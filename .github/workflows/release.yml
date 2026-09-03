@@ -299,6 +299,7 @@ jobs:
       # (app/lib/update/app_update.dart, and video_engine_test.dart pins it).
 
   linux:
+    if: ${{ false }}
     name: linux x64
     needs: version
     # Inside a container the runner's default shell resolves to plain sh
@@ -576,6 +577,7 @@ jobs:
           if-no-files-found: error
 
   macos:
+    if: ${{ false }}
     name: macos universal
     needs: version
     runs-on: macos-latest
