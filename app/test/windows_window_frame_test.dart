@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:ui' show AppExitType, AppExitResponse;
+import 'dart:ui' show AppExitType, AppExitResponse, PointerDeviceKind;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -39,22 +39,20 @@ void main() {
       MaterialApp(
         builder: (context, child) => WindowsWindowFrame(
             controller: controller, startFullscreen: start, child: child!),
-        home: const Scaffold(body: Center(child: Text('Notebook'))),
+        home: const Scaffold(
+            body: Column(children: [
+          Align(alignment: Alignment.topRight, child: WindowsCaptionButtons()),
+          Expanded(child: Center(child: Text('Notebook'))),
+        ])),
       );
 
-  testWidgets('starts full screen, top-edge swipe reveals window buttons',
+  testWidgets('starts full screen with permanent window buttons',
       (tester) async {
     final controller = WindowsWindowController(enabled: true);
     addTearDown(controller.dispose);
     await tester.pumpWidget(host(controller));
     await tester.pumpAndSettle();
     expect(controller.fullscreen, true);
-    expect(find.byTooltip('Minimize'), findsNothing);
-    final gesture = await tester.startGesture(const Offset(150, 4));
-    await gesture.moveBy(const Offset(0, 25));
-    await gesture.moveBy(const Offset(0, 25));
-    await gesture.up();
-    await tester.pumpAndSettle();
     expect(find.byTooltip('Minimize'), findsOneWidget);
     expect(find.byTooltip('Close Openote'), findsOneWidget);
     await tester.tap(find.byTooltip('Minimize'));
@@ -83,18 +81,22 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('controls auto-hide after a touch, notebook remains visible',
+  testWidgets('pen hover never adds an overlay or hides the fixed controls',
       (tester) async {
     final controller = WindowsWindowController(enabled: true);
     addTearDown(controller.dispose);
     await tester.pumpWidget(host(controller));
     await tester.pumpAndSettle();
-    await tester.tapAt(const Offset(150, 4));
+    final pen = await tester.createGesture(kind: PointerDeviceKind.stylus);
+    await pen.addPointer(location: const Offset(150, 80));
+    await pen.moveTo(const Offset(150, 4));
     await tester.pump();
     expect(find.byTooltip('Close Openote'), findsOneWidget);
+    expect(find.byKey(const ValueKey('window-top-edge')), findsNothing);
     await tester.pump(const Duration(seconds: 5));
-    expect(find.byTooltip('Close Openote'), findsNothing);
+    expect(find.byTooltip('Close Openote'), findsOneWidget);
     expect(find.text('Notebook'), findsOneWidget);
+    await pen.removePointer();
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -106,6 +108,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.sendKeyEvent(LogicalKeyboardKey.f11);
     expect(calls, isEmpty);
+    expect(find.byTooltip('Close Openote'), findsNothing);
     expect(find.byKey(const ValueKey('window-top-edge')), findsNothing);
     expect(find.text('Notebook'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
@@ -138,9 +141,11 @@ void main() {
     var done = false;
     final closing = controller.close().then((_) => done = true);
     await Future<void>.delayed(Duration.zero);
+    expect(controller.closing, true);
     expect(binding.requestedType, AppExitType.cancelable);
     expect(done, false);
     saved.complete();
     await closing;
+    expect(controller.closing, false);
   });
 }

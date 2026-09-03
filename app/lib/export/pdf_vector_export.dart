@@ -201,7 +201,12 @@ Future<void> _addPageSheets(
     final visible = [
       for (final b in blocks)
         if (_overlaps(app, b, top, bottom)) b
-    ]..sort((a, b) => a.z.compareTo(b.z));
+    ]..sort((a, b) {
+      // Match the canvas: annotation ink stays above images, PDFs and tables.
+      final inkOrder = (a.type == BlockType.ink ? 1 : 0) -
+          (b.type == BlockType.ink ? 1 : 0);
+      return inkOrder != 0 ? inkOrder : a.z.compareTo(b.z);
+    });
     if (visible.isEmpty && sheet > 0) continue;
 
     doc.addPage(pw.Page(

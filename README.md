@@ -10,8 +10,9 @@
 
 </div>
 
-This Windows-first fork adds live pen-button handling and a full-screen window
-with swipe-down controls. Windows installers build on push; Linux is manual.
+This Windows-first fork adds live pen-button handling, permanent window controls,
+touch context menus and handwriting above page objects. Every branch push builds
+and publishes a higher-version Windows installer after checks pass; Linux is manual.
 See [build and test instructions](docs/WINDOWS-FORK.md). The Apple target is removed;
 historical upstream design notes and third-party licences remain unchanged.
 

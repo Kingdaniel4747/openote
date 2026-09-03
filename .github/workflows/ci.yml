@@ -4,6 +4,10 @@ name: Windows checks and installer
 on:
   workflow_call:
     inputs:
+      publish:
+        type: boolean
+        default: false
+        required: false
       version:
         type: string
         default: ''
@@ -11,7 +15,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   windows:
@@ -19,21 +23,39 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Test version calculation
+        run: ./packaging/windows/release-version.test.ps1
 
       - name: Read and check version
         shell: pwsh
         env:
           INPUT_VERSION: ${{ inputs.version }}
+          PUBLISH: ${{ inputs.publish }}
         run: |
           $ErrorActionPreference = 'Stop'
           $pubspec = Get-Content app/pubspec.yaml -Raw
           if ($pubspec -notmatch '(?m)^version:\s*(\d+\.\d+\.\d+)') { throw 'Missing app version' }
           $version = $Matches[1]
-          $requested = $env:INPUT_VERSION -replace '^v', ''
-          if (-not $requested -and $env:GITHUB_REF_TYPE -eq 'tag') {
-            $requested = $env:GITHUB_REF_NAME -replace '^v', ''
+          if ($env:PUBLISH -eq 'true') {
+            . ./packaging/windows/release-version.ps1
+            $tags = @(git tag --list 'v*')
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot read version tags' }
+            $headTags = @(git tag --points-at HEAD --list 'v*' |
+              Where-Object { $_ -match '^v\d+\.\d+\.\d+$' } |
+              Sort-Object { [version]($_ -replace '^v','') })
+            if ($headTags.Count) {
+              # Re-running the same commit rebuilds the same version.
+              $version = $headTags[-1] -replace '^v',''
+            } else {
+              $version = Get-NextOpenoteVersion -Baseline $version -Tags $tags
+            }
+          } elseif ($env:INPUT_VERSION) {
+            $requested = $env:INPUT_VERSION -replace '^v',''
+            if ($requested -ne $version) { throw "Version must match pubspec.yaml ($version)" }
           }
-          if ($requested -and $requested -ne $version) { throw "Version must match pubspec.yaml ($version)" }
           "VERSION=$version" >> $env:GITHUB_ENV
 
       - uses: dtolnay/rust-toolchain@stable
@@ -82,7 +104,7 @@ jobs:
       # first-use download is needed for this Windows build.
       - name: Build Windows
         working-directory: app
-        run: flutter build windows --release --build-name=$env:VERSION
+        run: flutter build windows --release --build-name=$env:VERSION --dart-define=OPENOTE_VERSION=$env:VERSION --dart-define=OPENOTE_REPOSITORY=$env:GITHUB_REPOSITORY
       - name: Trim icon font
         working-directory: app
         run: dart run tool/shake_icons.dart windows
@@ -104,3 +126,25 @@ jobs:
           name: windows-x64
           path: openote-*-windows-x64-setup.exe
           if-no-files-found: error
+
+
+      - name: Publish versioned Windows release
+        if: inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = "v$env:VERSION"
+          # Fail on API/auth errors, never mistake them for an absent release.
+          $releases = gh api --paginate "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name'
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect existing releases' }
+          if ($tag -in @($releases)) {
+            Write-Host "$tag already exists; leaving it unchanged."
+            exit 0
+          }
+          $installer = "openote-$env:VERSION-windows-x64-setup.exe"
+          if (-not (Test-Path -LiteralPath $installer)) { throw 'Installer is missing' }
+          $notes = "Windows build from commit $env:GITHUB_SHA. Includes the setup EXE; source code is available with this tag."
+          gh release create $tag $installer --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "Openote $env:VERSION" --notes $notes --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }

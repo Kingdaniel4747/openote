@@ -17,6 +17,11 @@ void main() {
     expect((release['on'] as Map).keys,
         unorderedEquals(['push', 'workflow_dispatch']));
     expect(jobs['windows']['uses'], './.github/workflows/ci.yml');
+    expect(jobs['windows']['with']['publish'], true);
+    expect(release['on']['push']['tags'], isNull);
+    expect(release['concurrency']['cancel-in-progress'], false);
+    expect(release['concurrency']['queue'], 'max');
+    expect(release['concurrency']['group'], isNot(contains('github.ref')));
     expect(jobs['linux']['if'],
         "github.event_name == 'workflow_dispatch' && inputs.platform == 'linux'");
     final choice = release['on']['workflow_dispatch']['inputs']['platform'];
@@ -41,8 +46,20 @@ void main() {
     final upload =
         steps.singleWhere((s) => s['uses'] == 'actions/upload-artifact@v4');
     expect(upload['with']['path'], 'openote-*-windows-x64-setup.exe');
-    expect(ci['permissions']['contents'], 'read');
-    expect(workflow('release.yml')['permissions']['contents'], 'read');
+    expect(ci['permissions']['contents'], 'write');
+    expect(workflow('release.yml')['permissions']['contents'], 'write');
+    final publish = steps
+        .singleWhere((s) => s['name'] == 'Publish versioned Windows release');
+    expect(publish['if'], 'inputs.publish');
+    expect(publish['run'], contains('gh release create'));
+    expect(publish['run'], contains(r'--target $env:GITHUB_SHA'));
+    expect(publish['run'], isNot(contains('--clobber')));
+    expect(steps.indexOf(publish), greaterThan(steps.indexOf(upload)));
+    final build = steps.singleWhere((s) => s['name'] == 'Build Windows');
+    expect(build['run'], contains(r'--build-name=$env:VERSION'));
+    expect(
+        build['run'], contains(r'--dart-define=OPENOTE_VERSION=$env:VERSION'));
+    expect(build['run'], contains('--dart-define=OPENOTE_REPOSITORY='));
   });
 
   test('Windows and Linux targets remain, Apple target is removed', () {

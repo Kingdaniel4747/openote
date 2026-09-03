@@ -28,6 +28,7 @@ import 'settings_dialog.dart';
 import 'update_dialog.dart';
 import '../theme/tokens.dart';
 import 'onote_dialog.dart';
+import 'windows_window_frame.dart';
 
 /// The tabbed command bar (style guide §7 revised): Home · Insert · Draw ·
 /// View. OneNote's few-clicks accessibility in Openote's calm language — a
@@ -43,10 +44,39 @@ class CommandBar extends StatefulWidget {
 class _CommandBarState extends State<CommandBar> {
   /// The tab the user last chose among the permanent ones.
   int _tab = 0;
+  late int _drawRequest;
+
+  @override
+  void initState() {
+    super.initState();
+    _drawRequest = app.drawTabRequest;
+    app.addListener(_followDrawing);
+  }
+
+  void _followDrawing() {
+    if (_drawRequest == app.drawTabRequest) return;
+    _drawRequest = app.drawTabRequest;
+    if (mounted && _tab != 2) setState(() => _tab = 2);
+  }
+
+  @override
+  void didUpdateWidget(CommandBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.app != app) {
+      oldWidget.app.removeListener(_followDrawing);
+      _drawRequest = app.drawTabRequest;
+      app.addListener(_followDrawing);
+    }
+  }
+
+  @override
+  void dispose() {
+    app.removeListener(_followDrawing);
+    super.dispose();
+  }
 
   /// **Three, forever.** Home is write and format, Insert is add, Draw is
-  /// ink; nothing is ever appended, and nothing but a tap on one of them ever
-  /// changes which is showing.
+  /// ink. Actual stylus drawing also opens Draw; hover never changes tabs.
   ///
   /// There used to be a fourth, View, and a fifth that appeared while an
   /// equation was open and dragged the student onto it. The equation's
@@ -293,23 +323,16 @@ class _CommandBarState extends State<CommandBar> {
                           ),
                         ],
                       ),
-                      // The one place to LOOK for a setting (PLANNING
-                      // "Consistency/UX": centralised settings page).
-                      ToolbarControl(
-                        width: 40,
-                        icon: Icons.settings_outlined,
-                        label: 'Settings',
-                        onPressed: () => showSettingsDialog(context, app),
-                        inline: IconButton(
-                          icon: const Icon(Icons.settings_outlined, size: 18),
-                          tooltip: 'Settings…',
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () => showSettingsDialog(context, app),
-                        ),
-                      ),
                     ],
                   ),
                 ),
+                IconButton(
+                  icon: const Icon(Icons.settings_outlined, size: 18),
+                  tooltip: 'Settings…',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => showSettingsDialog(context, app),
+                ),
+                const WindowsCaptionButtons(),
               ],
             ),
           ),
@@ -774,9 +797,10 @@ class _CommandBarState extends State<CommandBar> {
     final inkActive = app.tool == Tool.pen ||
         app.tool == Tool.highlighter ||
         app.hasInkSelection;
-    final colors = app.tool == Tool.highlighter
-        ? OnoteColors.highlighterColors
-        : OnoteColors.penColors;
+    final colors = OnoteColors.drawingColors(
+      dark: Theme.of(context).brightness == Brightness.dark,
+      highlighter: app.tool == Tool.highlighter,
+    );
     return Row(children: [
       toolButton(Tool.select, Icons.near_me_outlined, 'Select / move  (V)'),
       toolButton(Tool.text, Icons.text_fields, 'Text  (T)'),
@@ -806,6 +830,7 @@ class _CommandBarState extends State<CommandBar> {
                 }
               },
               child: Container(
+                key: ValueKey('pen-swatch-$i'),
                 width: 18,
                 height: 18,
                 decoration: BoxDecoration(
@@ -834,6 +859,14 @@ class _CommandBarState extends State<CommandBar> {
           ),
         ),
       ] else if (app.tool == Tool.eraser) ...[
+        SizedBox(width: 135, child: Slider(
+          key: const ValueKey('eraser-size'),
+          value: app.eraserSize,
+          min: 4, max: 100, divisions: 48,
+          label: '${app.eraserSize.round()} px',
+          onChanged: app.setEraserSize,
+        )),
+        Text('${app.eraserSize.round()} px', style: const TextStyle(fontSize: 11)),
         SegmentedButton<EraserMode>(
           segments: [
             for (final m in EraserMode.values)
@@ -1562,4 +1595,3 @@ class _SubjectBadge extends StatelessWidget {
     );
   }
 }
-

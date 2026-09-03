@@ -502,11 +502,11 @@ void main() {
               'the pass');
     });
 
-    test('the vacuum is owed to shutdown, not run on the timer', () async {
+    test('vacuum waits for manual maintenance, not the timer or shutdown', () async {
       // reclaimFreeSpace is a synchronous whole-file rewrite whose own doc
       // comment says it "runs from an explicit user action rather than on a
       // timer". On a timer it froze the window for seconds with no dialog
-      // explaining why. Deferred to shutdown, there is no interface to freeze.
+      // explaining why. On shutdown it made closing the window feel stuck.
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       writeLegacyPage(otherPage('Other'), handwriting(count: 20, seed: 24));
 
@@ -516,8 +516,12 @@ void main() {
           reason: 'the debt is recorded rather than paid mid-session');
 
       await app.shutdown();
+      expect(repo.getSetting('vacuumPending:${app.notebookId}'), isTrue,
+          reason: 'closing must only persist notes, not compact notebooks');
+      final result = await app.reclaimFreeSpace(app.notebookId!);
+      expect(result.ran, isTrue);
       expect(repo.getSetting('vacuumPending:${app.notebookId}'), isNull,
-          reason: 'shutdown pays it and clears the flag');
+          reason: 'explicit maintenance pays it and clears the flag');
     });
 
     test('a keystroke mid-run stops the run where it stands', () async {

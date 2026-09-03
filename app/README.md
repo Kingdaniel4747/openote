@@ -18,6 +18,9 @@ optional at build time on Windows and Linux — see below.
 ## Building and running
 
 For a Windows installer without a local compiler, see [the fork build guide](../docs/WINDOWS-FORK.md).
+Branch pushes automatically publish a numbered Windows release with a setup EXE.
+The workflow injects its version and repository into the app's update checker;
+local builds keep the baseline version in `pubspec.yaml`.
 
 Prereqs for local builds: Flutter 3.44.8 with desktop support for your OS. Rust
 (`cargo`) is needed only to build the native core — the app runs without it.

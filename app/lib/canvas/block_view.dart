@@ -307,22 +307,6 @@ class _BlockViewState extends State<BlockView> {
     _bodyDragMoves = false;
   }
 
-  /// Long-press reports a cumulative offset, not a delta.
-  Offset _lastLongPress = Offset.zero;
-
-  void _longPressStart(LongPressStartDetails d) {
-    _lastLongPress = Offset.zero;
-    _dragStart(DragStartDetails(globalPosition: d.globalPosition));
-  }
-
-  void _longPressMove(LongPressMoveUpdateDetails d) {
-    final delta = d.offsetFromOrigin - _lastLongPress;
-    _lastLongPress = d.offsetFromOrigin;
-    _drag(DragUpdateDetails(globalPosition: d.globalPosition, delta: delta));
-  }
-
-  void _longPressEnd(LongPressEndDetails d) => _dragEnd(DragEndDetails());
-
   /// The strip above the block: the only place a drag moves the container.
   ///
   /// OneNote's model, adopted because it resolves an ambiguity that has no
@@ -355,6 +339,7 @@ class _BlockViewState extends State<BlockView> {
         // Block actions stay reachable while editing, which they were not
         // when the only right-click target was the text itself.
         onSecondaryTapUp: (d) => showBlockMenu(context, app, b, d.globalPosition),
+        onLongPressStart: (d) => showBlockMenu(context, app, b, d.globalPosition),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: _kChromePad),
           child: Container(
@@ -586,7 +571,7 @@ class _BlockViewState extends State<BlockView> {
     // them instead of dragging/editing them (fixes ink-over-block dragging).
     final inkToolActive = app.tool == Tool.pen ||
         app.tool == Tool.highlighter ||
-        app.tool == Tool.eraser;
+        app.tool == Tool.eraser || app.tool == Tool.lasso;
 
     // Chrome is only live for its OWN block, so two abutting blocks can never
     // both offer a bar at once even though the reserved strips overlap.
@@ -676,18 +661,15 @@ class _BlockViewState extends State<BlockView> {
       ),
     );
 
-    // Touch has no hover, so the bar cannot be the only way to move a block.
-    // Long-press-then-drag is the platform convention there — and it is scoped
-    // to touch and stylus so a slow mouse click can never move a text box by
-    // accident, which is the very complaint the bar exists to fix.
+    // Touch has no right button. Hold for the same object menu; select then
+    // use the visible handle to move. Editors retain their own text selection.
     final touchable = GestureDetector(
       supportedDevices: const {
         PointerDeviceKind.touch,
         PointerDeviceKind.stylus,
       },
-      onLongPressStart: editing || _locked ? null : _longPressStart,
-      onLongPressMoveUpdate: editing || _locked ? null : _longPressMove,
-      onLongPressEnd: editing || _locked ? null : _longPressEnd,
+      onLongPressStart: editing ? null :
+          (d) => showBlockMenu(context, app, b, d.globalPosition),
       child: body,
     );
 

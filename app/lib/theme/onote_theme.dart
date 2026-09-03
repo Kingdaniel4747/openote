@@ -95,6 +95,17 @@ abstract final class OnoteColors {
   static const success = Color(0xFF2E8B57);
 
   /// Default content-ink pen colors (style guide §3.6).
+  /// Shared by the toolbar and stroke capture: swatches show actual ink.
+  static List<Color> drawingColors({required bool dark, required bool highlighter}) =>
+      highlighter ? highlighterColors : [
+        dark ? moon0 : graphite900,
+        ...penColors.skip(1),
+        // Explicit black and white are available for annotating light/dark
+        // images and PDFs, irrespective of the application's theme.
+        Colors.black,
+        Colors.white,
+      ];
+
   static const penColors = <Color>[
     graphite900,
     Color(0xFF2F6FB3),

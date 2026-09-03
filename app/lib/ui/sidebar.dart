@@ -1096,6 +1096,8 @@ class _NotebookHeader extends StatelessWidget {
           onTap: () => showNotebookManager(context, app),
           onSecondaryTapUp: (_) =>
               showNotebookManager(context, app, focusId: current.id),
+          onLongPress: () =>
+              showNotebookManager(context, app, focusId: current.id),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
             child: Row(
@@ -2286,4 +2288,3 @@ Future<void> _onPage(AppState app, String pageId, Future<void> Function() body)
     }
   }
 }
-

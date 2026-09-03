@@ -191,8 +191,9 @@ class _ImageBlockViewState extends State<ImageBlockView> {
           Icon(isPdf ? Icons.picture_as_pdf_outlined : Icons.broken_image_outlined,
               color: OnoteColors.graphite400),
           const SizedBox(width: 8),
-          Text(isPdf ? 'PDF not here yet — still syncing?' : 'Missing image',
-              style: const TextStyle(color: OnoteColors.graphite400)),
+          Flexible(child: Text(
+              isPdf ? 'PDF not here yet — still syncing?' : 'Missing image',
+              style: const TextStyle(color: OnoteColors.graphite400))),
         ]),
       );
     }

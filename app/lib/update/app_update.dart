@@ -19,12 +19,15 @@ import 'dart:io';
 
 import '../markdown/md_syntax.dart';
 
-/// The running app's version. pubspec.yaml is the source of truth;
-/// app_update_test.dart fails the build the moment the two drift.
-const kAppVersion = '0.8.0';
+/// Windows releases inject the calculated version. Local/Linux builds use the
+/// pubspec baseline; app_update_test.dart guards that default against drift.
+const kAppVersion =
+    String.fromEnvironment('OPENOTE_VERSION', defaultValue: '0.8.0');
+const kUpdateRepository = String.fromEnvironment('OPENOTE_REPOSITORY',
+    defaultValue: 'Kingdaniel4747/openote');
 
 const _kLatestReleaseApi =
-    'https://api.github.com/repos/icmric/openote/releases/latest';
+    'https://api.github.com/repos/$kUpdateRepository/releases/latest';
 
 class UpdateInfo {
   const UpdateInfo({
@@ -89,7 +92,7 @@ UpdateInfo? parseLatestRelease(
     notes: json['body'] as String?,
     windowsSetupUrl: setup,
     pageUrl: json['html_url'] as String? ??
-        'https://github.com/icmric/openote/releases',
+        'https://github.com/$kUpdateRepository/releases',
   );
 }
 

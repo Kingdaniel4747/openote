@@ -13,6 +13,7 @@ class WindowsWindowController extends ChangeNotifier {
   final bool enabled;
   bool fullscreen = false;
   bool _disposed = false;
+  bool closing = false;
   Future<void> _pending = Future.value();
 
   Future<void> setFullscreen(bool value) {
@@ -48,7 +49,15 @@ class WindowsWindowController extends ChangeNotifier {
   Future<void> close() async {
     // Same lifecycle request as the native close button. In particular, await
     // OpenoteBoot's app.shutdown() before exiting: never terminate the process.
-    await ServicesBinding.instance.exitApplication(AppExitType.cancelable);
+    if (closing || _disposed) return;
+    closing = true;
+    notifyListeners();
+    try {
+      await ServicesBinding.instance.exitApplication(AppExitType.cancelable);
+    } finally {
+      closing = false;
+      if (!_disposed) notifyListeners();
+    }
   }
 
   @override
@@ -85,16 +94,11 @@ class _WindowScope extends InheritedWidget {
 
 class _WindowsWindowFrameState extends State<WindowsWindowFrame> {
   late final WindowsWindowController _window;
-  Timer? _hideTimer;
-  bool _visible = false;
-  bool _hovering = false;
-  double _dragDistance = 0;
 
   @override
   void initState() {
     super.initState();
     _window = widget.controller ?? WindowsWindowController();
-    _window.addListener(_changed);
     if (_window.enabled) {
       HardwareKeyboard.instance.addHandler(_key);
       unawaited(_window.setFullscreen(widget.startFullscreen));
@@ -109,126 +113,56 @@ class _WindowsWindowFrameState extends State<WindowsWindowFrame> {
     return true;
   }
 
-  void _changed() {
-    if (mounted) setState(() {});
-  }
-
-  void _show() {
-    _hideTimer?.cancel();
-    setState(() => _visible = true);
-    if (!_hovering) {
-      _hideTimer = Timer(const Duration(seconds: 4), () {
-        if (mounted) setState(() => _visible = false);
-      });
-    }
-  }
-
   @override
   void dispose() {
-    _hideTimer?.cancel();
     if (_window.enabled) HardwareKeyboard.instance.removeHandler(_key);
-    _window.removeListener(_changed);
     if (widget.controller == null) _window.dispose();
     super.dispose();
   }
 
   @override
+  Widget build(BuildContext context) => _window.enabled
+      ? _WindowScope(controller: _window, child: widget.child)
+      : widget.child;
+}
+
+/// Permanently beside Settings, inside the Navigator's normal overlay. No
+/// hover/swipe activation, no floating strip that can cover the drawing tools.
+class WindowsCaptionButtons extends StatelessWidget {
+  const WindowsCaptionButtons({super.key});
+
+  @override
   Widget build(BuildContext context) {
-    if (!_window.enabled) return widget.child;
-    return _WindowScope(
-      controller: _window,
-      // This frame is above the Navigator in MaterialApp.builder, so its
-      // tooltips need their own overlay. The notebook keeps its own Navigator.
-      child: Overlay.wrap(
-          child: Stack(fit: StackFit.expand, children: [
-        widget.child,
-        if (_window.fullscreen)
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: _visible
-                ? MouseRegion(
-                    onEnter: (_) {
-                      _hovering = true;
-                      _hideTimer?.cancel();
-                    },
-                    onExit: (_) {
-                      _hovering = false;
-                      _show();
-                    },
-                    child: Listener(
-                      onPointerDown: (_) => _hideTimer?.cancel(),
-                      onPointerUp: (_) => _show(),
-                      onPointerCancel: (_) => _show(),
-                      child: Material(
-                        elevation: 8,
-                        color: Theme.of(context).colorScheme.surface,
-                        child: SizedBox(
-                            height: 48,
-                            child: Row(children: [
-                              Expanded(
-                                  child: GestureDetector(
-                                behavior: HitTestBehavior.opaque,
-                                onDoubleTap: () => _window.setFullscreen(false),
-                                child: const Padding(
-                                    padding:
-                                        EdgeInsets.symmetric(horizontal: 16),
-                                    child: Text('Openote',
-                                        style: TextStyle(fontSize: 14))),
-                              )),
-                              IconButton(
-                                  tooltip: 'Hide window controls',
-                                  onPressed: () {
-                                    _hideTimer?.cancel();
-                                    setState(() => _visible = false);
-                                  },
-                                  icon: const Icon(Icons.keyboard_arrow_up)),
-                              IconButton(
-                                  tooltip: 'Minimize',
-                                  onPressed: _window.minimize,
-                                  icon: const Icon(Icons.minimize)),
-                              IconButton(
-                                  tooltip: 'Exit full screen (F11)',
-                                  onPressed: () => _window.setFullscreen(false),
-                                  icon: const Icon(Icons.fullscreen_exit)),
-                              IconButton(
-                                  tooltip: 'Close Openote',
-                                  onPressed: _window.close,
-                                  icon: const Icon(Icons.close)),
-                            ])),
-                      ),
-                    ),
-                  )
-                : MouseRegion(
-                    onEnter: (_) => _show(),
-                    child: GestureDetector(
-                      key: const ValueKey('window-top-edge'),
-                      behavior: HitTestBehavior.opaque,
-                      onTap: _show,
-                      onVerticalDragStart: (_) => _dragDistance = 0,
-                      onVerticalDragUpdate: (event) {
-                        _dragDistance += event.delta.dy;
-                        if (_dragDistance >= 12) _show();
-                      },
-                      child: Semantics(
-                          label: 'Show window controls',
-                          button: true,
-                          child: SizedBox(
-                              height: 12,
-                              child: Center(
-                                  child: Container(
-                                width: 42,
-                                height: 3,
-                                decoration: BoxDecoration(
-                                    color:
-                                        Theme.of(context).colorScheme.outline,
-                                    borderRadius: BorderRadius.circular(2)),
-                              )))),
-                    ),
-                  ),
-          ),
-      ])),
+    final window = WindowsWindowFrame.of(context);
+    if (window == null) return const SizedBox.shrink();
+    return ListenableBuilder(
+      listenable: window,
+      builder: (context, _) => Row(mainAxisSize: MainAxisSize.min, children: [
+        _button('Minimize', Icons.minimize, window.minimize),
+        _button(
+            window.fullscreen ? 'Exit full screen (F11)' : 'Full screen (F11)',
+            window.fullscreen ? Icons.fullscreen_exit : Icons.fullscreen,
+            () => window.setFullscreen(!window.fullscreen)),
+        window.closing
+            ? const SizedBox(
+                width: 36,
+                height: 32,
+                child: Padding(
+                    padding: EdgeInsets.all(8),
+                    child: CircularProgressIndicator(strokeWidth: 2)))
+            : _button('Close Openote', Icons.close, window.close),
+      ]),
     );
   }
+
+  Widget _button(String label, IconData icon, VoidCallback pressed) => SizedBox(
+        width: 36,
+        height: 32,
+        child: IconButton(
+          padding: EdgeInsets.zero,
+          tooltip: label,
+          icon: Icon(icon, size: 18),
+          onPressed: pressed,
+        ),
+      );
 }

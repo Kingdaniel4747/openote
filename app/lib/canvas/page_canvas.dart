@@ -245,6 +245,9 @@ class _PageCanvasState extends State<PageCanvas> {
   // ── Ink capture (page-space, Ink Data Spec §1) ──────────────────────────
 
   void _inkDown(PointerDownEvent e) {
+    if (e.kind == PointerDeviceKind.stylus || e.kind == PointerDeviceKind.invertedStylus) {
+      app.requestDrawTab();
+    }
     if (_windowsPen.enabled) {
       if (_windowsInkPointer != null && _windowsInkPointer != e.pointer) return;
       _windowsInkPointer = e.pointer;
@@ -268,11 +271,9 @@ class _PageCanvasState extends State<PageCanvas> {
 
   void _beginWetStroke(PointerEvent e, Offset pt) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final colors = app.tool == Tool.highlighter
-        ? OnoteColors.highlighterColors
-        : OnoteColors.penColors;
-    var color = colors[app.penColor % colors.length];
-    if (dark && color == OnoteColors.graphite900) color = OnoteColors.moon0;
+    final colors = OnoteColors.drawingColors(
+        dark: dark, highlighter: app.tool == Tool.highlighter);
+    final color = colors[app.penColor % colors.length];
     setState(() {
       _wet = Stroke(
         tool: app.tool == Tool.highlighter ? 'highlighter' : 'pen',
@@ -366,7 +367,7 @@ class _PageCanvasState extends State<PageCanvas> {
       app.pushUndo();
       _eraseUndoPushed = true;
     }
-    final radius = 12.0 / controller.scale;
+    final radius = app.eraserSize / 2 / controller.scale;
     final r2 = radius * radius;
     // INK-6: 'area' rubs points out mid-stroke (splitting survivors); 'stroke'
     // removes any stroke the eraser touches whole — OneNote's default, and the
@@ -969,32 +970,12 @@ class _PageCanvasState extends State<PageCanvas> {
                       child: Stack(
                       clipBehavior: Clip.none,
                       children: [
-                        Positioned(
-                          left: 0,
-                          top: 0,
-                          child: IgnorePointer(
-                            child: RepaintBoundary(
-                              child: CustomPaint(
-                                size: Size.zero,
-                                painter: InkPainter(visibleStrokes,
-                                    wet: _wet,
-                                    // Per-point repaint without widget rebuild.
-                                    repaint: _wetTick,
-                                    // Theme default for "auto" strokes: dark
-                                    // ink on light pages, light ink on dark.
-                                    autoColor: dark
-                                        ? OnoteColors.moon100
-                                        : OnoteColors.graphite900),
-                              ),
-                            ),
-                          ),
-                        ),
                         // In-page title band (OneNote-style)
                         Positioned(
                           left: AppState.pageLeftMargin,
                           top: 20,
                           child: IgnorePointer(
-                            ignoring: _inkTool,
+                            ignoring: _inkTool || _lassoTool,
                             child: PageTitleView(
                               key: ValueKey('title-${app.pageId}'),
                               app: app,
@@ -1033,6 +1014,27 @@ class _PageCanvasState extends State<PageCanvas> {
                             app: app,
                             controller: controller,
                           ),
+                        // Ink is an annotation layer ABOVE every object.
+                        Positioned(
+                          left: 0,
+                          top: 0,
+                          child: IgnorePointer(
+                            child: RepaintBoundary(
+                              child: CustomPaint(
+                                size: Size.zero,
+                                painter: InkPainter(visibleStrokes,
+                                    wet: _wet,
+                                    // Per-point repaint without widget rebuild.
+                                    repaint: _wetTick,
+                                    // Theme default for "auto" strokes: dark
+                                    // ink on light pages, light ink on dark.
+                                    autoColor: dark
+                                        ? OnoteColors.moon100
+                                        : OnoteColors.graphite900),
+                              ),
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                     ),
@@ -1111,6 +1113,7 @@ class _PageCanvasState extends State<PageCanvas> {
         },
         onPointerMove: _lassoMove,
         onPointerUp: _lassoUp,
+        onPointerCancel: (_) => setState(() => _lasso = null),
         child: canvas,
       );
     } else if (_inkTool) {
@@ -1171,13 +1174,34 @@ class _PageCanvasState extends State<PageCanvas> {
         child: canvas,
       );
     } else {
-      canvas = Listener(
+      canvas = GestureDetector(
+        onLongPressStart: (details) {
+          _mode = _DragMode.none;
+          _touches.clear();
+          _pinchBaseDist = null;
+          app.setDragging(false);
+          final page = controller.screenToPage(details.localPosition);
+          final ink = _hitInk(page);
+          if (ink != null) {
+            showBlockMenu(context, app, app.blocks.firstWhere((b) => b.id == ink),
+                details.globalPosition);
+          } else {
+            showCanvasMenu(context, app, details.globalPosition, page);
+          }
+        },
+        child: Listener(
         onPointerDown: _selectDown,
         onPointerMove: _selectMove,
         onPointerUp: _selectUp,
+        onPointerCancel: (_) {
+          _mode = _DragMode.none;
+          _touches.clear();
+          _pinchBaseDist = null;
+          app.setDragging(false);
+        },
         behavior: HitTestBehavior.translucent,
         child: canvas,
-      );
+      ));
     }
 
     // Drag-and-drop (MEDIA-1): files dropped anywhere on the page land where
@@ -1469,8 +1493,13 @@ class _OverlayPainter extends CustomPainter {
     required this.inkSelections,
     required this.lasso,
     required this.color,
-  });
+  }) : lassoPointCount = lasso?.length ?? 0,
+       viewOffset = controller.offset,
+       viewScale = controller.scale;
   final CanvasController controller;
+  final int lassoPointCount;
+  final Offset viewOffset;
+  final double viewScale;
   final Rect? marquee;
   final List<Rect> inkSelections;
   final List<Offset>? lasso;
@@ -1490,12 +1519,15 @@ class _OverlayPainter extends CustomPainter {
       }
       path.close();
       canvas.drawPath(path, Paint()..color = color.withValues(alpha: .08));
-      canvas.drawPath(
-          path,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.5
-            ..color = color.withValues(alpha: .7));
+      // A halo stays visible over both dark paper and white PDFs.
+      canvas.drawPath(path, Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 4
+        ..color = Colors.white.withValues(alpha: .85));
+      canvas.drawPath(path, Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..color = color);
     }
     if (marquee != null) {
       final r = Rect.fromPoints(controller.pageToScreen(marquee!.topLeft),
@@ -1543,9 +1575,10 @@ class _OverlayPainter extends CustomPainter {
       old.marquee != marquee ||
       old.inkSelections.length != inkSelections.length ||
       old.lasso != lasso ||
-      (lasso?.length ?? 0) != (old.lasso?.length ?? 0) ||
-      old.controller.offset != controller.offset ||
-      old.controller.scale != controller.scale;
+      old.lassoPointCount != lassoPointCount ||
+      old.viewOffset != viewOffset ||
+      old.viewScale != viewScale ||
+      old.color != color;
 }
 
 /// Draws the alignment guides while a block is being dragged.

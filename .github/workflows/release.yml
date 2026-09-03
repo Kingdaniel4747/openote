@@ -1,11 +1,10 @@
 name: Release
 
-# A push builds ONLY the Windows setup EXE. Linux is an explicit manual choice.
-# No public release is created or overwritten.
+# Each branch push builds and publishes a new Windows version after all tests.
+# Linux is still an explicit manual build. Tags do not trigger another run.
 on:
   push:
     branches: ['**']
-    tags: ['v*']
   workflow_dispatch:
     inputs:
       platform:
@@ -15,16 +14,18 @@ on:
         default: windows
         required: true
       version:
-        description: 'Optional: must match app/pubspec.yaml; leave empty normally'
+        description: 'Linux only: optional pubspec version; Windows versions are automatic'
         required: false
         type: string
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: release-${{ github.ref }}-${{ inputs.platform || 'windows' }}
-  cancel-in-progress: true
+  # Serialize Windows releases across branches so version allocation is unique.
+  group: openote-release-${{ inputs.platform || 'windows' }}
+  cancel-in-progress: false
+  queue: max
 
 jobs:
   windows:
@@ -32,6 +33,7 @@ jobs:
     uses: ./.github/workflows/ci.yml
     with:
       version: ${{ inputs.version || '' }}
+      publish: true
 
   linux:
     if: github.event_name == 'workflow_dispatch' && inputs.platform == 'linux'

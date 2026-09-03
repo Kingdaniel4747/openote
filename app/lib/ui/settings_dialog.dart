@@ -147,8 +147,8 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   label: const Text('Toggle full screen (F11)'),
                   onPressed: () => window.setFullscreen(!window.fullscreen),
                 ),
-                const Text('In full screen, swipe down from the top edge to show '
-                    'the window buttons.', style: TextStyle(fontSize: 11)),
+                const Text('Window buttons stay beside Settings, including in '
+                    'full screen.', style: TextStyle(fontSize: 11)),
               ],
               _section('Writing and drawing'),
               _row('Spell check', _toggle(app.spellCheckEnabled, app.setSpellCheck)),

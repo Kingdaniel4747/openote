@@ -194,9 +194,12 @@ void main() {
         Block(type: BlockType.text, x: 5, y: 5, content: {'text': 'unsaved!'})
       ];
       app.markDirty(); // starts a 700ms debounce we deliberately do NOT wait for
+      repo.setSetting('vacuumPending:${nb.id}', true);
 
       await app.shutdown(); // what the window-close handler calls
 
+      expect(repo.getSetting('vacuumPending:${nb.id}'), true,
+          reason: 'optional compaction must not delay closing');
       // Re-read from storage: the edit must be there despite the debounce.
       final data = repo.readPage(nb.id, pageId);
       expect(data.blocks.map((b) => b.content['text']), contains('unsaved!'));

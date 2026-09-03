@@ -2989,14 +2989,16 @@ class AppState extends ChangeNotifier
     if (unattended) {
       // The mirror shrank but the file keeps its high-water mark until a
       // VACUUM — seconds of synchronous IO that must not land on the UI
-      // isolate while someone is mid-sentence. Deferred to shutdown, where
-      // there is no interface left to freeze.
+      // isolate while someone is mid-sentence. Leave it for manual maintenance,
+      // not window close: exiting should only persist the student's work.
       if (converted > 0) _repo.setSetting('vacuumPending:$nb', true);
     } else {
       // Manual runs VACUUM immediately: the user pressed the button and is
       // watching a spinner in a modal dialog, so the cost is one they asked
       // for and the shrink is visible the moment the dialog updates.
-      _repo.reclaimFreeSpace(nb);
+      if (_repo.reclaimFreeSpace(nb).ran) {
+        _repo.setSetting('vacuumPending:$nb', null);
+      }
     }
     if (!unattended && pageId != null && notebookId == nb && !_dirty) {
       // The open page's blocks are pre-conversion in memory; refresh them so
@@ -3031,6 +3033,7 @@ class AppState extends ChangeNotifier
   Future<SpaceReclaim> reclaimFreeSpace(String nb) async {
     await flushSave();
     final r = _repo.reclaimFreeSpace(nb);
+    if (r.ran) _repo.setSetting('vacuumPending:$nb', null);
     if (r.freed > 0) notifyListeners();
     return r;
   }
@@ -4464,6 +4467,23 @@ class AppState extends ChangeNotifier
   /// a preference.
   EraserMode eraserMode = EraserMode.area;
 
+  /// Diameter in logical screen pixels (independent of zoom and pen width).
+  double eraserSize = 24;
+
+  void setEraserSize(double value) {
+    if (!value.isFinite) return;
+    eraserSize = value.clamp(4.0, 100.0);
+    _repo.setSetting('eraserSize', eraserSize);
+    notifyListeners();
+  }
+
+  /// A real ink contact requests Draw once, without stealing tabs on hover.
+  int drawTabRequest = 0;
+  void requestDrawTab() {
+    drawTabRequest++;
+    notifyListeners();
+  }
+
   void setEraserMode(EraserMode m) {
     eraserMode = m;
     notifyListeners();
@@ -5749,6 +5769,10 @@ class AppState extends ChangeNotifier
     if (pp is bool) penProximitySwitch = pp;
     final fs = _repo.getSetting('startFullscreen');
     if (fs is bool) startFullscreen = fs;
+    final eraser = _repo.getSetting('eraserSize');
+    if (eraser is num && eraser.isFinite) {
+      eraserSize = eraser.toDouble().clamp(4.0, 100.0);
+    }
     // Detached: binding a port must never gate the app opening.
     unawaited(_restoreMcp());
     unawaited(checkForAppUpdate());
@@ -8561,29 +8585,11 @@ class AppState extends ChangeNotifier
     } catch (_) {
       // Never block exit on a save failure — flushSave already recorded it.
     }
-    // The VACUUMs unattended housekeeping owed. A container the ink migration
-    // shrank keeps its high-water mark until one runs, and a full VACUUM is
-    // seconds of synchronous IO — unacceptable on a timer while someone is
-    // writing, invisible on the way out because there is no interface left to
-    // freeze. One shot per flag; a flag for a since-deleted notebook clears
-    // harmlessly (reclaimFreeSpace returns 0 for an unknown id).
-    for (final key in _repo.settingKeys()) {
-      if (!key.startsWith('vacuumPending:')) continue;
-      try {
-        _repo.reclaimFreeSpace(key.substring('vacuumPending:'.length));
-      } catch (_) {}
-      _repo.setSetting(key, null);
-    }
+    // No VACUUM or new network sync on close. Persist local work first;
+    // cloud syncing resumes during the next session.
     _rememberView();
     _persistSession();
     await _repo.flushWorkspace(); // settle the debounced registry write
-    // One last cycle on the way out, so closing the lid is not a lost push.
-    // Guarded like the save above: exit must never be blocked by a network.
-    if (_gitEnabled) {
-      try {
-        await syncGitNow();
-      } catch (_) {}
-    }
   }
 
   /// Drop a pending debounced save without writing it.
