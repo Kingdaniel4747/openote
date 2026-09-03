@@ -29,6 +29,7 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  writing_services_ = std::make_unique<WritingServices>(flutter_controller_->engine()->messenger());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
   window_controls_ = std::make_unique<WindowControls>(
       GetHandle(), flutter_controller_->engine()->messenger());
@@ -49,6 +50,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  writing_services_.reset();
   window_controls_.reset();
   pen_buttons_.reset();
   if (flutter_controller_) {

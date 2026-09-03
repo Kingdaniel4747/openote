@@ -1,9 +1,9 @@
-
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
+import '../l10n/app_strings.dart';
 import 'package:flutter/services.dart';
 
 import '../export/markdown_export.dart';
@@ -34,8 +34,9 @@ import 'windows_window_frame.dart';
 /// View. OneNote's few-clicks accessibility in Openote's calm language — a
 /// slim tab row over a single command row of grouped icon buttons.
 class CommandBar extends StatefulWidget {
-  const CommandBar({super.key, required this.app});
+  const CommandBar({super.key, required this.app, this.titlebarOnly = false});
   final AppState app;
+  final bool titlebarOnly;
 
   @override
   State<CommandBar> createState() => _CommandBarState();
@@ -87,9 +88,243 @@ class _CommandBarState extends State<CommandBar> {
 
   AppState get app => widget.app;
 
+  List<Widget> _utilityControls(BuildContext context, ColorScheme scheme) => [
+        // The trailing cluster COMPACTS rather than scrolling.
+        //
+        // Reported: "it doesnt handle resizing well (menus should
+        // either compact as required or become sliding, again i
+        // belive the former is cleaner)." A `Row` that overflows is
+        // CLIPPED, and clipped pixels do not hit-test — so on a
+        // narrow window (laptop + navigator open) the rightmost
+        // buttons used to stop responding, and the horizontal-scroll
+        // fix that followed traded that for "responds, but you can't
+        // see it without scrolling first." `CompactingToolbar` folds
+        // whatever does not fit into one "More" menu instead —
+        // `alignment: end` keeps it flush against the window edge,
+        // the one thing the scrolling version got right.
+        Expanded(
+          child: CompactingToolbar(
+            alignment: MainAxisAlignment.end,
+            fillAvailable: true,
+            controls: [
+              // Update-through-app: the "little update button" of
+              // PLANNING.md. Exists only when launch found a newer
+              // release, and leads with the version so the tooltip
+              // answers "to what?" before the click.
+              if (app.updateAvailable != null)
+                ToolbarControl(
+                  width: 40,
+                  icon: Icons.system_update_alt,
+                  label: 'Update to ${app.updateAvailable!.version}…',
+                  onPressed: () => showUpdateDialog(context, app),
+                  inline: IconButton(
+                    icon: Icon(Icons.system_update_alt,
+                        size: 18, color: scheme.primary),
+                    tooltip: 'Update to ${app.updateAvailable!.version}…',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => showUpdateDialog(context, app),
+                  ),
+                ),
+              // Current-tool escape hatch: visible whenever not in Select.
+              if (app.tool != Tool.select)
+                ToolbarControl(
+                  width: 98,
+                  icon: _toolIcon(app.tool),
+                  label: 'Done',
+                  onPressed: () => app.setTool(Tool.select),
+                  inline: Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: ActionChip(
+                      avatar: Icon(_toolIcon(app.tool), size: 16),
+                      label:
+                          const AppText('Done', style: TextStyle(fontSize: 11)),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => app.setTool(Tool.select),
+                    ),
+                  ),
+                ),
+              // Study: the due count is the whole nudge, so it's on the
+              // badge rather than hidden behind the panel.
+              ToolbarControl(
+                width: 40,
+                icon: Icons.school_outlined,
+                label: 'Study',
+                selected: app.showStudyPanel,
+                onPressed: app.toggleStudyPanel,
+                inline: _StudyButton(app: app),
+              ),
+              // The planner sits beside Study rather than in a menu:
+              // it is the other half of the same daily question, and
+              // the whole complaint it answers was that dates were
+              // reachable only from places you had to already be in.
+              ToolbarControl(
+                width: 40,
+                icon: Icons.event_note_outlined,
+                label: 'Planner',
+                selected: app.showPlannerPanel,
+                onPressed: app.togglePlannerPanel,
+                inline: _PlannerButton(app: app),
+              ),
+              ToolbarControl(
+                width: 40,
+                icon: Icons.label_outline,
+                label: 'Find tags',
+                selected: app.showTagsPanel,
+                onPressed: app.toggleTagsPanel,
+                inline: IconButton(
+                  icon: const Icon(Icons.label_outline, size: 18),
+                  tooltip: tr(context, 'Find tags'),
+                  isSelected: app.showTagsPanel,
+                  visualDensity: VisualDensity.compact,
+                  onPressed: app.toggleTagsPanel,
+                ),
+              ),
+              ToolbarControl(
+                width: 40,
+                icon: Icons.toc,
+                label: 'Page outline',
+                selected: app.showTocPanel,
+                onPressed: app.toggleTocPanel,
+                inline: IconButton(
+                  icon: const Icon(Icons.toc, size: 18),
+                  tooltip: tr(context, 'Page outline'),
+                  isSelected: app.showTocPanel,
+                  visualDensity: VisualDensity.compact,
+                  onPressed: app.toggleTocPanel,
+                ),
+              ),
+              ToolbarControl(
+                width: 40,
+                icon: Icons.account_tree_outlined,
+                label: 'Links & backlinks',
+                selected: app.showLinksPanel,
+                onPressed: app.toggleLinksPanel,
+                inline: IconButton(
+                  icon: const Icon(Icons.account_tree_outlined, size: 18),
+                  tooltip: tr(context, 'Links & backlinks'),
+                  isSelected: app.showLinksPanel,
+                  visualDensity: VisualDensity.compact,
+                  onPressed: app.toggleLinksPanel,
+                ),
+              ),
+              ToolbarControl(
+                width: 40,
+                icon: Icons.search,
+                label: 'Find on page',
+                selected: app.findOpen,
+                onPressed: app.toggleFind,
+                inline: IconButton(
+                  icon: const Icon(Icons.search, size: 18),
+                  tooltip: tr(context, 'Find on page  (Ctrl+F)'),
+                  isSelected: app.findOpen,
+                  visualDensity: VisualDensity.compact,
+                  onPressed: app.toggleFind,
+                ),
+              ),
+              ToolbarControl(
+                width: 40,
+                icon: Icons.ios_share_outlined,
+                label: 'Export',
+                inline: MenuAnchor(
+                  builder: (context, controller, _) => IconButton(
+                    icon: const Icon(Icons.ios_share_outlined, size: 18),
+                    tooltip: tr(context, 'Export page…'),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => controller.isOpen
+                        ? controller.close()
+                        : controller.open(),
+                  ),
+                  menuChildren: _exportMenuItems(context),
+                ),
+                submenu: [
+                  ToolbarSubmenuItem(
+                    icon: Icons.description_outlined,
+                    label: 'Markdown (.md)',
+                    onPressed: () => _export(context, exportPageMarkdown),
+                  ),
+                  // Vector by default: the shared/printed artefact
+                  // should be searchable, selectable and small. The
+                  // raster capture stays available for the rare page
+                  // whose look matters more than its text.
+                  ToolbarSubmenuItem(
+                    icon: Icons.picture_as_pdf_outlined,
+                    label: 'PDF (.pdf)',
+                    onPressed: () => _export(context, exportPagePdfVector),
+                  ),
+                  ToolbarSubmenuItem(
+                    icon: Icons.print_outlined,
+                    label: 'Print…',
+                    onPressed: () => printCurrentPage(app),
+                  ),
+                  ToolbarSubmenuItem(
+                    icon: Icons.image_outlined,
+                    label: 'PDF — picture of the page',
+                    onPressed: () => _export(context, exportPagePdf),
+                  ),
+                  ToolbarSubmenuItem(
+                    icon: Icons.hub_outlined,
+                    label: 'For Obsidian Canvas (.canvas)',
+                    onPressed: () => _export(context, exportPageJsonCanvas),
+                  ),
+                  ToolbarSubmenuItem(
+                    icon: Icons.gesture,
+                    label: 'Just the drawing (.inkml)',
+                    onPressed: () => _export(context, exportPageInkML),
+                  ),
+                  // Say what lands on disk. "Materialize" is this
+                  // codebase's own architecture vocabulary
+                  // (`sync/materializer.dart`) and appears in no
+                  // other user-visible string in the app.
+                  ToolbarSubmenuItem(
+                    icon: Icons.folder_zip_outlined,
+                    label: 'Save the whole notebook as folders and files…',
+                    onPressed: () => _exportWithProgress(
+                        context,
+                        'Saving the notebook…',
+                        (report) => materializeNotebook(app,
+                            onProgress: (done, total) =>
+                                report('Page $done of $total…'))),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        IconButton(
+          icon: const Icon(Icons.settings_outlined, size: 18),
+          tooltip: tr(context, 'Settings…'),
+          visualDensity: VisualDensity.compact,
+          onPressed: () => showSettingsDialog(context, app),
+        ),
+        const WindowsCaptionButtons(),
+      ];
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    if (widget.titlebarOnly) {
+      final window = WindowsWindowFrame.of(context);
+      return Material(
+        color: scheme.surface,
+        child: SizedBox(
+            height: 36,
+            child: Row(children: [
+              Expanded(
+                  child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onPanStart: (_) => window?.beginDrag(),
+                onDoubleTap: window?.maximize,
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: AppText('Openote')),
+                ),
+              )),
+              ..._utilityControls(context, scheme),
+            ])),
+      );
+    }
     return Container(
       decoration: BoxDecoration(
         color: scheme.surface,
@@ -118,221 +353,10 @@ class _CommandBarState extends State<CommandBar> {
                 // where the old Maths tab sat, deliberately: same place,
                 // opposite kind.
                 if (objectFaceOf(app) == ObjectFace.equation)
-                  const _SubjectBadge(
-                      icon: Icons.functions, label: 'Equation'),
+                  const _SubjectBadge(icon: Icons.functions, label: 'Equation'),
                 const Spacer(),
-                // The trailing cluster COMPACTS rather than scrolling.
-                //
-                // Reported: "it doesnt handle resizing well (menus should
-                // either compact as required or become sliding, again i
-                // belive the former is cleaner)." A `Row` that overflows is
-                // CLIPPED, and clipped pixels do not hit-test — so on a
-                // narrow window (laptop + navigator open) the rightmost
-                // buttons used to stop responding, and the horizontal-scroll
-                // fix that followed traded that for "responds, but you can't
-                // see it without scrolling first." `CompactingToolbar` folds
-                // whatever does not fit into one "More" menu instead —
-                // `alignment: end` keeps it flush against the window edge,
-                // the one thing the scrolling version got right.
-                Expanded(
-                  child: CompactingToolbar(
-                    alignment: MainAxisAlignment.end,
-                    fillAvailable: true,
-                    controls: [
-                      // Update-through-app: the "little update button" of
-                      // PLANNING.md. Exists only when launch found a newer
-                      // release, and leads with the version so the tooltip
-                      // answers "to what?" before the click.
-                      if (app.updateAvailable != null)
-                        ToolbarControl(
-                          width: 40,
-                          icon: Icons.system_update_alt,
-                          label: 'Update to ${app.updateAvailable!.version}…',
-                          onPressed: () => showUpdateDialog(context, app),
-                          inline: IconButton(
-                            icon: Icon(Icons.system_update_alt,
-                                size: 18, color: scheme.primary),
-                            tooltip:
-                                'Update to ${app.updateAvailable!.version}…',
-                            visualDensity: VisualDensity.compact,
-                            onPressed: () => showUpdateDialog(context, app),
-                          ),
-                        ),
-                      // Current-tool escape hatch: visible whenever not in Select.
-                      if (app.tool != Tool.select)
-                        ToolbarControl(
-                          width: 98,
-                          icon: _toolIcon(app.tool),
-                          label: 'Done',
-                          onPressed: () => app.setTool(Tool.select),
-                          inline: Padding(
-                            padding: const EdgeInsets.only(right: 4),
-                            child: ActionChip(
-                              avatar: Icon(_toolIcon(app.tool), size: 16),
-                              label: const Text('Done',
-                                  style: TextStyle(fontSize: 11)),
-                              visualDensity: VisualDensity.compact,
-                              onPressed: () => app.setTool(Tool.select),
-                            ),
-                          ),
-                        ),
-                      // Study: the due count is the whole nudge, so it's on the
-                      // badge rather than hidden behind the panel.
-                      ToolbarControl(
-                        width: 40,
-                        icon: Icons.school_outlined,
-                        label: 'Study',
-                        selected: app.showStudyPanel,
-                        onPressed: app.toggleStudyPanel,
-                        inline: _StudyButton(app: app),
-                      ),
-                      // The planner sits beside Study rather than in a menu:
-                      // it is the other half of the same daily question, and
-                      // the whole complaint it answers was that dates were
-                      // reachable only from places you had to already be in.
-                      ToolbarControl(
-                        width: 40,
-                        icon: Icons.event_note_outlined,
-                        label: 'Planner',
-                        selected: app.showPlannerPanel,
-                        onPressed: app.togglePlannerPanel,
-                        inline: _PlannerButton(app: app),
-                      ),
-                      ToolbarControl(
-                        width: 40,
-                        icon: Icons.label_outline,
-                        label: 'Find tags',
-                        selected: app.showTagsPanel,
-                        onPressed: app.toggleTagsPanel,
-                        inline: IconButton(
-                          icon: const Icon(Icons.label_outline, size: 18),
-                          tooltip: 'Find tags',
-                          isSelected: app.showTagsPanel,
-                          visualDensity: VisualDensity.compact,
-                          onPressed: app.toggleTagsPanel,
-                        ),
-                      ),
-                      ToolbarControl(
-                        width: 40,
-                        icon: Icons.toc,
-                        label: 'Page outline',
-                        selected: app.showTocPanel,
-                        onPressed: app.toggleTocPanel,
-                        inline: IconButton(
-                          icon: const Icon(Icons.toc, size: 18),
-                          tooltip: 'Page outline',
-                          isSelected: app.showTocPanel,
-                          visualDensity: VisualDensity.compact,
-                          onPressed: app.toggleTocPanel,
-                        ),
-                      ),
-                      ToolbarControl(
-                        width: 40,
-                        icon: Icons.account_tree_outlined,
-                        label: 'Links & backlinks',
-                        selected: app.showLinksPanel,
-                        onPressed: app.toggleLinksPanel,
-                        inline: IconButton(
-                          icon: const Icon(Icons.account_tree_outlined, size: 18),
-                          tooltip: 'Links & backlinks',
-                          isSelected: app.showLinksPanel,
-                          visualDensity: VisualDensity.compact,
-                          onPressed: app.toggleLinksPanel,
-                        ),
-                      ),
-                      ToolbarControl(
-                        width: 40,
-                        icon: Icons.search,
-                        label: 'Find on page',
-                        selected: app.findOpen,
-                        onPressed: app.toggleFind,
-                        inline: IconButton(
-                          icon: const Icon(Icons.search, size: 18),
-                          tooltip: 'Find on page  (Ctrl+F)',
-                          isSelected: app.findOpen,
-                          visualDensity: VisualDensity.compact,
-                          onPressed: app.toggleFind,
-                        ),
-                      ),
-                      ToolbarControl(
-                        width: 40,
-                        icon: Icons.ios_share_outlined,
-                        label: 'Export',
-                        inline: MenuAnchor(
-                          builder: (context, controller, _) => IconButton(
-                            icon: const Icon(Icons.ios_share_outlined, size: 18),
-                            tooltip: 'Export page…',
-                            visualDensity: VisualDensity.compact,
-                            onPressed: () => controller.isOpen
-                                ? controller.close()
-                                : controller.open(),
-                          ),
-                          menuChildren: _exportMenuItems(context),
-                        ),
-                        submenu: [
-                          ToolbarSubmenuItem(
-                            icon: Icons.description_outlined,
-                            label: 'Markdown (.md)',
-                            onPressed: () =>
-                                _export(context, exportPageMarkdown),
-                          ),
-                          // Vector by default: the shared/printed artefact
-                          // should be searchable, selectable and small. The
-                          // raster capture stays available for the rare page
-                          // whose look matters more than its text.
-                          ToolbarSubmenuItem(
-                            icon: Icons.picture_as_pdf_outlined,
-                            label: 'PDF (.pdf)',
-                            onPressed: () =>
-                                _export(context, exportPagePdfVector),
-                          ),
-                          ToolbarSubmenuItem(
-                            icon: Icons.print_outlined,
-                            label: 'Print…',
-                            onPressed: () => printCurrentPage(app),
-                          ),
-                          ToolbarSubmenuItem(
-                            icon: Icons.image_outlined,
-                            label: 'PDF — picture of the page',
-                            onPressed: () => _export(context, exportPagePdf),
-                          ),
-                          ToolbarSubmenuItem(
-                            icon: Icons.hub_outlined,
-                            label: 'For Obsidian Canvas (.canvas)',
-                            onPressed: () =>
-                                _export(context, exportPageJsonCanvas),
-                          ),
-                          ToolbarSubmenuItem(
-                            icon: Icons.gesture,
-                            label: 'Just the drawing (.inkml)',
-                            onPressed: () => _export(context, exportPageInkML),
-                          ),
-                          // Say what lands on disk. "Materialize" is this
-                          // codebase's own architecture vocabulary
-                          // (`sync/materializer.dart`) and appears in no
-                          // other user-visible string in the app.
-                          ToolbarSubmenuItem(
-                            icon: Icons.folder_zip_outlined,
-                            label: 'Save the whole notebook as folders and files…',
-                            onPressed: () => _exportWithProgress(
-                                context,
-                                'Saving the notebook…',
-                                (report) => materializeNotebook(app,
-                                    onProgress: (done, total) => report(
-                                        'Page $done of $total…'))),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.settings_outlined, size: 18),
-                  tooltip: 'Settings…',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () => showSettingsDialog(context, app),
-                ),
-                const WindowsCaptionButtons(),
+                if (WindowsWindowFrame.of(context)?.customChrome != true)
+                  ..._utilityControls(context, scheme),
               ],
             ),
           ),
@@ -471,7 +495,7 @@ class _CommandBarState extends State<CommandBar> {
       return;
     }
     if (path != null) {
-      messenger?.showSnackBar(SnackBar(content: Text('Exported to $path')));
+      messenger?.showSnackBar(SnackBar(content: AppText('Exported to $path')));
     }
   }
 
@@ -483,7 +507,7 @@ class _CommandBarState extends State<CommandBar> {
         MenuItemButton(
           leadingIcon: const Icon(Icons.description_outlined, size: 18),
           onPressed: () => _export(context, exportPageMarkdown),
-          child: const Text('Markdown (.md)'),
+          child: const AppText('Markdown (.md)'),
         ),
         // Vector by default: the shared/printed artefact should be
         // searchable, selectable and small. The raster capture stays
@@ -491,28 +515,29 @@ class _CommandBarState extends State<CommandBar> {
         MenuItemButton(
           leadingIcon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
           onPressed: () => _export(context, exportPagePdfVector),
-          child: const Text('PDF (.pdf)'),
+          child: const AppText('PDF (.pdf)'),
         ),
         MenuItemButton(
           leadingIcon: const Icon(Icons.print_outlined, size: 18),
-          shortcut: const SingleActivator(LogicalKeyboardKey.keyP, control: true),
+          shortcut:
+              const SingleActivator(LogicalKeyboardKey.keyP, control: true),
           onPressed: () => printCurrentPage(app),
-          child: const Text('Print…'),
+          child: const AppText('Print…'),
         ),
         MenuItemButton(
           leadingIcon: const Icon(Icons.image_outlined, size: 18),
           onPressed: () => _export(context, exportPagePdf),
-          child: const Text('PDF — picture of the page'),
+          child: const AppText('PDF — picture of the page'),
         ),
         MenuItemButton(
           leadingIcon: const Icon(Icons.hub_outlined, size: 18),
           onPressed: () => _export(context, exportPageJsonCanvas),
-          child: const Text('For Obsidian Canvas (.canvas)'),
+          child: const AppText('For Obsidian Canvas (.canvas)'),
         ),
         MenuItemButton(
           leadingIcon: const Icon(Icons.gesture, size: 18),
           onPressed: () => _export(context, exportPageInkML),
-          child: const Text('Just the drawing (.inkml)'),
+          child: const AppText('Just the drawing (.inkml)'),
         ),
         const Divider(height: 6),
         MenuItemButton(
@@ -526,7 +551,7 @@ class _CommandBarState extends State<CommandBar> {
           // Say what lands on disk. "Materialize" is this codebase's own
           // architecture vocabulary (`sync/materializer.dart`) and appears
           // in no other user-visible string in the app.
-          child: const Text('Save the whole notebook as folders and files…'),
+          child: const AppText('Save the whole notebook as folders and files…'),
         ),
       ];
 
@@ -536,8 +561,8 @@ class _CommandBarState extends State<CommandBar> {
     try {
       final path = await fn(app);
       if (path != null) {
-        messenger?.showSnackBar(
-            SnackBar(content: Text('Exported to $path')));
+        messenger
+            ?.showSnackBar(SnackBar(content: AppText('Exported to $path')));
       }
     } catch (e) {
       messenger?.showSnackBar(SnackBar(
@@ -560,7 +585,7 @@ class _CommandBarState extends State<CommandBar> {
     Widget fmt(IconData icon, String tip, VoidCallback fn, [MdInline? mark]) =>
         IconButton(
           icon: Icon(icon, size: 18),
-          tooltip: tip,
+          tooltip: tr(context, tip),
           visualDensity: VisualDensity.compact,
           isSelected: mark != null && active.contains(mark),
           onPressed: canFormat ? fn : null,
@@ -572,13 +597,13 @@ class _CommandBarState extends State<CommandBar> {
     return Row(children: [
       IconButton(
         icon: const Icon(Icons.undo, size: 18),
-        tooltip: 'Undo  (Ctrl+Z)',
+        tooltip: tr(context, 'Undo  (Ctrl+Z)'),
         visualDensity: VisualDensity.compact,
         onPressed: app.canUndo ? app.undo : null,
       ),
       IconButton(
         icon: const Icon(Icons.redo, size: 18),
-        tooltip: 'Redo  (Ctrl+Y)',
+        tooltip: tr(context, 'Redo  (Ctrl+Y)'),
         visualDensity: VisualDensity.compact,
         onPressed: app.canRedo ? app.redo : null,
       ),
@@ -598,12 +623,12 @@ class _CommandBarState extends State<CommandBar> {
       // AFTER the last control, so it displaces nothing — says why.
       fmt(Icons.format_bold, 'Bold  (Ctrl+B)', () => app.wrapSelection('**'),
           MdInline.bold),
-      fmt(Icons.format_italic, 'Italic  (Ctrl+I)',
-          () => app.wrapSelection('*'), MdInline.italic),
+      fmt(Icons.format_italic, 'Italic  (Ctrl+I)', () => app.wrapSelection('*'),
+          MdInline.italic),
       fmt(Icons.format_underlined, 'Underline  (Ctrl+U)',
           () => app.wrapSelection('++'), MdInline.underline),
-      fmt(Icons.strikethrough_s, 'Strikethrough',
-          () => app.wrapSelection('~~'), MdInline.strike),
+      fmt(Icons.strikethrough_s, 'Strikethrough', () => app.wrapSelection('~~'),
+          MdInline.strike),
       fmt(Icons.code, 'Inline code', () => app.wrapSelection('`'),
           MdInline.code),
       fmt(Icons.border_color, 'Highlight', () => app.wrapSelection('=='),
@@ -638,7 +663,8 @@ class _CommandBarState extends State<CommandBar> {
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               Icon(Icons.format_color_text,
-                  size: 18, color: canFormat ? null : context.surfaces.textSecondary),
+                  size: 18,
+                  color: canFormat ? null : context.surfaces.textSecondary),
               Container(
                   width: 18,
                   height: 3,
@@ -663,7 +689,7 @@ class _CommandBarState extends State<CommandBar> {
       // Font — opens the searchable system-font picker.
       IconButton(
         icon: const Icon(Icons.font_download_outlined, size: 18),
-        tooltip: 'Text font…',
+        tooltip: tr(context, 'Text font…'),
         visualDensity: VisualDensity.compact,
         onPressed: canFormat
             ? () async {
@@ -679,8 +705,9 @@ class _CommandBarState extends State<CommandBar> {
       _FontSizeField(app: app, enabled: canFormat),
       if (!canFormat) ...[
         const SizedBox(width: 10),
-        Text('Click into a text box to format',
-            style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
+        AppText('Click into a text box to format',
+            style:
+                TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
       ],
     ]);
   }
@@ -705,7 +732,7 @@ class _CommandBarState extends State<CommandBar> {
             ),
           ),
         ),
-        child: Text(
+        child: AppText(
           label,
           style: TextStyle(
             fontSize: 13,
@@ -753,8 +780,7 @@ class _CommandBarState extends State<CommandBar> {
               icon: item.icon,
               label: item.label,
               inline: _InsertButton(app: app, item: item),
-              onPressed: () =>
-                  item.run(context, app, insertAnchor(app, item)),
+              onPressed: () => item.run(context, app, insertAnchor(app, item)),
               submenu: item.extras.isEmpty
                   ? null
                   : [
@@ -771,8 +797,8 @@ class _CommandBarState extends State<CommandBar> {
                         ToolbarSubmenuItem(
                           icon: extra.icon,
                           label: extra.label,
-                          onPressed: () => extra.run(
-                              context, app, insertAnchor(app, extra)),
+                          onPressed: () =>
+                              extra.run(context, app, insertAnchor(app, extra)),
                         ),
                     ],
             ),
@@ -782,7 +808,7 @@ class _CommandBarState extends State<CommandBar> {
     final scheme = Theme.of(context).colorScheme;
     Widget toolButton(Tool t, IconData icon, String tip) => IconButton(
           icon: Icon(icon, size: 18),
-          tooltip: tip,
+          tooltip: tr(context, tip),
           isSelected: app.tool == t,
           visualDensity: VisualDensity.compact,
           style: IconButton.styleFrom(
@@ -859,20 +885,26 @@ class _CommandBarState extends State<CommandBar> {
           ),
         ),
       ] else if (app.tool == Tool.eraser) ...[
-        SizedBox(width: 135, child: Slider(
-          key: const ValueKey('eraser-size'),
-          value: app.eraserSize,
-          min: 4, max: 100, divisions: 48,
-          label: '${app.eraserSize.round()} px',
-          onChanged: app.setEraserSize,
-        )),
-        Text('${app.eraserSize.round()} px', style: const TextStyle(fontSize: 11)),
+        SizedBox(
+            width: 135,
+            child: Slider(
+              key: const ValueKey('eraser-size'),
+              value: app.eraserSize,
+              min: 4,
+              max: 100,
+              divisions: 48,
+              label: '${app.eraserSize.round()} px',
+              onChanged: app.setEraserSize,
+            )),
+        AppText('${app.eraserSize.round()} px',
+            style: const TextStyle(fontSize: 11)),
         SegmentedButton<EraserMode>(
           segments: [
             for (final m in EraserMode.values)
               ButtonSegment(
                   value: m,
-                  label: Text(m.label, style: const TextStyle(fontSize: 11))),
+                  label:
+                      AppText(m.label, style: const TextStyle(fontSize: 11))),
           ],
           selected: {app.eraserMode},
           onSelectionChanged: (s) => app.setEraserMode(s.first),
@@ -886,13 +918,16 @@ class _CommandBarState extends State<CommandBar> {
             app.eraserMode == EraserMode.area
                 ? 'Splits strokes where you rub'
                 : 'Removes any stroke you touch',
-            style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
+            style:
+                TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
       ] else if (app.tool == Tool.lasso)
-        Text('Draw a loop around ink to select it — then drag or delete',
-            style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary))
+        AppText('Draw a loop around ink to select it — then drag or delete',
+            style:
+                TextStyle(fontSize: 11, color: context.surfaces.textSecondary))
       else
-        Text('Pick the pen or highlighter to draw',
-            style: TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
+        AppText('Pick the pen or highlighter to draw',
+            style:
+                TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
       // NO `Spacer` here, and none in any command row. Every row is built
       // inside a horizontal `SingleChildScrollView`, which offers unbounded
       // width — and a flex child (`Spacer` is `Expanded`) under an unbounded
@@ -920,7 +955,7 @@ class _CommandBarState extends State<CommandBar> {
               style: TextStyle(fontSize: 11, color: scheme.onSurface),
               items: [
                 for (final v in TouchDrawing.values)
-                  DropdownMenuItem(value: v, child: Text(v.label)),
+                  DropdownMenuItem(value: v, child: AppText(v.label)),
               ],
               onChanged: (v) => v == null ? null : app.setTouchDrawing(v),
             ),
@@ -943,7 +978,6 @@ class _CommandBarState extends State<CommandBar> {
       const SizedBox(width: 4),
     ]);
   }
-
 }
 
 /// `H2` / `H3` on the Home row.
@@ -1032,24 +1066,25 @@ class _FontSizeField extends StatelessWidget {
                       : Colors.transparent),
             ),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Text(label,
+              AppText(label,
                   style: TextStyle(
                       fontSize: 12,
                       color: enabled ? null : context.surfaces.textSecondary)),
               Icon(Icons.arrow_drop_down,
-                  size: 16, color: enabled ? null : context.surfaces.textSecondary),
+                  size: 16,
+                  color: enabled ? null : context.surfaces.textSecondary),
             ]),
           ),
         ),
         menuChildren: [
           MenuItemButton(
             onPressed: () => app.setActiveBlockFontSize(null),
-            child: const Text('Default'),
+            child: const AppText('Default'),
           ),
           for (final s in _sizes)
             MenuItemButton(
               onPressed: () => app.setActiveBlockFontSize(s),
-              child: Text('${s.toStringAsFixed(0)} pt'),
+              child: AppText('${s.toStringAsFixed(0)} pt'),
             ),
         ],
       ),
@@ -1092,7 +1127,8 @@ class _TagButton extends StatelessWidget {
                           ? null
                           : active.first.color),
               Icon(Icons.arrow_drop_down,
-                  size: 16, color: enabled ? null : context.surfaces.textSecondary),
+                  size: 16,
+                  color: enabled ? null : context.surfaces.textSecondary),
             ]),
           ),
         ),
@@ -1105,7 +1141,7 @@ class _TagButton extends StatelessWidget {
                 ? Icon(Icons.check, size: 16, color: scheme.primary)
                 : null,
             onPressed: () => app.toggleTagOnSelection(k),
-            child: Text(k.label),
+            child: AppText(k.label),
           ),
         // Dating a tag belongs here, beside applying one — a deadline you could
         // only set from a separate panel would be a feature most people never
@@ -1115,13 +1151,14 @@ class _TagButton extends StatelessWidget {
           MenuItemButton(
             leadingIcon: const Icon(Icons.event_outlined, size: 16),
             onPressed: () => _setDue(context),
-            child: Text(_dueOfCaret() == null ? 'Due date…' : 'Change due date…'),
+            child:
+                Text(_dueOfCaret() == null ? 'Due date…' : 'Change due date…'),
           ),
           if (_dueOfCaret() != null)
             MenuItemButton(
               leadingIcon: const Icon(Icons.event_busy_outlined, size: 16),
               onPressed: _clearDue,
-              child: const Text('Clear the due date'),
+              child: const AppText('Clear the due date'),
             ),
         ],
       ],
@@ -1215,9 +1252,7 @@ class _MakeCardButton extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Tooltip(
-            message: onLine
-                ? 'Make this line a flashcard'
-                : 'New flashcard',
+            message: onLine ? 'Make this line a flashcard' : 'New flashcard',
             child: InkWell(
               borderRadius: BorderRadius.circular(6),
               onTap: () {
@@ -1248,7 +1283,7 @@ class _MakeCardButton extends StatelessWidget {
           shortcut:
               const SingleActivator(LogicalKeyboardKey.digit3, control: true),
           onPressed: () => app.toggleTagOnSelection(TagKind.question),
-          child: const Text('Question card'),
+          child: const AppText('Question card'),
         ),
         MenuItemButton(
           leadingIcon: Icon(TagKind.definition.icon,
@@ -1256,7 +1291,7 @@ class _MakeCardButton extends StatelessWidget {
           shortcut:
               const SingleActivator(LogicalKeyboardKey.digit5, control: true),
           onPressed: () => app.toggleTagOnSelection(TagKind.definition),
-          child: const Text('Definition card'),
+          child: const AppText('Definition card'),
         ),
         MenuItemButton(
           leadingIcon: const Icon(Icons.format_underlined, size: 16),
@@ -1265,7 +1300,7 @@ class _MakeCardButton extends StatelessWidget {
               _say(context, 'Select the words to blank out first.');
             }
           },
-          child: const Text('Blank out selection'),
+          child: const AppText('Blank out selection'),
         ),
         const Divider(height: 8),
         MenuItemButton(
@@ -1273,7 +1308,7 @@ class _MakeCardButton extends StatelessWidget {
           onPressed: () {
             if (!app.showStudyPanel) app.toggleStudyPanel();
           },
-          child: const Text('Open study panel'),
+          child: const AppText('Open study panel'),
         ),
       ],
     );
@@ -1300,8 +1335,7 @@ class _StudyButton extends StatelessWidget {
     // through `examPlanFor`, which would walk the deck a second time on a
     // widget that rebuilds with every keystroke.
     final exam = app.study.examDate(app.activeSectionId);
-    final daysLeft =
-        exam == null ? null : daysBetween(DateTime.now(), exam);
+    final daysLeft = exam == null ? null : daysBetween(DateTime.now(), exam);
     final urgent =
         daysLeft != null && daysLeft >= 0 && daysLeft <= _urgentDays && due > 0;
     final countdown = daysLeft == null || daysLeft < 0
@@ -1335,7 +1369,7 @@ class _StudyButton extends StatelessWidget {
                       : Theme.of(context).colorScheme.primary,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text('$due',
+                child: AppText('$due',
                     style: TextStyle(
                         fontSize: 11,
                         height: 1.2,
@@ -1410,7 +1444,7 @@ class _PlannerButton extends StatelessWidget {
                           : Theme.of(context).colorScheme.primary,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text('${alerts > 0 ? alerts : count}',
+                child: AppText('${alerts > 0 ? alerts : count}',
                     style: TextStyle(
                         fontSize: 11,
                         height: 1.2,
@@ -1519,16 +1553,13 @@ class _InsertButton extends StatelessWidget {
             MenuItemButton(
               leadingIcon: Icon(extra.icon, size: 16),
               onPressed: () => _run(context, extra),
-              child: Text(extra.label),
+              child: AppText(extra.label),
             ),
         ],
       ),
     );
   }
 }
-
-
-
 
 /// Lets the toolbar row be dragged and wheel-scrolled when it is wider than
 /// the window. Flutter's default behaviour excludes mouse and trackpad from
@@ -1569,8 +1600,7 @@ class _SubjectBadge extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.only(left: 6),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-              width: 1, height: 18, color: context.surfaces.border),
+          Container(width: 1, height: 18, color: context.surfaces.border),
           const SizedBox(width: 6),
           Tooltip(
             message: 'Esc when you are done',
@@ -1584,9 +1614,9 @@ class _SubjectBadge extends StatelessWidget {
               child: Row(mainAxisSize: MainAxisSize.min, children: [
                 Icon(icon, size: 14, color: accent),
                 const SizedBox(width: 4),
-                Text(label,
-                    style: OnoteType.caption.copyWith(
-                        fontWeight: FontWeight.w600, color: accent)),
+                AppText(label,
+                    style: OnoteType.caption
+                        .copyWith(fontWeight: FontWeight.w600, color: accent)),
               ]),
             ),
           ),

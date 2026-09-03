@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_strings.dart';
 
 /// **A row of controls that compacts before it scrolls.**
 ///
@@ -163,7 +164,7 @@ class _MoreMenu extends StatelessWidget {
     return MenuAnchor(
       builder: (context, controller, _) => IconButton(
         icon: const Icon(Icons.more_horiz, size: 18),
-        tooltip: 'More',
+        tooltip: tr(context, 'More'),
         visualDensity: VisualDensity.compact,
         onPressed: () =>
             controller.isOpen ? controller.close() : controller.open(),
@@ -178,17 +179,17 @@ class _MoreMenu extends StatelessWidget {
                   MenuItemButton(
                     leadingIcon: Icon(s.icon, size: 18),
                     onPressed: s.onPressed,
-                    child: Text(s.label),
+                    child: AppText(s.label),
                   ),
               ],
-              child: Text(c.label),
+              child: AppText(c.label),
             )
           else
             MenuItemButton(
               leadingIcon: Icon(c.icon, size: 18),
               trailingIcon: c.selected ? const Icon(Icons.check, size: 16) : null,
               onPressed: c.onPressed,
-              child: Text(c.label),
+              child: AppText(c.label),
             ),
       ],
     );

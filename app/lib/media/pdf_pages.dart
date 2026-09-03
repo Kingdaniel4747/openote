@@ -12,114 +12,146 @@ library;
 
 import 'dart:async';
 import 'dart:collection';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:pdfrx/pdfrx.dart';
 
 import '../state/app_state.dart';
+import 'pdf_runtime.dart';
 
 /// Render scale for page images: the importer's historical choice, kept so an
 /// on-demand slide is pixel-for-pixel the slide the raster path produced.
 const double kPdfPageScale = 2.0;
 
 abstract final class PdfPages {
-  /// Open documents, keyed by blob hash. An open pdfium document holds a file
-  /// parse and native memory, so the cache is small and evicts the least
-  /// recently used document that has no render in flight.
   static final LinkedHashMap<String, _Doc> _docs = LinkedHashMap();
-  static const _maxDocs = 4;
-
-  /// Rendered page PNGs, keyed `hash#page`. Bounded by total bytes rather
-  /// than entry count: one A0 poster page is worth fifty slides.
   static final LinkedHashMap<String, Uint8List> _pages = LinkedHashMap();
+  static final Map<String, Future<Uint8List?>> _renders = {};
+  static const _maxDocs = 4;
+  static const _maxPageBytes = 96 << 20;
   static var _pageBytes = 0;
-  static const _maxPageBytes = 96 << 20; // ~96 MB of decoded slides
+  static var _generation = 0;
 
-  /// The rendered image for [page] of the PDF stored as [hash], from cache or
-  /// freshly rendered. Null when the blob is absent (a sync still bringing it
-  /// across) or the bytes are not a readable PDF.
-  static Future<Uint8List?> pageImage(
-      AppState app, String hash, int page) async {
+  @visibleForTesting
+  static Future<PdfDocument> Function(Uint8List, String)? openForTest;
+  @visibleForTesting
+  static Future<RenderedPdfPage?> Function(PdfPage)? renderForTest;
+
+  static Future<Uint8List?> pageImage(AppState app, String hash, int page) {
     final key = '$hash#$page';
     final hit = _pages.remove(key);
     if (hit != null) {
-      _pages[key] = hit; // re-insert: LRU freshness
-      return hit;
+      _pages[key] = hit;
+      return Future.value(hit);
     }
-    final doc = await _open(app, hash);
-    if (doc == null) return null;
-    doc.busy++;
+    // One open per document, one render per page, even for overlapping viewers.
+    return _renders.putIfAbsent(
+        key, () => Future.microtask(() => _render(app, hash, page, key)));
+  }
+
+  static Future<Uint8List?> _render(
+      AppState app, String hash, int page, String key) async {
+    final generation = _generation;
+    _Doc? entry;
     try {
-      if (page < 0 || page >= doc.doc.pages.length) return null;
-      final png = await renderPdfPageToPng(doc.doc.pages[page]);
-      if (png == null) return null;
-      _pages[key] = png.png;
-      _pageBytes += png.png.length;
-      while (_pageBytes > _maxPageBytes && _pages.length > 1) {
-        _pageBytes -= _pages.remove(_pages.keys.first)!.length;
+      entry = _acquire(app, hash);
+      if (entry == null) return null;
+      final doc = await entry.ready;
+      if (page < 0 || page >= doc.pages.length) return null;
+      final image =
+          await (renderForTest ?? renderPdfPageToPng)(doc.pages[page]);
+      if (image == null) return null;
+      if (generation == _generation) {
+        _pageBytes -= _pages.remove(key)?.length ?? 0;
+        _pages[key] = image.png;
+        _pageBytes += image.png.length;
+        while (_pageBytes > _maxPageBytes && _pages.length > 1) {
+          _pageBytes -= _pages.remove(_pages.keys.first)!.length;
+        }
       }
-      return png.png;
+      return image.png;
+    } catch (e) {
+      debugPrint('[openote/pdf] page $page failed: $e');
+      return null;
     } finally {
-      doc.busy--;
+      if (entry != null) entry.busy--;
+      // A reset/new attempt must never be removed by an older render.
+      if (generation == _generation) _renders.remove(key);
+      _evict();
     }
   }
 
-  /// Cached synchronously, for paint paths that cannot await.
   static Uint8List? cached(String hash, int page) => _pages['$hash#$page'];
 
-  /// How many pages the stored PDF has, or null when it cannot be opened.
-  static Future<int?> pageCount(AppState app, String hash) async =>
-      (await _open(app, hash))?.doc.pages.length;
-
-  static Future<_Doc?> _open(AppState app, String hash) async {
-    final held = _docs.remove(hash);
-    if (held != null) {
-      _docs[hash] = held;
-      return held.failed ? null : held;
-    }
-    final bytes = app.blob(hash);
-    if (bytes == null) return null;
-    final entry = _Doc();
-    _docs[hash] = entry;
+  static Future<int?> pageCount(AppState app, String hash) async {
+    final entry = _acquire(app, hash);
+    if (entry == null) return null;
     try {
-      entry.doc = await PdfDocument.openData(bytes, sourceName: hash);
-    } catch (e) {
-      // Remembered as failed rather than retried per frame: a corrupt blob
-      // stays corrupt, and every caller re-opening it would jank the canvas.
-      entry.failed = true;
-      debugPrint('[openote/pdf] could not open $hash: $e');
+      return (await entry.ready).pages.length;
+    } catch (_) {
       return null;
+    } finally {
+      entry.busy--;
+      _evict();
     }
-    // Evict beyond the cap — least recently used first, never one mid-render.
-    final evictable = _docs.entries
-        .where((e) => e.key != hash && e.value.busy == 0 && !e.value.failed)
-        .map((e) => e.key)
-        .toList();
-    while (_docs.length > _maxDocs && evictable.isNotEmpty) {
-      final victim = _docs.remove(evictable.removeAt(0))!;
-      unawaited(victim.doc.dispose());
+  }
+
+  static _Doc? _acquire(AppState app, String hash) {
+    var entry = _docs.remove(hash);
+    if (entry == null) {
+      final bytes = app.blob(hash);
+      if (bytes == null) return null;
+      // Cache the FUTURE, not a late, uninitialized PdfDocument.
+      entry = _Doc((openForTest ?? PdfRuntime.open)(bytes, hash));
     }
+    _docs[hash] = entry;
+    entry.busy++;
     return entry;
   }
 
-  /// Drop everything — for tests, and for a notebook switch where holding
-  /// another notebook's documents open would pin its blobs in memory.
+  static void _evict() {
+    final keys = _docs.keys.toList();
+    for (final key in keys) {
+      final entry = _docs[key]!;
+      if (entry.busy != 0) continue;
+      if (!entry.failed && _docs.length <= _maxDocs) continue;
+      _docs.remove(key);
+      unawaited(entry.dispose());
+    }
+  }
+
   static Future<void> reset() async {
-    final docs = _docs.values.where((d) => !d.failed).toList();
+    _generation++;
+    final docs = _docs.values.toList();
+    final renders = _renders.values.toList();
     _docs.clear();
+    _renders.clear();
     _pages.clear();
     _pageBytes = 0;
-    for (final d in docs) {
-      await d.doc.dispose();
+    await Future.wait(renders);
+    for (final doc in docs) {
+      await doc.dispose();
     }
   }
 }
 
 class _Doc {
-  late PdfDocument doc;
+  _Doc(Future<PdfDocument> opening) {
+    ready = opening.then((doc) => doc, onError: (Object e, StackTrace st) {
+      failed = true;
+      Error.throwWithStackTrace(e, st);
+    });
+  }
+  late final Future<PdfDocument> ready;
   var busy = 0;
   var failed = false;
+  Future<void> dispose() async {
+    try {
+      await (await ready).dispose();
+    } catch (_) {}
+  }
 }
 
 /// A rendered page's PNG bytes and pixel size.
@@ -129,13 +161,21 @@ typedef RenderedPdfPage = ({Uint8List png, int width, int height});
 /// it for nothing but sizing now), the on-demand path above, and the vector
 /// PDF exporter's pre-render pass.
 Future<RenderedPdfPage?> renderPdfPageToPng(PdfPage page) async {
-  final w = (page.width * kPdfPageScale).round();
-  final h = (page.height * kPdfPageScale).round();
+  if (!page.width.isFinite ||
+      !page.height.isFinite ||
+      page.width <= 0 ||
+      page.height <= 0) return null;
+  final scale =
+      math.min(kPdfPageScale, 4096 / math.max(page.width, page.height));
+  final w = (page.width * scale).round();
+  final h = (page.height * scale).round();
   if (w <= 0 || h <= 0) return null;
 
   PdfImage? img;
+  final cancellation = page.createCancellationToken();
+  var expired = false;
   try {
-    img = await page.render(
+    final rendering = page.render(
       fullWidth: w.toDouble(),
       fullHeight: h.toDouble(),
       width: w,
@@ -144,7 +184,16 @@ Future<RenderedPdfPage?> renderPdfPageToPng(PdfPage page) async {
       // as invisible text on the page's own colour, and in dark mode that is
       // black-on-black.
       backgroundColor: 0xFFFFFFFF,
+      cancellationToken: cancellation,
     );
+    unawaited(rendering.then((image) {
+      if (expired) image?.dispose();
+    }, onError: (Object _) {}));
+    img = await rendering.timeout(const Duration(seconds: 30), onTimeout: () {
+      expired = true;
+      cancellation.cancel();
+      return null;
+    });
     if (img == null) return null;
     final png = await _bgraToPng(img.pixels, img.width, img.height);
     if (png == null) return null;

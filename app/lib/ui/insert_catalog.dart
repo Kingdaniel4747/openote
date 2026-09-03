@@ -50,6 +50,7 @@ import 'dart:typed_data';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../l10n/app_strings.dart';
 
 import '../canvas/media_drop.dart';
 import '../editor/board_block_view.dart';
@@ -356,6 +357,14 @@ final List<InsertGroup> kInsertGroups = [
               importPdfWithProgress(c, a, placement: PdfPlacement.currentPage),
         ),
         InsertItem(
+          id: 'pdf-only',
+          icon: Icons.picture_as_pdf_outlined,
+          label: 'PDF editor (pages only)',
+          opensPicker: true,
+          size: Size.zero,
+          run: (c, a, at) => importPdfWithProgress(c, a, placement: PdfPlacement.pdfOnly),
+        ),
+        InsertItem(
           id: 'pdf-pages',
           icon: Icons.auto_stories_outlined,
           label: 'One page per slide',
@@ -657,7 +666,7 @@ Future<void> insertPageLink(
   final choice = await showOnoteDialog<String>(
     context: context,
     builder: (ctx) => SimpleDialog(
-      title: const Text('Link to page'),
+      title: const AppText('Link to page'),
       children: [
         for (final p in pages)
           SimpleDialogOption(
@@ -706,7 +715,7 @@ Future<void> importPdfWithProgress(BuildContext context, AppState app,
           Expanded(
             child: ValueListenableBuilder<String>(
               valueListenable: progress,
-              builder: (_, text, __) => Text(text),
+              builder: (_, text, __) => AppText(text),
             ),
           ),
         ]),

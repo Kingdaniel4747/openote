@@ -11,6 +11,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
   # Storage — the .onote container (File Format Spec 10)
   sqlite3: ^2.4.0
   sqlite3_flutter_libs: ^0.5.24 # bundles SQLite (incl. FTS5) on all desktop/mobile targets

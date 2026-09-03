@@ -8,6 +8,7 @@ import '../markdown/md_syntax.dart';
 import '../model/models.dart';
 import '../model/tags.dart';
 import '../spell/spell_checker.dart';
+import '../spell/writing_services.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../math/equation_editor.dart';
@@ -709,6 +710,25 @@ class _LiveMarkdownSession extends OnoteEditSession {
     }
     _spellDebounce?.cancel();
     _spellDebounce = Timer(delay, () async {
+      final text = controller.text;
+      final language = app.writingLanguage;
+      if (language == 'de-DE') {
+        try {
+          final ranges = await WritingServices.checkText(
+              SpellChecker.proseForChecking(text), language);
+          if (!_disposed && controller.text == text && app.writingLanguage == language) {
+            controller.misspellings = ranges.where((r) => r.isValid &&
+                r.end <= text.length && !learnedWords.contains(text.substring(r.start, r.end).toLowerCase())).toList();
+          }
+        } catch (error) {
+          debugPrint('[openote/spelling] $error');
+          if (!_disposed) {
+            controller.misspellings = const [];
+            app.writingServiceProblem = 'Local writing services are unavailable. Check Windows language packs.';
+          }
+        }
+        return;
+      }
       final checker = SpellChecker.loaded ?? await SpellChecker.instance();
       // The session may have been disposed while the dictionary loaded.
       if (_disposed) return;
@@ -1073,7 +1093,8 @@ class _LiveMarkdownSession extends OnoteEditSession {
   /// exactly as it always did.
   List<ContextMenuButtonItem> _spellMenuItems(EditableTextState editable) {
     final checker = SpellChecker.loaded;
-    if (checker == null || !spellCheckEnabled) return const [];
+    // The native German checker supplies underlines, not English suggestions.
+    if (checker == null || !spellCheckEnabled || app.writingLanguage == 'de-DE') return const [];
     final sel = controller.selection;
     if (!sel.isValid) return const [];
     final text = controller.text;

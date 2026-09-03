@@ -181,6 +181,15 @@ class SpellChecker {
     return out;
   }
 
+  /// Keep UTF-16 offsets while hiding Markdown/code from native spell check.
+  static String proseForChecking(String text) {
+    final units = List<int>.filled(text.length, 32);
+    for (final (start, end) in _wordSpans(text)) {
+      units.setRange(start, end, text.codeUnits, start);
+    }
+    return String.fromCharCodes(units);
+  }
+
   /// Up to [max] corrections, by edit distance 1 (insert/delete/substitute/
   /// transpose) filtered through the dictionary.
   ///

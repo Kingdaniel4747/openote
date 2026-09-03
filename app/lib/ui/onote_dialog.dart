@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_strings.dart';
 
 /// Every Openote dialog opens through here (PLANNING "Consistency/UX":
 /// "simple unobtrusive animations consistently … a little bounce when a
@@ -123,20 +124,20 @@ class _TextPromptState extends State<_TextPrompt> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        title: Text(widget.title),
+        title: AppText(widget.title),
         content: TextField(
           controller: _ctl,
           autofocus: true,
-          decoration: InputDecoration(hintText: widget.hintText),
+          decoration: InputDecoration(hintText: widget.hintText == null ? null : tr(context, widget.hintText!)),
           onSubmitted: (s) => Navigator.pop(context, s),
         ),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
+              child: const AppText('Cancel')),
           FilledButton(
               onPressed: () => Navigator.pop(context, _ctl.text),
-              child: Text(widget.okLabel)),
+              child: AppText(widget.okLabel)),
         ],
       );
 }

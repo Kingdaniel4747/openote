@@ -29,6 +29,7 @@ import '../export/print_page.dart';
 import 'study_panel.dart';
 import 'sync_dialog.dart';
 import 'sync_dot.dart';
+import 'windows_window_frame.dart';
 import '../theme/tokens.dart';
 
 /// Layout per style guide §5.4: navigator | (toolbar / canvas-as-hero / status).
@@ -1202,7 +1203,10 @@ class _AppShellState extends State<AppShell> {
           // so this changes no hit testing — it only listens on the way past.
           body: Listener(
             onPointerDown: (_) => _ring.value = null,
-            child: Stack(children: [
+            child: Column(children: [
+            if (WindowsWindowFrame.of(context)?.customChrome == true)
+              CommandBar(app: app, titlebarOnly: true),
+            Expanded(child: Stack(children: [
             Row(
             children: [
               _regionWrap(_Region.sidebar, _navigator()),
@@ -1268,6 +1272,7 @@ class _AppShellState extends State<AppShell> {
           ),
             AlertPopup(app: app, regionFocus: _alertRegion),
             ImportProgressCard(app: app),
+          ])),
           ]),
           ),
         );

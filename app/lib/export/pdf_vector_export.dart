@@ -190,8 +190,9 @@ Future<void> _addPageSheets(
       (slide == null
           ? _sheetHeight(widthPx)
           : (bottomPx > slide ? bottomPx : slide));
-  final sheets = (bottomPx / sheetPx).ceil().clamp(1, 500);
-  final format = PdfPageFormat(widthPx / _pxPerPoint, sheetPx / _pxPerPoint);
+  final sheets = props.pdfOnly ? 1 : (bottomPx / sheetPx).ceil().clamp(1, 500);
+  final format = PdfPageFormat(widthPx / _pxPerPoint,
+      (props.pdfOnly ? props.pdfPageHeight : sheetPx) / _pxPerPoint);
 
   for (var sheet = 0; sheet < sheets; sheet++) {
     final top = sheet * sheetPx;
@@ -221,7 +222,7 @@ Future<void> _addPageSheets(
           // TreeNode. So a PDF of a note came out with no indication of which
           // note it was, which is most of what you need from a page you have
           // shared or handed in.
-          if (sheet == 0) ..._titleBand(app, pageId, widthPx),
+          if (sheet == 0 && !props.pdfOnly) ..._titleBand(app, pageId, widthPx),
           for (final b in visible)
             if (_blockWidget(app, b, top, maths) case final w?) w,
         ],
@@ -293,7 +294,8 @@ PdfPageFormat debugPageFormat(AppState app, String pageId) {
       (slide == null
           ? _sheetHeight(widthPx)
           : (bottomPx > slide ? bottomPx : slide));
-  return PdfPageFormat(widthPx / _pxPerPoint, sheetPx / _pxPerPoint);
+  return PdfPageFormat(widthPx / _pxPerPoint,
+      (props.pdfOnly ? props.pdfPageHeight : sheetPx) / _pxPerPoint);
 }
 
 @visibleForTesting

@@ -20,6 +20,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import '../l10n/app_strings.dart';
 
 import '../theme/tokens.dart';
 
@@ -49,7 +50,7 @@ class CommandButton extends StatelessWidget {
     final enabled = onPressed != null;
     final button = TextButton.icon(
       icon: Icon(icon, size: OnoteIcon.sm),
-      label: Text(label),
+      label: AppText(label),
       onPressed: onPressed,
       style: TextButton.styleFrom(
         // The whole point: ink, not accent.
@@ -63,7 +64,7 @@ class CommandButton extends StatelessWidget {
     );
     final tip = tooltip;
     if (tip == null || !enabled) return button;
-    return Tooltip(message: tip, child: button);
+    return Tooltip(message: tr(context, tip), child: button);
   }
 }
 
@@ -97,10 +98,10 @@ class CommandTextButton extends StatelessWidget {
         minimumSize: const Size(30, OnoteSize.button),
         padding: const EdgeInsets.symmetric(horizontal: OnoteSpace.x3),
       ),
-      child: Text(label),
+      child: AppText(label),
     );
     final tip = tooltip;
     if (tip == null || onPressed == null) return button;
-    return Tooltip(message: tip, child: button);
+    return Tooltip(message: tr(context, tip), child: button);
   }
 }

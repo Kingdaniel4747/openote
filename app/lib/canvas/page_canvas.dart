@@ -10,6 +10,8 @@ import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../ui/context_menus.dart';
+import '../ui/selection_toolbar.dart';
+import 'handwriting_spell_layer.dart';
 import 'block_view.dart';
 import 'align_guides.dart';
 import 'canvas_controller.dart';
@@ -41,27 +43,32 @@ class _PageCanvasState extends State<PageCanvas> {
   Stroke? _wet;
   final WindowsPenButtons _windowsPen = WindowsPenButtons();
   int? _windowsInkPointer;
-  PointerDeviceKind? _windowsInkKind;
+  bool _buttonOverride = false;
+  bool _pendingErase = false;
+  Tool _penReturnTool = Tool.pen;
+  Tool _contactTool = Tool.pen;
 
   void _windowsPenChanged() {
     if (!mounted) return;
-    // A barrel press/release can arrive while hovering or without movement.
-    // Keep the selected brush unchanged; only this gesture temporarily erases.
-    if (_windowsInkPointer != null &&
-        (_windowsInkKind == PointerDeviceKind.stylus ||
-            _windowsInkKind == PointerDeviceKind.invertedStylus)) {
-      _setWindowsErase(_windowsPen.nativeEraser ||
-          _windowsInkKind == PointerDeviceKind.invertedStylus);
-    }
+    _pendingErase = _windowsPen.nativeEraser;
+    // Button changes during contact are queued until lift-off, not applied
+    // halfway through writing/erasing. The ribbon follows the active tool.
+    if (_windowsInkPointer == null && _lasso == null) _showPenButtonTool(_pendingErase);
     setState(() {});
   }
 
-  void _setWindowsErase(bool erase) {
-    if (erase == _gestureErase) return;
-    _finishWetStroke();
-    _gestureErase = erase;
-    _eraseUndoPushed = false;
-    setState(() {});
+  void _showPenButtonTool(bool erase) {
+    if (erase) {
+      if (!_buttonOverride) {
+        _penReturnTool = (app.tool == Tool.highlighter || app.tool == Tool.lasso)
+            ? app.tool : Tool.pen;
+      }
+      _buttonOverride = true;
+      if (app.tool != Tool.eraser) app.setTool(Tool.eraser);
+    } else if (_buttonOverride) {
+      _buttonOverride = false;
+      app.setTool(_penReturnTool);
+    }
   }
 
   /// Bumped per wet-ink point so ONLY the ink layer repaints (the painter
@@ -104,6 +111,9 @@ class _PageCanvasState extends State<PageCanvas> {
 
   bool get _inkTool =>
       app.tool == Tool.pen || app.tool == Tool.highlighter || app.tool == Tool.eraser;
+
+  bool _onPaper(Offset point) => !app.pageProps.pdfOnly ||
+      (Offset.zero & app.pageSize()).contains(point);
 
   /// When a stylus was last seen, so palm rejection can be *conditional*
   /// (INK-4) instead of absolute.
@@ -163,6 +173,7 @@ class _PageCanvasState extends State<PageCanvas> {
     if (approaching && app.penProximitySwitch && app.tool == Tool.select) {
       app.setTool(Tool.pen);
     }
+    if (_windowsInkPointer == null && _lasso == null) _showPenButtonTool(_windowsPen.erases(e));
   }
 
   /// True while the CURRENT ink gesture erases regardless of the selected
@@ -178,12 +189,9 @@ class _PageCanvasState extends State<PageCanvas> {
   /// finger lands, turning what looked like a draw into a pinch. Without this
   /// the first finger of every two-finger gesture would leave a stray mark.
   void _cancelWetStroke() {
-    if (_windowsPen.enabled) {
-      _windowsInkPointer = null;
-      _windowsInkKind = null;
-      _gestureErase = false;
-      _eraseUndoPushed = false;
-    }
+    _windowsInkPointer = null;
+    _gestureErase = false;
+    _eraseUndoPushed = false;
     if (_wet != null) setState(() => _wet = null);
   }
 
@@ -246,12 +254,13 @@ class _PageCanvasState extends State<PageCanvas> {
 
   void _inkDown(PointerDownEvent e) {
     if (e.kind == PointerDeviceKind.stylus || e.kind == PointerDeviceKind.invertedStylus) {
+      _showPenButtonTool(_windowsPen.erases(e));
+      if (app.tool == Tool.select || app.tool == Tool.text) app.setTool(Tool.pen);
       app.requestDrawTab();
     }
-    if (_windowsPen.enabled) {
+    if (_windowsPen.enabled || e.kind == PointerDeviceKind.stylus || e.kind == PointerDeviceKind.invertedStylus) {
       if (_windowsInkPointer != null && _windowsInkPointer != e.pointer) return;
       _windowsInkPointer = e.pointer;
-      _windowsInkKind = e.kind;
     }
     app.claimedPointers.remove(e.pointer); // keep the claim set tidy
     // The pen's own erase signals, per gesture: the tail end, or the barrel
@@ -261,8 +270,12 @@ class _PageCanvasState extends State<PageCanvas> {
     // Windows additionally observes native pen flags and rechecks on moves.
     // Other platforms keep their existing contact-time behavior.
     _gestureErase = _windowsPen.erases(e);
+    final stylus = e.kind == PointerDeviceKind.stylus || e.kind == PointerDeviceKind.invertedStylus;
+    if (stylus) _pendingErase = _gestureErase;
+    _contactTool = !stylus && _buttonOverride ? _penReturnTool : app.tool;
     final pt = _clampToPagePoint(controller.screenToPage(e.localPosition));
-    if (app.tool == Tool.eraser || _gestureErase) {
+    if (!_onPaper(controller.screenToPage(e.localPosition))) return;
+    if (_contactTool == Tool.eraser || _gestureErase) {
       _eraseAt(pt);
       return;
     }
@@ -272,15 +285,15 @@ class _PageCanvasState extends State<PageCanvas> {
   void _beginWetStroke(PointerEvent e, Offset pt) {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final colors = OnoteColors.drawingColors(
-        dark: dark, highlighter: app.tool == Tool.highlighter);
+        dark: dark, highlighter: _contactTool == Tool.highlighter);
     final color = colors[app.penColor % colors.length];
     setState(() {
       _wet = Stroke(
-        tool: app.tool == Tool.highlighter ? 'highlighter' : 'pen',
+        tool: _contactTool == Tool.highlighter ? 'highlighter' : 'pen',
         colorHex:
             '#${(color.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}',
         size: app.penSize,
-        opacity: app.tool == Tool.highlighter ? 0.4 : 1.0,
+        opacity: _contactTool == Tool.highlighter ? 0.4 : 1.0,
       );
       _addPoint(e, pt);
     });
@@ -289,17 +302,20 @@ class _PageCanvasState extends State<PageCanvas> {
   void _inkMove(PointerMoveEvent e) {
     if (_windowsPen.enabled) {
       if (_windowsInkPointer != e.pointer) return;
-      _setWindowsErase(_windowsPen.erases(e));
+      _pendingErase = _windowsPen.erases(e);
     }
-    if (app.tool == Tool.eraser || _gestureErase) {
+    if (!_onPaper(controller.screenToPage(e.localPosition))) {
+      _finishWetStroke();
+      return;
+    }
+    if (_contactTool == Tool.eraser || _gestureErase) {
       _eraseAt(controller.screenToPage(e.localPosition));
       return;
     }
     if (_wet == null) {
-      if (_windowsPen.enabled &&
-          (app.tool == Tool.pen || app.tool == Tool.highlighter)) {
-        // Start a fresh segment after releasing the button: never join across
-        // the path used for erasing.
+      if ((_windowsPen.enabled || app.pageProps.pdfOnly) &&
+          (_contactTool == Tool.pen || _contactTool == Tool.highlighter)) {
+        // Re-entering a PDF starts a segment; never bridge the off-paper gap.
         _beginWetStroke(
             e, _clampToPagePoint(controller.screenToPage(e.localPosition)));
       }
@@ -325,14 +341,16 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _inkUp(PointerUpEvent e) {
-    if (_windowsPen.enabled) {
+    if (_windowsPen.enabled || e.kind == PointerDeviceKind.stylus || e.kind == PointerDeviceKind.invertedStylus) {
       if (_windowsInkPointer != e.pointer) return;
       _windowsInkPointer = null;
-      _windowsInkKind = null;
     }
     _eraseUndoPushed = false;
     _gestureErase = false;
     _finishWetStroke();
+    if (e.kind == PointerDeviceKind.stylus || e.kind == PointerDeviceKind.invertedStylus) {
+      _showPenButtonTool(_pendingErase);
+    }
   }
 
   void _finishWetStroke() {
@@ -473,23 +491,31 @@ class _PageCanvasState extends State<PageCanvas> {
   // ── Lasso-select ink (INK-7) ────────────────────────────────────────────
 
   void _lassoDown(PointerDownEvent e) {
+    _noteStylus(e);
+    if (_windowsPen.erases(e)) { _inkDown(e); return; }
+    if (e.kind == PointerDeviceKind.stylus) app.requestDrawTab();
     app.claimedPointers.remove(e.pointer);
+    app.select(null);
     setState(() => _lasso = [
           _clampToPagePoint(controller.screenToPage(e.localPosition))
         ]);
   }
 
   void _lassoMove(PointerMoveEvent e) {
+    if (_windowsInkPointer == e.pointer) { _inkMove(e); return; }
     if (_lasso == null) return;
     setState(() => _lasso!
         .add(_clampToPagePoint(controller.screenToPage(e.localPosition))));
   }
 
   void _lassoUp(PointerUpEvent e) {
+    if (_windowsInkPointer == e.pointer) { _inkUp(e); return; }
     final poly = _lasso;
     setState(() => _lasso = null);
-    if (poly == null || poly.length < 3) return;
-    _gatherLassoedStrokes(poly);
+    if (poly != null && poly.length >= 3) _gatherLassoedStrokes(poly);
+    if (e.kind == PointerDeviceKind.stylus || e.kind == PointerDeviceKind.invertedStylus) {
+      _showPenButtonTool(_pendingErase);
+    }
   }
 
   /// Gather every stroke whose points mostly fall inside the drawn loop into a
@@ -539,8 +565,8 @@ class _PageCanvasState extends State<PageCanvas> {
     _refitInkBounds(grouped);
     app.updateBlock(grouped);
     app.select(grouped.id);
-    // Switch back to Select so the gathered ink can be dragged/deleted at once.
-    app.setTool(Tool.select);
+    // Keep Lasso active: a fresh circle replaces the selection. The floating
+    // toolbar offers actions without forcing the user to reselect Lasso.
   }
 
   /// A stroke counts as lassoed when the majority of its sample points lie
@@ -616,6 +642,10 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _selectDown(PointerDownEvent e) {
+    if (e.kind == PointerDeviceKind.stylus || e.kind == PointerDeviceKind.invertedStylus) {
+      if (!app.claimedPointers.remove(e.pointer)) _inkDown(e);
+      return;
+    }
     if (app.claimedPointers.remove(e.pointer)) return; // a block owns this one
     _downScreen = e.localPosition;
     _lastScreen = e.localPosition;
@@ -662,6 +692,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _selectMove(PointerMoveEvent e) {
+    if (_windowsInkPointer == e.pointer) { _inkMove(e); return; }
     if (_touches.containsKey(e.pointer)) {
       _touches[e.pointer] = e.localPosition;
       if (_touches.length == 2 && _pinchBaseDist != null) {
@@ -711,6 +742,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _selectUp(PointerUpEvent e) {
+    if (_windowsInkPointer == e.pointer) { _inkUp(e); return; }
     _touches.remove(e.pointer);
     if (_touches.length < 2) _pinchBaseDist = null;
     final mode = _mode;
@@ -745,6 +777,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _createTextAt(Offset pagePt) {
+    if (!_onPaper(pagePt)) return;
     // OneNote-style: interpret intent rather than land pixel-exact.
     final pos = app.smartTextPosition(pagePt);
     final b = app.addBlock(Block(
@@ -945,7 +978,7 @@ class _PageCanvasState extends State<PageCanvas> {
                       background: app.pageProps.background,
                       gridSize: app.gridSize,
                       dark: dark,
-                      sheet: app.pageProps.isPaged
+                      sheet: app.pageProps.pdfOnly ? app.pageSize() : app.pageProps.isPaged
                           ? Size(app.pageProps.paper.width,
                               app.pageProps.paper.height)
                           : null,
@@ -968,10 +1001,10 @@ class _PageCanvasState extends State<PageCanvas> {
                       width: pageSize.width,
                       height: pageSize.height,
                       child: Stack(
-                      clipBehavior: Clip.none,
+                      clipBehavior: app.pageProps.pdfOnly ? Clip.hardEdge : Clip.none,
                       children: [
                         // In-page title band (OneNote-style)
-                        Positioned(
+                        if (!app.pageProps.pdfOnly) Positioned(
                           left: AppState.pageLeftMargin,
                           top: 20,
                           child: IgnorePointer(
@@ -1014,6 +1047,7 @@ class _PageCanvasState extends State<PageCanvas> {
                             app: app,
                             controller: controller,
                           ),
+                        Positioned.fill(child: HandwritingSpellLayer(app: app)),
                         // Ink is an annotation layer ABOVE every object.
                         Positioned(
                           left: 0,
@@ -1092,6 +1126,9 @@ class _PageCanvasState extends State<PageCanvas> {
                 // instrument for POSITION: see where you are in a long page,
                 // and cover all of it in one drag.
                 ..._scrollBar(context, dark),
+                if (app.selectedIds.isNotEmpty && app.editingBlockId == null &&
+                    !app.draggingBlock && _lasso == null && _wet == null)
+                  Positioned(right: 18, top: 8, child: SelectionToolbar(app: app)),
               ],
             ),
           ),

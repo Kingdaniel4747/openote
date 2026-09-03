@@ -124,6 +124,7 @@ class _BlockViewState extends State<BlockView> {
       b.type == BlockType.table;
 
   void _tap() {
+    if (app.tool == Tool.pen || app.tool == Tool.highlighter || app.tool == Tool.eraser) return;
     final shift = HardwareKeyboard.instance.isShiftPressed;
     if (shift) {
       app.select(b.id, additive: true);
@@ -184,6 +185,10 @@ class _BlockViewState extends State<BlockView> {
   }
 
   void _pointerDown(PointerDownEvent e) {
+    if ((e.kind == PointerDeviceKind.stylus || e.kind == PointerDeviceKind.invertedStylus) &&
+        (app.tool == Tool.select || app.tool == Tool.text)) {
+      return;
+    }
     app.claimedPointers.add(e.pointer);
     _pressGlobal = e.position;
     _pressOnChrome = _isChromeAt(e.position);

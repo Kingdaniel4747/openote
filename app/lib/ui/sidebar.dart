@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_strings.dart';
 import 'package:flutter/services.dart';
 
 import '../export/pdf_vector_export.dart';
@@ -311,7 +312,7 @@ class _SidebarState extends State<Sidebar> {
         if (contentHits.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
-            child: Text('In page content',
+            child: AppText('In page content',
                 style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
@@ -454,7 +455,7 @@ class _SidebarState extends State<Sidebar> {
         Expanded(
           child: pages.isEmpty
               ? Center(
-                  child: Text('No pages yet',
+                  child: AppText('No pages yet',
                       style: TextStyle(
                           fontSize: 12, color: context.surfaces.textSecondary)),
                 )
@@ -541,7 +542,7 @@ class _SidebarState extends State<Sidebar> {
             Expanded(
               child: TextButton.icon(
                 icon: const Icon(Icons.create_new_folder_outlined, size: 16),
-                label: const Text('Section', style: TextStyle(fontSize: 12)),
+                label: const AppText('Section', style: TextStyle(fontSize: 12)),
                 onPressed: app.addSection,
               ),
             ),
@@ -724,7 +725,7 @@ class _HomeTile extends StatelessWidget {
                 color: active ? scheme.primary : OnoteColors.brass400),
             const SizedBox(width: 8),
             Expanded(
-              child: Text('Home',
+              child: AppText('Home',
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                       fontSize: 13,
@@ -858,7 +859,7 @@ class _ComingUp extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 12, 6, 4),
           child: Row(children: [
-            Text('COMING UP',
+            AppText('COMING UP',
                 style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
@@ -1305,13 +1306,13 @@ Future<void> showRecycleBin(BuildContext context, AppState app) async {
         final notebooks = app.trashedNotebooks;
         final items = app.deletedNodes();
         return AlertDialog(
-          title: const Text('Recycle bin'),
+          title: const AppText('Recycle bin'),
           content: SizedBox(
             width: 400,
             child: (notebooks.isEmpty && items.isEmpty)
                 ? const Padding(
                     padding: EdgeInsets.symmetric(vertical: 16),
-                    child: Text('Nothing deleted.'))
+                    child: AppText('Nothing deleted.'))
                 : ConstrainedBox(
                     constraints: const BoxConstraints(maxHeight: 400),
                     child: ListView(
@@ -1347,7 +1348,7 @@ Future<void> showRecycleBin(BuildContext context, AppState app) async {
                                       await app.restoreNotebook(nb.id);
                                       setLocal(() {});
                                     },
-                                    child: const Text('Restore'),
+                                    child: const AppText('Restore'),
                                   ),
                                   IconButton(
                                     icon: const Icon(Icons.delete_forever,
@@ -1392,7 +1393,7 @@ Future<void> showRecycleBin(BuildContext context, AppState app) async {
                                     await app.restoreDeleted(it.id);
                                     setLocal(() {});
                                   },
-                                  child: const Text('Restore'),
+                                  child: const AppText('Restore'),
                                 ),
                                 IconButton(
                                   icon: const Icon(Icons.delete_forever,
@@ -1412,7 +1413,7 @@ Future<void> showRecycleBin(BuildContext context, AppState app) async {
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+                onPressed: () => Navigator.pop(ctx), child: const AppText('Close')),
           ],
         );
       },
@@ -1425,18 +1426,18 @@ Future<bool> _confirmPurgeNotebook(BuildContext context, NotebookRef nb,
   final ok = await showOnoteDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Delete permanently?'),
+      title: const AppText('Delete permanently?'),
       content: Text(
           '“${nb.title}” and all its pages will be removed for good. This can\'t '
           'be undone.${caveat == null ? '' : '\n\n$caveat'}'),
       actions: [
         TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel')),
+            child: const AppText('Cancel')),
         FilledButton(
           style: FilledButton.styleFrom(backgroundColor: OnoteColors.danger),
           onPressed: () => Navigator.pop(ctx, true),
-          child: const Text('Delete forever'),
+          child: const AppText('Delete forever'),
         ),
       ],
     ),
@@ -1569,7 +1570,7 @@ Widget dragChip(BuildContext context, String label, IconData icon) {
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(icon, size: 16, color: Colors.white),
         const SizedBox(width: 6),
-        Text(label,
+        AppText(label,
             style: const TextStyle(color: Colors.white, fontSize: 12)),
       ]),
     ),
@@ -1824,7 +1825,7 @@ PopupMenuItem<String> _nodeItem(String v, IconData icon, String label,
     child: Row(children: [
       Icon(icon, size: 16, color: color),
       const SizedBox(width: 10),
-      Text(label, style: TextStyle(fontSize: 13, color: color)),
+      AppText(label, style: TextStyle(fontSize: 13, color: color)),
     ]),
   );
 }
@@ -2100,7 +2101,7 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
           ClipboardData(text: '[[${node.title}|${node.id}]]'));
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Link copied — paste it into any page')));
+            content: AppText('Link copied — paste it into any page')));
       }
     case 'togroup':
       final groups = app.nodes
@@ -2109,11 +2110,11 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       final choice = await showOnoteDialog<String>(
         context: context,
         builder: (ctx) => SimpleDialog(
-          title: const Text('Move section to…'),
+          title: const AppText('Move section to…'),
           children: [
             SimpleDialogOption(
                 onPressed: () => Navigator.pop(ctx, ''),
-                child: const Text('(No group — top level)')),
+                child: const AppText('(No group — top level)')),
             for (final g in groups)
               SimpleDialogOption(
                   onPressed: () => Navigator.pop(ctx, g.id),
@@ -2197,7 +2198,7 @@ class _SectionColorRowState extends State<_SectionColorRow> {
     final scheme = Theme.of(context).colorScheme;
     final current = widget.app.node(widget.section.id)?.color;
     return Row(children: [
-      const Text('Colour',
+      const AppText('Colour',
           style: TextStyle(fontSize: 13, color: OnoteColors.graphite500)),
       const SizedBox(width: 10),
       for (final token in AppState.sectionColorTokens)
@@ -2254,13 +2255,13 @@ Future<void> promptApplyTemplate(BuildContext context, AppState app) async {
   final names = app.templateNames();
   if (names.isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('No templates yet — "Save as template…" first.')));
+        content: AppText('No templates yet — "Save as template…" first.')));
     return;
   }
   final choice = await showOnoteDialog<String>(
     context: context,
     builder: (ctx) => SimpleDialog(
-      title: const Text('Apply template'),
+      title: const AppText('Apply template'),
       children: [
         for (final n in names)
           SimpleDialogOption(

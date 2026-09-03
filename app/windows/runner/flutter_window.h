@@ -9,6 +9,7 @@
 #include "win32_window.h"
 #include "pen_buttons.h"
 #include "window_controls.h"
+#include "writing_services.h"
 
 // A window that does nothing but host a Flutter view.
 class FlutterWindow : public Win32Window {
@@ -33,6 +34,7 @@ class FlutterWindow : public Win32Window {
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
   std::unique_ptr<PenButtons> pen_buttons_;
   std::unique_ptr<WindowControls> window_controls_;
+  std::unique_ptr<WritingServices> writing_services_;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

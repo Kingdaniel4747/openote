@@ -1,5 +1,6 @@
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import '../l10n/app_strings.dart';
 import 'package:path/path.dart' as p;
 
 import '../export/import_job.dart';
@@ -121,7 +122,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
       title: Row(children: [
         Icon(Icons.menu_book_outlined, size: 18, color: scheme.primary),
         const SizedBox(width: 9),
-        const Text('Notebooks'),
+        const AppText('Notebooks'),
         const Spacer(),
         Text('${notebooks.length} open',
             style: TextStyle(
@@ -166,7 +167,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
         Row(children: [
           TextButton.icon(
             icon: const Icon(Icons.add, size: 18),
-            label: const Text('New'),
+            label: const AppText('New'),
             onPressed: () async {
               // Through the shared prompt, which owns the field's controller in
               // the dialog's own State. This used to build the field and
@@ -188,12 +189,12 @@ class _NotebookManagerState extends State<_NotebookManager> {
           TextButton.icon(
             icon: Icon(_importOpen ? Icons.expand_less : Icons.download_outlined,
                 size: 18),
-            label: const Text('Import'),
+            label: const AppText('Import'),
             onPressed: () => setState(() => _importOpen = !_importOpen),
           ),
           TextButton.icon(
             icon: const Icon(Icons.healing_outlined, size: 18),
-            label: const Text('Repair'),
+            label: const AppText('Repair'),
             onPressed: () => _repairWithProgress(context, app),
           ),
           // The welcome flow is where "open the notebook that's already in my
@@ -202,7 +203,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
           // after the first one.
           TextButton.icon(
             icon: const Icon(Icons.explore_outlined, size: 18),
-            label: const Text('Get started'),
+            label: const AppText('Get started'),
             onPressed: () async {
               // Root navigator's context, captured before the pop — the same
               // trap as the import row below: `showDialog` on a route that has
@@ -215,7 +216,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
           const Spacer(),
           TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Done')),
+              child: const AppText('Done')),
         ]),
       ],
     );
@@ -240,7 +241,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
           padding: const EdgeInsets.only(right: 6, top: 6),
           child: OutlinedButton.icon(
             icon: Icon(icon, size: 16),
-            label: Text(label, style: const TextStyle(fontSize: 13)),
+            label: AppText(label, style: const TextStyle(fontSize: 13)),
             onPressed: () async {
               final messenger = ScaffoldMessenger.of(context);
               final rootContext = Navigator.of(context, rootNavigator: true).context;
@@ -348,7 +349,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
                                   _dupes.remove(g);
                                 });
                               },
-                        child: const Text('Delete',
+                        child: const AppText('Delete',
                             style: TextStyle(fontSize: 11)),
                       ),
                   ]),
@@ -491,14 +492,14 @@ class _NotebookManagerState extends State<_NotebookManager> {
                 ),
                 TextButton(
                     onPressed: () => setState(() => _confirmDeleteId = null),
-                    child: const Text('Cancel')),
+                    child: const AppText('Cancel')),
                 const SizedBox(width: 4),
                 FilledButton(
                   style: FilledButton.styleFrom(
                       backgroundColor: OnoteColors.danger,
                       visualDensity: VisualDensity.compact),
                   onPressed: () => _delete(nb),
-                  child: const Text('Delete'),
+                  child: const AppText('Delete'),
                 ),
               ]),
             ),
@@ -536,7 +537,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
             await app.restoreNotebook(nb.id);
             if (mounted) setState(() => _highlightId = nb.id);
           },
-          child: const Text('Restore'),
+          child: const AppText('Restore'),
         ),
         _act(Icons.delete_forever, 'Delete permanently', () async {
           final ok =
@@ -573,17 +574,17 @@ Future<bool> _confirmPurge(BuildContext context, NotebookRef nb,
   final ok = await showOnoteDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Delete permanently?'),
+      title: const AppText('Delete permanently?'),
       content: Text('“${nb.title}” and all its pages will be removed for good. '
           "This can't be undone.${caveat == null ? '' : '\n\n$caveat'}"),
       actions: [
         TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel')),
+            child: const AppText('Cancel')),
         FilledButton(
           style: FilledButton.styleFrom(backgroundColor: OnoteColors.danger),
           onPressed: () => Navigator.pop(ctx, true),
-          child: const Text('Delete forever'),
+          child: const AppText('Delete forever'),
         ),
       ],
     ),

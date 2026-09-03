@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import '../l10n/app_strings.dart';
 
 import '../model/models.dart';
 import '../state/app_state.dart';
@@ -20,7 +21,7 @@ PopupMenuItem<String> _item(String v, IconData icon, String label,
     child: Row(children: [
       Icon(icon, size: 16),
       const SizedBox(width: 10),
-      Expanded(child: Text(label, style: const TextStyle(fontSize: 13))),
+      Expanded(child: AppText(label, style: const TextStyle(fontSize: 13))),
       if (shortcut != null)
         // A Builder because this is a top-level helper with no context of its
         // own, and the shortcut hint must follow the surface role rather than
@@ -211,7 +212,7 @@ PopupMenuEntry<String> _bgSubmenu(BuildContext context, AppState app) {
             child: Row(children: [
               Icon(icon, size: 16),
               const SizedBox(width: 10),
-              Text(label, style: const TextStyle(fontSize: 13)),
+              AppText(label, style: const TextStyle(fontSize: 13)),
             ]),
           ),
       ],
@@ -221,7 +222,7 @@ PopupMenuEntry<String> _bgSubmenu(BuildContext context, AppState app) {
           const Icon(Icons.wallpaper_outlined, size: 16),
           const SizedBox(width: 10),
           const Expanded(
-              child: Text('Page background',
+              child: AppText('Page background',
                   style: TextStyle(fontSize: 13))),
           Icon(Icons.chevron_right,
               size: 16, color: context.surfaces.textSecondary),
@@ -320,7 +321,7 @@ class _Tile extends StatelessWidget {
               Icon(item.icon, size: 16),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(item.menuLabel,
+                child: AppText(item.menuLabel,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(

@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import '../l10n/app_strings.dart';
 
 import '../media/pdf_pages.dart';
 import '../model/models.dart';
@@ -60,6 +62,8 @@ class _ImageBlockViewState extends State<ImageBlockView> {
   /// True while an on-demand PDF page render is in flight — the placeholder
   /// then says "rendering" rather than "missing", which are different facts.
   bool _rendering = false;
+  String? _pdfError;
+  int _loadRequest = 0;
 
   @override
   void initState() {
@@ -71,10 +75,12 @@ class _ImageBlockViewState extends State<ImageBlockView> {
   void didUpdateWidget(covariant ImageBlockView old) {
     super.didUpdateWidget(old);
     final key = widget.block.content['pdf'] ?? widget.block.content['blob'];
-    if (key != _hash) _load();
+    if (key != _hash || old.block.content['page'] != widget.block.content['page']) _load();
   }
 
   void _load() {
+    final request = ++_loadRequest;
+    _pdfError = null;
     // A slide is a REFERENCE — `{pdf: sha256:…, page: i}` — rendered on
     // demand (storage wave 1c). The PDF is stored once; the pixels exist
     // only while something is looking at them.
@@ -89,11 +95,19 @@ class _ImageBlockViewState extends State<ImageBlockView> {
         return;
       }
       _rendering = true;
-      PdfPages.pageImage(widget.app, pdf, page).then((png) {
-        if (!mounted || widget.block.content['pdf'] != pdf) return;
+      PdfPages.pageImage(widget.app, pdf, page)
+          .timeout(const Duration(seconds: 45)).then((png) {
+        if (!mounted || request != _loadRequest) return;
         setState(() {
           _rendering = false;
+          _pdfError = png == null ? 'PDF page unavailable. Retry after syncing.' : null;
           _provider = png == null ? null : MemoryImage(png);
+        });
+      }, onError: (Object error) {
+        if (!mounted || request != _loadRequest) return;
+        setState(() {
+          _rendering = false;
+          _pdfError = 'PDF loading failed or timed out. Please retry.';
         });
       });
       if (mounted) setState(() {});
@@ -185,6 +199,14 @@ class _ImageBlockViewState extends State<ImageBlockView> {
     }
     if (_provider == null) {
       final isPdf = widget.block.content['pdf'] != null;
+      if (isPdf && _pdfError != null) {
+        return Center(child: Padding(padding: const EdgeInsets.all(12),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            AppText(_pdfError!, textAlign: TextAlign.center),
+            TextButton.icon(onPressed: _load, icon: const Icon(Icons.refresh),
+                label: const AppText('Retry')),
+          ])));
+      }
       return Padding(
         padding: const EdgeInsets.all(12),
         child: Row(mainAxisSize: MainAxisSize.min, children: [

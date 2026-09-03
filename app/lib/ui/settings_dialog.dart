@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../core/platform_open.dart';
+import '../l10n/app_strings.dart';
+import '../spell/writing_services.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../update/app_update.dart';
@@ -35,7 +37,30 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   AppState get app => widget.app;
 
   bool _checking = false;
+  bool _checkingLanguage = false;
   String? _updateNote;
+
+  Future<void> _checkLanguage() async {
+    setState(() => _checkingLanguage = true);
+    String note;
+    try {
+      final result = await WritingServices.run({
+        'kind': 'status',
+        'language': app.writingLanguage,
+      }) as Map;
+      note = result['handwriting'] == true
+          ? 'Language support is ready.'
+          : 'Install the selected handwriting language in Windows Settings.';
+    } catch (_) {
+      note =
+          'Local writing services are unavailable. Check Windows language packs.';
+    }
+    if (!mounted) return;
+    setState(() {
+      _checkingLanguage = false;
+      app.writingServiceProblem = note;
+    });
+  }
 
   Future<void> _checkNow() async {
     setState(() {
@@ -57,7 +82,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
 
   Widget _section(String title) => Padding(
         padding: const EdgeInsets.only(top: 14, bottom: 4),
-        child: Text(title,
+        child: AppText(title,
             style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
@@ -67,7 +92,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   Widget _row(String label, Widget control) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 2),
         child: Row(children: [
-          Expanded(child: Text(label, style: const TextStyle(fontSize: 13))),
+          Expanded(child: AppText(label, style: const TextStyle(fontSize: 13))),
           control,
         ]),
       );
@@ -82,8 +107,8 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             visualDensity: VisualDensity.compact,
             textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 11))),
         segments: const [
-          ButtonSegment(value: false, label: Text('Off')),
-          ButtonSegment(value: true, label: Text('On')),
+          ButtonSegment(value: false, label: AppText('Off')),
+          ButtonSegment(value: true, label: AppText('On')),
         ],
         selected: {value},
         onSelectionChanged: (s) => onChanged(s.first),
@@ -94,16 +119,17 @@ class _SettingsDialogState extends State<_SettingsDialog> {
         padding: const EdgeInsets.symmetric(vertical: 2),
         child: Row(children: [
           Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(label, style: const TextStyle(fontSize: 13)),
-              Text(hint,
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              AppText(label, style: const TextStyle(fontSize: 13)),
+              AppText(hint,
                   style: const TextStyle(
                       fontSize: 11, color: OnoteColors.graphite400)),
             ]),
           ),
           TextButton.icon(
             icon: Icon(icon, size: 15),
-            label: const Text('Open…', style: TextStyle(fontSize: 12)),
+            label: const AppText('Open…', style: TextStyle(fontSize: 12)),
             onPressed: open,
           ),
         ]),
@@ -114,13 +140,25 @@ class _SettingsDialogState extends State<_SettingsDialog> {
     return ListenableBuilder(
       listenable: app,
       builder: (context, _) => AlertDialog(
-        title: const Text('Settings'),
+        title: const AppText('Settings'),
         content: SizedBox(
           width: 460,
           child: ListView(
             shrinkWrap: true,
             children: [
               _section('Appearance'),
+              _row(
+                  'Interface language',
+                  DropdownButton<String>(
+                    value: app.interfaceLanguage,
+                    items: const [
+                      DropdownMenuItem(value: 'en', child: Text('English')),
+                      DropdownMenuItem(value: 'de', child: Text('Deutsch')),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) app.setInterfaceLanguage(value);
+                    },
+                  )),
               _row(
                 'Theme',
                 SegmentedButton<ThemeMode>(
@@ -131,9 +169,11 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                           WidgetStatePropertyAll(TextStyle(fontSize: 11))),
                   segments: const [
                     ButtonSegment(
-                        value: ThemeMode.system, label: Text('System')),
-                    ButtonSegment(value: ThemeMode.light, label: Text('Light')),
-                    ButtonSegment(value: ThemeMode.dark, label: Text('Dark')),
+                        value: ThemeMode.system, label: AppText('System')),
+                    ButtonSegment(
+                        value: ThemeMode.light, label: AppText('Light')),
+                    ButtonSegment(
+                        value: ThemeMode.dark, label: AppText('Dark')),
                   ],
                   selected: {app.themeMode},
                   onSelectionChanged: (s) => app.setThemeMode(s.first),
@@ -144,18 +184,53 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                     _toggle(app.startFullscreen, app.setStartFullscreen)),
                 TextButton.icon(
                   icon: const Icon(Icons.fullscreen),
-                  label: const Text('Toggle full screen (F11)'),
+                  label: const AppText('Toggle full screen (F11)'),
                   onPressed: () => window.setFullscreen(!window.fullscreen),
                 ),
-                const Text('Window buttons stay beside Settings, including in '
-                    'full screen.', style: TextStyle(fontSize: 11)),
+                const AppText(
+                    'Window buttons stay beside Settings, including in '
+                    'full screen.',
+                    style: TextStyle(fontSize: 11)),
               ],
               _section('Writing and drawing'),
-              _row('Spell check', _toggle(app.spellCheckEnabled, app.setSpellCheck)),
+              _row('Spell check',
+                  _toggle(app.spellCheckEnabled, app.setSpellCheck)),
+              _row(
+                  'Writing language',
+                  DropdownButton<String>(
+                    value: app.writingLanguage,
+                    items: const [
+                      DropdownMenuItem(value: 'en-US', child: Text('English')),
+                      DropdownMenuItem(value: 'de-DE', child: Text('Deutsch')),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) app.setWritingLanguage(value);
+                    },
+                  )),
+              _row(
+                  'Check handwriting',
+                  _toggle(
+                      app.handwritingSpellCheck, app.setHandwritingSpellCheck)),
+              const AppText(
+                  'Local Windows language packs are required. No notes are uploaded.',
+                  style: TextStyle(fontSize: 11)),
+              const AppText(
+                  'Recognition may misread handwriting; marks are suggestions, not corrections.',
+                  style: TextStyle(fontSize: 11)),
+              TextButton.icon(
+                onPressed: _checkingLanguage ? null : _checkLanguage,
+                icon: const Icon(Icons.spellcheck, size: 16),
+                label: const AppText('Check language support'),
+              ),
+              if (app.writingServiceProblem != null)
+                AppText(app.writingServiceProblem!,
+                    style: const TextStyle(fontSize: 11)),
               _row('Pen near the page switches to inking',
                   _toggle(app.penProximitySwitch, app.setPenProximitySwitch)),
               _section('Connections'),
-              _door(Icons.sync, 'Sync',
+              _door(
+                  Icons.sync,
+                  'Sync',
                   'Back up and share this notebook — GitHub or a folder.',
                   () => showSyncDialog(context, app)),
               _door(
@@ -166,7 +241,9 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                       : 'Off — connect Claude or other AI helpers.',
                   () => showMcpDialog(context, app)),
               _section('Keyboard'),
-              _door(Icons.keyboard_outlined, 'Keyboard shortcuts',
+              _door(
+                  Icons.keyboard_outlined,
+                  'Keyboard shortcuts',
                   'Everything has a key — the full list.  (Ctrl+/)',
                   () => showShortcutOverlay(context)),
               _section('About'),
@@ -179,20 +256,20 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                         child: CircularProgressIndicator(strokeWidth: 2))
                     : TextButton(
                         onPressed: _checkNow,
-                        child: const Text('Check for updates',
+                        child: const AppText('Check for updates',
                             style: TextStyle(fontSize: 12)),
                       ),
               ),
               if (_updateNote != null)
-                Text(_updateNote!,
+                AppText(_updateNote!,
                     style: const TextStyle(
                         fontSize: 11.5, color: OnoteColors.graphite400)),
               Align(
                 alignment: Alignment.centerLeft,
                 child: TextButton(
                   onPressed: () => PlatformOpen.url(
-                      'https://github.com/icmric/openote/releases'),
-                  child: const Text("What's new",
+                      'https://github.com/$kUpdateRepository/releases'),
+                  child: const AppText("What's new",
                       style: TextStyle(fontSize: 12)),
                 ),
               ),
@@ -202,7 +279,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
         actions: [
           TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Close')),
+              child: const AppText('Close')),
         ],
       ),
     );

@@ -245,8 +245,7 @@ void main() {
       await finish(t, app);
     });
 
-    testWidgets(
-        'mid-stroke button transitions preserve brush and never bridge the gap',
+    testWidgets('button transitions during a stroke do not split or erase it',
         (t) async {
       final app = await mount(t);
       app.tool = Tool.highlighter;
@@ -258,40 +257,54 @@ void main() {
       await move(t, 390);
       await up(t, 390);
       final ink = strokes(app);
-      expect(ink, hasLength(2));
-      expect(ink[0]['x'], [100.0, 140.0]);
-      expect(ink[1]['x'], [340.0, 390.0]);
-      expect(ink[0]['brush'], ink[1]['brush']);
+      expect(ink, hasLength(1));
+      expect(ink[0]['x'], [100.0, 140.0, 280.0, 340.0, 390.0]);
+      expect((ink[0]['brush'] as Map)['tool'], 'highlighter');
       expect(app.tool, Tool.highlighter);
       expect(app.penSize, 4);
       expect(app.penColor, 2);
       await finish(t, app);
     });
 
-    testWidgets(
-        'native button changes without motion split ink and update cursor',
+    testWidgets('native button changes apply only after lifting the pen',
         (t) async {
       final app = await mount(t);
       await down(t, 100);
       await move(t, 140);
       await nativeState(true, true);
       await t.pump();
+      expect(app.tool, Tool.pen);
+      expect(strokes(app), isEmpty,
+          reason: 'wet stroke is not prematurely committed');
+      await move(t, 180);
+      await up(t, 180);
       expect(strokes(app), hasLength(1));
-      expect(
-          t
-              .widgetList<MouseRegion>(find.byType(MouseRegion))
-              .any((r) => r.cursor == SystemMouseCursors.cell),
-          true);
-      await move(t, 280); // Flutter did not forward a barrel flag.
+      expect(app.tool, Tool.eraser);
+      // Release while erasing: keep erasing until lift, then restore the pen.
+      await down(t, 100);
       await nativeState(true, false);
       await t.pump();
-      // A stale Flutter bit must not switch back to erasing after native UP.
-      await move(t, 340, buttons: kPrimaryStylusButton);
-      await move(t, 390, buttons: kPrimaryStylusButton);
-      await up(t, 390);
-      expect(strokes(app), hasLength(2));
-      expect(strokes(app)[1]['x'], [340.0, 390.0]);
+      expect(app.tool, Tool.eraser);
+      await move(t, 140, buttons: kPrimaryStylusButton);
+      await up(t, 140);
       expect(app.tool, Tool.pen);
+      await down(t, 280);
+      await move(t, 320);
+      await up(t, 320);
+      expect(strokes(app).last['x'], [280.0, 320.0]);
+      await finish(t, app);
+    });
+
+    testWidgets('hover toggles eraser without leaving range and restores lasso',
+        (t) async {
+      final app = await mount(t);
+      app.setTool(Tool.lasso);
+      await nativeState(true, true);
+      await t.pump();
+      expect(app.tool, Tool.eraser);
+      await nativeState(true, false);
+      await t.pump();
+      expect(app.tool, Tool.lasso);
       await finish(t, app);
     });
 

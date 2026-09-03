@@ -286,10 +286,49 @@ void main() {
       await pen.up();
       await t.pump();
       expect(app.hasInkSelection, true);
+      expect(app.tool, Tool.lasso);
+      expect(find.byTooltip('Duplicate'), findsOneWidget);
+      await t.tap(find.byTooltip('Duplicate'));
+      await t.pump();
+      expect(strokes(), hasLength(2));
+      expect(app.tool, Tool.lasso);
       app.cancelPendingSave();
       await t.pumpWidget(const SizedBox());
     });
   }
+
+  testWidgets('PDF-only pages reject off-paper ink and split re-entry',
+      (t) async {
+    app.pageProps =
+        PageProps(layout: 'pdf', pageWidth: 400, pdfPageHeight: 400);
+    await mount(t);
+    final pen = await t.startGesture(at(t, const Offset(100, 200)),
+        kind: PointerDeviceKind.stylus);
+    await pen.moveTo(at(t, const Offset(200, 200)));
+    await pen.moveTo(at(t, const Offset(500, 200)));
+    await pen.moveTo(at(t, const Offset(250, 250)));
+    await pen.moveTo(at(t, const Offset(300, 250)));
+    await pen.up();
+    await t.pump();
+    expect(strokes(), hasLength(2));
+    for (final stroke in strokes()) {
+      expect((stroke['x'] as List).every((x) => (x as num) < 400), true);
+    }
+    app.cancelPendingSave();
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('stylus contact from Select starts ink instead of text',
+      (t) async {
+    app.tool = Tool.select;
+    await mount(t);
+    await draw(t);
+    expect(app.tool, Tool.pen);
+    expect(strokes(), hasLength(1));
+    expect(app.editingBlockId, null);
+    app.cancelPendingSave();
+    await t.pumpWidget(const SizedBox());
+  });
 
   testWidgets('finger hold on a locked object opens its context menu',
       (t) async {

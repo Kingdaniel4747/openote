@@ -4306,10 +4306,34 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
-  /// Spell check (TEXT-11). English-only for v0.2 — the bundled wordlist is
-  /// en-US, and non-English dictionaries are a recorded follow-up rather than
-  /// a half-built option here.
+  /// English uses the bundled word list; German uses local Windows services.
   bool spellCheckEnabled = true;
+  String interfaceLanguage = 'en';
+  String writingLanguage = 'en-US';
+  bool handwritingSpellCheck = true;
+  String? writingServiceProblem;
+
+  void setInterfaceLanguage(String value) {
+    if (value != 'en' && value != 'de') return;
+    interfaceLanguage = value;
+    _repo.setSetting('interfaceLanguage', value);
+    notifyListeners();
+  }
+
+  void setWritingLanguage(String value) {
+    if (value != 'en-US' && value != 'de-DE') return;
+    writingLanguage = value;
+    writingServiceProblem = null;
+    _repo.setSetting('writingLanguage', value);
+    docRevision++;
+    notifyListeners();
+  }
+
+  void setHandwritingSpellCheck(bool value) {
+    handwritingSpellCheck = value;
+    _repo.setSetting('handwritingSpellCheck', value);
+    notifyListeners();
+  }
 
   /// Degrees or radians, for every equation in the app.
   ///
@@ -5731,6 +5755,9 @@ class AppState extends ChangeNotifier
     if (as is bool) autoSync = as;
     final sc = _repo.getSetting('spellCheck');
     if (sc is bool) spellCheckEnabled = sc;
+    interfaceLanguage = _repo.getSetting('interfaceLanguage') == 'de' ? 'de' : 'en';
+    writingLanguage = _repo.getSetting('writingLanguage') == 'de-DE' ? 'de-DE' : 'en-US';
+    handwritingSpellCheck = _repo.getSetting('handwritingSpellCheck') != false;
     final am = _repo.getSetting('angleMode');
     mathAngleMode = am == 'rad' ? AngleMode.radians : AngleMode.degrees;
     onboardingSeen = _repo.getSetting('onboardingSeen') == true;
@@ -6936,6 +6963,7 @@ class AppState extends ChangeNotifier
   /// Content-based page size (used off-view, e.g. export). The on-screen page
   /// additionally grows to fill the viewport — computed in the canvas widget.
   Size pageSize() {
+    if (pageProps.pdfOnly) return Size(pageProps.pageWidth, pageProps.pdfPageHeight);
     final e = contentExtent();
     if (pageProps.isPaged) {
       // A sheet does not grow sideways, ever — that is what makes it a sheet.
@@ -8112,10 +8140,10 @@ class AppState extends ChangeNotifier
   }
 
   /// Duplicate with FRESH ids (Data Model Spec §2 rule 3).
-  void duplicateBlock(String id) {
+  void duplicateBlock(String id, {bool recordUndo = true}) {
     final src = blocks.where((b) => b.id == id).firstOrNull;
     if (src == null) return;
-    pushUndo();
+    if (recordUndo) pushUndo();
     final fresh = Block(
       id: newId(),
       type: src.type,
@@ -8144,6 +8172,18 @@ class AppState extends ChangeNotifier
       fresh.updatedAt = nowMs(); // refresh the canvas stroke cache key
     }
     select(fresh.id);
+  }
+
+  void duplicateSelectedBlocks() {
+    final ids = selectedIds.toList();
+    if (ids.isEmpty) return;
+    pushUndo();
+    final copies = <String>[];
+    for (final id in ids) {
+      duplicateBlock(id, recordUndo: false);
+      if (selectedBlockId != null && selectedBlockId != id) copies.add(selectedBlockId!);
+    }
+    selectMany(copies);
   }
 
   void select(String? id, {bool edit = false, bool additive = false}) {
@@ -8583,7 +8623,8 @@ class AppState extends ChangeNotifier
     try {
       await flushSave();
     } catch (_) {
-      // Never block exit on a save failure — flushSave already recorded it.
+      // flushSave recorded the problem and left _dirty set. The lifecycle
+      // handler keeps the app open so unsaved notes can still be recovered.
     }
     // No VACUUM or new network sync on close. Persist local work first;
     // cloud syncing resumes during the next session.

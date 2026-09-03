@@ -2,7 +2,8 @@ import 'dart:io' show exit;
 import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';
-import 'package:pdfrx/pdfrx.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'l10n/app_strings.dart';
 
 import 'core/single_instance.dart';
 import 'core/startup_args.dart';
@@ -58,7 +59,7 @@ Future<void> main(List<String> args) async {
   // builds one — so without this, opening a PDF throws
   // "Pdfrx.getCacheDirectory is not set" before pdfium is even touched.
   // Must run on the root isolate, before any PDF work.
-  pdfrxFlutterInitialize();
+  // PDF initialization is awaited lazily by PdfRuntime, with error handling.
   // Resolve libmpv once, here, rather than the first time a block tries to
   // play something: on a Linux box without it, `MediaKit.ensureInitialized`
   // throws, and a throw inside a widget build is a red screen where a "you
@@ -66,7 +67,7 @@ Future<void> main(List<String> args) async {
   // Awaited: on Windows this also resolves whether the downloaded engine is
   // present, and a page that renders its video cards before that answer is
   // known shows "needs the video player" to somebody who already has it.
-  await VideoPlayback.probe();
+  // Probe behind the first splash frame, not before runApp.
   // Paint a window IMMEDIATELY; open the workspace behind it. Blocking runApp
   // on Repository.open + init left the window invisible until SQLite and the
   // restored page were fully loaded ("the app takes ages to appear").
@@ -94,6 +95,8 @@ class _OpenoteBootState extends State<OpenoteBoot> {
   AppState? _app;
   (Object, StackTrace)? _error;
   AppLifecycleListener? _lifecycle;
+  bool _closing = false;
+  bool _closeFailed = false;
 
   @override
   void initState() {
@@ -103,6 +106,8 @@ class _OpenoteBootState extends State<OpenoteBoot> {
 
   Future<void> _open() async {
     try {
+      await WidgetsBinding.instance.endOfFrame;
+      await VideoPlayback.probe();
       final repo = await Repository.open();
       final app = AppState(repo);
       await app.init(notebookPath: widget.notebookPath);
@@ -114,9 +119,33 @@ class _OpenoteBootState extends State<OpenoteBoot> {
       // SQLite handles never got a clean close (no WAL checkpoint).
       _lifecycle = AppLifecycleListener(
         onExitRequested: () async {
-          await app.shutdown();
-          await widget.instance?.dispose();
-          return AppExitResponse.exit;
+          if (_closing) return AppExitResponse.cancel;
+          if (mounted)
+            setState(() {
+              _closing = true;
+              _closeFailed = false;
+            });
+          await WidgetsBinding.instance.endOfFrame;
+          try {
+            await app.shutdown();
+            if (app.hasUnsavedChanges) {
+              if (mounted)
+                setState(() {
+                  _closing = false;
+                  _closeFailed = true;
+                });
+              return AppExitResponse.cancel;
+            }
+            await widget.instance?.dispose();
+            return AppExitResponse.exit;
+          } catch (_) {
+            if (mounted)
+              setState(() {
+                _closing = false;
+                _closeFailed = true;
+              });
+            return AppExitResponse.cancel;
+          }
         },
       );
       if (mounted) setState(() => _app = app);
@@ -141,7 +170,12 @@ class _OpenoteBootState extends State<OpenoteBoot> {
     final err = _error;
     if (err != null) return _StartupError(error: err.$1, stack: err.$2);
     final app = _app;
-    if (app != null) return OpenoteApp(app: app);
+    if (app != null)
+      return OpenoteApp(
+          app: app,
+          closing: _closing,
+          closeFailed: _closeFailed,
+          dismissCloseError: () => setState(() => _closeFailed = false));
     return MaterialApp(
       title: 'Openote',
       debugShowCheckedModeBanner: false,
@@ -153,6 +187,8 @@ class _OpenoteBootState extends State<OpenoteBoot> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.menu_book_outlined, size: 42),
+              SizedBox(height: 14),
+              AppText('Opening Openote…'),
               SizedBox(height: 14),
               SizedBox(
                   width: 20,
@@ -187,14 +223,18 @@ class _StartupError extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text("Openote couldn't start",
-                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600)),
+                      style:
+                          TextStyle(fontSize: 22, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 8),
                   const Text(
                       'Something failed while opening your workspace. Your notes '
                       'are not affected. Details below — please report this.'),
                   const SizedBox(height: 16),
                   SelectableText('$error\n\n$stack',
-                      style: const TextStyle(fontFamily: 'JetBrains Mono', fontFamilyFallback: onoteFontFallback, fontSize: 12)),
+                      style: const TextStyle(
+                          fontFamily: 'JetBrains Mono',
+                          fontFamilyFallback: onoteFontFallback,
+                          fontSize: 12)),
                 ],
               ),
             ),
@@ -206,8 +246,16 @@ class _StartupError extends StatelessWidget {
 }
 
 class OpenoteApp extends StatefulWidget {
-  const OpenoteApp({super.key, required this.app});
+  const OpenoteApp(
+      {super.key,
+      required this.app,
+      this.closing = false,
+      this.closeFailed = false,
+      this.dismissCloseError});
   final AppState app;
+  final bool closing;
+  final bool closeFailed;
+  final VoidCallback? dismissCloseError;
 
   @override
   State<OpenoteApp> createState() => _OpenoteAppState();
@@ -215,6 +263,9 @@ class OpenoteApp extends StatefulWidget {
 
 class _OpenoteAppState extends State<OpenoteApp> {
   ThemeMode? _builtMode;
+  String? _builtLanguage;
+  bool? _builtClosing;
+  bool? _builtCloseFailed;
   Widget? _built;
 
   @override
@@ -226,19 +277,62 @@ class _OpenoteAppState extends State<OpenoteApp> {
         // Content updates ride AppShell's own listener — rebuilding the whole
         // tree from the root on every notify (each keystroke, drag frame)
         // doubled per-frame build work.
-        if (_built != null && _builtMode == widget.app.themeMode) {
+        if (_built != null &&
+            _builtMode == widget.app.themeMode &&
+            _builtLanguage == widget.app.interfaceLanguage &&
+            _builtClosing == widget.closing &&
+            _builtCloseFailed == widget.closeFailed) {
           return _built!;
         }
         _builtMode = widget.app.themeMode;
+        _builtLanguage = widget.app.interfaceLanguage;
+        _builtClosing = widget.closing;
+        _builtCloseFailed = widget.closeFailed;
         return _built = MaterialApp(
           title: 'Openote',
           debugShowCheckedModeBanner: false,
           theme: onoteTheme(Brightness.light),
           darkTheme: onoteTheme(Brightness.dark),
           themeMode: widget.app.themeMode, // Settings: Auto / Light / Dark
+          locale: Locale(widget.app.interfaceLanguage),
+          supportedLocales: const [Locale('en'), Locale('de')],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
           builder: (context, child) => WindowsWindowFrame(
             startFullscreen: widget.app.startFullscreen,
-            child: child ?? const SizedBox.shrink(),
+            child: Stack(children: [
+              child ?? const SizedBox.shrink(),
+              if (widget.closing) ...[
+                const ModalBarrier(dismissible: false, color: Colors.black38),
+                const Center(
+                    child: AlertDialog(
+                  title: AppText('Saving and closing…'),
+                  content: Row(mainAxisSize: MainAxisSize.min, children: [
+                    SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator()),
+                    SizedBox(width: 18),
+                    Flexible(
+                        child: AppText(
+                            'Please wait. Your notes are being saved.')),
+                  ]),
+                )),
+              ],
+              if (widget.closeFailed) ...[
+                const ModalBarrier(dismissible: false, color: Colors.black38),
+                Center(
+                    child: AlertDialog(
+                  title: const AppText('Saving failed'),
+                  content: const AppText(
+                      'Could not finish saving. Openote has stayed open. Check the save warning and try again.'),
+                  actions: [
+                    TextButton(
+                        onPressed: widget.dismissCloseError,
+                        child: const AppText('Close'))
+                  ],
+                )),
+              ],
+            ]),
           ),
           home: AppShell(app: widget.app),
         );

@@ -26,6 +26,7 @@
 library;
 
 import 'dart:io';
+import 'dart:async';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -33,6 +34,7 @@ import 'package:pdfrx/pdfrx.dart';
 
 import '../model/models.dart';
 import '../state/app_state.dart';
+import '../media/pdf_runtime.dart';
 
 /// Page width we lay imported slides out at, matching the default page width
 /// so a slide fills the page the way it does in a PDF reader.
@@ -59,6 +61,8 @@ enum PdfPlacement {
   /// not have the whole thing always open." Clicking the card opens the
   /// viewer, where the text is selectable.
   card,
+  /// Fixed-size pages: the PDF is the paper, without extra drawing margins.
+  pdfOnly,
 }
 
 /// Result of an import, for the caller's summary.
@@ -72,6 +76,19 @@ Future<PdfImportResult?> importPdfAsPages(
   void Function(int done, int total)? onProgress,
 }) async {
   const typeGroup = XTypeGroup(label: 'PDF', extensions: ['pdf']);
+  if (placement == PdfPlacement.pdfOnly || app.pageProps.pdfOnly) {
+    final files = await openFiles(acceptedTypeGroups: [typeGroup]);
+    if (files.isEmpty) return null;
+    PdfImportResult? first;
+    var pages = 0;
+    for (final file in files) {
+      final result = await importPdfFile(app, file.path, file.name,
+          placement: PdfPlacement.pdfOnly, onProgress: onProgress);
+      first ??= result;
+      pages += result.pages;
+    }
+    return (pages: pages, sectionId: first?.sectionId, firstPageId: first?.firstPageId);
+  }
   final file = await openFile(acceptedTypeGroups: [typeGroup]);
   if (file == null) return null;
   return importPdfFile(app, file.path, file.name,
@@ -91,7 +108,8 @@ Future<PdfImportResult> importPdfFile(
 }) async {
   final nb = app.notebookId;
   if (nb == null) return (pages: 0, sectionId: null, firstPageId: null);
-  if (placement != PdfPlacement.pagePerSlide && app.pageId == null) {
+  final separatePages = placement == PdfPlacement.pagePerSlide || placement == PdfPlacement.pdfOnly;
+  if (!separatePages && app.pageId == null) {
     // No page open — make one and put it there.
     //
     // This used to silently switch to one-page-per-slide, which is a different
@@ -107,9 +125,9 @@ Future<PdfImportResult> importPdfFile(
   // The source file, once, into the content-addressed store. Everything else
   // in this import is a reference to this hash.
   final bytes = await File(path).readAsBytes();
-  final doc = await PdfDocument.openData(bytes, sourceName: displayName);
+  final doc = await PdfRuntime.open(bytes, displayName);
   try {
-    final pdfHash = placement == PdfPlacement.pagePerSlide
+    final pdfHash = separatePages
         ? app.importBlob(nb, bytes, 'application/pdf')
         : app.addBlob(bytes, 'application/pdf');
     final title =
@@ -171,7 +189,8 @@ Future<PdfImportResult> importPdfFile(
                   x: 0, y: 0, w: w, background: true)
                 ..h = h
             ],
-            PageProps(pageWidth: w),
+            PageProps(pageWidth: w,
+                layout: placement == PdfPlacement.pdfOnly ? 'pdf' : 'canvas', pdfPageHeight: h),
           );
           made++;
         }
@@ -186,7 +205,7 @@ Future<PdfImportResult> importPdfFile(
     app.reloadNodes();
     return (pages: made, sectionId: section.id, firstPageId: firstPageId);
   } finally {
-    await doc.dispose();
+    await doc.dispose().timeout(const Duration(seconds: 5), onTimeout: () {});
   }
 }
 
@@ -226,7 +245,10 @@ Future<String?> _textOf(PdfPage page) async {
   try {
     // Hidden, but present in the page JSON, so the existing brute-force
     // notebook search finds slides by their words.
-    return (await page.loadText())?.fullText.trim();
+    return (await page.loadText().timeout(const Duration(seconds: 8)))?.fullText.trim();
+  } on TimeoutException {
+    // Fail visibly instead of waiting once per remaining page of a stalled worker.
+    rethrow;
   } catch (_) {
     return null; // a scanned deck has no text layer; that's fine
   }

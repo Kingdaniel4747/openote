@@ -180,6 +180,7 @@ class PageProps {
     this.layout = 'canvas',
     this.paperSize = 'A4',
     this.landscape = false,
+    this.pdfPageHeight = 1403,
     Map<String, dynamic>? unknownFields,
   }) : unknownFields = unknownFields ?? {};
   String background; // blank | grid | dotted | ruled
@@ -201,6 +202,8 @@ class PageProps {
   /// The name of a [PaperSize]. Only meaningful when [layout] is `paged`.
   String paperSize;
   bool landscape;
+  double pdfPageHeight;
+  bool get pdfOnly => layout == 'pdf';
 
   bool get isPaged => layout == 'paged';
 
@@ -223,6 +226,7 @@ class PageProps {
     'layout',
     'paperSize',
     'landscape',
+    'pdfPageHeight',
   };
 
   Map<String, dynamic> toJson() => {
@@ -234,7 +238,8 @@ class PageProps {
         // previous build wrote — which matters beyond tidiness: emitting three
         // new keys unconditionally would rewrite every page in every notebook
         // on the next save, and hand the sync log a diff for all of them.
-        if (isPaged) 'layout': layout,
+        if (isPaged || pdfOnly) 'layout': layout,
+        if (pdfOnly) 'pdfPageHeight': pdfPageHeight,
         if (isPaged) 'paperSize': paperSize,
         if (isPaged && landscape) 'landscape': landscape,
         ...unknownFields,
@@ -248,6 +253,7 @@ class PageProps {
         layout: j?['layout'] as String? ?? 'canvas',
         paperSize: j?['paperSize'] as String? ?? 'A4',
         landscape: j?['landscape'] as bool? ?? false,
+        pdfPageHeight: (j?['pdfPageHeight'] as num?)?.toDouble() ?? 1403,
         unknownFields: {
           for (final e in (j ?? const {}).entries)
             if (!_known.contains(e.key)) e.key: e.value,
