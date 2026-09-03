@@ -62,6 +62,32 @@ void main() {
     expect(build['run'], contains('--dart-define=OPENOTE_REPOSITORY='));
   });
 
+  test('Windows package cache avoids the hidden AppData path', () {
+    final steps = workflow('ci.yml')['jobs']['windows']['steps'] as List;
+    final flutter =
+        steps.singleWhere((s) => s['uses'] == 'subosito/flutter-action@v2');
+    expect(flutter['with']['pub-cache-path'],
+        r'${{ runner.temp }}/openote-pub-cache');
+  });
+
+  test('Windows writing services use standard C++20 coroutines', () {
+    final runner = File('windows/runner/CMakeLists.txt').readAsStringSync();
+    expect(
+        runner,
+        contains(
+            r'target_compile_features(${BINARY_NAME} PRIVATE cxx_std_20)'));
+    expect(runner, isNot(contains('/await')));
+    expect(
+        runner,
+        isNot(
+            contains('_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS')));
+    final writing =
+        File('windows/runner/writing_services.cpp').readAsStringSync();
+    final standardHeader = writing.indexOf('#include <coroutine>');
+    expect(standardHeader, greaterThanOrEqualTo(0));
+    expect(standardHeader, lessThan(writing.indexOf('#include <winrt/')));
+  });
+
   test('Windows and Linux targets remain, Apple target is removed', () {
     expect(File('windows/CMakeLists.txt').existsSync(), true);
     expect(File('linux/CMakeLists.txt').existsSync(), true);

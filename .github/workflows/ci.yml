@@ -68,6 +68,8 @@ jobs:
         with:
           flutter-version: 3.44.8
           cache: true
+          # Cargokit's symlink resolver cannot traverse hidden AppData folders.
+          pub-cache-path: '${{ runner.temp }}/openote-pub-cache'
 
       - name: Test Rust core
         working-directory: rust/onote_core

@@ -1,6 +1,8 @@
 #include "writing_services.h"
 #include <windows.h>
 #include <spellcheck.h>
+// Select standard coroutines before C++/WinRT checks the library feature macro.
+#include <coroutine>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.UI.Input.Inking.h>

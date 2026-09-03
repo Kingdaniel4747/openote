@@ -23,6 +23,10 @@ add_executable(${BINARY_NAME} WIN32
 # that need different build settings.
 apply_standard_settings(${BINARY_NAME})
 
+# C++/WinRT needs standard coroutines with current MSVC. Keep this runner-only
+# so Flutter, third-party plugins and the Linux target retain their settings.
+target_compile_features(${BINARY_NAME} PRIVATE cxx_std_20)
+
 # C++/WinRT writing workers catch COM/STL failures and return them to Flutter.
 # Enable STL exceptions for the runner, leaving all plugin flags untouched.
 get_target_property(RUNNER_DEFINITIONS ${BINARY_NAME} COMPILE_DEFINITIONS)
