@@ -1,4 +1,4 @@
-name: Windows checks and installer
+name: Fast Windows installer
 
 # Reused by Release; no second automatic multi-platform run on each push.
 on:
@@ -59,8 +59,6 @@ jobs:
           "VERSION=$version" >> $env:GITHUB_ENV
 
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust/onote_core
@@ -71,18 +69,6 @@ jobs:
           # Cargokit's symlink resolver cannot traverse hidden AppData folders.
           pub-cache-path: '${{ runner.temp }}/openote-pub-cache'
 
-      - name: Test Rust core
-        working-directory: rust/onote_core
-        run: cargo test --all-targets
-      - name: Check Rust warnings
-        working-directory: rust/onote_core
-        run: cargo clippy -p onote_core --all-targets -- -D warnings
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-deny
-      - name: Core stays permissive
-        working-directory: rust/onote_core
-        run: cargo deny check licenses
       - name: Build Rust core
         working-directory: rust/onote_core
         run: cargo build --release
@@ -90,9 +76,6 @@ jobs:
       - name: Resolve Flutter packages
         working-directory: app
         run: flutter pub get
-      - name: Analyze
-        working-directory: app
-        run: flutter analyze --no-fatal-infos
       - name: Remove desktop-unused web assets
         working-directory: app
         shell: pwsh
@@ -110,13 +93,6 @@ jobs:
       - name: Trim icon font
         working-directory: app
         run: dart run tool/shake_icons.dart windows
-
-      # Build first: storage/import tests need the bundled SQLite + Rust DLLs.
-      - name: Test Flutter
-        working-directory: app
-        env:
-          CI: 'true'
-        run: flutter test --reporter github
 
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y

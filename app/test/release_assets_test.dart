@@ -31,7 +31,7 @@ void main() {
         reason: 'Linux is independent of Windows');
   });
 
-  test('reusable Windows build tests and uploads only a setup EXE', () {
+  test('reusable Windows build publishes quickly without waiting for tests', () {
     final ci = workflow('ci.yml');
     expect((ci['on'] as Map).keys,
         unorderedEquals(['workflow_call', 'workflow_dispatch']));
@@ -40,9 +40,11 @@ void main() {
     expect(jobs['windows']['runs-on'], 'windows-latest');
     final steps = jobs['windows']['steps'] as List;
     expect(
-        steps.any((s) => s['run'] == 'flutter test --reporter github'), true);
-    expect(steps.any((s) => s['run'] == 'cargo test --all-targets'), true);
-    expect(steps.any((s) => s['run'] == 'cargo deny check licenses'), true);
+        steps.any((s) => s['run'] == 'flutter test --reporter github'), false);
+    expect(steps.any((s) => s['run'] == 'cargo test --all-targets'), false);
+    expect(steps.any((s) => s['run'] == 'cargo deny check licenses'), false);
+    expect(steps.any((s) => s['run'] == 'flutter analyze --no-fatal-infos'),
+        false);
     final upload =
         steps.singleWhere((s) => s['uses'] == 'actions/upload-artifact@v4');
     expect(upload['with']['path'], 'openote-*-windows-x64-setup.exe');
@@ -60,6 +62,23 @@ void main() {
     expect(
         build['run'], contains(r'--dart-define=OPENOTE_VERSION=$env:VERSION'));
     expect(build['run'], contains('--dart-define=OPENOTE_REPOSITORY='));
+  });
+
+  test('full checks run separately and never block the installer', () {
+    final tests = workflow('tests.yml');
+    expect((tests['on'] as Map).keys,
+        unorderedEquals(['push', 'workflow_dispatch']));
+    expect(tests['permissions']['contents'], 'read');
+    expect(tests['concurrency']['cancel-in-progress'], true);
+    final steps = tests['jobs']['tests']['steps'] as List;
+    expect(
+        steps.any((s) => s['run'] == 'flutter test --reporter github'), true);
+    expect(steps.any((s) => s['run'] == 'cargo test --all-targets'), true);
+    expect(steps.any((s) => s['run'] == 'cargo deny check licenses'), true);
+    expect(steps.any((s) => s['run'] == 'flutter analyze --no-fatal-infos'),
+        true);
+    expect(steps.any((s) => s['run'] == 'flutter build windows --debug'),
+        true);
   });
 
   test('Windows package cache avoids the hidden AppData path', () {

@@ -1,6 +1,7 @@
 name: Release
 
-# Each branch push builds and publishes a new Windows version after all tests.
+# Each branch push builds and publishes a Windows installer immediately.
+# The long test suite runs independently in tests.yml and cannot block the EXE.
 # Linux is still an explicit manual build. Tags do not trigger another run.
 on:
   push:
