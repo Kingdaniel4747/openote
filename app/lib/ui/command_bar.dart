@@ -24,6 +24,7 @@ import 'compacting_toolbar.dart';
 import 'font_picker.dart';
 import 'insert_catalog.dart';
 import 'object_face.dart';
+import 'object_row.dart';
 import 'settings_dialog.dart';
 import 'update_dialog.dart';
 import '../theme/tokens.dart';
@@ -76,15 +77,9 @@ class _CommandBarState extends State<CommandBar> {
     super.dispose();
   }
 
-  /// **Three, forever.** Home is write and format, Insert is add, Draw is
-  /// ink. Actual stylus drawing also opens Draw; hover never changes tabs.
-  ///
-  /// There used to be a fourth, View, and a fifth that appeared while an
-  /// equation was open and dragged the student onto it. The equation's
-  /// palette is on the object row now, where it arrives without moving
-  /// anybody; View's page controls are on the same row, and the four
-  /// preferences it also held were already in Settings.
-  static const _tabs = ['Home', 'Insert', 'Draw'];
+  /// Home is write and format, Insert is add, Draw is ink, and View owns page
+  /// appearance and zoom. Actual stylus drawing opens Draw; hover does not.
+  static const _tabs = ['Home', 'Insert', 'Draw', 'View'];
 
   AppState get app => widget.app;
 
@@ -123,24 +118,6 @@ class _CommandBarState extends State<CommandBar> {
                     tooltip: 'Update to ${app.updateAvailable!.version}…',
                     visualDensity: VisualDensity.compact,
                     onPressed: () => showUpdateDialog(context, app),
-                  ),
-                ),
-              // Current-tool escape hatch: visible whenever not in Select.
-              if (app.tool != Tool.select)
-                ToolbarControl(
-                  width: 98,
-                  icon: _toolIcon(app.tool),
-                  label: 'Done',
-                  onPressed: () => app.setTool(Tool.select),
-                  inline: Padding(
-                    padding: const EdgeInsets.only(right: 4),
-                    child: ActionChip(
-                      avatar: Icon(_toolIcon(app.tool), size: 16),
-                      label:
-                          const AppText('Done', style: TextStyle(fontSize: 11)),
-                      visualDensity: VisualDensity.compact,
-                      onPressed: () => app.setTool(Tool.select),
-                    ),
                   ),
                 ),
               // Study: the due count is the whole nudge, so it's on the
@@ -414,8 +391,11 @@ class _CommandBarState extends State<CommandBar> {
                       child: SingleChildScrollView(
                         key: ValueKey(_tab),
                         scrollDirection: Axis.horizontal,
-                        child:
-                            _tab == 2 ? _drawRow(context) : _homeRow(context),
+                        child: _tab == 2
+                            ? _drawRow(context)
+                            : _tab == 3
+                                ? PageFace(app: app)
+                                : _homeRow(context),
                       ),
                     ),
             ),
@@ -424,14 +404,6 @@ class _CommandBarState extends State<CommandBar> {
       ),
     );
   }
-
-  static IconData _toolIcon(Tool t) => switch (t) {
-        Tool.pen => Icons.edit_outlined,
-        Tool.highlighter => Icons.border_color_outlined,
-        Tool.eraser => Icons.cleaning_services_outlined,
-        Tool.text => Icons.text_fields,
-        _ => Icons.near_me_outlined,
-      };
 
   /// Every item in the Export menu comes through here.
   ///
@@ -961,19 +933,6 @@ class _CommandBarState extends State<CommandBar> {
             ),
           ),
         ]),
-      ),
-      const _Div(),
-      // Pen proximity → pen tool. On by default because it is what a pen
-      // means; the toggle exists for people who use the pen as a pointer.
-      IconButton(
-        icon: const Icon(Icons.draw_outlined, size: 18),
-        tooltip: 'Bringing the pen near the page switches to inking.\n'
-            'Pick another tool while the pen hovers and it sticks until the\n'
-            'pen leaves and comes back. The pen\'s tail (or its barrel\n'
-            'button, held while drawing) erases.',
-        visualDensity: VisualDensity.compact,
-        isSelected: app.penProximitySwitch,
-        onPressed: () => app.setPenProximitySwitch(!app.penProximitySwitch),
       ),
       const SizedBox(width: 4),
     ]);

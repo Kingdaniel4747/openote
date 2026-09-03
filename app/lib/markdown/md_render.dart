@@ -865,7 +865,7 @@ class _ExternalLink extends StatelessWidget {
                     decoration: TextDecoration.underline,
                     decorationColor: color)),
             TextSpan(
-                text: ' ↗',
+                text: ' \u2197',
                 style: base.copyWith(
                     color: color, fontSize: (base.fontSize ?? 14) * 0.78)),
           ])),

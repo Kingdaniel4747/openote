@@ -48,7 +48,7 @@ void main() {
       // there is no way to tell those apart from text alone. Rule 1 (convert
       // exactly the selection) is the escape hatch, asserted just below.
       expect(at('word2764', 8)!.text, 'wor\u{D2764}');
-      expect(over('word2764', 4, 8)!.text, 'word❤');
+      expect(over('word2764', 4, 8)!.text, 'word\u2764');
     });
   });
 

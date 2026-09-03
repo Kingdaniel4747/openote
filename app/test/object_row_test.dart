@@ -177,8 +177,8 @@ void main() {
     });
   });
 
-  group('the chrome does not move', () {
-    testWidgets('same height, and the tabs in the same pixels, in every state',
+  group('the contextual row only spends space when it is needed', () {
+    testWidgets('equation controls appear below tabs and leave again',
         (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       tester.view.physicalSize = const Size(2600, 1200);
@@ -201,7 +201,7 @@ void main() {
       await tester.pumpAndSettle();
 
       Map<String, double> tabXs() => {
-            for (final t in ['Home', 'Insert', 'Draw'])
+            for (final t in ['Home', 'Insert', 'Draw', 'View'])
               t: tester.getRect(find.text(t)).left,
           };
       double pageTop() =>
@@ -217,8 +217,8 @@ void main() {
       expect(find.byType(MathBar), findsOneWidget);
       expect(tabXs(), restingTabs,
           reason: 'every tab in the same pixel it was in');
-      expect(pageTop(), restingTop,
-          reason: 'the page did not move, which is the whole design');
+      expect(pageTop(), restingTop + kObjectRowHeight,
+          reason: 'only the active equation uses the contextual row');
 
       // …and back again.
       app.clearActiveMath('test');
@@ -243,7 +243,7 @@ void main() {
         ),
       ));
       await tester.pumpAndSettle();
-      expect(tester.getSize(find.byType(ObjectRow)).height, kObjectRowHeight);
+      expect(tester.getSize(find.byType(ObjectRow)).height, 0);
       expect(kObjectRowHeight, 36);
     });
   });
@@ -259,7 +259,7 @@ void main() {
         home: Scaffold(
           body: ListenableBuilder(
             listenable: app,
-            builder: (_, __) => ObjectRow(app: app),
+            builder: (_, __) => PageFace(app: app),
           ),
         ),
       ));

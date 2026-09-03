@@ -4534,11 +4534,11 @@ class AppState extends ChangeNotifier
   /// option" half of the ask.
   bool penProximitySwitch = true;
 
-  bool startFullscreen = true;
+  bool startMaximized = true;
 
-  void setStartFullscreen(bool value) {
-    startFullscreen = value;
-    _repo.setSetting('startFullscreen', value);
+  void setStartMaximized(bool value) {
+    startMaximized = value;
+    _repo.setSetting('startMaximized', value);
     notifyListeners();
   }
 
@@ -5794,8 +5794,9 @@ class AppState extends ChangeNotifier
     }
     final pp = _repo.getSetting('penProximity');
     if (pp is bool) penProximitySwitch = pp;
-    final fs = _repo.getSetting('startFullscreen');
-    if (fs is bool) startFullscreen = fs;
+    final maximized = _repo.getSetting('startMaximized') ??
+        _repo.getSetting('startFullscreen');
+    if (maximized is bool) startMaximized = maximized;
     final eraser = _repo.getSetting('eraserSize');
     if (eraser is num && eraser.isFinite) {
       eraserSize = eraser.toDouble().clamp(4.0, 100.0);
@@ -8406,7 +8407,7 @@ class AppState extends ChangeNotifier
     // instead of only after you navigate away.
     study.noteContentChanged();
     _saveDebounce?.cancel();
-    _saveDebounce = Timer(const Duration(milliseconds: 700), flushSave);
+    _saveDebounce = Timer(const Duration(seconds: 1), flushSave);
     // "Would need to all be automated by default as most people wont remeber
     // to save and push changes." Every edit pushes the git timer out, so a
     // cycle runs once writing stops rather than in the middle of a sentence.

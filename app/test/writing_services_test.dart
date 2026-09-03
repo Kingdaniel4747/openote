@@ -22,7 +22,8 @@ void main() {
         ];
       return null;
     });
-    final errors = await WritingServices.checkText('😀 Feler', 'de-DE');
+    final errors =
+        await WritingServices.checkText('\u{1F600} Feler', 'de-DE');
     expect(errors, [const TextRange(start: 3, end: 7)]);
     expect(calls.first.arguments['language'], 'de-DE');
     expect(calls.last.method, 'cancel');
@@ -57,7 +58,7 @@ void main() {
   }, skip: !Platform.isWindows);
 
   test('masking markdown does not shift German or emoji offsets', () {
-    const text = '😀 Deutsch `code_wrong` und Feler';
+    const text = '\u{1F600} Deutsch `code_wrong` und Feler';
     final masked = SpellChecker.proseForChecking(text);
     expect(masked.length, text.length);
     expect(masked.indexOf('Feler'), text.indexOf('Feler'));

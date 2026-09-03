@@ -30,6 +30,7 @@ class AppText extends StatelessWidget {
 }
 
 const german = <String, String>{
+  'View': 'Ansicht',
   'Settings': 'Einstellungen',
   'Settings…': 'Einstellungen…',
   'Appearance': 'Darstellung',
@@ -41,8 +42,10 @@ const german = <String, String>{
   'Off': 'Aus',
   'Interface language': 'Sprache der Oberfläche',
   'Writing language': 'Schreibsprache',
-  'Start in full screen': 'Im Vollbild starten',
-  'Toggle full screen (F11)': 'Vollbild umschalten (F11)',
+  'Start maximized': 'Maximiert starten',
+  'Maximize / restore (F11)': 'Maximieren / wiederherstellen (F11)',
+  'Maximized mode keeps the Windows taskbar available.':
+      'Im maximierten Modus bleibt die Windows-Taskleiste erreichbar.',
   'Writing and drawing': 'Schreiben und Zeichnen',
   'Spell check': 'Rechtschreibung prüfen',
   'Check handwriting': 'Handschrift prüfen',
@@ -106,8 +109,6 @@ const german = <String, String>{
   'Minimize': 'Minimieren',
   'Maximize / restore': 'Maximieren / wiederherstellen',
   'Close Openote': 'Openote schließen',
-  'Full screen (F11)': 'Vollbild (F11)',
-  'Exit full screen (F11)': 'Vollbild verlassen (F11)',
   'Opening Openote…': 'Openote wird geladen…',
   'Saving and closing…': 'Wird gespeichert und geschlossen…',
   'Please wait. Your notes are being saved.':
@@ -120,7 +121,6 @@ const german = <String, String>{
       'PDF konnte nicht geladen werden. Bitte erneut versuchen.',
   'PDF editor (pages only)': 'PDF-Bearbeitung (nur Seiten)',
   'PDF printout': 'PDF-Ausdruck',
-  'One page per slide': 'Eine Seite pro PDF-Seite',
   'PDF card': 'PDF-Anhang',
   'PDF pages only': 'Nur PDF-Seiten',
   'Only write on PDF pages': 'Nur auf PDF-Seiten schreiben',
@@ -158,8 +158,6 @@ const german = <String, String>{
       'Aus – Claude oder andere KI-Assistenten verbinden.',
   'Everything has a key — the full list.  (Ctrl+/)':
       'Alle Tastenkürzel anzeigen.  (Strg+/)',
-  'Window buttons stay beside Settings, including in full screen.':
-      'Fensterknöpfe stehen oben neben den Einstellungen, auch im Vollbild.',
   'Local Windows language packs are required. No notes are uploaded.':
       'Lokale Windows-Sprachpakete werden benötigt. Es werden keine Notizen hochgeladen.',
   'Recognition may misread handwriting; marks are suggestions, not corrections.':

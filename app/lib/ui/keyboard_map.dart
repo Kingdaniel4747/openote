@@ -70,7 +70,7 @@ const List<KeySection> keyboardMap = [
         'Tag the line: to-do, important, question, remember, definition'),
     KeyBinding('Ctrl+V',
         'Paste — a copied image lands on the page as a picture'),
-    KeyBinding('Alt+X', 'Character ↔ its U+ code, either direction'),
+    KeyBinding('Alt+X', 'Character to or from its U+ code'),
     KeyBinding('( " * … with text selected',
         'Wraps the selection instead of replacing it'),
   ]),

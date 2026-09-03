@@ -326,7 +326,7 @@ String relativeWhen(DatedItem item, DateTime now) {
 /// A time of day as a student writes it: `4pm`, `4:30pm`, `12am`.
 ///
 /// 12-hour with no space and no leading zero, and the `:00` dropped on the
-/// hour, because that is the form in the design's mock ("🔔 Re-read the proof
+/// hour, because that is the form in the design's reminder mock ("Re-read the proof
 /// of 2.7 — 4pm") and because a planner row is scanned, not read.
 ///
 /// Not locale-aware: a 24-hour locale gets 12-hour clock times. That is a known

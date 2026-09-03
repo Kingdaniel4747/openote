@@ -112,12 +112,9 @@ void main() {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     await pump(tester);
     expect(find.text('Maths'), findsNothing);
-    for (final t in ['Home', 'Insert', 'Draw']) {
+    for (final t in ['Home', 'Insert', 'Draw', 'View']) {
       expect(find.text(t), findsOneWidget, reason: '$t should be there');
     }
-    expect(find.text('View'), findsNothing,
-        reason: "the page's own controls are on the object row, and the four "
-            'preferences View also held were already in Settings');
   });
 
   testWidgets('the palette arrives WITHOUT the student being moved',
@@ -175,8 +172,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(MathBar), findsNothing,
         reason: 'buttons that act on nothing are worse than no buttons');
-    expect(find.byType(PageFace), findsOneWidget,
-        reason: 'the row is the page\'s again, not blank');
+    expect(find.byType(PageFace), findsNothing,
+        reason: 'page controls stay in View instead of occupying another row');
     settle();
   });
 

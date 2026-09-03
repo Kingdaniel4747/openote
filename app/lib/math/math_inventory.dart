@@ -518,7 +518,7 @@ final List<MathItem> _compare = [
   // far more often than it is a left arrow, and the shortcut turned one into
   // the other silently. `->` stays: `x ->` is not otherwise valid maths.
   _symbol(id: 'gets', cat: MathCat.compare, name: 'left arrow', label: '←', tex: r'\leftarrow', cls: MClass.rel),
-  _symbol(id: 'leftrightarrow', cat: MathCat.compare, name: 'both ways', label: '↔', tex: r'\leftrightarrow', cls: MClass.rel),
+  _symbol(id: 'leftrightarrow', cat: MathCat.compare, name: 'both ways', label: '\u2194', tex: r'\leftrightarrow', cls: MClass.rel),
   _symbol(id: 'implies', cat: MathCat.compare, name: 'implies', label: '⇒', tex: r'\Rightarrow', cls: MClass.rel, aliases: ['therefore', 'so', 'then'], typeIt: '=>'),
   _symbol(id: 'impliedby', cat: MathCat.compare, name: 'is implied by', label: '⇐', tex: r'\Leftarrow', cls: MClass.rel),
   _symbol(id: 'iff', cat: MathCat.compare, name: 'if and only if', label: '⇔', tex: r'\Leftrightarrow', cls: MClass.rel, aliases: ['iff', 'equivalent']),
@@ -788,9 +788,9 @@ final List<MathItem> _extras = [
   _symbol(id: 'uparrow', cat: MathCat.compare, name: 'up arrow', label: '↑', tex: r'\uparrow', cls: MClass.rel),
   _symbol(id: 'downarrow', cat: MathCat.compare, name: 'down arrow', label: '↓', tex: r'\downarrow', cls: MClass.rel),
   _symbol(id: 'longrightarrow', cat: MathCat.compare, name: 'long arrow', label: '⟶', tex: r'\longrightarrow', cls: MClass.rel),
-  _symbol(id: 'hookrightarrow', cat: MathCat.compare, name: 'injects into', label: '↪', tex: r'\hookrightarrow', cls: MClass.rel),
-  _symbol(id: 'nearrow', cat: MathCat.compare, name: 'increasing', label: '↗', tex: r'\nearrow', cls: MClass.rel, aliases: ['rising']),
-  _symbol(id: 'searrow', cat: MathCat.compare, name: 'decreasing', label: '↘', tex: r'\searrow', cls: MClass.rel, aliases: ['falling']),
+  _symbol(id: 'hookrightarrow', cat: MathCat.compare, name: 'injects into', label: '\u21AA', tex: r'\hookrightarrow', cls: MClass.rel),
+  _symbol(id: 'nearrow', cat: MathCat.compare, name: 'increasing', label: '\u2197', tex: r'\nearrow', cls: MClass.rel, aliases: ['rising']),
+  _symbol(id: 'searrow', cat: MathCat.compare, name: 'decreasing', label: '\u2198', tex: r'\searrow', cls: MClass.rel, aliases: ['falling']),
   // Geometry and measurement.
   _symbol(id: 'measuredangle', cat: MathCat.geometry, name: 'measured angle', label: '∡', tex: r'\measuredangle'),
   _symbol(id: 'square-shape', cat: MathCat.geometry, name: 'square', label: '□', tex: r'\square', aliases: ['quadrilateral']),

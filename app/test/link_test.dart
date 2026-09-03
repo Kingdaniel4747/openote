@@ -27,7 +27,7 @@ void main() {
   /// The link is a WidgetSpan, so it shows up as its own Text.rich.
   Finder linkLabel(String label) => find.byWidgetPredicate((w) {
         if (w is! RichText) return false;
-        return w.text.toPlainText().startsWith('$label ↗');
+        return w.text.toPlainText().startsWith('$label \u2197');
       });
 
   testWidgets('an explicit [label](url) renders as a link', (t) async {

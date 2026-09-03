@@ -61,6 +61,7 @@ enum PdfPlacement {
   /// not have the whole thing always open." Clicking the card opens the
   /// viewer, where the text is selectable.
   card,
+
   /// Fixed-size pages: the PDF is the paper, without extra drawing margins.
   pdfOnly,
 }
@@ -87,7 +88,11 @@ Future<PdfImportResult?> importPdfAsPages(
       first ??= result;
       pages += result.pages;
     }
-    return (pages: pages, sectionId: first?.sectionId, firstPageId: first?.firstPageId);
+    return (
+      pages: pages,
+      sectionId: first?.sectionId,
+      firstPageId: first?.firstPageId
+    );
   }
   final file = await openFile(acceptedTypeGroups: [typeGroup]);
   if (file == null) return null;
@@ -108,8 +113,10 @@ Future<PdfImportResult> importPdfFile(
 }) async {
   final nb = app.notebookId;
   if (nb == null) return (pages: 0, sectionId: null, firstPageId: null);
-  final separatePages = placement == PdfPlacement.pagePerSlide || placement == PdfPlacement.pdfOnly;
-  if (!separatePages && app.pageId == null) {
+  final separatePages = placement == PdfPlacement.pagePerSlide;
+  if (placement != PdfPlacement.pdfOnly &&
+      !separatePages &&
+      app.pageId == null) {
     // No page open — make one and put it there.
     //
     // This used to silently switch to one-page-per-slide, which is a different
@@ -127,18 +134,37 @@ Future<PdfImportResult> importPdfFile(
   final bytes = await File(path).readAsBytes();
   final doc = await PdfRuntime.open(bytes, displayName);
   try {
-    final pdfHash = separatePages
-        ? app.importBlob(nb, bytes, 'application/pdf')
-        : app.addBlob(bytes, 'application/pdf');
     final title =
         displayName.replaceAll(RegExp(r'\.pdf$', caseSensitive: false), '');
 
+    // PDF editor mode is one Openote page in the current section. Further
+    // PDFs selected in the same picker append to that page instead of creating
+    // one section or one navigator page per PDF sheet.
+    if (placement == PdfPlacement.pdfOnly && !app.pageProps.pdfOnly) {
+      final sectionId = app.sectionOf(app.pageId) ?? app.activeSectionId;
+      await app.addPage(sectionId: sectionId);
+      if (app.pageId != null) {
+        app.renameNode(app.pageId!, title.isEmpty ? 'PDF' : title);
+        app.pendingTitleEdit = null;
+      }
+    }
+    if (app.pageId == null) {
+      return (pages: 0, sectionId: null, firstPageId: null);
+    }
+
+    final pdfHash = separatePages
+        ? app.importBlob(nb, bytes, 'application/pdf')
+        : app.addBlob(bytes, 'application/pdf');
+
     if (placement == PdfPlacement.card) {
-      return _importAsCard(app, doc, pdfHash,
-          title.isEmpty ? displayName : title);
+      return _importAsCard(
+          app, doc, pdfHash, title.isEmpty ? displayName : title);
     }
     if (placement == PdfPlacement.currentPage) {
       return await _importOntoCurrentPage(app, doc, pdfHash, onProgress);
+    }
+    if (placement == PdfPlacement.pdfOnly) {
+      return await _importIntoPdfPage(app, doc, pdfHash, onProgress);
     }
 
     // A section per PDF: a 60-slide deck dumped into an existing section
@@ -164,7 +190,8 @@ Future<PdfImportResult> importPdfFile(
       final end = (start + chunkSize).clamp(0, total);
       final batch = <({PdfPage page, String? text, int index})>[];
       for (var i = start; i < end; i++) {
-        batch.add((page: doc.pages[i], text: await _textOf(doc.pages[i]), index: i));
+        batch.add(
+            (page: doc.pages[i], text: await _textOf(doc.pages[i]), index: i));
       }
 
       app.importBatch(nb, () {
@@ -189,8 +216,10 @@ Future<PdfImportResult> importPdfFile(
                   x: 0, y: 0, w: w, background: true)
                 ..h = h
             ],
-            PageProps(pageWidth: w,
-                layout: placement == PdfPlacement.pdfOnly ? 'pdf' : 'canvas', pdfPageHeight: h),
+            PageProps(
+                pageWidth: w,
+                layout: placement == PdfPlacement.pdfOnly ? 'pdf' : 'canvas',
+                pdfPageHeight: h),
           );
           made++;
         }
@@ -245,7 +274,9 @@ Future<String?> _textOf(PdfPage page) async {
   try {
     // Hidden, but present in the page JSON, so the existing brute-force
     // notebook search finds slides by their words.
-    return (await page.loadText().timeout(const Duration(seconds: 8)))?.fullText.trim();
+    return (await page.loadText().timeout(const Duration(seconds: 8)))
+        ?.fullText
+        .trim();
   } on TimeoutException {
     // Fail visibly instead of waiting once per remaining page of a stalled worker.
     rethrow;
@@ -339,6 +370,59 @@ Future<PdfImportResult> _importOntoCurrentPage(
   }
   await app.flushSave();
   return (pages: made, sectionId: null, firstPageId: app.pageId);
+}
+
+/// Put every sheet of a PDF into one continuous, marginless Openote page.
+/// The PDF blocks are fixed backgrounds; ink remains the only editable layer.
+Future<PdfImportResult> _importIntoPdfPage(
+  AppState app,
+  PdfDocument doc,
+  String pdfHash,
+  void Function(int done, int total)? onProgress,
+) async {
+  const width = kPdfPageWidth;
+  var y = 0.0;
+  for (final b in app.blocks) {
+    final bottom = b.y + (b.h ?? 0);
+    if (bottom > y) y = bottom;
+  }
+
+  app.pushUndo();
+  app.pageProps
+    ..layout = 'pdf'
+    ..background = 'blank'
+    ..pageWidth = width;
+
+  final firstY = y;
+  Block? first;
+  for (var i = 0; i < doc.pages.length; i++) {
+    final page = doc.pages[i];
+    final text = await _textOf(page);
+    final height = page.height / page.width * width;
+    final block = app.addBlock(
+      _slideBlock(pdfHash, page, i, text,
+          x: 0, y: y, w: width, background: true)
+        ..h = height,
+      recordUndo: false,
+    );
+    first ??= block;
+    y += height;
+    onProgress?.call(i + 1, doc.pages.length);
+    await Future<void>.delayed(const Duration(milliseconds: 2));
+  }
+
+  app.pageProps.pdfPageHeight = y <= 0 ? 1.0 : y;
+  app.markDirty();
+  app.select(null);
+  if (first != null) {
+    app.canvas.centerOn(Offset(width / 2, firstY + 200));
+  }
+  await app.flushSave();
+  return (
+    pages: doc.pages.length,
+    sectionId: app.sectionOf(app.pageId),
+    firstPageId: app.pageId,
+  );
 }
 
 /// Where a printout should start, and which blocks have to move to make room.

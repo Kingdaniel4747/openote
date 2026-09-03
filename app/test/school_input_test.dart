@@ -63,7 +63,7 @@ void main() {
       builder: window == null
           ? null
           : (context, child) => WindowsWindowFrame(
-              controller: window, startFullscreen: false, child: child!),
+              controller: window, startMaximized: false, child: child!),
       home: Scaffold(
           body: ListenableBuilder(
               listenable: app,

@@ -95,6 +95,7 @@ class _PageCanvasState extends State<PageCanvas> {
   // Two-finger touch pinch tracking.
   final Map<int, Offset> _touches = {};
   double? _pinchBaseDist;
+  Offset? _pinchLastFocal;
   double _pzLastScale = 1.0;
 
   /// The pointer of a trackpad pan/pinch a block has claimed for itself
@@ -602,6 +603,7 @@ class _PageCanvasState extends State<PageCanvas> {
     if (_touches.length == 2) {
       final pts = _touches.values.toList();
       _pinchBaseDist = (pts[0] - pts[1]).distance;
+      _pinchLastFocal = (pts[0] + pts[1]) / 2;
     }
   }
 
@@ -612,20 +614,23 @@ class _PageCanvasState extends State<PageCanvas> {
       final d = (pts[0] - pts[1]).distance;
       final focal = (pts[0] + pts[1]) / 2;
       if (_pinchBaseDist! > 0 && d > 0) {
-        controller.zoomAt(focal, d / _pinchBaseDist!);
+        final previous = _pinchLastFocal ?? focal;
+        controller.transformAt(previous, d / _pinchBaseDist!, focal - previous);
         _pinchBaseDist = d;
+        _pinchLastFocal = focal;
       }
-      setState(() {});
     } else if (_touches.length == 1) {
       controller.panBy(e.localPosition - _lastScreen);
       _lastScreen = e.localPosition;
-      setState(() {});
     }
   }
 
   void _touchUp(PointerUpEvent e) {
     _touches.remove(e.pointer);
-    if (_touches.length < 2) _pinchBaseDist = null;
+    if (_touches.length < 2) {
+      _pinchBaseDist = null;
+      _pinchLastFocal = null;
+    }
     if (_touches.length == 1) _lastScreen = _touches.values.first;
   }
 
@@ -669,6 +674,7 @@ class _PageCanvasState extends State<PageCanvas> {
       if (_touches.length == 2) {
         final pts = _touches.values.toList();
         _pinchBaseDist = (pts[0] - pts[1]).distance;
+        _pinchLastFocal = (pts[0] + pts[1]) / 2;
         _mode = _DragMode.none;
         return;
       }
@@ -700,10 +706,11 @@ class _PageCanvasState extends State<PageCanvas> {
         final d = (pts[0] - pts[1]).distance;
         final focal = (pts[0] + pts[1]) / 2;
         if (_pinchBaseDist! > 0 && d > 0) {
-          controller.zoomAt(focal, d / _pinchBaseDist!);
+          final previous = _pinchLastFocal ?? focal;
+          controller.transformAt(previous, d / _pinchBaseDist!, focal - previous);
           _pinchBaseDist = d;
+          _pinchLastFocal = focal;
         }
-        setState(() {});
         return;
       }
     }
@@ -712,7 +719,6 @@ class _PageCanvasState extends State<PageCanvas> {
     switch (_mode) {
       case _DragMode.pan:
         controller.panBy(delta);
-        setState(() {});
       case _DragMode.pending:
         if ((e.localPosition - _downScreen).distance > 5) {
           if (_downKind == PointerDeviceKind.touch) {
@@ -744,7 +750,10 @@ class _PageCanvasState extends State<PageCanvas> {
   void _selectUp(PointerUpEvent e) {
     if (_windowsInkPointer == e.pointer) { _inkUp(e); return; }
     _touches.remove(e.pointer);
-    if (_touches.length < 2) _pinchBaseDist = null;
+    if (_touches.length < 2) {
+      _pinchBaseDist = null;
+      _pinchLastFocal = null;
+    }
     final mode = _mode;
     _mode = _DragMode.none;
     switch (mode) {
@@ -1343,12 +1352,9 @@ class _PageCanvasState extends State<PageCanvas> {
       },
       onPointerPanZoomUpdate: (e) {
         if (_panZoomClaimedBy == e.pointer) return;
-        if (e.scale != 1.0) {
-          controller.zoomAt(e.localPosition, e.scale / _pzLastScale);
-          _pzLastScale = e.scale;
-        }
-        if (e.panDelta != Offset.zero) controller.panBy(e.panDelta);
-        setState(() {});
+        controller.transformAt(
+            e.localPosition, e.scale / _pzLastScale, e.panDelta);
+        _pzLastScale = e.scale;
       },
       onPointerPanZoomEnd: (e) {
         if (_panZoomClaimedBy == e.pointer) _panZoomClaimedBy = null;

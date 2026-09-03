@@ -365,15 +365,6 @@ final List<InsertGroup> kInsertGroups = [
           run: (c, a, at) => importPdfWithProgress(c, a, placement: PdfPlacement.pdfOnly),
         ),
         InsertItem(
-          id: 'pdf-pages',
-          icon: Icons.auto_stories_outlined,
-          label: 'One page per slide',
-          opensPicker: true,
-          size: Size.zero,
-          run: (c, a, at) =>
-              importPdfWithProgress(c, a, placement: PdfPlacement.pagePerSlide),
-        ),
-        InsertItem(
           id: 'pdf-card',
           icon: Icons.branding_watermark_outlined,
           label: 'As a card — open in a popup',

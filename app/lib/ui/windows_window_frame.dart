@@ -12,11 +12,9 @@ class WindowsWindowController extends ChangeNotifier {
       : enabled = enabled ?? Platform.isWindows;
   static const channel = MethodChannel('openote/window_controls');
   final bool enabled;
-  bool fullscreen = false;
   bool customChrome = false;
   bool _disposed = false;
   bool closing = false;
-  Future<void> _pending = Future.value();
 
   Future<void> configureChrome(Color color) async {
     if (!enabled || _disposed) return;
@@ -38,7 +36,7 @@ class WindowsWindowController extends ChangeNotifier {
   }
 
   Future<void> beginDrag() async {
-    if (!enabled || fullscreen) return;
+    if (!enabled) return;
     try {
       await channel.invokeMethod<void>('drag');
     } on MissingPluginException {/* Old runner. */} on PlatformException {
@@ -48,31 +46,11 @@ class WindowsWindowController extends ChangeNotifier {
 
   Future<void> maximize() async {
     if (!enabled) return;
-    if (fullscreen) await setFullscreen(false);
     try {
       await channel.invokeMethod<void>('maximize');
     } on MissingPluginException {/* Old runner. */} on PlatformException {
       /* Leave window in place. */
     }
-  }
-
-  Future<void> setFullscreen(bool value) {
-    if (!enabled || _disposed) return Future.value();
-    // Serialize fast F11/button presses so the final native and Flutter state
-    // agree. A missing bridge (tests/old runners) leaves the normal frame alone.
-    return _pending = _pending.then((_) async {
-      if (_disposed) return;
-      try {
-        final result = await channel.invokeMethod<bool>('setFullscreen', value);
-        if (_disposed) return;
-        fullscreen = result ?? false;
-        notifyListeners();
-      } on MissingPluginException {
-        // No custom frame: keep the OS caption and close button.
-      } on PlatformException {
-        // Keep the last confirmed state if Windows rejects the transition.
-      }
-    });
   }
 
   Future<void> minimize() async {
@@ -111,10 +89,10 @@ class WindowsWindowFrame extends StatefulWidget {
   const WindowsWindowFrame(
       {super.key,
       required this.child,
-      required this.startFullscreen,
+      required this.startMaximized,
       this.controller});
   final Widget child;
-  final bool startFullscreen;
+  final bool startMaximized;
   final WindowsWindowController? controller;
 
   static WindowsWindowController? of(BuildContext context) =>
@@ -162,14 +140,14 @@ class _WindowsWindowFrameState extends State<WindowsWindowFrame> {
       await _window.configureChrome(color);
       if (!mounted || _started) return;
       _started = true;
-      await _window.setFullscreen(widget.startFullscreen);
+      if (widget.startMaximized) await _window.maximize();
     });
   }
 
   bool _key(KeyEvent event) {
     if (event.logicalKey != LogicalKeyboardKey.f11) return false;
     if (event is KeyDownEvent) {
-      unawaited(_window.setFullscreen(!_window.fullscreen));
+      unawaited(_window.maximize());
     }
     return true;
   }
@@ -205,16 +183,8 @@ class WindowsCaptionButtons extends StatelessWidget {
       listenable: window,
       builder: (context, _) => Row(mainAxisSize: MainAxisSize.min, children: [
         _button(tr(context, 'Minimize'), Icons.minimize, window.minimize),
-        _button(
-            tr(
-                context,
-                window.fullscreen
-                    ? 'Exit full screen (F11)'
-                    : 'Maximize / restore'),
-            window.fullscreen ? Icons.fullscreen_exit : Icons.crop_square,
-            () => window.fullscreen
-                ? window.setFullscreen(false)
-                : window.maximize()),
+        _button(tr(context, 'Maximize / restore'), Icons.crop_square,
+            window.maximize),
         window.closing
             ? const SizedBox(
                 width: 36,

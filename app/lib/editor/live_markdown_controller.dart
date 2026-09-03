@@ -491,7 +491,7 @@ class LiveMarkdownController extends TextEditingController {
     return null;
   }
 
-  /// Surrogate-pair-safe neighbours: `**bold🙂**` must not lose half an emoji.
+  /// Surrogate-pair-safe neighbours must not split a supplementary character.
   static int _prevBoundary(String t, int at) {
     if (at <= 0) return 0;
     final i = at - 1;
@@ -1015,7 +1015,7 @@ class LiveMarkdownController extends TextEditingController {
   static String? _markerGlyph(String marker) {
     if (marker.startsWith('>')) return null;
     final m = marker.trimRight();
-    if (m.endsWith(']')) return m.contains(RegExp('[xX]')) ? '☑' : '☐';
+    if (m.endsWith(']')) return m.contains(RegExp('[xX]')) ? '\u2611' : '\u2610';
     if (RegExp(r'^\d').hasMatch(m)) return m; // `12.` keeps its number
     return '•';
   }
@@ -1211,7 +1211,7 @@ class LiveMarkdownController extends TextEditingController {
         // in it. Drawing only the ticked box meant a completed task lost both
         // the moment you clicked on the line — the comment above claimed the
         // parity that this line actually provides.
-        final done = glyph == '☑';
+        final done = glyph == '\u2611';
         _inline(
             line.substring(p.end),
             lineStart + p.end,

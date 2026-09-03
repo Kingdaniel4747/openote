@@ -44,7 +44,7 @@ void main() {
         (call) async {
       calls.add(call);
       if (call.method == 'customChrome') return true;
-      return call.method == 'setFullscreen' ? call.arguments : null;
+      return null;
     });
   });
   tearDown(() async {
@@ -67,7 +67,7 @@ void main() {
   });
 
   testWidgets(
-      'German shell keeps utilities in one titlebar above the three tabs',
+      'German shell keeps utilities in one titlebar above the four tabs',
       (t) async {
     t.view.physicalSize = const Size(1200, 900);
     t.view.devicePixelRatio = 1;
@@ -75,6 +75,7 @@ void main() {
     await t.pumpWidget(OpenoteApp(app: app));
     await t.pumpAndSettle();
     expect(find.text('Zeichnen'), findsOneWidget);
+    expect(find.text('Ansicht'), findsOneWidget);
     expect(find.byTooltip('Einstellungen…'), findsOneWidget);
     if (Platform.isWindows) {
       expect(find.byTooltip('Openote schließen'), findsOneWidget);

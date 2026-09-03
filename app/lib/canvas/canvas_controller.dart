@@ -26,10 +26,16 @@ class CanvasController extends ChangeNotifier {
 
   /// Zoom keeping the given screen point fixed (style guide §8.2).
   void zoomAt(Offset screenFocal, double factor) {
+    transformAt(screenFocal, factor, Offset.zero);
+  }
+
+  /// Apply one pan/zoom frame and repaint once. Trackpads used to notify after
+  /// zoom and again after pan, rebuilding a populated page twice per event.
+  void transformAt(Offset screenFocal, double factor, Offset panDelta) {
     final newScale = (scale * factor).clamp(minScale, maxScale);
     final pageFocal = screenToPage(screenFocal);
     scale = newScale;
-    offset = screenFocal - pageFocal * scale;
+    offset = screenFocal - pageFocal * scale + panDelta;
     clampToPage();
     notifyListeners();
   }
@@ -106,7 +112,8 @@ class CanvasController extends ChangeNotifier {
 
   /// Center a page-space point in the viewport (find, navigation).
   void centerOn(Offset pagePoint) {
-    offset = Offset(viewport.width / 2, viewport.height / 2) - pagePoint * scale;
+    offset =
+        Offset(viewport.width / 2, viewport.height / 2) - pagePoint * scale;
     clampToPage();
     notifyListeners();
   }
@@ -127,7 +134,8 @@ class CanvasController extends ChangeNotifier {
     scale = (sx < sy ? sx : sy).clamp(minScale, maxScale);
     offset = Offset(
       (viewport.width - pageBounds.width * scale) / 2 - pageBounds.left * scale,
-      (viewport.height - pageBounds.height * scale) / 2 - pageBounds.top * scale,
+      (viewport.height - pageBounds.height * scale) / 2 -
+          pageBounds.top * scale,
     );
     notifyListeners();
   }

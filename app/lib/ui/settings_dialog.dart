@@ -180,16 +180,15 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 ),
               ),
               if (WindowsWindowFrame.of(context) case final window?) ...[
-                _row('Start in full screen',
-                    _toggle(app.startFullscreen, app.setStartFullscreen)),
+                _row('Start maximized',
+                    _toggle(app.startMaximized, app.setStartMaximized)),
                 TextButton.icon(
-                  icon: const Icon(Icons.fullscreen),
-                  label: const AppText('Toggle full screen (F11)'),
-                  onPressed: () => window.setFullscreen(!window.fullscreen),
+                  icon: const Icon(Icons.crop_square),
+                  label: const AppText('Maximize / restore (F11)'),
+                  onPressed: window.maximize,
                 ),
                 const AppText(
-                    'Window buttons stay beside Settings, including in '
-                    'full screen.',
+                    'Maximized mode keeps the Windows taskbar available.',
                     style: TextStyle(fontSize: 11)),
               ],
               _section('Writing and drawing'),

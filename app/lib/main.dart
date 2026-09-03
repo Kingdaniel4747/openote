@@ -298,7 +298,7 @@ class _OpenoteAppState extends State<OpenoteApp> {
           supportedLocales: const [Locale('en'), Locale('de')],
           localizationsDelegates: GlobalMaterialLocalizations.delegates,
           builder: (context, child) => WindowsWindowFrame(
-            startFullscreen: widget.app.startFullscreen,
+            startMaximized: widget.app.startMaximized,
             child: Stack(children: [
               child ?? const SizedBox.shrink(),
               if (widget.closing) ...[

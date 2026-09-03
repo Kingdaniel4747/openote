@@ -1,32 +1,7 @@
-/// **The object row** — the band of chrome that belongs to what you are
-/// touching (plan: v0.23, "the object row").
+/// Contextual controls for the object currently being edited.
 ///
-/// The owner, on the old contextual Maths tab: *"moving the user to a new menu
-/// up there when entering maths mode without them doing anything is jarring
-/// and its best to not force any navigation."*
-///
-/// The whole answer, in one sentence:
-///
-/// > The tab row and the command row belong to the student. This row belongs
-/// > to the page — and the page lends it to an equation while the student is
-/// > writing one.
-///
-/// ## The invariant
-///
-/// **The chrome is 32 + 44 + 36 = 112 px, in every state of the app.** Nothing
-/// in it grows, shrinks, moves or re-points; only this row's *contents*
-/// change, and they cross-fade in place. The canvas's box therefore never
-/// changes size or position, so there is no compensating pan to write and no
-/// promise to keep by hand.
-///
-/// That is why the row is permanent rather than appearing with the equation.
-/// A row that slid in would push the page down 36 px, and putting the page
-/// back means panning it up 36 px — which `CanvasController.panBy` discards
-/// whenever the content is shorter than the viewport (`clampToPage`'s `axis()`
-/// returns 0 there). On a short page, or a zoomed-out one — exactly where a
-/// student is when they press Alt+= for their first equation — the page would
-/// jump. A conditional band cannot honour "don't move the user". A permanent
-/// one honours it by construction.
+/// Ordinary page controls live in the View tab, so this row is absent during
+/// normal writing and only appears while an equation needs its own controls.
 ///
 /// ## Hard rules for anything added here
 ///
@@ -65,6 +40,9 @@ class ObjectRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = context.surfaces;
     final face = objectFaceOf(app);
+    // Page controls live under View. Keep this contextual strip only while an
+    // equation needs it, so ordinary writing gets the space back.
+    if (face == ObjectFace.page) return const SizedBox.shrink();
     return Container(
       height: kObjectRowHeight,
       decoration: BoxDecoration(
@@ -226,8 +204,7 @@ class PageFace extends StatelessWidget {
           tooltip: 'Paper size',
           icon: const Icon(Icons.aspect_ratio, size: OnoteIcon.md),
           onSelected: (v) => v == '_rotate'
-              ? app.setPageLayout('paged',
-                  landscape: !app.pageProps.landscape)
+              ? app.setPageLayout('paged', landscape: !app.pageProps.landscape)
               : app.setPageLayout('paged', paper: v),
           itemBuilder: (_) => [
             for (final p in PaperSize.all)
@@ -360,11 +337,8 @@ class _WordCountState extends State<_WordCount> {
             height: 34,
             // Rounded UP and never zero: "0 min" reads as a failure, and
             // anything written at all takes a moment to read.
-            child: _row(
-                'Reading time',
-                stats.words == 0
-                    ? '—'
-                    : '${stats.readingMinutes} min'),
+            child: _row('Reading time',
+                stats.words == 0 ? '—' : '${stats.readingMinutes} min'),
           ),
         ],
         child: Padding(

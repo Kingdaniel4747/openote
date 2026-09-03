@@ -11,15 +11,8 @@ class WindowControls {
  public:
   WindowControls(HWND window, flutter::BinaryMessenger* messenger);
   ~WindowControls();
-  void FitMonitor();
-  bool fullscreen() const { return fullscreen_; }
-
  private:
-  bool SetFullscreen(bool value);
   HWND window_;
-  bool fullscreen_ = false;
-  LONG_PTR saved_style_ = 0;
-  WINDOWPLACEMENT placement_{};
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> channel_;
 };
 

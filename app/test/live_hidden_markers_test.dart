@@ -272,7 +272,7 @@ void main() {
     });
 
     test('an emoji at the edge is not torn in half', () {
-      const s = '**ok🙂**';
+      const s = '**ok\u{1F642}**';
       c.text = s;
       final next = c.markerAwareDelete(at(s, s.length), forward: false);
       expect(next?.text, '**ok**',

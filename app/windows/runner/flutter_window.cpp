@@ -31,6 +31,18 @@ bool FlutterWindow::OnCreate() {
   RegisterPlugins(flutter_controller_->engine());
   writing_services_ = std::make_unique<WritingServices>(flutter_controller_->engine()->messenger());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
+  // Windows' pen/touch rings cover the first pixels of a stroke. Openote draws
+  // its own ink feedback, so suppress the duplicate system visualization.
+  const BOOL feedback_off = FALSE;
+  const auto flutter_view = flutter_controller_->view()->GetNativeWindow();
+  SetWindowFeedbackSetting(flutter_view, FEEDBACK_TOUCH_CONTACTVISUALIZATION,
+                           0, sizeof(feedback_off), &feedback_off);
+  SetWindowFeedbackSetting(flutter_view, FEEDBACK_PEN_BARRELVISUALIZATION,
+                           0, sizeof(feedback_off), &feedback_off);
+  SetWindowFeedbackSetting(flutter_view, FEEDBACK_PEN_TAP,
+                           0, sizeof(feedback_off), &feedback_off);
+  SetWindowFeedbackSetting(flutter_view, FEEDBACK_PEN_PRESSANDHOLD,
+                           0, sizeof(feedback_off), &feedback_off);
   window_controls_ = std::make_unique<WindowControls>(
       GetHandle(), flutter_controller_->engine()->messenger());
   pen_buttons_ = std::make_unique<PenButtons>(
@@ -79,15 +91,6 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   }
 
   switch (message) {
-    case WM_DISPLAYCHANGE:
-      if (window_controls_) window_controls_->FitMonitor();
-      break;
-    case WM_DPICHANGED:
-      if (window_controls_ && window_controls_->fullscreen()) {
-        window_controls_->FitMonitor();
-        return 0;
-      }
-      break;
     case WM_FONTCHANGE:
       flutter_controller_->engine()->ReloadSystemFonts();
       break;

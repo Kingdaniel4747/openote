@@ -29,7 +29,7 @@ void main() {
     messenger.setMockMethodCallHandler(WindowsWindowController.channel,
         (call) async {
       calls.add(call);
-      return call.method == 'setFullscreen' ? call.arguments as bool : null;
+      return null;
     });
   });
   tearDown(() => messenger.setMockMethodCallHandler(
@@ -38,7 +38,7 @@ void main() {
   Widget host(WindowsWindowController controller, {bool start = true}) =>
       MaterialApp(
         builder: (context, child) => WindowsWindowFrame(
-            controller: controller, startFullscreen: start, child: child!),
+            controller: controller, startMaximized: start, child: child!),
         home: const Scaffold(
             body: Column(children: [
           Align(alignment: Alignment.topRight, child: WindowsCaptionButtons()),
@@ -46,38 +46,35 @@ void main() {
         ])),
       );
 
-  testWidgets('starts full screen with permanent window buttons',
-      (tester) async {
+  testWidgets('starts maximized with permanent window buttons', (tester) async {
     final controller = WindowsWindowController(enabled: true);
     addTearDown(controller.dispose);
     await tester.pumpWidget(host(controller));
     await tester.pumpAndSettle();
-    expect(controller.fullscreen, true);
+    expect(calls.where((c) => c.method == 'maximize'), hasLength(1));
     expect(find.byTooltip('Minimize'), findsOneWidget);
     expect(find.byTooltip('Close Openote'), findsOneWidget);
     await tester.tap(find.byTooltip('Minimize'));
     await tester.pump();
     expect(calls.last.method, 'minimize');
-    await tester.tap(find.byTooltip('Exit full screen (F11)'));
+    await tester.tap(find.byTooltip('Maximize / restore'));
     await tester.pumpAndSettle();
-    expect(controller.fullscreen, false);
+    expect(calls.where((c) => c.method == 'maximize'), hasLength(2));
     expect(find.byKey(const ValueKey('window-top-edge')), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('F11 toggles both ways; saved windowed preference is respected',
+  testWidgets('F11 uses the same maximize or restore action as the button',
       (tester) async {
     final controller = WindowsWindowController(enabled: true);
     addTearDown(controller.dispose);
     await tester.pumpWidget(host(controller, start: false));
     await tester.pumpAndSettle();
-    expect(controller.fullscreen, false);
     await tester.sendKeyEvent(LogicalKeyboardKey.f11);
     await tester.pumpAndSettle();
-    expect(controller.fullscreen, true);
     await tester.sendKeyEvent(LogicalKeyboardKey.f11);
     await tester.pumpAndSettle();
-    expect(controller.fullscreen, false);
+    expect(calls.where((c) => c.method == 'maximize'), hasLength(2));
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -114,17 +111,14 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  test('missing or failed native bridge never claims borderless fullscreen',
-      () async {
+  test('missing or failed native maximize bridge stays harmless', () async {
     final controller = WindowsWindowController(enabled: true);
     addTearDown(controller.dispose);
     messenger.setMockMethodCallHandler(WindowsWindowController.channel, null);
-    await controller.setFullscreen(true);
-    expect(controller.fullscreen, false);
+    await controller.maximize();
     messenger.setMockMethodCallHandler(WindowsWindowController.channel,
         (_) async => throw PlatformException(code: 'resize failed'));
-    await controller.setFullscreen(true);
-    expect(controller.fullscreen, false);
+    await controller.maximize();
     await controller.minimize();
   });
 
