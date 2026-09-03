@@ -1,307 +1,41 @@
 name: Release
 
-# Tag-triggered release builds (v0.2.0 → tag v0.2.0). Cut tags only from a
-# green master: this workflow does not re-run tests (CI gates every push); it
-# builds, packages, and DRAFTS the release for human review — nothing goes
-# public without a person pressing publish.
-#
-# The explicit `cargo build` steps are kept even though the CMake hook now
-# builds the core during `flutter build` on Windows/Linux: release artifacts
-# must not depend on the hook alone, and macOS has no hook (Xcode project).
+# A push builds ONLY the Windows setup EXE. Linux is an explicit manual choice.
+# No public release is created or overwritten.
 on:
   push:
+    branches: ['**']
     tags: ['v*']
-  # A dry run: build and package everything, upload the artifacts, and create
-  # NO release. Added because the platform jobs went un-run for their whole
-  # existence — the only way to exercise them was to cut a real tag, and a tag
-  # that fails leaves a half-made release and a name that has to be deleted in
-  # two places before it can be reused. Now the expensive, breakable half can
-  # be tried on demand.
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Version to build, e.g. 0.3.0 (must match app/pubspec.yaml). Builds artifacts only — no release is created.'
+      platform:
+        description: 'Platform to build (Linux only when you choose it)'
+        type: choice
+        options: [windows, linux]
+        default: windows
         required: true
+      version:
+        description: 'Optional: must match app/pubspec.yaml; leave empty normally'
+        required: false
         type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
+  group: release-${{ github.ref }}-${{ inputs.platform || 'windows' }}
+  cancel-in-progress: true
 
 jobs:
-  # Single source of truth: the git tag. Fails fast when app/pubspec.yaml
-  # disagrees so the two can never drift silently — bump pubspec, commit, then
-  # tag. (pubspec is 'M.m.p+build'; only M.m.p is compared.)
-  version:
-    name: derive version
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.v.outputs.version }}
-    steps:
-      - uses: actions/checkout@v4
-      - id: v
-        env:
-          INPUT_VERSION: ${{ inputs.version }}
-        run: |
-          if [ -n "$INPUT_VERSION" ]; then
-            VERSION="${INPUT_VERSION#v}"     # a dry run names its own version
-          else
-            VERSION="${GITHUB_REF_NAME#v}"   # a tag IS the version
-          fi
-          PUBSPEC="$(sed -n 's/^version: *\([^+ ]*\).*/\1/p' app/pubspec.yaml)"
-          if [ "$VERSION" != "$PUBSPEC" ]; then
-            echo "::error::version ${VERSION} does not match app/pubspec.yaml version ${PUBSPEC}."
-            echo "::error::Bump app/pubspec.yaml, commit and PUSH, then delete the tag in BOTH places (git tag -d v${VERSION} AND git push --delete origin v${VERSION}) before re-tagging — a stale local tag is the usual cause."
-            exit 1
-          fi
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-
-      # Refuse to run against a tag that ALREADY has a release.
-      #
-      # `draft: true` in the release job is not the safety net it looks like.
-      # softprops/action-gh-release only honours it on the CREATE path; when a
-      # release already exists for the tag it takes the update path and passes
-      # `draft: existingRelease.draft` verbatim. So re-running a tag whose
-      # release was published would attach every installer to a LIVE public
-      # release, overwrite its title and body with the draft text — comment
-      # marker and all — and never once pause for the human review this
-      # workflow's own header promises.
-      #
-      # This is the exact shape of the 0.3.0 incident: the first tag failed the
-      # guard above, a release was created by hand to compensate, and the tag
-      # was then a loaded gun. Fail in eight seconds instead of at minute forty.
-      - name: Refuse to overwrite an existing release
-        if: github.event_name == 'push'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" >/dev/null 2>&1; then
-            echo "::error::A release already exists for ${TAG}."
-            echo "::error::Publishing into it would bypass the draft review step entirely."
-            echo "::error::Delete that release (and this tag) first, or ship the next patch version."
-            exit 1
-          fi
-
   windows:
-    name: windows x64
-    needs: version
-    runs-on: windows-latest
-    env:
-      VERSION: ${{ needs.version.outputs.version }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: rust/onote_core
-
-      - name: Build Rust core
-        working-directory: rust/onote_core
-        run: cargo build --release
-
-      # Pinned to the version CI tests — see the comment in ci.yml. A tag
-      # must never build with a toolchain no push has been verified against.
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: 3.44.8
-          cache: true
-
-      - name: Build app
-        working-directory: app
-        run: |
-          flutter pub get
-          # 4.0 MB of web-only PDFium WASM that desktop cannot execute; the
-          # package documents this command for release builds.
-          dart run pdfrx:remove_wasm_modules
-          dart run tool/strip_web_assets.dart
-          # 48,423,670 B of libmpv and ANGLE — 48% of the whole download —
-          # stop being copied next to openote.exe and become the one-off
-          # fetch in lib/media/video_engine.dart. The next step packages them.
-          dart run tool/split_video_engine.dart
-          flutter build windows --release --build-name=$env:VERSION
-          dart run tool/shake_icons.dart windows
-
-      # The download the app fetches the first time somebody plays a video.
-      #
-      # Built from the very DLLs this build would otherwise have shipped, and
-      # CHECKED against the hashes the app pins. Those two must agree or every
-      # student's download is refused with a hash mismatch and video simply
-      # stops working — an upgrade of media_kit is exactly how that happens,
-      # and it must fail here, in the release, not in the field.
-      - name: Package the video player
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $src = 'app/build/windows/x64'
-          $manifest = Get-Content app/lib/media/video_engine.dart -Raw
-          # EngineFile('name.dll', 123, 'hash') — across the line break the
-          # formatter puts in.
-          $pins = [regex]::Matches(
-            $manifest,
-            "EngineFile\('([^']+)',\s*(\d+),\s*\r?\n?\s*'([0-9a-f]{64})'\)")
-          if ($pins.Count -lt 7) {
-            throw "Only $($pins.Count) engine files found in video_engine.dart — the pinned manifest could not be read, so nothing here is verified."
-          }
-          $stage = New-Item -ItemType Directory -Force -Path video-engine
-          foreach ($m in $pins) {
-            $name = $m.Groups[1].Value
-            $bytes = [int64]$m.Groups[2].Value
-            $want = $m.Groups[3].Value
-            $found = Get-ChildItem -Path $src -Filter $name -Recurse -File |
-              Select-Object -First 1
-            if (-not $found) { throw "$name is not under $src — did split_video_engine run before the build?" }
-            $got = (Get-FileHash $found.FullName -Algorithm SHA256).Hash.ToLower()
-            if ($got -ne $want -or $found.Length -ne $bytes) {
-              throw "$name does not match what the app pins ($got / $($found.Length) vs $want / $bytes). Update the manifest in app/lib/media/video_engine.dart, or the first video anybody plays will refuse the download."
-            }
-            Copy-Item $found.FullName $stage
-          }
-          Compress-Archive -Path "$($stage.FullName)/*" `
-            -DestinationPath "openote-$env:VERSION-video-engine-windows-x64.zip"
-
-      # And the shipped bundle must NOT contain them, or the split saved
-      # nothing and the release notes are wrong about the download size.
-      - name: Verify the engine is not in the bundle
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $rel = 'app/build/windows/x64/runner/Release'
-          $leaked = Get-ChildItem $rel -File |
-            Where-Object { $_.Name -in @('libmpv-2.dll','libEGL.dll','libGLESv2.dll','d3dcompiler_47.dll','vk_swiftshader.dll','vulkan-1.dll','zlib.dll') }
-          if ($leaked) {
-            throw "The video engine is still in the bundle: $($leaked.Name -join ', '). split_video_engine.dart did not take effect."
-          }
-
-      # The FFI loader (app/lib/core/onote_ffi.dart) looks next to the exe
-      # first — the DLL must sit beside openote.exe in the zip. The CMake hook
-      # already bundles it; the explicit copy is belt-and-braces.
-      - name: Package zip (DLL next to the exe)
-        shell: pwsh
-        run: |
-          $stage = "openote-$env:VERSION-windows-x64"
-          Copy-Item -Recurse app/build/windows/x64/runner/Release $stage
-          Copy-Item rust/onote_core/target/release/onote_core.dll $stage/ -Force
-          Compress-Archive -Path $stage -DestinationPath "$stage.zip"
-
-      # The setup .exe — what a non-technical user should be downloading.
-      # The zip stays beside it: it is the answer for a locked-down machine, a
-      # USB stick, or someone who wants to look inside before running anything,
-      # and keeping it costs one line.
-      #
-      # Inno Setup is not preinstalled on the runner.
-      #
-      # NOT pinned to an exact version, which reverses an earlier decision, and
-      # the reversal has a reason. The pin was 6.2.2 — and openote.iss uses
-      # `ArchitecturesAllowed=x64compatible`, which Inno Setup only understands
-      # from 6.3. A pin that cannot compile the script it is pinned for is not
-      # caution, it is a guaranteed failure. Verifying the floor is the part
-      # that was actually worth having, so that is what the next step does.
-      - name: Install Inno Setup
-        run: choco install innosetup --no-progress -y
-
-      - name: Build installer
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          # ${env:ProgramFiles(x86)} — the BRACES are load-bearing. PowerShell
-          # ends an unbraced variable name at the first character that cannot
-          # appear in one, and `(` is one of those: "$env:ProgramFiles(x86)\..."
-          # expands to "C:\Program Files(x86)\...", a path that does not exist.
-          # The step then failed on a directory nobody had ever typed.
-          # Find ISCC rather than hardcoding 'Inno Setup 6': the install step
-          # above is deliberately unpinned, so a future chocolatey package that
-          # ships 7.x would land in a directory this path does not name — and
-          # the failure would arrive after the whole Rust + Flutter build.
-          #
-          # Look in the conventional 'Inno Setup <n>' directories FIRST. The
-          # recursive sweep below is the fallback, not the default: recursing
-          # both Program Files trees took 4m24s on the runner, and every second
-          # of it was spent after the Rust and Flutter builds had already run.
-          $roots = @(${env:ProgramFiles(x86)}, $env:ProgramFiles) | Where-Object { $_ }
-          $candidates = Get-ChildItem -Path $roots -Filter 'Inno Setup*' -Directory -ErrorAction SilentlyContinue |
-            ForEach-Object { Join-Path $_.FullName 'ISCC.exe' } |
-            Where-Object { Test-Path $_ } |
-            Sort-Object { if ($_ -match 'Inno Setup\s+(\d+)') { [int]$Matches[1] } else { 0 } }
-          $iscc = $candidates | Select-Object -Last 1
-          if (-not $iscc) {
-            $iscc = Get-ChildItem -Path $roots -Filter ISCC.exe -Recurse -ErrorAction SilentlyContinue |
-              Select-Object -Last 1 -ExpandProperty FullName
-          }
-          if (-not $iscc) {
-            throw "ISCC.exe not found under Program Files — did the Inno Setup install step succeed?"
-          }
-
-          # Read the compiler's version for the LOG ONLY. It is never a gate.
-          #
-          # This check has now been wrong twice, in both directions, and each
-          # mistake cost a full release run:
-          #   1. FileMajorPart/FileMinorPart — ISCC.exe leaves the fixed
-          #      VS_FIXEDFILEINFO block zeroed, so the floor read 0.0 and
-          #      rejected the 6.x chocolatey had just installed.
-          #   2. ProductVersion/FileVersion — zeroed too. Regexing them out
-          #      produced a confident, wrong 0.0 and threw again, without ever
-          #      reaching the fallback meant to cover exactly that case.
-          #
-          # The lesson is not "find a third field". It is that the floor was
-          # never load-bearing: ISCC itself rejects ArchitecturesAllowed=
-          # x64compatible when it is too old, and that is the authoritative
-          # answer. The check only ever existed to turn ISCC's terse "Unknown
-          # value" into a sentence naming the cause — so it now runs AFTER the
-          # compile, on the failure path, where being wrong costs nothing.
-          #
-          # Do not cast these strings to [version] either: the field is
-          # free-form (git.exe reports '2.48.1.windows.1') and the cast throws
-          # under the $ErrorActionPreference='Stop' above.
-          $fi = (Get-Item $iscc).VersionInfo
-          $isccVersion = $null
-          foreach ($s in @($fi.ProductVersion, $fi.FileVersion)) {
-            if ($s -and $s -match '(\d+)\.(\d+)') {
-              $candidate = [version]::new([int]$Matches[1], [int]$Matches[2])
-              # A 0.x reading means "this binary does not report a version",
-              # not "this binary is ancient".
-              if ($candidate.Major -gt 0) { $isccVersion = $candidate; break }
-            }
-          }
-          if ($isccVersion) {
-            Write-Host "ISCC $isccVersion at $iscc"
-          } else {
-            Write-Host "ISCC at $iscc (the binary reports no usable version)"
-          }
-
-          $stage = "openote-$env:VERSION-windows-x64"
-          & $iscc `
-            "/DAppVersion=$env:VERSION" `
-            "/DStageDir=$(Resolve-Path $stage)" `
-            packaging/windows/openote.iss
-          if ($LASTEXITCODE -ne 0) {
-            $reported = if ($isccVersion) { "$isccVersion" } else { "no version" }
-            throw "ISCC failed with exit code $LASTEXITCODE. If the error above " +
-              "mentions ArchitecturesAllowed, openote.iss needs Inno Setup 6.3+ " +
-              "for x64compatible and this compiler reports $reported."
-          }
-          Move-Item packaging/windows/openote-*-setup.exe . -Force
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows-x64
-          path: |
-            openote-*.zip
-            openote-*-setup.exe
-          if-no-files-found: error
-      # `openote-*.zip` above already picks up the video-player archive; it is
-      # named so that it can never end with `-setup.exe`, which is the exact
-      # string the in-app updater matches on to find the installer
-      # (app/lib/update/app_update.dart, and video_engine_test.dart pins it).
+    if: github.event_name != 'workflow_dispatch' || inputs.platform != 'linux'
+    uses: ./.github/workflows/ci.yml
+    with:
+      version: ${{ inputs.version || '' }}
 
   linux:
-    if: ${{ false }}
+    if: github.event_name == 'workflow_dispatch' && inputs.platform == 'linux'
     name: linux x64
-    needs: version
     # Inside a container the runner's default shell resolves to plain sh
     # (dash), not bash — v0.8.0's dry run died on this job's first bashism,
     # `set -o pipefail` ("Illegal option"). Every script here was written and
@@ -351,7 +85,6 @@ jobs:
     container:
       image: debian:12
     env:
-      VERSION: ${{ needs.version.outputs.version }}
       # Every step here runs as root in a bare image, so an apt that stopped to
       # ask a configuration question would hang the job rather than fail it.
       DEBIAN_FRONTEND: noninteractive
@@ -419,6 +152,18 @@ jobs:
           git config --global --add safe.directory '*'
 
       - uses: actions/checkout@v4
+
+      - name: Read app version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          VERSION="$(sed -n 's/^version: *\([^+ ]*\).*/\1/p' app/pubspec.yaml)"
+          if [ -n "$INPUT_VERSION" ] && [ "${INPUT_VERSION#v}" != "$VERSION" ]; then
+            echo "::error::Version must match app/pubspec.yaml ($VERSION)"
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       # In the container too, so the core links against bookworm's glibc like
       # everything else. A Rust core built outside would be the one .so in the
@@ -575,274 +320,3 @@ jobs:
             openote-*.deb
             openote-*.rpm
           if-no-files-found: error
-
-  macos:
-    if: ${{ false }}
-    name: macos universal
-    needs: version
-    runs-on: macos-latest
-    env:
-      VERSION: ${{ needs.version.outputs.version }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: rust/onote_core
-
-      # Flutter's macOS release build is universal by default; the dylib must
-      # match or Intel Macs silently lose the Rust core through a Rosetta
-      # arch mismatch.
-      #
-      # KEPT ON PURPOSE even though app/macos/build_onote_core.sh now does the
-      # same work inside `flutter build macos`. That build phase has never run
-      # on a Mac (it was written on a Windows machine — see app/README.md), and
-      # a tag is the worst possible place to discover it is wrong: the app
-      # would still build and still launch, just without OneNote import,
-      # because the loader falls back to the Dart engine on purpose. These
-      # steps make the shipped dmg independent of that question. Delete them
-      # once the hook has been confirmed on real hardware, not before.
-      # The two are consistent by construction: same crate, same two targets,
-      # same lipo, and the copy below overwrites whatever the hook placed.
-      - name: Build Rust core (universal)
-        working-directory: rust/onote_core
-        run: |
-          cargo build --release --target aarch64-apple-darwin
-          cargo build --release --target x86_64-apple-darwin
-          lipo -create -output libonote_core.dylib \
-            target/aarch64-apple-darwin/release/libonote_core.dylib \
-            target/x86_64-apple-darwin/release/libonote_core.dylib
-
-      # Pinned to the version CI tests — see the comment in ci.yml. A tag
-      # must never build with a toolchain no push has been verified against.
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: 3.44.8
-          cache: true
-
-      - name: Build app
-        working-directory: app
-        run: |
-          flutter pub get
-          dart run pdfrx:remove_wasm_modules
-          dart run tool/strip_web_assets.dart
-          flutter build macos --release --build-name="$VERSION"
-
-      # Loader contract: dylib next to the exe = Contents/MacOS/. Inserting it
-      # breaks Flutter's ad-hoc signature seal, so re-sign ad-hoc or the app
-      # is killed on launch.
-      # Ad-hoc signing is REQUIRED, not cosmetic: an unsigned binary will not
-      # launch at all on Apple Silicon. It is not notarisation — see the
-      # release notes below for what the user still has to do.
-      #
-      # `--deep` is deprecated by Apple and was also doing something nobody
-      # intended: it re-signed the bundle with NO entitlements, silently
-      # dropping the app-sandbox flag that Release.entitlements used to set.
-      # The shipped app therefore worked by accident. Signing the inserted
-      # dylib first and then the bundle WITH its entitlements makes the result
-      # deliberate and identical to a local `flutter build macos`.
-      - name: Bundle dylib and re-sign (ad-hoc)
-        run: |
-          APP=app/build/macos/Build/Products/Release/openote.app
-          cp rust/onote_core/libonote_core.dylib "$APP/Contents/MacOS/"
-          codesign --force --sign - "$APP/Contents/MacOS/libonote_core.dylib"
-          codesign --force --sign - \
-            --entitlements app/macos/Runner/Release.entitlements "$APP"
-          codesign --verify --strict --verbose=2 "$APP"
-
-      - name: Package dmg (unsigned)
-        run: |
-          APP=app/build/macos/Build/Products/Release/openote.app
-          mkdir dmg-staging
-          cp -R "$APP" dmg-staging/
-          ln -s /Applications dmg-staging/Applications
-          hdiutil create -volname "Openote" -srcfolder dmg-staging -ov \
-            -format UDZO "openote-${VERSION}-macos-universal.dmg"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos-universal
-          path: openote-*.dmg
-          if-no-files-found: error
-
-  release:
-    name: draft release
-    needs: [version, windows, linux, macos]
-    # A dry run stops here: the artifacts are on the run page for inspection
-    # and nothing reaches the Releases tab.
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write # create the draft release + upload assets
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-
-      - uses: softprops/action-gh-release@v2
-        with:
-          draft: true
-          name: Openote ${{ needs.version.outputs.version }}
-          generate_release_notes: true
-          files: dist/*
-          # THE BODY IS WHAT THE IN-APP UPDATE DIALOG SHOWS (update-through
-          # -app fetches the release body as the "what's new" text). So it
-          # MUST LEAD with a human "What's new" — the actual features and
-          # fixes, in the user's language — ABOVE the download boilerplate.
-          # Eric, 2026-08-10: "ensure the patch notes actually describe
-          # whats new at the start rather than the generic info since thats
-          # whats seen in app." CHANGELOG.md's newest section is the source.
-          # The "What's new" below is written for THIS release before
-          # tagging; rewrite it from the CHANGELOG before cutting the next
-          # one — a stale top section is worse than the old placeholder.
-          #
-          # AND IT MUST OPEN SHORT. Eric, 2026-08-17: "we only show the first
-          # few lines in the app which is where most people will see it. We
-          # want to keep the overview compact and have the most important
-          # /exciting changes for a user right at the top every time." So the
-          # FIRST section is a handful of one-line bullets — the best of the
-          # release, one line each, no line wrapping — and the detail follows
-          # underneath. `release_notes_test.dart` reads this file and fails
-          # if that opening grows. The rule, and why, is written down in
-          # docs/RELEASING.md §"Writing the notes".
-          body: |
-            <!-- Draft: review — the What's new below was written with the
-                 tag, from CHANGELOG.md's 0.8.0 section — then publish. -->
-
-            ## What's new
-
-            - **Half the download** — about 50 MB now, instead of 100 MB.
-            - **Your notebook can take half the room** — one button does it.
-            - **Double-click a notebook to open it**, even with Openote shut.
-            - **Get deletions back** — your last ten, one click each.
-            - **OneNote import overhauled** — nothing cut off or doubled up.
-            - **Every part of the app now works from the keyboard.**
-
-            ## All of it, in more detail
-
-            - **The download is about half the size** — roughly 100 MB down
-              to about 50 MB. Openote used to carry a video player inside it;
-              now it is fetched once, the first time you play a video. Your
-              videos themselves are always on your computer, and if you are
-              updating from an older Openote the player you already have
-              keeps working — nothing to download.
-            - **Notebooks can take about half the space they did.** One
-              button (sharing window ▸ Storage) stops Openote keeping every
-              picture and drawing twice; on two real notebooks it took them
-              from 63 MB down to 33 MB apiece. It checks every single picture
-              is safe in the notebook's own folder before it removes
-              anything, and changes nothing unless all of them are.
-            - **Double-clicking a notebook now opens it — even when Openote
-              is closed.** Opening another notebook switches the window you
-              already have, rather than starting a second copy.
-            - **See who changed what on a page, and get deletions back.** The
-              page history button now says which computer each paragraph,
-              picture or drawing last came from — and your last ten notable
-              deletions (a page, a section, a picture, a recording, a long
-              stretch of writing) can each be put back with one click.
-              The old copy Openote quietly took of every page every ten
-              minutes is gone, and those old copies cannot be brought back —
-              if there is an old page version you still want, get it out
-              before you update. Undo, the recycle bin and your backups all
-              carry on exactly as before.
-            - **OneNote import overhauled.** Pages no longer come out cut
-              off, blank lines and layout are preserved, erased ink stays
-              erased, titles land on the right pages, and importing the same
-              file twice no longer doubles up your handwriting or paragraphs.
-              Re-import a section to pick up the fixes.
-            - **Sharing and sync are much safer, and faster.** Several ways a
-              shared notebook could quietly lose things are fixed — one
-              computer's bad copy of a picture can no longer delete the good
-              copies everywhere else, a sync that silently stopped now picks
-              itself up, a save that never reached the notebook's history now
-              says so — and catching up with another computer no longer
-              freezes the app.
-            - **The whole app works from the keyboard.** F6 moves between the
-              sidebar, toolbar, page and panels; Ctrl+/ shows every shortcut.
-              A paste that cannot be saved now tells you plainly instead of
-              doing nothing, and error messages are clearer throughout.
-            - **Your GitHub key now lives in your computer's own password
-              storage** — Credential Manager on Windows, the Keychain on Mac,
-              the keyring on Linux — never in a plain file. A key you saved
-              before is moved over automatically.
-            - **Openote can rebuild a notebook's working file from your
-              notes** if it is ever damaged or lost. Your notes live in the
-              notebook's own folder; the working file is only the copy
-              Openote reads while the notebook is open.
-
-            ## The fine print
-
-            - Openote is still in active development. Updates are worth
-              taking, but a major update may occasionally break a feature —
-              and macOS is the least-tested platform by far.
-            - On Linux, whether double-clicking a notebook *folder* opens
-              Openote depends on your file manager; the **Open this
-              notebook** file inside the folder works either way.
-            - The storage format changed this release: Openote can now tuck
-              a notebook's working file out of the way and rebuild it on
-              demand. It is opt-in, one notebook at a time, and **Put it
-              back** undoes it.
-
-            ## For the technically curious
-
-            This release lands the storage-cluster work: the append-only op
-            log in the notebook's folder is now the source of truth, and the
-            SQLite container is demoted to a working copy the app can always
-            reproduce from that log. Pictures and drawings are stored once,
-            as content-addressed files verified by re-hash on read-back —
-            a corrupt copy is set aside and healed rather than deleted, so
-            one machine's bad blob can never propagate a delete through a
-            shared notebook. The change set then went through adversarial
-            review passes whose every confirmed finding was fixed, and the
-            test suite grew from 1,272 to 1,564 over the cycle.
-
-            ## Downloads
-            - **Windows**: `openote-*-windows-x64-setup.exe` — the installer.
-              Installs for your user only, so it never asks for an
-              administrator password. (Prefer no installer? The
-              `…-windows-x64.zip` is the same build — unzip it anywhere and run
-              `openote.exe` from inside the folder it extracts.)
-            - **Linux**: `openote-*-linux-amd64.deb` on Ubuntu/Debian/Mint, or
-              `openote-*-linux-x86_64.rpm` on Fedora/RHEL/openSUSE. Double-click
-              it, or install from a terminal — then Openote is in your
-              applications menu like any other program. To open a notebook from
-              your file manager, double-click the **Open this notebook** file
-              inside the notebook's folder; whether double-clicking the folder
-              itself opens Openote depends on which file manager you use.
-              (Neither package fits? The `.tar.gz` runs from anywhere: extract
-              it and run `./openote` inside. It has no package manager to ask
-              for libmpv, so if you want video to play in the page, install
-              `mpv-libs` on Fedora or `libmpv2` on Ubuntu/Debian yourself —
-              the app says so too.)
-            - **macOS**: `openote-*-macos-universal.dmg` — drag Openote to Applications.
-
-            ---
-
-            ### Both warnings below are expected. Here is exactly why.
-
-            Openote is not code-signed. Signing certificates cost a few hundred
-            dollars a year each, and while the project is this young that money
-            is better spent on nothing at all. Nothing about the warnings says
-            the software is unsafe — only that we have not paid to tell your
-            operating system who we are. Every build here is produced by the
-            public workflow in this repository, from the tagged commit, and you
-            can read both.
-
-            **Windows: "Windows protected your PC"**
-
-            Click **More info**, then **Run anyway**. SmartScreen shows this for
-            any installer it has not seen often enough to have an opinion about.
-
-            **macOS: "openote is damaged and can't be opened"**
-
-            Gatekeeper quarantines unsigned downloads. After copying to
-            Applications, clear the flag once:
-
-                xattr -cr /Applications/openote.app
-
-            Your notes never leave your machine either way — see the project's
-            local-first principles.

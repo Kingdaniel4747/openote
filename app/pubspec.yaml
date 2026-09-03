@@ -52,19 +52,17 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^4.0.0
   flutter_launcher_icons: ^0.14.1
+  yaml: ^3.1.3
 
 # Run once after `flutter create` + `flutter pub get`:
 #   dart run flutter_launcher_icons
-# to generate the Windows .ico / macOS / etc. app icons from the logo.
+# to generate the Windows .ico from the logo. Linux keeps its existing PNG.
 flutter_launcher_icons:
   image_path: "assets/icon/openote_icon.png"
   windows:
     generate: true
     image_path: "assets/icon/openote_icon.png"
     icon_size: 256
-  macos:
-    generate: true
-    image_path: "assets/icon/openote_icon.png"
 
 flutter:
   uses-material-design: true

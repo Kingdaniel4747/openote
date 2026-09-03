@@ -9,6 +9,7 @@ import 'onote_dialog.dart';
 import 'shortcut_overlay.dart';
 import 'sync_dialog.dart';
 import 'update_dialog.dart';
+import 'windows_window_frame.dart';
 
 /// The centralised settings page (PLANNING "Consistency/UX"): one place
 /// holding every app-wide preference and door — previously each lived only
@@ -138,6 +139,17 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   onSelectionChanged: (s) => app.setThemeMode(s.first),
                 ),
               ),
+              if (WindowsWindowFrame.of(context) case final window?) ...[
+                _row('Start in full screen',
+                    _toggle(app.startFullscreen, app.setStartFullscreen)),
+                TextButton.icon(
+                  icon: const Icon(Icons.fullscreen),
+                  label: const Text('Toggle full screen (F11)'),
+                  onPressed: () => window.setFullscreen(!window.fullscreen),
+                ),
+                const Text('In full screen, swipe down from the top edge to show '
+                    'the window buttons.', style: TextStyle(fontSize: 11)),
+              ],
               _section('Writing and drawing'),
               _row('Spell check', _toggle(app.spellCheckEnabled, app.setSpellCheck)),
               _row('Pen near the page switches to inking',

@@ -126,16 +126,14 @@ void main() {
     });
 
     test('every release build runs them too', () {
-      // Three platforms, and the icon step is a deliberate no-op on macOS —
-      // so two shake_icons calls, three of each of the others.
-      final text =
-          File('${root.parent.path}/.github/workflows/release.yml')
-              .readAsStringSync();
-      expect('pdfrx:remove_wasm_modules'.allMatches(text).length, 3,
-          reason: 'windows, linux and macos');
-      expect('tool/strip_web_assets.dart'.allMatches(text).length, 3);
-      expect('tool/shake_icons.dart'.allMatches(text).length, 2,
-          reason: 'macOS subsets correctly on its own');
+      // Windows lives in the reusable CI job; Linux remains manual in Release.
+      for (final file in ['ci.yml', 'release.yml']) {
+        final text = File('${root.parent.path}/.github/workflows/$file')
+            .readAsStringSync();
+        expect('pdfrx:remove_wasm_modules'.allMatches(text).length, 1);
+        expect('tool/strip_web_assets.dart'.allMatches(text).length, 1);
+        expect('tool/shake_icons.dart'.allMatches(text).length, 1);
+      }
     });
   });
 }

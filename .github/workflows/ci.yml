@@ -1,274 +1,106 @@
-name: CI
+name: Windows checks and installer
 
+# Reused by Release; no second automatic multi-platform run on each push.
 on:
-  # EVERY branch, not just master and release/**. The narrow filter meant a
-  # branch that never opened a PR was never verified at all: eight commits
-  # touching 3,700 lines of Dart landed on `claude/performance`, were merged to
-  # master, and the FIRST time they ran on macOS or Windows was after the merge
-  # — where two of the four runners promptly failed. CI that only watches the
-  # branch you have already merged into is CI that reports history.
-  #
-  # The cost is runner minutes on feature branches; the concurrency group below
-  # already cancels superseded runs, and a wasted build is much cheaper than
-  # discovering a break once it is on master.
-  push:
-  pull_request:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        default: ''
+        required: false
   workflow_dispatch:
 
-# A newer push to the same branch supersedes an in-flight run; three-OS desktop
-# builds are slow enough that queueing them up is wasteful.
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+permissions:
+  contents: read
 
 jobs:
-  # The Flutter application (AGPL tier). Builds BEFORE testing on purpose: the
-  # desktop build is what puts the bundled SQLite next to the runner, and
-  # test/support/sqlite.dart skips every storage test when it can't find one.
-  # Under CI that helper throws instead of skipping, so a broken build can't
-  # masquerade as a green test run.
-  app:
-    name: app (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        # ubuntu-24.04, NOT ubuntu-latest: release.yml pins its Linux job to
-        # this exact label, so this is the host releases are actually built
-        # on — the one whose breakage matters. Both labels were run for a
-        # while "for when they diverge", but they are the same image today,
-        # so the second job could only ever repeat the first's answer at the
-        # cost of a full build per push. When ubuntu-latest does move on, the
-        # pin keeps testing the release host, which is the promise this
-        # matrix exists to keep. (24.04 rather than 22.04 for the libmpv
-        # soname — see the comment on release.yml's linux job.)
-        os: [ubuntu-24.04, macos-latest, windows-latest]
-    defaults:
-      run:
-        working-directory: app
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Linux desktop toolchain
-        if: runner.os == 'Linux'
+      - name: Read and check version
+        shell: pwsh
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          sudo apt-get update
-          # libmpv-dev and libepoxy-dev are media_kit_video's: its Linux plugin
-          # links against both through pkg-config, so without them the plugin
-          # silently drops out of the build and video does not exist.
-          # --no-install-recommends: libgtk-3-dev alone drags in tens of
-          # recommended packages nothing here links against. The explicit
-          # list IS the dependency set, so recommends are pure download time.
-          sudo apt-get install -y --no-install-recommends clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev libmpv-dev libepoxy-dev
+          $ErrorActionPreference = 'Stop'
+          $pubspec = Get-Content app/pubspec.yaml -Raw
+          if ($pubspec -notmatch '(?m)^version:\s*(\d+\.\d+\.\d+)') { throw 'Missing app version' }
+          $version = $Matches[1]
+          $requested = $env:INPUT_VERSION -replace '^v', ''
+          if (-not $requested -and $env:GITHUB_REF_TYPE -eq 'tag') {
+            $requested = $env:GITHUB_REF_NAME -replace '^v', ''
+          }
+          if ($requested -and $requested -ne $version) { throw "Version must match pubspec.yaml ($version)" }
+          "VERSION=$version" >> $env:GITHUB_ENV
 
-      # The CMake hook now builds the Rust core during `flutter build` when
-      # cargo is present (it is, on all GitHub runners) — cache it or every
-      # app build pays a cold lto/codegen-units=1 compile.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust/onote_core
-
-      # macOS needs BOTH Apple targets installed, and this job is the only
-      # automated exercise the macOS build hook
-      # (app/macos/build_onote_core.sh) will ever get before a tag runs it for
-      # real. The hook derives its Rust targets from Xcode's `$ARCHS`, and a
-      # Release build is universal, so without the x86_64 target here the hook
-      # would warn and produce an arm64-only dylib — CI would stay green while
-      # never once exercising the `lipo` path that release.yml depends on.
-      # The host target is already installed on the runner; naming both is
-      # cheap and says what the build needs out loud.
-      - name: Add the Apple Rust targets (the macOS hook builds both)
-        if: runner.os == 'macOS'
-        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
-
-      # This is NOT the app build's copy of the core — the Xcode hook does that
-      # now, into the .app, per architecture, under `target/<triple>/release/`.
-      # This one exists for `flutter test`, which loads the library from
-      # `../rust/onote_core/target/release/` relative to `app/` (see
-      # `_candidatePaths` in app/lib/core/onote_ffi.dart) and so needs a plain,
-      # host-native, no-`--target` build that lands in exactly that directory.
-      #
-      # Without it `OnoteCore.instance` is null here, and every test that
-      # reaches `ImportJob.start` dies on the `OneNoteUnavailable` throw at
-      # import_job.dart:110 — four tests, on macOS only, passing everywhere
-      # else. ("one at a time" survived because it returns one line earlier, at
-      # the already-running check, which is precisely why that ordering was
-      # chosen.)
-      #
-      # Windows and Linux get the same directory populated as a side effect of
-      # their CMake hook, which builds without `--target`. macOS cannot: it
-      # must name a target per architecture to produce a universal dylib.
-      - name: Build Rust core for the tests (host-native)
-        if: runner.os == 'macOS'
-        working-directory: rust/onote_core
-        run: cargo build --release
-
-      # PINNED for determinism: `channel: stable` resolves whatever is
-      # stable at run time, so an SDK release can change what CI analyzes
-      # and builds with under every branch at once, with no commit to bisect.
-      # The lockfile pins the packages; this pins the other input, and
-      # upgrading becomes a deliberate one-line bump made together with
-      # whatever new diagnostics the new SDK brings. Keep it in step with
-      # release.yml, which pins the same version so a tag never builds with
-      # a toolchain CI has not tested.
-      #
-      # For the record: this pin was first written in the belief that 3.44.9
-      # had caused the two-day analyze failure. It had not — the failure was
-      # a real `unused_field` warning in the tree, invisible locally only
-      # because a dev-side check filtered analyzer output and echoed
-      # "analyze ok" unconditionally. The pin stays because determinism is
-      # right on its own merits, not because it fixed that.
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: 3.44.8
           cache: true
 
-      - run: flutter --version
-      - run: flutter pub get
-
-      # Errors and warnings are fatal; infos are not. That is the bar
-      # CONTRIBUTING.md states, so CI enforces exactly it and no more.
-      #
-      # Linux only: analysis reads the same Dart against the same resolved
-      # packages on every OS, so three copies of this step can only agree.
-      # It was 23 s of the Windows job — the critical path of the whole
-      # workflow, since the run finishes when its slowest job does.
-      - name: Analyze
-        if: runner.os == 'Linux'
-        run: flutter analyze --no-fatal-infos
-
-      # pdfrx bundles PDFium as a WASM module for its web target, and its
-      # `assets/` declaration ships it on every platform — 4.0 MB of a 101 MB
-      # Windows bundle that nothing on desktop can execute. The package
-      # documents this exact command for release builds, and the debug banner
-      # nags about it on every run.
-      #
-      # Between `pub get` and `build`, because `pub get` restores the files.
-      - name: Drop the PDFium WASM module (desktop cannot run it)
-        run: dart run pdfrx:remove_wasm_modules
-        working-directory: app
-
-      # media_kit's HLS shim and wakelock_plus's no-sleep shim are browser
-      # payloads that desktop never loads. See app/tool/strip_web_assets.dart.
-      - name: Drop other packages' web-only assets
-        run: dart run tool/strip_web_assets.dart
-        working-directory: app
-
-      - name: Build (Linux)
-        if: runner.os == 'Linux'
-        run: flutter build linux --release
-
-      - name: Build (macOS)
-        if: runner.os == 'macOS'
-        run: flutter build macos --release
-
-      - name: Build (Windows)
-        if: runner.os == 'Windows'
-        run: flutter build windows --release
-
-      # Flutter's desktop build never subsets the Material icon font, because
-      # `tool_backend.dart` passes `-dTreeShakeIcons="true"` WITH the quotes
-      # and the shaker tests for `true` without them. 1.6 MB shipped whole in
-      # every Windows and Linux release. macOS is unaffected and this is a
-      # no-op there. See app/tool/shake_icons.dart.
-      # Linux only, and in CI this is a SMOKE TEST of the tool, not
-      # packaging: release.yml runs it for real on every platform at tag
-      # time. One run per push proves the tool still works against a fresh
-      # build; the Windows copy bought no extra coverage and cost 60 s of
-      # the slowest job.
-      - name: Subset the icon font (works around a Flutter SDK bug)
-        if: runner.os == 'Linux'
-        run: dart run tool/shake_icons.dart
-        working-directory: app
-
-      # The github reporter annotates failures in the PR view and stays
-      # quiet on success — `expanded` streamed a line per test (1,000+) into
-      # the log websocket, which is not free on a Windows runner.
-      - name: Test
-        env:
-          CI: 'true'
-        run: flutter test --reporter github --file-reporter json:test-results.json
-
-      # NAME the failing tests in an annotation of our own. The github
-      # reporter's only annotation is a count — "1069 passed, 1 failed" —
-      # and job LOGS require authentication even on a public repository, so
-      # a red Test step named nothing to anyone without push access. This
-      # was learned the slow way: a full day of diagnosing this workflow was
-      # done through the anonymous API, where step names and timings are
-      # public but the one line that says WHICH test failed is not.
-      # Annotations are public; put the answer there.
-      - name: Name the failing tests
-        if: failure()
-        shell: bash
-        run: |
-          # failure() is true when ANY earlier step failed; without the file
-          # this step would stack a FileNotFoundError on top of the real
-          # failure (a broken build, say) and point everyone the wrong way.
-          [ -f test-results.json ] || exit 0
-          python - <<'PY'
-          import json
-          names = {}
-          for line in open('test-results.json', encoding='utf-8'):
-              try:
-                  e = json.loads(line)
-              except ValueError:
-                  continue
-              if e.get('type') == 'testStart':
-                  t = e['test']
-                  names[t['id']] = (t.get('name', '?'), t.get('url') or '')
-              elif (e.get('type') == 'testDone'
-                    and e.get('result') != 'success'
-                    and not e.get('hidden')):
-                  n, u = names.get(e['testID'], ('?', ''))
-                  print(f'::error::FAILED: {n}  [{u}]')
-          PY
-
-  # The Rust core (Apache-2.0 tier). Independent of Flutter by design — the core
-  # is meant to be usable standalone, so CI proves it builds and tests without a
-  # Flutter toolchain anywhere in sight.
-  core:
-    name: core (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    defaults:
-      run:
+      - name: Test Rust core
         working-directory: rust/onote_core
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: rust/onote_core
-
-      - run: cargo test --all-targets
-
-      # `-D warnings` reaches only the primary package, not dependencies, so the
-      # vendored `cab` copy's own style lints don't fail the build. Keep it that
-      # way: silencing them would mean editing the vendored crate beyond its
-      # documented two-method patch (see vendor/cab/OPENOTE-PATCH.md).
-      - name: Clippy
+        run: cargo test --all-targets
+      - name: Check Rust warnings
+        working-directory: rust/onote_core
         run: cargo clippy -p onote_core --all-targets -- -D warnings
-
-  # Guards the licensing invariant recorded in ADR-0005: onote_core is the
-  # permissive tier, and a single copyleft crate in its dependency graph would
-  # silently void the promise that anyone can read and write .onote files.
-  licence-invariant:
-    name: core stays permissive
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install cargo-deny
-        uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@v2
         with:
           tool: cargo-deny
-      - name: Check dependency licences
+      - name: Core stays permissive
         working-directory: rust/onote_core
         run: cargo deny check licenses
+      - name: Build Rust core
+        working-directory: rust/onote_core
+        run: cargo build --release
+
+      - name: Resolve Flutter packages
+        working-directory: app
+        run: flutter pub get
+      - name: Analyze
+        working-directory: app
+        run: flutter analyze --no-fatal-infos
+      - name: Remove desktop-unused web assets
+        working-directory: app
+        shell: pwsh
+        run: |
+          dart run pdfrx:remove_wasm_modules
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dart run tool/strip_web_assets.dart
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # Keep the video DLLs inside the installer: no separate engine ZIP or
+      # first-use download is needed for this Windows build.
+      - name: Build Windows
+        working-directory: app
+        run: flutter build windows --release --build-name=$env:VERSION
+      - name: Trim icon font
+        working-directory: app
+        run: dart run tool/shake_icons.dart windows
+
+      # Build first: storage/import tests need the bundled SQLite + Rust DLLs.
+      - name: Test Flutter
+        working-directory: app
+        env:
+          CI: 'true'
+        run: flutter test --reporter github
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+      - name: Package setup EXE
+        shell: pwsh
+        run: ./packaging/windows/build-installer.ps1 -Version $env:VERSION
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: openote-*-windows-x64-setup.exe
+          if-no-files-found: error

@@ -8,6 +8,7 @@
 
 #include "win32_window.h"
 #include "pen_buttons.h"
+#include "window_controls.h"
 
 // A window that does nothing but host a Flutter view.
 class FlutterWindow : public Win32Window {
@@ -15,6 +16,7 @@ class FlutterWindow : public Win32Window {
   // Creates a new FlutterWindow hosting a Flutter view running |project|.
   explicit FlutterWindow(const flutter::DartProject& project);
   virtual ~FlutterWindow();
+  void ObservePenMessage(const MSG& message);
 
  protected:
   // Win32Window:
@@ -30,6 +32,7 @@ class FlutterWindow : public Win32Window {
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
   std::unique_ptr<PenButtons> pen_buttons_;
+  std::unique_ptr<WindowControls> window_controls_;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

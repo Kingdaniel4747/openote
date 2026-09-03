@@ -9,6 +9,10 @@ FlutterWindow::FlutterWindow(const flutter::DartProject& project)
 
 FlutterWindow::~FlutterWindow() {}
 
+void FlutterWindow::ObservePenMessage(const MSG& message) {
+  if (pen_buttons_) pen_buttons_->ObserveMessage(message);
+}
+
 bool FlutterWindow::OnCreate() {
   if (!Win32Window::OnCreate()) {
     return false;
@@ -26,6 +30,8 @@ bool FlutterWindow::OnCreate() {
   }
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
+  window_controls_ = std::make_unique<WindowControls>(
+      GetHandle(), flutter_controller_->engine()->messenger());
   pen_buttons_ = std::make_unique<PenButtons>(
       flutter_controller_->view()->GetNativeWindow(),
       flutter_controller_->engine()->messenger());
@@ -43,6 +49,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  window_controls_.reset();
   pen_buttons_.reset();
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
@@ -70,6 +77,15 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   }
 
   switch (message) {
+    case WM_DISPLAYCHANGE:
+      if (window_controls_) window_controls_->FitMonitor();
+      break;
+    case WM_DPICHANGED:
+      if (window_controls_ && window_controls_->fullscreen()) {
+        window_controls_->FitMonitor();
+        return 0;
+      }
+      break;
     case WM_FONTCHANGE:
       flutter_controller_->engine()->ReloadSystemFonts();
       break;

@@ -50,11 +50,13 @@ class WindowsPenButtons extends ChangeNotifier {
     if (event.kind == PointerDeviceKind.invertedStylus) return true;
     if (event.kind != PointerDeviceKind.stylus) return false;
     final barrel = (event.buttons & kPrimaryStylusButton) != 0;
-    // Preserve Linux/macOS exactly; the new secondary/native path is Windows.
+    // Preserve Linux exactly; the new secondary/native path is Windows.
     if (!enabled) return barrel;
+    // Flutter can keep a button bit from pointer-down for the whole stroke.
+    // A native release must win over that stale bit, not be OR-ed with it.
+    if (nativeInRange) return nativeEraser;
     return barrel ||
-        (event.buttons & kSecondaryStylusButton) != 0 ||
-        nativeEraser;
+        (event.buttons & kSecondaryStylusButton) != 0;
   }
 
   @override

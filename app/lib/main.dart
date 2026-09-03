@@ -11,6 +11,7 @@ import 'state/app_state.dart';
 import 'store/repository.dart';
 import 'theme/onote_theme.dart';
 import 'ui/app_shell.dart';
+import 'ui/windows_window_frame.dart';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -235,6 +236,10 @@ class _OpenoteAppState extends State<OpenoteApp> {
           theme: onoteTheme(Brightness.light),
           darkTheme: onoteTheme(Brightness.dark),
           themeMode: widget.app.themeMode, // Settings: Auto / Light / Dark
+          builder: (context, child) => WindowsWindowFrame(
+            startFullscreen: widget.app.startFullscreen,
+            child: child ?? const SizedBox.shrink(),
+          ),
           home: AppShell(app: widget.app),
         );
       },

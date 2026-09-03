@@ -11,9 +11,8 @@
 //     release, short. That is a property of the workflow file, so the test
 //     for it reads the workflow file.
 //
-// The body used here is not a copy: it is extracted from
-// `.github/workflows/release.yml` itself, so these tests exercise the real
-// text that will ship and cannot drift away from it.
+// This fork builds private-use installers, not published GitHub releases.
+// Keep the real upstream body as a fixture so Markdown rendering remains tested.
 
 import 'dart:io';
 
@@ -23,29 +22,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:openote/ui/update_dialog.dart';
 import 'package:openote/update/app_update.dart';
 
-/// The `body: |` block scalar from the release workflow, dedented — i.e.
-/// exactly the Markdown GitHub will store as the release body.
-String releaseBodyTemplate() {
-  final f = File('../.github/workflows/release.yml');
-  expect(f.existsSync(), isTrue,
-      reason: 'tests run from app/, so the workflow is one level up');
-  final lines = f.readAsStringSync().replaceAll('\r\n', '\n').split('\n');
-  final start = lines.indexWhere((l) => RegExp(r'^\s*body: \|\s*$').hasMatch(l));
-  expect(start, greaterThan(-1), reason: 'release.yml still has a `body: |`');
-  final body = <String>[];
-  int? indent;
-  for (final line in lines.skip(start + 1)) {
-    if (line.trim().isEmpty) {
-      body.add('');
-      continue;
-    }
-    final lead = line.length - line.trimLeft().length;
-    indent ??= lead;
-    if (lead < indent) break; // the block scalar ended
-    body.add(line.substring(indent));
-  }
-  return body.join('\n').trim();
-}
+/// A real upstream release body, retained after removing release publication.
+String releaseBodyTemplate() =>
+    File('test/fixtures/upstream_release_0_8_0.md').readAsStringSync();
 
 /// Every string the widget tree actually draws.
 String visibleText(WidgetTester tester) {

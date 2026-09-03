@@ -100,6 +100,23 @@ void main() {
     }
   });
 
+  test('live release wins over Flutter button latched at pointer-down',
+      () async {
+    final pen = WindowsPenButtons(enabled: true);
+    addTearDown(pen.dispose);
+    await pen.attach();
+    const stale = PointerMoveEvent(
+        kind: PointerDeviceKind.stylus, buttons: kPrimaryStylusButton);
+    // Same proximity session, including repeated toggles while hovering.
+    for (var i = 0; i < 4; i++) {
+      await nativeState(true, true);
+      expect(pen.erases(stale), true);
+      await nativeState(true, false);
+      expect(pen.nativeInRange, true);
+      expect(pen.erases(stale), false);
+    }
+  });
+
   test('leaving range/focus clears native state even with an old eraser bit',
       () async {
     final pen = WindowsPenButtons(enabled: true);
@@ -268,8 +285,9 @@ void main() {
       await move(t, 280); // Flutter did not forward a barrel flag.
       await nativeState(true, false);
       await t.pump();
-      await move(t, 340);
-      await move(t, 390);
+      // A stale Flutter bit must not switch back to erasing after native UP.
+      await move(t, 340, buttons: kPrimaryStylusButton);
+      await move(t, 390, buttons: kPrimaryStylusButton);
       await up(t, 390);
       expect(strokes(app), hasLength(2));
       expect(strokes(app)[1]['x'], [340.0, 390.0]);

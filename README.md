@@ -6,9 +6,14 @@
 
 *Your notes. Your format. Every platform.*
 
-`Freeform canvas` · `Handwriting & math` · `Open file format` · `Local-first` · `Windows · macOS · Linux · tablets`
+`Freeform canvas` · `Handwriting & math` · `Open file format` · `Local-first` · `Windows · Linux`
 
 </div>
+
+This Windows-first fork adds live pen-button handling and a full-screen window
+with swipe-down controls. Windows installers build on push; Linux is manual.
+See [build and test instructions](docs/WINDOWS-FORK.md). The Apple target is removed;
+historical upstream design notes and third-party licences remain unchanged.
 
 ---
 
@@ -18,9 +23,8 @@
 > notebooks, flashcards from your own notes, and a planner. But it is still
 > receiving **major updates, and an update may break a feature** until the
 > next one fixes it — and it is **largely untested on many platforms**:
-> development happens on Windows, Linux is tested occasionally, and **macOS
-> has barely been tested at all**. Whatever breaks, your notes are safe
-> either way: they live on your own machine, in an open, documented format
+> development happens on Windows and Linux is tested occasionally. Your notes
+> live on your own machine, in an open, documented format
 > that stays readable without Openote — nothing is locked in. What is and
 > isn't verified is tracked honestly in [TESTING.md](TESTING.md); design and
 > specification documents are in the [documentation index](docs/README.md);
@@ -28,13 +32,13 @@
 
 ## Install
 
-Grab the latest build from **[openote.org](https://openote.org)** or the
-[Releases page](https://github.com/icmric/openote/releases).
+For this fork, open this repository's **Actions → Release**, select a successful
+run, and download **windows-x64**. Extract the GitHub artifact ZIP and run the
+setup EXE inside. The original project's releases do not include these changes.
 
 | | Download | Then |
 |---|---|---|
-| **Windows** | `openote-*-windows-x64-setup.exe` | Run it. Installs for your user only, so it never asks for an administrator password. *(Prefer no installer? The `.zip` is the same build — unzip anywhere and run `openote.exe`.)* |
-| **macOS** | `openote-*-macos-universal.dmg` | Open it, drag Openote to Applications. |
+| **Windows** | `openote-*-windows-x64-setup.exe` | Run it. Per-user install; C++ runtime and video libraries are included. |
 | **Linux** | `openote-*-linux-amd64.deb` (Ubuntu/Debian/Mint) or `openote-*-linux-x86_64.rpm` (Fedora/RHEL/openSUSE) | Double-click it, or install from a terminal. Openote then appears in your applications menu. *(Neither fits? The `.tar.gz` extracts anywhere and runs with `./openote`.)* |
 
 Your notes are written to your own machine in an open, documented format. There
@@ -49,16 +53,12 @@ desktops you can double-click the folder itself. From a terminal,
 
 ### Your operating system will warn you. Here's why, honestly.
 
-Openote isn't code-signed. Certificates cost a few hundred dollars a year per
-platform, and while the project is this young that money buys nothing a user
-would notice. The warnings don't mean the software is unsafe — only that we
-haven't paid to tell your OS who we are. Every release is built by the
-[public workflow](.github/workflows/release.yml) in this repository, from the
-tagged commit; you can read both.
+These installers are unsigned. Only run an installer from a build you trust;
+an unsigned warning is not a safety guarantee either way. The
+[build workflow](.github/workflows/release.yml) and source commit are visible
+in each Actions run.
 
 - **Windows** — *"Windows protected your PC"*: click **More info** ▸ **Run anyway**.
-- **macOS** — *"openote is damaged and can't be opened"*: after copying to
-  Applications, run `xattr -cr /Applications/openote.app` once.
 - **Linux** — no warning; the `.deb` and `.rpm` install like any other package.
 
 ## What is Openote?
@@ -77,7 +77,7 @@ But OneNote traps your notes in a proprietary format, defaults to a mandatory cl
 - 🖊️ **First-class pen & handwriting** — low-latency, pressure-sensitive ink you can write and draw with anywhere.
 - 📦 **An open, documented file format** — local-first, no lock-in, no size limits, readable without us.
 - ☁️ **Cloud-optional sync** — work across your devices; bring your own backend; real-time collaboration on the roadmap.
-- 🐧 **Truly cross-platform** — desktop-first (Windows, macOS, **Linux**), tablets close behind.
+- 🐧 **Windows and Linux** — Windows first, with Linux sources and manual packaging retained.
 
 Read the full argument in the [Product Vision](docs/00-product-vision.md).
 

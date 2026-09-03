@@ -4490,6 +4490,14 @@ class AppState extends ChangeNotifier
   /// option" half of the ask.
   bool penProximitySwitch = true;
 
+  bool startFullscreen = true;
+
+  void setStartFullscreen(bool value) {
+    startFullscreen = value;
+    _repo.setSetting('startFullscreen', value);
+    notifyListeners();
+  }
+
   void setPenProximitySwitch(bool v) {
     penProximitySwitch = v;
     _repo.setSetting('penProximity', v);
@@ -5739,6 +5747,8 @@ class AppState extends ChangeNotifier
     }
     final pp = _repo.getSetting('penProximity');
     if (pp is bool) penProximitySwitch = pp;
+    final fs = _repo.getSetting('startFullscreen');
+    if (fs is bool) startFullscreen = fs;
     // Detached: binding a port must never gate the app opening.
     unawaited(_restoreMcp());
     unawaited(checkForAppUpdate());
