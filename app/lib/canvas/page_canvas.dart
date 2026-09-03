@@ -17,6 +17,7 @@ import 'ink_ops.dart';
 import 'media_drop.dart';
 import 'ink_painter.dart';
 import 'page_title_view.dart';
+import 'windows_pen_buttons.dart';
 
 /// The page canvas (CANVAS-1 v0.3): an auto-growing page surface on a neutral
 /// backdrop. Select-mode input model (style guide §8):
@@ -38,6 +39,30 @@ enum _DragMode { none, pending, marquee, moveSelection, pan }
 
 class _PageCanvasState extends State<PageCanvas> {
   Stroke? _wet;
+  final WindowsPenButtons _windowsPen = WindowsPenButtons();
+  int? _windowsInkPointer;
+  PointerDeviceKind? _windowsInkKind;
+
+  void _windowsPenChanged() {
+    if (!mounted) return;
+    // A barrel press/release can arrive while hovering or without movement.
+    // Keep the selected brush unchanged; only this gesture temporarily erases.
+    if (_windowsInkPointer != null &&
+        (_windowsInkKind == PointerDeviceKind.stylus ||
+            _windowsInkKind == PointerDeviceKind.invertedStylus)) {
+      _setWindowsErase(_windowsPen.nativeEraser ||
+          _windowsInkKind == PointerDeviceKind.invertedStylus);
+    }
+    setState(() {});
+  }
+
+  void _setWindowsErase(bool erase) {
+    if (erase == _gestureErase) return;
+    _finishWetStroke();
+    _gestureErase = erase;
+    _eraseUndoPushed = false;
+    setState(() {});
+  }
 
   /// Bumped per wet-ink point so ONLY the ink layer repaints (the painter
   /// listens via `repaint:`). A setState per pointer move rebuilt every
@@ -153,6 +178,12 @@ class _PageCanvasState extends State<PageCanvas> {
   /// finger lands, turning what looked like a draw into a pinch. Without this
   /// the first finger of every two-finger gesture would leave a stray mark.
   void _cancelWetStroke() {
+    if (_windowsPen.enabled) {
+      _windowsInkPointer = null;
+      _windowsInkKind = null;
+      _gestureErase = false;
+      _eraseUndoPushed = false;
+    }
     if (_wet != null) setState(() => _wet = null);
   }
 
@@ -183,6 +214,8 @@ class _PageCanvasState extends State<PageCanvas> {
 
   @override
   void dispose() {
+    _windowsPen.removeListener(_windowsPenChanged);
+    _windowsPen.dispose();
     _wetTick.dispose();
     super.dispose();
   }
@@ -190,6 +223,8 @@ class _PageCanvasState extends State<PageCanvas> {
   @override
   void initState() {
     super.initState();
+    _windowsPen.addListener(_windowsPenChanged);
+    _windowsPen.attach();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       controller.pageSize = app.pageSize();
       // Restore this page's remembered view if the user actually adjusted it
@@ -210,19 +245,28 @@ class _PageCanvasState extends State<PageCanvas> {
   // ── Ink capture (page-space, Ink Data Spec §1) ──────────────────────────
 
   void _inkDown(PointerDownEvent e) {
+    if (_windowsPen.enabled) {
+      if (_windowsInkPointer != null && _windowsInkPointer != e.pointer) return;
+      _windowsInkPointer = e.pointer;
+      _windowsInkKind = e.kind;
+    }
     app.claimedPointers.remove(e.pointer); // keep the claim set tidy
     // The pen's own erase signals, per gesture: the tail end, or the barrel
     // button held at contact. (kPrimaryStylusButton shares its bit with
     // kSecondaryButton, which is exactly how Windows reports a barrel press —
     // the kind guard is what keeps a right-click mouse drag from erasing.)
-    _gestureErase = e.kind == PointerDeviceKind.invertedStylus ||
-        ((e.kind == PointerDeviceKind.stylus) &&
-            (e.buttons & kPrimaryStylusButton) != 0);
+    // Windows additionally observes native pen flags and rechecks on moves.
+    // Other platforms keep their existing contact-time behavior.
+    _gestureErase = _windowsPen.erases(e);
     final pt = _clampToPagePoint(controller.screenToPage(e.localPosition));
     if (app.tool == Tool.eraser || _gestureErase) {
       _eraseAt(pt);
       return;
     }
+    _beginWetStroke(e, pt);
+  }
+
+  void _beginWetStroke(PointerEvent e, Offset pt) {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final colors = app.tool == Tool.highlighter
         ? OnoteColors.highlighterColors
@@ -242,11 +286,24 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _inkMove(PointerMoveEvent e) {
+    if (_windowsPen.enabled) {
+      if (_windowsInkPointer != e.pointer) return;
+      _setWindowsErase(_windowsPen.erases(e));
+    }
     if (app.tool == Tool.eraser || _gestureErase) {
       _eraseAt(controller.screenToPage(e.localPosition));
       return;
     }
-    if (_wet == null) return;
+    if (_wet == null) {
+      if (_windowsPen.enabled &&
+          (app.tool == Tool.pen || app.tool == Tool.highlighter)) {
+        // Start a fresh segment after releasing the button: never join across
+        // the path used for erasing.
+        _beginWetStroke(
+            e, _clampToPagePoint(controller.screenToPage(e.localPosition)));
+      }
+      return;
+    }
     // Repaint-only: grow the stroke and nudge the ink painter. No setState —
     // rebuilding every visible block per point made inking sluggish.
     _addPoint(e, _clampToPagePoint(controller.screenToPage(e.localPosition)));
@@ -267,8 +324,17 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _inkUp(PointerUpEvent e) {
+    if (_windowsPen.enabled) {
+      if (_windowsInkPointer != e.pointer) return;
+      _windowsInkPointer = null;
+      _windowsInkKind = null;
+    }
     _eraseUndoPushed = false;
     _gestureErase = false;
+    _finishWetStroke();
+  }
+
+  void _finishWetStroke() {
     final w = _wet;
     if (w == null || w.x.length < 2) {
       setState(() => _wet = null);
@@ -1098,6 +1164,7 @@ class _PageCanvasState extends State<PageCanvas> {
         },
         onPointerCancel: (e) {
           _touches.remove(e.pointer);
+          if (_windowsPen.enabled && _windowsInkPointer != e.pointer) return;
           _gestureErase = false;
           _cancelWetStroke();
         },
@@ -1226,13 +1293,17 @@ class _PageCanvasState extends State<PageCanvas> {
         if (_panZoomClaimedBy == e.pointer) _panZoomClaimedBy = null;
       },
       child: MouseRegion(
-        cursor: switch (app.tool) {
-          Tool.text => SystemMouseCursors.text,
-          Tool.pen || Tool.highlighter => SystemMouseCursors.precise,
-          Tool.eraser => SystemMouseCursors.cell,
-          Tool.lasso => SystemMouseCursors.precise,
-          _ => MouseCursor.defer,
-        },
+        cursor: _windowsPen.enabled &&
+                _inkTool &&
+                (_gestureErase || _windowsPen.nativeEraser)
+            ? SystemMouseCursors.cell
+            : switch (app.tool) {
+                Tool.text => SystemMouseCursors.text,
+                Tool.pen || Tool.highlighter => SystemMouseCursors.precise,
+                Tool.eraser => SystemMouseCursors.cell,
+                Tool.lasso => SystemMouseCursors.precise,
+                _ => MouseCursor.defer,
+              },
         child: canvas,
       ),
     );
