@@ -4235,6 +4235,11 @@ class AppState extends ChangeNotifier
   /// culling, marquee hit-testing, and content bounds).
   final Map<String, Size> renderSizes = {};
 
+  /// A two-finger canvas gesture is in progress. Object views consult this
+  /// live flag before acting on their one-finger touch drag, so a PDF/image
+  /// can never keep moving underneath a pinch gesture.
+  bool touchCanvasGesture = false;
+
   /// Pointer ids claimed by block widgets this gesture, so the canvas-level
   /// handler ignores them (see BlockView / PageCanvas).
   final Set<int> claimedPointers = {};

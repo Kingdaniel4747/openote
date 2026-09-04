@@ -1,9 +1,11 @@
+import 'dart:math' as math;
+
 import 'package:flutter/widgets.dart';
 
 /// First-party pan/zoom (Tech Eval §7.3: own transform, no InteractiveViewer).
-/// Maps between screen space and page space. The model is unbounded, but
-/// panning is clamped to the page origin (`clampToPage`) so the page can't be
-/// lost off-screen (CANVAS-1 v0.3).
+/// Maps between screen space and page space. The model has a bounded overview
+/// at minimum zoom: when the whole page fits, it may be positioned anywhere
+/// inside the viewport; when it is larger, its edges bound the camera.
 class CanvasController extends ChangeNotifier {
   double scale = 1.0;
   Offset offset = Offset.zero; // page-space origin's screen position
@@ -54,35 +56,37 @@ class CanvasController extends ChangeNotifier {
     double factor,
     Offset currentFocal,
   ) {
-    // An origin at zero is the visible top/left edge. Keep that edge pinned
-    // while it is visible, but never force a distant page origin back into
-    // view in the middle of a pinch.
-    final pinLeftEdge = offset.dx >= -0.5;
-    final pinTopEdge = offset.dy >= -0.5;
     final pageFocal = screenToPage(previousFocal);
     final newScale = (scale * factor).clamp(minScale, maxScale);
-    scale = newScale;
-    final proposed = currentFocal - pageFocal * scale;
+    final proposed = currentFocal - pageFocal * newScale;
     final ps = pageSize;
     if (ps == null || viewport == Size.zero) {
+      scale = newScale;
       offset = proposed;
     } else {
-      double axis(double current, double next, double viewportExtent,
-          double contentExtent, bool pinOrigin) {
+      final pinLeftEdge =
+          offset.dx.abs() <= 0.5 && ps.width * scale >= viewport.width;
+      final pinTopEdge =
+          offset.dy.abs() <= 0.5 && ps.height * scale >= viewport.height;
+      scale = newScale;
+
+      double axis(double next, double viewportExtent, double contentExtent,
+          bool pinOrigin) {
         // Keep the named edge in place once it is visible. If the gesture
         // reaches it from inside the page, stop at the edge in this frame —
         // never after the gesture has ended.
-        if (pinOrigin || contentExtent <= viewportExtent || next >= 0) {
-          return 0;
-        }
-        return next.clamp(viewportExtent - contentExtent, 0.0);
+        final travel = viewportExtent - contentExtent;
+        if (pinOrigin && travel <= 0) return 0;
+        // With the entire page on screen, its origin may travel between the
+        // two opposing edges. This is what lets a student zoom into the
+        // upper-right of a fully zoomed-out endless page instead of being
+        // pulled back to the left edge.
+        return next.clamp(math.min(0, travel), math.max(0, travel));
       }
 
       offset = Offset(
-        axis(offset.dx, proposed.dx, viewport.width, ps.width * scale,
-            pinLeftEdge),
-        axis(offset.dy, proposed.dy, viewport.height, ps.height * scale,
-            pinTopEdge),
+        axis(proposed.dx, viewport.width, ps.width * scale, pinLeftEdge),
+        axis(proposed.dy, viewport.height, ps.height * scale, pinTopEdge),
       );
     }
     notifyListeners();
@@ -109,19 +113,15 @@ class CanvasController extends ChangeNotifier {
   /// used to clamp panning so the page can't be lost (CANVAS-1 v0.3).
   Size? pageSize;
 
-  /// Pin the page's origin to the top-left: in normal zoom (page ≥ viewport)
-  /// you can't reveal backdrop above/left of the page; when zoomed out
-  /// (page < viewport) the page sits top-left and the backdrop shows to the
-  /// right/below — so its bounds are visible, "page that can be a canvas".
+  /// Keep the camera within the page. When a page is smaller than the window,
+  /// its origin can travel from one visible edge to the other, rather than
+  /// being forced back to top-left; this makes the low-zoom overview useful.
   void clampToPage() {
     final ps = pageSize;
     if (ps == null || viewport == Size.zero) return;
     double axis(double o, double vp, double contentPx) {
-      // The named page origin stays in the upper-left corner at every zoom.
-      // Letting a small page drift right/down made an endless page look as if
-      // it had grown a new margin on the left when pinching out.
-      if (contentPx <= vp) return 0.0;
-      return o.clamp(vp - contentPx, 0.0); // fills → stay within the page
+      final travel = vp - contentPx;
+      return o.clamp(math.min(0, travel), math.max(0, travel));
     }
 
     offset = Offset(

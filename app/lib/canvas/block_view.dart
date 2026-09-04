@@ -717,6 +717,7 @@ class _BlockViewState extends State<BlockView> {
       onPanStart: editing || _locked || !selected
           ? null
           : (d) {
+              if (app.touchCanvasGesture) return;
               app.pushUndo();
               app.setDragging(true);
               _touchMoveLast = d.localPosition;
@@ -724,6 +725,7 @@ class _BlockViewState extends State<BlockView> {
       onPanUpdate: editing || _locked || !selected
           ? null
           : (d) {
+              if (app.touchCanvasGesture) return;
               final last = _touchMoveLast;
               if (last == null) return;
               final delta = d.localPosition - last;
@@ -732,6 +734,11 @@ class _BlockViewState extends State<BlockView> {
                   delta.dy / widget.controller.scale);
             },
       onPanEnd: (_) {
+        if (app.touchCanvasGesture) {
+          _touchMoveLast = null;
+          app.setDragging(false);
+          return;
+        }
         if (_touchMoveLast == null) return;
         _touchMoveLast = null;
         app.settleSelected();
@@ -752,6 +759,7 @@ class _BlockViewState extends State<BlockView> {
       onLongPressMoveUpdate: editing || _locked
           ? null
           : (d) {
+              if (app.touchCanvasGesture) return;
               final last = _touchMoveLast;
               if (last == null) return;
               final delta = d.localPosition - last;
@@ -760,6 +768,11 @@ class _BlockViewState extends State<BlockView> {
                   delta.dy / widget.controller.scale);
             },
       onLongPressEnd: (_) {
+        if (app.touchCanvasGesture) {
+          _touchMoveLast = null;
+          app.setDragging(false);
+          return;
+        }
         if (_touchMoveLast == null) return;
         _touchMoveLast = null;
         app.settleSelected();

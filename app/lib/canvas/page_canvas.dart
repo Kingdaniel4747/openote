@@ -111,6 +111,12 @@ class _PageCanvasState extends State<PageCanvas> {
   DateTime? _lastTouchMove;
   bool _multiTouchSeen = false;
 
+  /// A block may own a single touch for direct object movement. We still
+  /// record that contact here, passively, so a second finger can always turn
+  /// the interaction into a canvas pinch. Before this, a PDF claimed the
+  /// first finger and the canvas could never discover the pair.
+  final Set<int> _blockOwnedTouches = {};
+
   /// The pointer of a trackpad pan/pinch a block has claimed for itself
   /// (a graph, panning its own window) — null once nothing has. Latched
   /// for the gesture's whole lifetime; see the comment on
@@ -191,6 +197,7 @@ class _PageCanvasState extends State<PageCanvas> {
   void dispose() {
     _inertia?.cancel();
     _shapeHold?.cancel();
+    app.touchCanvasGesture = false;
     _windowsPen.removeListener(_windowsPenChanged);
     _windowsPen.dispose();
     _wetTick.dispose();
@@ -847,6 +854,7 @@ class _PageCanvasState extends State<PageCanvas> {
         _startInertia();
       }
       _multiTouchSeen = false;
+      app.touchCanvasGesture = false;
     }
   }
 
@@ -883,7 +891,10 @@ class _PageCanvasState extends State<PageCanvas> {
       if (!app.claimedPointers.remove(e.pointer)) _inkDown(e);
       return;
     }
-    if (app.claimedPointers.remove(e.pointer)) return; // a block owns this one
+    final blockOwnsPointer = app.claimedPointers.remove(e.pointer);
+    if (e.kind != PointerDeviceKind.touch && blockOwnsPointer) {
+      return; // a block owns this mouse/pen interaction
+    }
     _downScreen = e.localPosition;
     _lastScreen = e.localPosition;
     _downKind = e.kind;
@@ -902,11 +913,16 @@ class _PageCanvasState extends State<PageCanvas> {
       return;
     }
     if (e.kind == PointerDeviceKind.touch) {
+      if (blockOwnsPointer) _blockOwnedTouches.add(e.pointer);
       _touchDown(e);
       if (_touches.length >= 2) {
+        // Two fingers always navigate the page, regardless of whether their
+        // first contact landed on a PDF, image, table, or empty paper.
+        app.touchCanvasGesture = true;
         _mode = _DragMode.none;
         return;
       }
+      if (blockOwnsPointer) return;
       // A finger is for navigation and a held context menu, never for moving
       // or drawing a block. The pen/mouse still provide precise selection.
       _mode = _DragMode.pending;
@@ -937,8 +953,12 @@ class _PageCanvasState extends State<PageCanvas> {
       return;
     }
     if (_touches.containsKey(e.pointer)) {
-      _touchMove(e);
+      final blockOwnsPointer = _blockOwnedTouches.contains(e.pointer);
+      // Keep a claimed first finger passive until a second contact arrives.
+      // Once there are two, both feeds belong to one CanvasController pinch.
+      if (_multiTouchSeen || !blockOwnsPointer) _touchMove(e);
       if (_touches.length >= 2) return;
+      if (blockOwnsPointer) return;
       if (_mode == _DragMode.pending &&
           (e.localPosition - _downScreen).distance > 5) {
         _mode = _DragMode.pan;
@@ -986,6 +1006,8 @@ class _PageCanvasState extends State<PageCanvas> {
     }
     final wasTouch = _touches.containsKey(e.pointer);
     if (wasTouch) _touchUp(e);
+    _blockOwnedTouches.remove(e.pointer);
+    if (_touches.isEmpty) app.touchCanvasGesture = false;
     final mode = _mode;
     _mode = _DragMode.none;
     switch (mode) {
@@ -1538,7 +1560,9 @@ class _PageCanvasState extends State<PageCanvas> {
             onPointerCancel: (_) {
               _mode = _DragMode.none;
               _touches.clear();
+              _blockOwnedTouches.clear();
               _pinchBaseDist = null;
+              app.touchCanvasGesture = false;
               app.setDragging(false);
             },
             behavior: HitTestBehavior.translucent,
