@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import '../l10n/app_strings.dart';
@@ -143,7 +142,7 @@ class _CommandBarState extends State<CommandBar> {
               ToolbarControl(
                 width: 40,
                 icon: Icons.event_note_outlined,
-                label: 'Planner',
+                label: 'Homework & reminders',
                 selected: app.showPlannerPanel,
                 onPressed: app.togglePlannerPanel,
                 inline: _PlannerButton(app: app),
@@ -274,12 +273,6 @@ class _CommandBarState extends State<CommandBar> {
           ),
         ),
         IconButton(
-          icon: const Icon(Icons.fullscreen, size: 18),
-          tooltip: tr(context, 'Writing mode'),
-          visualDensity: VisualDensity.compact,
-          onPressed: () => app.setWritingMode(true),
-        ),
-        IconButton(
           icon: const Icon(Icons.settings_outlined, size: 18),
           tooltip: tr(context, 'Settings…'),
           visualDensity: VisualDensity.compact,
@@ -322,7 +315,13 @@ class _CommandBarState extends State<CommandBar> {
                       child: AppText('Openote')),
                 ),
               )),
-              ..._utilityControls(context, scheme),
+              IconButton(
+                icon: const Icon(Icons.settings_outlined, size: 18),
+                tooltip: tr(context, 'Settings…'),
+                visualDensity: VisualDensity.compact,
+                onPressed: () => showSettingsDialog(context, app),
+              ),
+              const WindowsCaptionButtons(),
             ])),
       );
     }
@@ -339,6 +338,12 @@ class _CommandBarState extends State<CommandBar> {
             height: 32,
             child: Row(
               children: [
+                IconButton(
+                  icon: const Icon(Icons.fullscreen, size: 18),
+                  tooltip: tr(context, 'Writing mode'),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => app.setWritingMode(true),
+                ),
                 // **No leading gutter.** A fixed chrome region runs to the edge
                 // of the region it owns (§7d); the first control's own padding
                 // is the optical margin. An extra 6px here made the toolbar
@@ -410,18 +415,19 @@ class _CommandBarState extends State<CommandBar> {
               child: _tab == 1
                   ? KeyedSubtree(
                       key: const ValueKey(1), child: _insertRow(context))
-                  : ScrollConfiguration(
-                      behavior: const _ToolbarScroll(),
-                      child: SingleChildScrollView(
-                        key: ValueKey(_tab),
-                        scrollDirection: Axis.horizontal,
-                        child: _tab == 2
-                            ? _drawRow(context)
-                            : _tab == 3
-                                ? PageFace(app: app)
-                                : _homeRow(context),
-                      ),
-                    ),
+                  : KeyedSubtree(
+                      key: ValueKey(_tab),
+                      child: ScrollConfiguration(
+                        behavior: const _ToolbarScroll(),
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: _tab == 2
+                              ? _drawRow(context)
+                              : _tab == 3
+                                  ? PageFace(app: app)
+                                  : _homeRow(context),
+                        ),
+                      )),
             ),
           ),
         ],
@@ -829,8 +835,7 @@ class _CommandBarState extends State<CommandBar> {
       toolButton(Tool.select, Icons.near_me_outlined, 'Select / move  (V)'),
       toolButton(Tool.text, Icons.text_fields, 'Text  (T)'),
       toolButton(Tool.pen, Icons.brush_outlined, 'Pen  (P)'),
-      toolButton(
-          Tool.ballpoint, Icons.edit, 'Ballpoint — constant width'),
+      toolButton(Tool.ballpoint, Icons.edit, 'Ballpoint — constant width'),
       toolButton(
           Tool.highlighter, Icons.border_color_outlined, 'Highlighter  (H)'),
       toolButton(Tool.eraser, Icons.cleaning_services_outlined, 'Eraser  (E)'),
@@ -1402,10 +1407,10 @@ class _PlannerButton extends StatelessWidget {
       message: alerts > 0
           ? '$alerts reminder${alerts == 1 ? '' : 's'} waiting'
           : count == 0
-              ? 'Planner — every date you have, in one place'
+              ? 'Homework & reminders — every date in one place'
               : overdue
-                  ? 'Planner — $count today or overdue'
-                  : 'Planner — $count today',
+                  ? 'Homework & reminders — $count today or overdue'
+                  : 'Homework & reminders — $count today',
       child: Stack(clipBehavior: Clip.none, children: [
         IconButton(
           icon: const Icon(Icons.event_note_outlined, size: 18),

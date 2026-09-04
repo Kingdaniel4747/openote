@@ -197,7 +197,10 @@ Future<PdfImportResult> importPdfFile(
         final page = doc.pages[i];
         batch.add((
           page: page,
-          text: await _textOf(page),
+          // Text extraction is optional search metadata, never a reason to
+          // hold up importing an otherwise valid worksheet. Some scanned or
+          // malformed school PDFs keep PDFium in this call for many seconds.
+          text: null,
           // Page previews are generated lazily by ImageBlockView. Rendering a
           // 100-page deck before inserting anything is why imports looked as
           // though they were stuck forever on Windows.
@@ -287,23 +290,6 @@ Block _slideBlock(
       },
     );
 
-Future<String?> _textOf(PdfPage page) async {
-  try {
-    // Hidden, but present in the page JSON, so the existing brute-force
-    // notebook search finds slides by their words.
-    return (await page.loadText().timeout(const Duration(seconds: 8)))
-        ?.fullText
-        .trim();
-  } on TimeoutException {
-    // A broken text layer must not stop someone annotating their PDF. The
-    // slide still imports and can be searched visually; a later page can
-    // still contribute text if its layer is healthy.
-    return null;
-  } catch (_) {
-    return null; // a scanned deck has no text layer; that's fine
-  }
-}
-
 /// The card: one block, the deck behind a click.
 PdfImportResult _importAsCard(
     AppState app, PdfDocument doc, String pdfHash, String name) {
@@ -358,7 +344,10 @@ Future<PdfImportResult> _importOntoCurrentPage(
   var made = 0;
   for (var i = 0; i < total; i++) {
     final page = doc.pages[i];
-    final text = await _textOf(page);
+    // Keep the import path to copying the source and writing references.
+    // Rendering and text extraction are not allowed to make a large printout
+    // look stuck before the student can write on it.
+    const String? text = null;
     // The original PDF is already safely stored. Its preview is cached the
     // first time this slide appears on screen, so inserting a large deck is
     // immediate instead of waiting for every PDF page to rasterise.
@@ -420,7 +409,7 @@ Future<PdfImportResult> _importIntoPdfPage(
   Block? first;
   for (var i = 0; i < doc.pages.length; i++) {
     final page = doc.pages[i];
-    final text = await _textOf(page);
+    const String? text = null;
     const String? preview = null;
     final height = page.height / page.width * width;
     final block = app.addBlock(

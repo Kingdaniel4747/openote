@@ -96,15 +96,14 @@ abstract final class OnoteColors {
 
   /// Default content-ink pen colors (style guide §3.6).
   /// Shared by the toolbar and stroke capture: swatches show actual ink.
-  static List<Color> drawingColors({required bool dark, required bool highlighter}) =>
-      highlighter ? highlighterColors : [
-        dark ? moon0 : graphite900,
-        ...penColors.skip(1),
-        // Explicit black and white are available for annotating light/dark
-        // images and PDFs, irrespective of the application's theme.
-        Colors.black,
-        Colors.white,
-      ];
+  static List<Color> drawingColors(
+          {required bool dark, required bool highlighter}) =>
+      highlighter
+          ? highlighterColors
+          : [
+              dark ? moon0 : graphite900,
+              ...penColors.skip(1),
+            ];
 
   static const penColors = <Color>[
     graphite900,
@@ -199,8 +198,8 @@ ThemeData onoteTheme(Brightness brightness) {
   );
 
   ButtonStyle buttonBase({Color? fg, Color? bg}) => ButtonStyle(
-        minimumSize: const WidgetStatePropertyAll(
-            Size(0, OnoteSize.buttonCompact)),
+        minimumSize:
+            const WidgetStatePropertyAll(Size(0, OnoteSize.buttonCompact)),
         padding: const WidgetStatePropertyAll(OnoteSpace.control),
         textStyle: const WidgetStatePropertyAll(OnoteType.ui),
         foregroundColor: fg == null ? null : WidgetStatePropertyAll(fg),
@@ -230,15 +229,15 @@ ThemeData onoteTheme(Brightness brightness) {
     splashFactory: NoSplash.splashFactory,
     extensions: [surfaces],
 
-    dividerTheme: DividerThemeData(
-        color: surfaces.border, thickness: 1, space: 1),
+    dividerTheme:
+        DividerThemeData(color: surfaces.border, thickness: 1, space: 1),
 
     iconTheme: IconThemeData(size: OnoteIcon.sm, color: surfaces.textPrimary),
 
     tooltipTheme: TooltipThemeData(
       waitDuration: const Duration(milliseconds: 500),
-      textStyle: OnoteType.caption.copyWith(
-          color: dark ? OnoteColors.graphite900 : OnoteColors.moon0),
+      textStyle: OnoteType.caption
+          .copyWith(color: dark ? OnoteColors.graphite900 : OnoteColors.moon0),
       decoration: BoxDecoration(
         color: dark ? OnoteColors.moon100 : OnoteColors.graphite900,
         borderRadius: OnoteRadius.smAll,
@@ -294,8 +293,7 @@ ThemeData onoteTheme(Brightness brightness) {
     ),
     menuButtonTheme: const MenuButtonThemeData(
       style: ButtonStyle(
-        minimumSize:
-            WidgetStatePropertyAll(Size(0, OnoteSize.menuRow)),
+        minimumSize: WidgetStatePropertyAll(Size(0, OnoteSize.menuRow)),
         padding: WidgetStatePropertyAll(
             EdgeInsets.symmetric(horizontal: OnoteSpace.x5)),
         textStyle: WidgetStatePropertyAll(OnoteType.ui),
@@ -353,8 +351,8 @@ ThemeData onoteTheme(Brightness brightness) {
       ),
       helpTextStyle: OnoteType.small.copyWith(color: surfaces.textSecondary),
       dialTextStyle: OnoteType.ui,
-      hourMinuteShape: const RoundedRectangleBorder(
-          borderRadius: OnoteRadius.lgAll),
+      hourMinuteShape:
+          const RoundedRectangleBorder(borderRadius: OnoteRadius.lgAll),
     ),
 
     // ── Toasts (style guide §7 Toasts) ─────────────────────────────────
@@ -365,8 +363,8 @@ ThemeData onoteTheme(Brightness brightness) {
       behavior: SnackBarBehavior.floating,
       width: 440,
       backgroundColor: dark ? OnoteColors.night200 : OnoteColors.graphite900,
-      contentTextStyle: OnoteType.small.copyWith(
-          color: dark ? OnoteColors.moon0 : OnoteColors.paper0),
+      contentTextStyle: OnoteType.small
+          .copyWith(color: dark ? OnoteColors.moon0 : OnoteColors.paper0),
       actionTextColor: dark ? OnoteColors.ink300 : OnoteColors.ink200,
       elevation: 6,
       shape: const RoundedRectangleBorder(borderRadius: OnoteRadius.lgAll),
@@ -422,8 +420,8 @@ ThemeData onoteTheme(Brightness brightness) {
     scrollbarTheme: ScrollbarThemeData(
       thickness: const WidgetStatePropertyAll(8),
       radius: const Radius.circular(OnoteRadius.sm),
-      thumbColor: WidgetStatePropertyAll(
-          surfaces.textDisabled.withValues(alpha: .5)),
+      thumbColor:
+          WidgetStatePropertyAll(surfaces.textDisabled.withValues(alpha: .5)),
       crossAxisMargin: 2,
     ),
   );

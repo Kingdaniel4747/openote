@@ -52,6 +52,7 @@ class _PageCanvasState extends State<PageCanvas> {
   final List<Offset> _shapeRaw = [];
   String? _shapeKind;
   Offset? _shapeAnchor;
+  Offset? _shapeLastMotion;
 
   void _windowsPenChanged() {
     if (!mounted) return;
@@ -152,6 +153,7 @@ class _PageCanvasState extends State<PageCanvas> {
     _shapeRaw.clear();
     _shapeKind = null;
     _shapeAnchor = null;
+    _shapeLastMotion = null;
     _windowsInkPointer = null;
     _gestureErase = false;
     _eraseUndoPushed = false;
@@ -267,9 +269,10 @@ class _PageCanvasState extends State<PageCanvas> {
     _shapeKind = null;
     _shapeRaw.clear();
     _shapeAnchor = null;
+    _shapeLastMotion = null;
     if (_contactTool == Tool.shape) {
       _shapeAnchor = pt;
-      _shapeHold = Timer(const Duration(milliseconds: 550), _snapWetShape);
+      _shapeLastMotion = pt;
     }
     setState(() {
       _wet = Stroke(
@@ -341,6 +344,15 @@ class _PageCanvasState extends State<PageCanvas> {
         _rewriteWetShape(pagePt);
         return;
       }
+      final last = _shapeLastMotion;
+      if (last == null || (pagePt - last).distance > 4) {
+        _shapeLastMotion = pagePt;
+        _shapeHold?.cancel();
+        // Snapping is a deliberate gesture: finish the rough outline, then
+        // keep the pen down and still for two seconds. Normal handwriting
+        // never pauses in this exact state, so it remains ordinary ink.
+        _shapeHold = Timer(const Duration(seconds: 2), _snapWetShape);
+      }
     }
     w.x.add(pagePt.dx);
     w.y.add(pagePt.dy);
@@ -362,9 +374,11 @@ class _PageCanvasState extends State<PageCanvas> {
         .expandToInclude(_pointsBounds(_shapeRaw));
     final diagonal =
         math.sqrt(bounds.width * bounds.width + bounds.height * bounds.height);
+    if (diagonal < 28) return;
     final closed = (_shapeRaw.first - _shapeRaw.last).distance <
-        math.max(20, diagonal * .3);
+        math.max(14, diagonal * .13);
     if (!closed) {
+      if (_lineDeviation(_shapeRaw) > .045) return;
       _shapeKind = 'line';
     } else {
       final center = bounds.center;
@@ -377,11 +391,18 @@ class _PageCanvasState extends State<PageCanvas> {
         radialError += (math.sqrt(dx * dx + dy * dy) - 1).abs();
       }
       radialError /= _shapeRaw.length;
-      _shapeKind = radialError < .24
-          ? 'ellipse'
-          : _roughCornerCount(_shapeRaw) <= 3
-              ? 'triangle'
-              : 'rectangle';
+      if (radialError < .13) {
+        _shapeKind = 'ellipse';
+      } else {
+        final corners = _roughCornerCount(_shapeRaw);
+        if (corners == 3) {
+          _shapeKind = 'triangle';
+        } else if (corners == 4) {
+          _shapeKind = 'rectangle';
+        } else {
+          return;
+        }
+      }
     }
     _rewriteWetShape(_shapeRaw.last);
     _wetTick.value++;
@@ -402,7 +423,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   int _roughCornerCount(List<Offset> points) {
-    if (points.length < 7) return 4;
+    if (points.length < 7) return 0;
     final stride = math.max(1, points.length ~/ 20);
     var corners = 0;
     for (var i = stride; i < points.length - stride; i += stride) {
@@ -412,7 +433,24 @@ class _PageCanvasState extends State<PageCanvas> {
       final cosine = (a.dx * b.dx + a.dy * b.dy) / (a.distance * b.distance);
       if (cosine < .45) corners++;
     }
-    return corners.clamp(3, 4);
+    return corners;
+  }
+
+  double _lineDeviation(List<Offset> points) {
+    final start = points.first;
+    final end = points.last;
+    final chord = end - start;
+    final length = chord.distance;
+    if (length < 1) return double.infinity;
+    var greatest = 0.0;
+    for (final point in points) {
+      final distance =
+          ((point.dx - start.dx) * chord.dy - (point.dy - start.dy) * chord.dx)
+                  .abs() /
+              length;
+      greatest = math.max(greatest, distance);
+    }
+    return greatest / length;
   }
 
   void _rewriteWetShape(Offset end) {
@@ -487,6 +525,7 @@ class _PageCanvasState extends State<PageCanvas> {
       _shapeRaw.clear();
       _shapeKind = null;
       _shapeAnchor = null;
+      _shapeLastMotion = null;
       setState(() => _wet = null);
       return;
     }
@@ -510,6 +549,7 @@ class _PageCanvasState extends State<PageCanvas> {
     _shapeRaw.clear();
     _shapeKind = null;
     _shapeAnchor = null;
+    _shapeLastMotion = null;
   }
 
   /// True area-erase (INK-6, Ink Spec §2): remove points within the eraser

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
@@ -51,7 +52,7 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   AppState get app => widget.app;
-  Offset _writingToolbarOffset = const Offset(56, 28);
+  Offset _writingToolbarOffset = const Offset(12, 12);
 
   /// Whether the Ctrl+/ shortcut reference is up. Tracked here because the
   /// global handler runs even under a dialog: Ctrl+/ must toggle rather than
@@ -1199,18 +1200,17 @@ class _AppShellState extends State<AppShell> {
                 Positioned.fill(child: writingSurface),
                 Positioned(
                   left: _writingToolbarOffset.dx.clamp(8.0,
-                      (constraints.maxWidth - 120).clamp(8.0, double.infinity)),
+                      (constraints.maxWidth - 220).clamp(8.0, double.infinity)),
                   top: _writingToolbarOffset.dy.clamp(8.0,
                       (constraints.maxHeight - 60).clamp(8.0, double.infinity)),
                   child: Material(
                     elevation: 10,
                     clipBehavior: Clip.antiAlias,
                     borderRadius: BorderRadius.circular(12),
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                          maxWidth:
-                              (constraints.maxWidth - 16).clamp(280.0, 900.0)),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    child: SizedBox(
+                      width: math.min(
+                          760.0, math.max(220.0, constraints.maxWidth - 32)),
+                      child: Row(children: [
                         GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onPanUpdate: (details) => setState(() {
@@ -1221,7 +1221,7 @@ class _AppShellState extends State<AppShell> {
                             child: Icon(Icons.drag_indicator, size: 20),
                           ),
                         ),
-                        Flexible(child: CommandBar(app: app, drawOnly: true)),
+                        Expanded(child: CommandBar(app: app, drawOnly: true)),
                         IconButton(
                           tooltip: 'Leave writing mode',
                           icon: const Icon(Icons.close_fullscreen, size: 19),

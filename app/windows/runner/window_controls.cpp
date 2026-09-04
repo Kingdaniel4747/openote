@@ -30,31 +30,14 @@ WindowControls::WindowControls(HWND window, flutter::BinaryMessenger* messenger)
           ReleaseCapture();
           PostMessage(window_, WM_SYSCOMMAND, SC_MOVE | HTCAPTION, 0);
         } else if (call.method_name() == "maximize") {
-          if (work_area_maximized_) {
-            SetWindowPos(window_, nullptr, restore_bounds_.left,
-                restore_bounds_.top,
-                restore_bounds_.right - restore_bounds_.left,
-                restore_bounds_.bottom - restore_bounds_.top,
-                SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-            work_area_maximized_ = false;
+          // Let Windows do this itself. It knows the taskbar work area and
+          // supplies the same native maximize/restore animation as every
+          // other desktop app. Manual SetWindowPos looked like fullscreen and
+          // bypassed both of those behaviours.
+          if (IsZoomed(window_)) {
+            ShowWindow(window_, SW_RESTORE);
           } else {
-            GetWindowRect(window_, &restore_bounds_);
-            const HMONITOR monitor =
-                MonitorFromWindow(window_, MONITOR_DEFAULTTONEAREST);
-            MONITORINFO info{};
-            info.cbSize = sizeof(info);
-            if (GetMonitorInfo(monitor, &info)) {
-              const RECT area = info.rcWork;
-              // Leave the bottom edge to Explorer. A borderless window that
-              // owns the final screen pixel can prevent an auto-hidden
-              // taskbar from opening when the pen or mouse reaches it.
-              const LONG available_height = area.bottom - area.top - 1;
-              SetWindowPos(window_, nullptr, area.left, area.top,
-                  area.right - area.left,
-                  available_height > 1 ? available_height : 1,
-                  SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-              work_area_maximized_ = true;
-            }
+            ShowWindow(window_, SW_MAXIMIZE);
           }
           result->Success();
         } else if (call.method_name() == "minimize") {

@@ -16,18 +16,12 @@ class WindowsWindowController extends ChangeNotifier {
   bool _disposed = false;
   bool closing = false;
 
-  /// Hide the Windows window immediately while the cancelable exit handler
-  /// settles the last durable save. This changes perceived close time without
-  /// trading away data safety; a failed save restores the same window.
+  /// Leave the window visible while the cancelable exit handler settles the
+  /// last durable save. Windows then performs its normal close animation.
   static Future<void> hideForExit() async {
-    if (!Platform.isWindows) return;
-    try {
-      await channel.invokeMethod<void>('hide');
-    } on MissingPluginException {
-      // Older runners simply keep showing the closing overlay.
-    } on PlatformException {
-      // Saving and the ordinary exit path still continue.
-    }
+    // Kept as an API for the lifecycle path. Deliberately no native hide:
+    // hiding first makes the application vanish abruptly instead of closing
+    // like a normal Windows window.
   }
 
   static Future<void> restoreAfterFailedExit() async {

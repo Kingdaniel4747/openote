@@ -12,9 +12,7 @@ class WindowControls {
   WindowControls(HWND window, flutter::BinaryMessenger* messenger);
   ~WindowControls();
  private:
- HWND window_;
-  RECT restore_bounds_{};
-  bool work_area_maximized_ = false;
+  HWND window_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> channel_;
 };
 
