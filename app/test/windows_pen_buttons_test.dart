@@ -100,6 +100,17 @@ void main() {
     }
   });
 
+  test('disposing an old page keeps the new page connected', () async {
+    final oldPage = WindowsPenButtons(enabled: true);
+    final newPage = WindowsPenButtons(enabled: true);
+    await oldPage.attach();
+    await newPage.attach();
+    oldPage.dispose();
+    await nativeState(true, true);
+    expect(newPage.nativeEraser, true);
+    newPage.dispose();
+  });
+
   test('live release wins over Flutter button latched at pointer-down',
       () async {
     final pen = WindowsPenButtons(enabled: true);

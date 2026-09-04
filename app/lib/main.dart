@@ -8,6 +8,7 @@ import 'l10n/app_strings.dart';
 import 'core/single_instance.dart';
 import 'core/startup_args.dart';
 import 'media/video_playback.dart';
+import 'media/pdf_pages.dart';
 import 'state/app_state.dart';
 import 'store/repository.dart';
 import 'theme/onote_theme.dart';
@@ -128,6 +129,11 @@ class _OpenoteBootState extends State<OpenoteBoot> {
           await WidgetsBinding.instance.endOfFrame;
           try {
             await app.shutdown();
+            // A page render may otherwise keep pdfium and its worker alive for
+            // up to its 30-second timeout after the window has been closed.
+            // Cancel first, then give cleanup a short bounded opportunity.
+            await PdfPages.reset().timeout(const Duration(milliseconds: 750),
+                onTimeout: () {});
             if (app.hasUnsavedChanges) {
               if (mounted)
                 setState(() {

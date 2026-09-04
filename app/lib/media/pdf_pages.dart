@@ -29,6 +29,7 @@ abstract final class PdfPages {
   static final LinkedHashMap<String, _Doc> _docs = LinkedHashMap();
   static final LinkedHashMap<String, Uint8List> _pages = LinkedHashMap();
   static final Map<String, Future<Uint8List?>> _renders = {};
+  static final Map<String, void Function()> _cancelRenders = {};
   static const _maxDocs = 4;
   static const _maxPageBytes = 96 << 20;
   static var _pageBytes = 0;
@@ -124,6 +125,10 @@ abstract final class PdfPages {
 
   static Future<void> reset() async {
     _generation++;
+    for (final cancel in _cancelRenders.values.toList(growable: false)) {
+      cancel();
+    }
+    _cancelRenders.clear();
     final docs = _docs.values.toList();
     final renders = _renders.values.toList();
     _docs.clear();
@@ -173,6 +178,8 @@ Future<RenderedPdfPage?> renderPdfPageToPng(PdfPage page) async {
 
   PdfImage? img;
   final cancellation = page.createCancellationToken();
+  final cancelId = '${identityHashCode(page)}#${DateTime.now().microsecondsSinceEpoch}';
+  PdfPages._cancelRenders[cancelId] = cancellation.cancel;
   var expired = false;
   try {
     final rendering = page.render(
@@ -202,6 +209,7 @@ Future<RenderedPdfPage?> renderPdfPageToPng(PdfPage page) async {
     debugPrint('[openote/pdf] page render failed: $e');
     return null;
   } finally {
+    PdfPages._cancelRenders.remove(cancelId);
     img?.dispose();
   }
 }

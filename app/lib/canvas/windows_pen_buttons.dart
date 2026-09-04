@@ -10,6 +10,8 @@ class WindowsPenButtons extends ChangeNotifier {
   WindowsPenButtons({bool? enabled}) : enabled = enabled ?? Platform.isWindows;
 
   static const channel = MethodChannel('openote/windows_pen_buttons');
+  static final Set<WindowsPenButtons> _clients = {};
+  static bool _handlerInstalled = false;
   final bool enabled;
   bool nativeInRange = false;
   bool nativeEraser = false;
@@ -19,9 +21,20 @@ class WindowsPenButtons extends ChangeNotifier {
   Future<void> attach() async {
     if (!enabled || _attached) return;
     _attached = true;
-    channel.setMethodCallHandler((call) async {
-      if (_attached && call.method == 'state') _readState(call.arguments);
-    });
+    _clients.add(this);
+    if (!_handlerInstalled) {
+      _handlerInstalled = true;
+      channel.setMethodCallHandler((call) async {
+        if (call.method != 'state') return;
+        // PageCanvas is keyed by page id, so an old and a new page can briefly
+        // overlap during a switch. One process-wide handler fans the native
+        // state out to every live page; disposing the old page can no longer
+        // unregister the new page's handler.
+        for (final client in _clients.toList(growable: false)) {
+          if (client._attached) client._readState(call.arguments);
+        }
+      });
+    }
     // A page can open while the same pen is already hovering with its button
     // held. Query once, rather than waiting for the native state to change.
     final revision = _revision;
@@ -72,8 +85,12 @@ class WindowsPenButtons extends ChangeNotifier {
 
   @override
   void dispose() {
-    if (_attached) channel.setMethodCallHandler(null);
+    _clients.remove(this);
     _attached = false;
+    if (_clients.isEmpty && _handlerInstalled) {
+      _handlerInstalled = false;
+      channel.setMethodCallHandler(null);
+    }
     super.dispose();
   }
 }
