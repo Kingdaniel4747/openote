@@ -4525,6 +4525,10 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
+  // Retained for older plug-ins and tests which assign this setting directly.
+  // Hover no longer reads it: switching to ink is now strictly contact-based.
+  bool penProximitySwitch = false;
+
   bool startMaximized = true;
 
   void setStartMaximized(bool value) {
@@ -8517,7 +8521,7 @@ class AppState extends ChangeNotifier
     if (!_disposed) notifyListeners();
   }
 
-  Future<void> flushSave() async {
+  Future<void> flushSave({bool closing = false}) async {
     final saveCancellationGeneration = _saveCancellationGeneration;
     _saveDebounce?.cancel();
     if (!_dirty || pageId == null || notebookId == null) return;
@@ -8607,7 +8611,11 @@ class AppState extends ChangeNotifier
       // plan, Step 8a). It reads from a stored byte offset, so this is the
       // ops that were written and nothing else — never a re-scan — and it is
       // best-effort inside: a derived index must never fail a save.
-      await refreshHistory(nb);
+      // The change-history view is derived data. Rebuilding it can scan a
+      // large operation log, which is valuable while the app is open but is
+      // unrelated to making the page durable. Never make closing a notebook
+      // wait for that extra work.
+      if (!closing) await refreshHistory(nb);
       // Throttled inside; a mirror is a safety net, not a live replica.
       unawaited(runMirrors(nb));
     } catch (e) {
@@ -8633,7 +8641,7 @@ class AppState extends ChangeNotifier
     _gitDebounce?.cancel();
     _housekeepingTimer?.cancel();
     try {
-      await flushSave();
+    await flushSave(closing: true);
     } catch (_) {
       // flushSave recorded the problem and left _dirty set. The lifecycle
       // handler keeps the app open so unsaved notes can still be recovered.

@@ -140,7 +140,10 @@ class _WindowsWindowFrameState extends State<WindowsWindowFrame> {
       await _window.configureChrome(color);
       if (!mounted || _started) return;
       _started = true;
-      if (widget.startMaximized) await _window.maximize();
+      // Openote is a writing surface. On Windows it always starts maximized
+      // (not borderless fullscreen), so the normal taskbar remains available
+      // and no old per-install setting can accidentally restore a tiny window.
+      await _window.maximize();
     });
   }
 

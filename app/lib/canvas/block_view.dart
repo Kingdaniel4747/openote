@@ -678,7 +678,7 @@ class _BlockViewState extends State<BlockView> {
         PointerDeviceKind.touch,
         PointerDeviceKind.stylus,
       },
-      onLongPressStart: editing || _locked ? null :
+      onLongPressStart: editing ? null :
           (d) => showBlockMenu(context, app, b, d.globalPosition),
       child: body,
     );

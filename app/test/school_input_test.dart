@@ -147,7 +147,10 @@ void main() {
           t.widget<Container>(find.byKey(const ValueKey('pen-swatch-0')));
       final shown = (swatch.decoration as BoxDecoration).color!;
       expect(shown, dark ? OnoteColors.moon0 : OnoteColors.graphite900);
-      expect(colorFromHex(strokes().single['brush']['color'] as String), shown);
+      // The first swatch is automatic paper ink. It follows the theme even
+      // after the stroke has been written, rather than persisting one fixed
+      // light/dark colour in the document.
+      expect(strokes().single['brush']['color'], 'auto');
       expect(
           OnoteColors.drawingColors(dark: dark, highlighter: false)
               .skip(1)

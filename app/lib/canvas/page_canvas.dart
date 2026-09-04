@@ -248,7 +248,7 @@ class _PageCanvasState extends State<PageCanvas> {
 
   void _inkDown(PointerDownEvent e) {
     if (e.kind == PointerDeviceKind.stylus || e.kind == PointerDeviceKind.invertedStylus) {
-      _showPenButtonTool(_windowsPen.erases(e));
+      _showPenButtonTool(_windowsPen.erasesAtContact(e));
       if (app.tool == Tool.select || app.tool == Tool.text) app.setTool(Tool.pen);
       app.requestDrawTab();
     }
@@ -263,7 +263,7 @@ class _PageCanvasState extends State<PageCanvas> {
     // the kind guard is what keeps a right-click mouse drag from erasing.)
     // Windows additionally observes native pen flags and rechecks on moves.
     // Other platforms keep their existing contact-time behavior.
-    _gestureErase = _windowsPen.erases(e);
+    _gestureErase = _windowsPen.erasesAtContact(e);
     final stylus = e.kind == PointerDeviceKind.stylus || e.kind == PointerDeviceKind.invertedStylus;
     if (stylus) _pendingErase = _gestureErase;
     _contactTool = !stylus && _buttonOverride ? _penReturnTool : app.tool;

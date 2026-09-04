@@ -295,13 +295,13 @@ void main() {
       await finish(t, app);
     });
 
-    testWidgets('hover toggles eraser without leaving range and restores lasso',
+    testWidgets('hover keeps the selected tool until a pen contact',
         (t) async {
       final app = await mount(t);
       app.setTool(Tool.lasso);
       await nativeState(true, true);
       await t.pump();
-      expect(app.tool, Tool.eraser);
+      expect(app.tool, Tool.lasso);
       await nativeState(true, false);
       await t.pump();
       expect(app.tool, Tool.lasso);

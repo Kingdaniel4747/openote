@@ -59,6 +59,17 @@ class WindowsPenButtons extends ChangeNotifier {
         (event.buttons & kSecondaryStylusButton) != 0;
   }
 
+  /// At the first contact a Galaxy S Pen can expose Flutter's barrel bit one
+  /// event before Windows' raw-HID state arrives. Use it only to decide this
+  /// new gesture; subsequent moves continue using [erases], where a live
+  /// native release correctly wins over a stale Flutter button bit.
+  bool erasesAtContact(PointerEvent event) {
+    if (erases(event)) return true;
+    if (!enabled || event.kind != PointerDeviceKind.stylus) return false;
+    return (event.buttons & kPrimaryStylusButton) != 0 ||
+        (event.buttons & kSecondaryStylusButton) != 0;
+  }
+
   @override
   void dispose() {
     if (_attached) channel.setMethodCallHandler(null);
