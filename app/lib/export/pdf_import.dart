@@ -5,16 +5,18 @@
 ///
 /// This is the workflow GoodNotes and Notability built businesses on, and it
 /// is Apple-locked and paid there. OneNote's equivalent ("Insert → PDF
-/// printout") rasterises pages into images and loses the text.
+/// printout") rasterises pages into images.
 ///
-/// **The PDF is stored ONCE, and pages are references** (storage wave 1c).
-/// The importer used to rasterise every page to a 2× PNG blob: a 60-slide
-/// deck became hundreds of megabytes of pixels standing in for a 4 MB file.
-/// Now the source PDF goes into the blob store once — it syncs exactly like
-/// an image does — and each slide block carries `{pdf: sha256:…, page: i}`,
-/// rendered on demand by `PdfPages` at the same scale, so it looks identical
-/// and costs almost nothing at rest. It also means the PDF's own text is
-/// still there for the viewer's selection and copy.
+/// **The PDF is stored ONCE, and every page gets a durable preview.** The
+/// source PDF remains one content-addressed blob, preserving searchable text
+/// and lossless export. Each slide also carries a content-addressed 2× PNG in
+/// `blob`, so drawing and scrolling use the same simple, immutable image path
+/// as ordinary pictures and do not keep pdfium involved after import.
+///
+/// This intentionally spends disk space for reliability. The blobs are
+/// content-addressed, so identical bytes are deduplicated, sync safely and can
+/// never become stale. A legacy `{pdf, page}` block without `blob` still works:
+/// the image view renders it once and upgrades it lazily.
 ///
 /// Two deliberate choices survive from the raster era:
 ///
@@ -34,6 +36,7 @@ import 'package:pdfrx/pdfrx.dart';
 
 import '../model/models.dart';
 import '../state/app_state.dart';
+import '../media/pdf_pages.dart';
 import '../media/pdf_runtime.dart';
 
 /// Page width we lay imported slides out at, matching the default page width
@@ -182,16 +185,22 @@ Future<PdfImportResult> importPdfFile(
     final total = doc.pages.length;
     var pos = nowMs();
 
-    // Chunked transactions, as before — but the per-page work is now only
-    // TEXT EXTRACTION, so a 200-slide import that used to render for minutes
-    // finishes in seconds.
+    // Chunked transactions keep large imports responsive. Page previews are
+    // deliberately rendered before the batch write: once imported, a slide
+    // is an ordinary immutable image and never depends on an open PDF worker.
     const chunkSize = 16;
     for (var start = 0; start < total; start += chunkSize) {
       final end = (start + chunkSize).clamp(0, total);
-      final batch = <({PdfPage page, String? text, int index})>[];
+      final batch =
+          <({PdfPage page, String? text, String? preview, int index})>[];
       for (var i = start; i < end; i++) {
-        batch.add(
-            (page: doc.pages[i], text: await _textOf(doc.pages[i]), index: i));
+        final page = doc.pages[i];
+        batch.add((
+          page: page,
+          text: await _textOf(page),
+          preview: await _storePagePreview(app, nb, page),
+          index: i,
+        ));
       }
 
       app.importBatch(nb, () {
@@ -213,7 +222,7 @@ Future<PdfImportResult> importPdfFile(
             node.id,
             [
               _slideBlock(pdfHash, item.page, item.index, item.text,
-                  x: 0, y: 0, w: w, background: true)
+                  x: 0, y: 0, w: w, background: true, preview: item.preview)
                 ..h = h
             ],
             PageProps(
@@ -248,6 +257,7 @@ Block _slideBlock(
   required double y,
   required double w,
   bool background = false,
+  String? preview,
 }) =>
     Block(
       type: BlockType.image,
@@ -256,6 +266,7 @@ Block _slideBlock(
       w: w,
       content: {
         'pdf': 'sha256:$pdfHash',
+        if (preview != null) 'blob': preview,
         'page': index,
         'mime': 'application/pdf',
         // The PDF's own geometry, so aspect and proportional resize never
@@ -283,6 +294,17 @@ Future<String?> _textOf(PdfPage page) async {
   } catch (_) {
     return null; // a scanned deck has no text layer; that's fine
   }
+}
+
+/// Persist the visual page beside the original PDF. A failed render does not
+/// abort the import: the `{pdf, page}` reference remains a complete fallback
+/// and the image view can retry and upgrade that one page later.
+Future<String?> _storePagePreview(
+    AppState app, String notebookId, PdfPage page) async {
+  final image = await renderPdfPageToPng(page);
+  if (image == null) return null;
+  final hash = app.importBlob(notebookId, image.png, 'image/png');
+  return 'sha256:$hash';
 }
 
 /// The card: one block, the deck behind a click.
@@ -340,10 +362,11 @@ Future<PdfImportResult> _importOntoCurrentPage(
   for (var i = 0; i < total; i++) {
     final page = doc.pages[i];
     final text = await _textOf(page);
+    final preview = await _storePagePreview(app, app.notebookId!, page);
     final h = page.height / page.width * width;
     final block = app.addBlock(
       _slideBlock(pdfHash, page, i, text,
-          x: AppState.pageLeftMargin, y: y, w: width)
+          x: AppState.pageLeftMargin, y: y, w: width, preview: preview)
         ..h = h,
       recordUndo: false,
     );
@@ -398,10 +421,11 @@ Future<PdfImportResult> _importIntoPdfPage(
   for (var i = 0; i < doc.pages.length; i++) {
     final page = doc.pages[i];
     final text = await _textOf(page);
+    final preview = await _storePagePreview(app, app.notebookId!, page);
     final height = page.height / page.width * width;
     final block = app.addBlock(
       _slideBlock(pdfHash, page, i, text,
-          x: 0, y: y, w: width, background: true)
+          x: 0, y: y, w: width, background: true, preview: preview)
         ..h = height,
       recordUndo: false,
     );

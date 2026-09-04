@@ -74,46 +74,27 @@ class _ImageBlockViewState extends State<ImageBlockView> {
   @override
   void didUpdateWidget(covariant ImageBlockView old) {
     super.didUpdateWidget(old);
-    final key = widget.block.content['pdf'] ?? widget.block.content['blob'];
-    if (key != _hash || old.block.content['page'] != widget.block.content['page']) _load();
+    final key = widget.block.content['blob'] ?? widget.block.content['pdf'];
+    if (key != _hash ||
+        old.block.content['page'] != widget.block.content['page']) {
+      _load();
+    }
   }
 
   void _load() {
     final request = ++_loadRequest;
     _pdfError = null;
-    // A slide is a REFERENCE — `{pdf: sha256:…, page: i}` — rendered on
-    // demand (storage wave 1c). The PDF is stored once; the pixels exist
-    // only while something is looking at them.
+    // New PDF slides carry both the source `{pdf, page}` and a permanent
+    // image `blob`. Legacy slides have only the source reference; render one
+    // once, store it like an ordinary image and upgrade the block in place.
     final pdf = widget.block.content['pdf'] as String?;
-    if (pdf != null) {
-      _hash = pdf;
+    final preview = widget.block.content['blob'] as String?;
+    if (pdf != null && preview == null) {
       final page = (widget.block.content['page'] as num?)?.toInt() ?? 0;
-      final hit = PdfPages.cached(pdf, page);
-      if (hit != null) {
-        _provider = MemoryImage(hit);
-        if (mounted) setState(() {});
-        return;
-      }
-      _rendering = true;
-      PdfPages.pageImage(widget.app, pdf, page)
-          .timeout(const Duration(seconds: 45)).then((png) {
-        if (!mounted || request != _loadRequest) return;
-        setState(() {
-          _rendering = false;
-          _pdfError = png == null ? 'PDF page unavailable. Retry after syncing.' : null;
-          _provider = png == null ? null : MemoryImage(png);
-        });
-      }, onError: (Object error) {
-        if (!mounted || request != _loadRequest) return;
-        setState(() {
-          _rendering = false;
-          _pdfError = 'PDF loading failed or timed out. Please retry.';
-        });
-      });
-      if (mounted) setState(() {});
+      _loadPdf(pdf, page, request);
       return;
     }
-    final h = widget.block.content['blob'] as String?;
+    final h = preview;
     _hash = h;
     if (h == null) {
       _provider = null;
@@ -152,12 +133,78 @@ class _ImageBlockViewState extends State<ImageBlockView> {
       }
       if (b != null) _blobCache.put(h, b);
       if (!mounted || widget.block.content['blob'] != h) return;
+      if (b == null && pdf != null) {
+        // A cloud client can deliver the small page record before the preview
+        // blob. The original PDF is sufficient to rebuild it, so a temporarily
+        // missing preview must not leave the slide blank.
+        _loadPdf(
+            pdf, (widget.block.content['page'] as num?)?.toInt() ?? 0, request);
+        return;
+      }
       setState(() {
         _rendering = false;
         _setBytes(b);
       });
     });
     if (mounted) setState(() {});
+  }
+
+  void _loadPdf(String pdf, int page, int request) {
+    _hash = pdf;
+    final hit = PdfPages.cached(pdf, page);
+    if (hit != null) {
+      _persistPdfPreview(hit, request);
+      return;
+    }
+    _rendering = true;
+    PdfPages.pageImage(widget.app, pdf, page)
+        .timeout(const Duration(seconds: 45))
+        .then((png) {
+      if (!mounted || request != _loadRequest) return;
+      if (png != null) {
+        _persistPdfPreview(png, request);
+        return;
+      }
+      setState(() {
+        _rendering = false;
+        _pdfError = 'PDF page unavailable. Retry after syncing.';
+        _provider = null;
+      });
+    }, onError: (Object error) {
+      if (!mounted || request != _loadRequest) return;
+      setState(() {
+        _rendering = false;
+        _pdfError = 'PDF loading failed or timed out. Please retry.';
+      });
+    });
+    if (mounted) setState(() {});
+  }
+
+  void _persistPdfPreview(Uint8List png, int request) {
+    if (!mounted || request != _loadRequest) return;
+    String? ref;
+    try {
+      // Content-addressed writes are idempotent. Once this block is saved,
+      // opening the page again never needs pdfium for display.
+      final notebookId = widget.app.notebookId;
+      if (notebookId != null && !widget.app.notebookIsReadOnly(notebookId)) {
+        final hash = widget.app.addBlob(png, 'image/png');
+        ref = 'sha256:$hash';
+        widget.block.content['blob'] = ref;
+        _hash = ref;
+        _blobCache.put(ref, png);
+        widget.app.markDirty();
+      }
+    } catch (e) {
+      debugPrint('[openote/pdf] could not persist page preview: $e');
+    }
+    if (!mounted || request != _loadRequest) return;
+    setState(() {
+      _hash = ref ?? _hash;
+      _rendering = false;
+      _pdfError = null;
+      _provider = MemoryImage(png);
+    });
   }
 
   /// One event-loop turn between blob reads, shared by every image on the

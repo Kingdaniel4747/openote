@@ -155,6 +155,14 @@ Future<void> _addPageSheets(
   for (final b in blocks) {
     final pdf = b.content['pdf'];
     if (b.type != BlockType.image || pdf is! String) continue;
+    final preview = b.content['blob'];
+    if (preview is String) {
+      final bytes = app.blob(preview);
+      if (bytes != null) {
+        maths[b.id] = bytes;
+        continue;
+      }
+    }
     final png = await PdfPages.pageImage(
         app, pdf, (b.content['page'] as num?)?.toInt() ?? 0);
     if (png != null) maths[b.id] = png;

@@ -13,14 +13,21 @@ import 'package:openote/store/repository.dart';
 import 'support/sqlite.dart';
 
 class _Document implements PdfDocument {
+  _Document([this.pages = const []]);
+
   int disposals = 0;
   @override
-  List<PdfPage> get pages => [];
+  final List<PdfPage> pages;
   @override
   Future<void> dispose() async {
     disposals++;
   }
 
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _Page implements PdfPage {
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -115,6 +122,47 @@ void main() {
     await tester.tap(find.text('Retry'));
     await tester.pumpAndSettle();
     expect(opens, 2);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('a legacy PDF page becomes a durable image after first display',
+      (tester) async {
+    var opens = 0;
+    PdfPages.openForTest = (_, __) async {
+      opens++;
+      return _Document([_Page()]);
+    };
+    final png = File('assets/icon/openote_icon.png').readAsBytesSync();
+    PdfPages.renderForTest = (_) async => (png: png, width: 1, height: 1);
+    final block = Block(
+        type: BlockType.image,
+        x: 0,
+        y: 0,
+        w: 400,
+        h: 500,
+        content: {'pdf': hash, 'page': 0, 'locked': true});
+
+    Widget page() => MaterialApp(
+        home: Scaffold(
+            body: SizedBox(
+                width: 400,
+                height: 500,
+                child: ImageBlockView(block: block, app: app))));
+
+    await tester.pumpWidget(page());
+    await tester.pumpAndSettle();
+    final preview = block.content['blob'];
+    expect(preview, isA<String>());
+    expect(app.blob(preview as String), orderedEquals(png));
+    expect(opens, 1);
+
+    // A fresh view reads the stored image and never opens the PDF again.
+    app.cancelPendingSave();
+    await tester.pumpWidget(const SizedBox());
+    await PdfPages.reset();
+    await tester.pumpWidget(page());
+    await tester.pumpAndSettle();
+    expect(opens, 1);
     await tester.pumpWidget(const SizedBox());
   });
 

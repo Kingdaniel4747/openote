@@ -1,13 +1,10 @@
 /// Render pages of a stored PDF on demand — storage wave 1c.
 ///
-/// A PDF used to be imported by rasterising EVERY page to a PNG blob at 2×:
-/// a 60-slide deck became ~240 MB of pixels standing in for a 4 MB file, and
-/// the text under the pixels was gone. Now the notebook stores the PDF ITSELF,
-/// once, as an ordinary content-addressed blob — it syncs like an image does —
-/// and a slide on a page is a reference `{pdf: sha256:…, page: 3}` rendered
-/// here when it scrolls into view. The look is identical (same engine, same
-/// 2× scale the importer used); the storage cost is the PDF, once; and the
-/// text survives, which is what makes the viewer's selection and copy work.
+/// A newly imported PDF keeps the source once and stores durable 2× PNG page
+/// previews beside it. This renderer remains the fallback for legacy blocks,
+/// a preview blob that has not arrived from sync yet, PDF cards and exports.
+/// The source PDF always survives, so text selection/search and lossless source
+/// access do not depend on the raster previews.
 library;
 
 import 'dart:async';

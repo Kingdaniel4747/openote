@@ -1,11 +1,6 @@
-// Storage wave 1c: a PDF is stored ONCE and its pages are references.
-//
-// The importer used to rasterise every page into a PNG blob — a 60-slide
-// deck became hundreds of megabytes standing in for a 4 MB file, and the
-// text under the pixels was gone. These tests pin the new shape: one
-// application/pdf blob, reference blocks `{pdf, page}`, the text layer
-// extracted for search, blob_refs reaching the source (or a future GC
-// collects the whole deck), and on-demand rendering producing pixels.
+// A PDF is stored once as the lossless source and each page gets a durable PNG
+// preview. The source preserves text/search/export; the preview makes display
+// independent of the PDF worker after import.
 //
 // The fixture PDF is GENERATED with the `pdf` package the exporter already
 // uses, so the bytes are a real document with a real text layer. Everything
@@ -44,8 +39,8 @@ void main() {
     await initPdfiumForTests();
     pdfBytes = await _twoPagePdf();
     try {
-      final d = await PdfDocument.openData(
-          Uint8List.fromList(pdfBytes), sourceName: 'probe');
+      final d = await PdfDocument.openData(Uint8List.fromList(pdfBytes),
+          sourceName: 'probe');
       havePdfium = d.pages.length == 2;
       await d.dispose();
     } catch (_) {
@@ -85,7 +80,7 @@ void main() {
     } catch (_) {}
   });
 
-  test('A PRINTOUT STORES THE PDF ONCE; PAGES ARE REFERENCES', () async {
+  test('a printout keeps one PDF and stores durable page previews', () async {
     if (!haveSqlite || !havePdfium) {
       return markTestSkipped('sqlite or pdfium unavailable');
     }
@@ -93,13 +88,13 @@ void main() {
     final r = await importPdfFile(app, pdfFile.path, 'deck.pdf');
     expect(r.pages, 2);
 
-    final slides =
-        app.blocks.where((b) => b.content['pdf'] is String).toList();
+    final slides = app.blocks.where((b) => b.content['pdf'] is String).toList();
     expect(slides, hasLength(2));
     for (final s in slides) {
       expect(s.type, BlockType.image);
-      expect(s.content['blob'], isNull,
-          reason: 'a reference block carries NO rasterised pixels');
+      expect(s.content['blob'], startsWith('sha256:'),
+          reason: 'each page carries an immutable visual preview');
+      expect(app.blob(s.content['blob'] as String), isNotNull);
       expect(s.content['locked'], true,
           reason: 'still an annotation surface, exactly as before');
     }
@@ -107,8 +102,8 @@ void main() {
     expect(slides.first.content['sourceText'], contains('alpha'),
         reason: 'the text layer still feeds notebook search');
 
-    expect(repo.blobIndex(app.notebookId!).length, blobsBefore + 1,
-        reason: 'ONE new blob — the PDF itself, no page PNGs');
+    expect(repo.blobIndex(app.notebookId!).length, blobsBefore + 3,
+        reason: 'one original PDF plus one PNG for each of two pages');
   });
 
   test('blob_refs reaches the source PDF, or a future GC eats the deck',
@@ -118,15 +113,18 @@ void main() {
     }
     await importPdfFile(app, pdfFile.path, 'deck.pdf');
     await app.flushSave();
-    final hash = (app.blocks
-            .firstWhere((b) => b.content['pdf'] is String)
-            .content['pdf'] as String)
-        .replaceFirst('sha256:', '');
-    expect(repo.blobRefsForTest(app.notebookId!, pageId), contains(hash),
+    final slide = app.blocks.firstWhere((b) => b.content['pdf'] is String);
+    final hash = (slide.content['pdf'] as String).replaceFirst('sha256:', '');
+    final preview =
+        (slide.content['blob'] as String).replaceFirst('sha256:', '');
+    final refs = repo.blobRefsForTest(app.notebookId!, pageId);
+    expect(refs, contains(hash),
         reason: 'the page must declare it reaches the PDF blob');
+    expect(refs, contains(preview),
+        reason: 'the durable preview must survive blob garbage collection');
   });
 
-  test('a slide renders on demand, and the second look is cached', () async {
+  test('the original PDF remains available for fallback rendering', () async {
     if (!haveSqlite || !havePdfium) {
       return markTestSkipped('sqlite or pdfium unavailable');
     }
@@ -135,7 +133,8 @@ void main() {
         .firstWhere((b) => b.content['pdf'] is String)
         .content['pdf'] as String;
 
-    expect(PdfPages.cached(ref, 0), isNull, reason: 'nothing rendered yet');
+    expect(PdfPages.cached(ref, 0), isNull,
+        reason: 'the durable preview is a blob, not the temporary PDF cache');
     final png = await PdfPages.pageImage(app, ref, 0);
     expect(png, isNotNull);
     expect(png!.length, greaterThan(1000), reason: 'a real PNG, not a stub');
@@ -167,9 +166,8 @@ void main() {
     // The blob_refs write path itself, with dummy bytes — this half must
     // hold even on machines where pdfium is missing entirely.
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-    final hash = repo.putBlob(
-        app.notebookId!, Uint8List.fromList(List.filled(64, 7)),
-        'application/pdf');
+    final hash = repo.putBlob(app.notebookId!,
+        Uint8List.fromList(List.filled(64, 7)), 'application/pdf');
     repo.writePage(
       app.notebookId!,
       pageId,
