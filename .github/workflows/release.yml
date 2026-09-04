@@ -1,325 +1,74 @@
-name: Release
+name: Windows Release
 
-# Each branch push builds and publishes a Windows installer immediately.
-# The long test suite runs independently in tests.yml and cannot block the EXE.
-# Linux is still an explicit manual build. Tags do not trigger another run.
+# A push creates one installable Windows release. Checks and tests are
+# deliberately separate, so they never delay the EXE.
 on:
   push:
-    branches: ['**']
+    branches: ["**"]
   workflow_dispatch:
-    inputs:
-      platform:
-        description: 'Platform to build (Linux only when you choose it)'
-        type: choice
-        options: [windows, linux]
-        default: windows
-        required: true
-      version:
-        description: 'Linux only: optional pubspec version; Windows versions are automatic'
-        required: false
-        type: string
 
 permissions:
   contents: write
 
 concurrency:
-  # Serialize Windows releases across branches so version allocation is unique.
-  group: openote-release-${{ inputs.platform || 'windows' }}
+  group: windows-release
   cancel-in-progress: false
-  queue: max
 
 jobs:
-  windows:
-    if: github.event_name != 'workflow_dispatch' || inputs.platform != 'linux'
-    uses: ./.github/workflows/ci.yml
-    with:
-      version: ${{ inputs.version || '' }}
-      publish: true
+  release:
+    name: Build Windows EXE and publish release
+    runs-on: windows-latest
 
-  linux:
-    if: github.event_name == 'workflow_dispatch' && inputs.platform == 'linux'
-    name: linux x64
-    # Inside a container the runner's default shell resolves to plain sh
-    # (dash), not bash — v0.8.0's dry run died on this job's first bashism,
-    # `set -o pipefail` ("Illegal option"). Every script here was written and
-    # syntax-checked as bash, so say so; debian:12 ships bash in the base image.
-    defaults:
-      run:
-        shell: bash
-    # Built INSIDE a debian:12 (bookworm) container rather than on a runner
-    # image. TWO properties of the build host are inherited by the artifact,
-    # and on the stock runner images they pull in opposite directions:
-    #
-    #   * glibc. A binary inherits the build host's floor, so an OLDER base
-    #     reaches more distros. ubuntu-22.04 gave 2.35; ubuntu-24.04 gives 2.39.
-    #   * libmpv's SONAME. media_kit_video's Linux plugin LINKS libmpv
-    #     (`target_link_libraries(... PkgConfig::mpv ...)`), so whichever
-    #     libmpv-dev this host has is baked in and resolved by ld.so before
-    #     main(). Jammy's is mpv 0.34 → libmpv.so.1; noble's is 0.37 →
-    #     libmpv.so.2.
-    #
-    # Nothing currently shipping outside 22.04 has libmpv.so.1 — Ubuntu 24.04,
-    # Debian 12/13, Mint 22, Fedora and openSUSE are all .so.2. So jammy was
-    # never really available: its packages INSTALL cleanly on those distros
-    # (the declared dependency is satisfied) and then die at exec with "error
-    # while loading shared libraries: libmpv.so.1" — not degraded video, no
-    # launch at all. But noble's 2.39 floor was the other half of the same
-    # trap: it locked Debian 12 and Ubuntu 22.04 out of 0.4.2 completely, and
-    # what those users saw was the loader's own "version `GLIBC_2.38' not
-    # found", which names no package and suggests no fix.
-    #
-    # debian:12 is the base that has BOTH, which is the whole reason for the
-    # container: glibc 2.36 (libc6 2.36-9+deb12u*) AND libmpv-dev 0.35.1-4,
-    # whose runtime package is `libmpv2` → libmpv.so.2 — exactly what
-    # packaging/linux/build-packages.sh already declares in Depends. Bookworm
-    # is also the OLDEST Debian that pairs them: bullseye would drop the floor
-    # to glibc 2.31, but its mpv is 0.32 → libmpv.so.1, straight back to the
-    # no-launch failure above.
-    #
-    # A container also decouples the floor from GitHub's image lifecycle. The
-    # runner label now only has to host Docker, so the ubuntu-22.04 removal on
-    # 2026-09-17 — and every deprecation after it — stops being a question the
-    # release has to answer.
-    #
-    # Two steps below assert all of this instead of trusting this comment to
-    # stay true: "Verify the glibc floor" pins the 2.36 ceiling, and "Verify
-    # shared-library dependencies" pins the soname.
-    runs-on: ubuntu-latest
-    container:
-      image: debian:12
-    env:
-      # Every step here runs as root in a bare image, so an apt that stopped to
-      # ask a configuration question would hang the job rather than fail it.
-      DEBIAN_FRONTEND: noninteractive
     steps:
-      # BEFORE actions/checkout, deliberately: debian:12 ships no git, and
-      # checkout without one silently falls back to unpacking a source tarball.
-      # That leaves no .git, and Flutter runs git against its own SDK.
-      #
-      # Note there is no `sudo` anywhere in this job. The image does not
-      # include it and these steps are already root, so the `sudo apt-get` this
-      # job used to run would now be "sudo: command not found".
-      - name: Install the build toolchain
-        run: |
-          set -eux
-          apt-get update
-          # What each group is for. The base image has no compiler, no CA
-          # bundle and no VCS, so all of it has to be named:
-          #   ca-certificates   TWO plugins download a prebuilt pdfium over
-          #                     HTTPS during CMake configure (printing's
-          #                     DownloadProject, pdfium_flutter's
-          #                     file(DOWNLOAD)). With no CA bundle in the image
-          #                     the TLS handshake fails and the build dies in
-          #                     cmake, long before any Dart runs.
-          #   curl              rustup's installer and flutter-action fetch.
-          #   git               see above, plus Flutter's own version probe.
-          #   unzip zip xz-utils file
-          #                     Flutter's documented Linux prerequisites; the
-          #                     SDK unpacks its engine artifacts with them.
-          #   zstd              actions/cache reaches for it first and falls
-          #                     back to gzip with a warning when it is absent.
-          #                     Both caches in this job (flutter-action's and
-          #                     rust-cache's) would otherwise take the slow
-          #                     path on every release.
-          #   build-essential   gcc/g++ (Rust needs `cc` to link at all) and
-          #                     binutils, whose objdump the two verify steps
-          #                     below depend on.
-          #   clang cmake ninja-build pkg-config liblzma-dev libstdc++-12-dev
-          #                     the `flutter build linux` toolchain proper.
-          #                     gcc 12 is bookworm's default, so -12- is the
-          #                     matching libstdc++ dev package on this base.
-          #   libgtk-3-dev      GTK itself, and also the gtk+-unix-print-3.0
-          #                     .pc file that the printing plugin looks up with
-          #                     pkg_check_modules(... REQUIRED ...) — that one
-          #                     is a hard configure failure, not a silent one.
-          #   libmpv-dev libepoxy-dev
-          #                     media_kit_video's: its Linux plugin links both
-          #                     through pkg-config, and pkg_check_modules is
-          #                     NOT REQUIRED there — so without them the plugin
-          #                     builds against nothing and ships a release
-          #                     where video silently does not work.
-          #   rpm               provides rpmbuild for build-packages.sh.
-          # jq is not ours: subosito/flutter-action's setup.sh dies without it
-          # ("jq not found", v0.8.0's first tag build). The ubuntu runner image
-          # preinstalls it, so the gap only shows inside a bare container.
-          apt-get install -y --no-install-recommends \
-            ca-certificates curl git unzip zip xz-utils zstd file jq \
-            build-essential clang cmake ninja-build pkg-config \
-            libgtk-3-dev liblzma-dev libstdc++-12-dev \
-            libmpv-dev libepoxy-dev \
-            rpm
-          # The workspace is bind-mounted from the runner (uid 1001) while this
-          # container is root, so git sees a tree owned by someone else and
-          # refuses it with "detected dubious ownership" — which would take out
-          # checkout and Flutter's SDK probe alike.
-          git config --global --add safe.directory '*'
-
-      - uses: actions/checkout@v4
-
-      - name: Read app version
-        env:
-          INPUT_VERSION: ${{ inputs.version }}
-        run: |
-          set -euo pipefail
-          VERSION="$(sed -n 's/^version: *\([^+ ]*\).*/\1/p' app/pubspec.yaml)"
-          if [ -n "$INPUT_VERSION" ] && [ "${INPUT_VERSION#v}" != "$VERSION" ]; then
-            echo "::error::Version must match app/pubspec.yaml ($VERSION)"
-            exit 1
-          fi
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-
-      # In the container too, so the core links against bookworm's glibc like
-      # everything else. A Rust core built outside would be the one .so in the
-      # bundle with a 2.39 floor, and the app would fail to load at startup on
-      # the exact machines this job exists to reach.
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - name: Check out the source
+        uses: actions/checkout@v4
         with:
-          workspaces: rust/onote_core
+          fetch-depth: 0
 
-      - name: Build Rust core
-        working-directory: rust/onote_core
-        run: cargo build --release
-
-      # Pinned to the version CI tests — see the comment in ci.yml. A tag
-      # must never build with a toolchain no push has been verified against.
-      - uses: subosito/flutter-action@v2
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
         with:
           flutter-version: 3.44.8
           cache: true
 
-      - name: Build app
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Choose the next version
+        id: version
+        shell: pwsh
+        run: |
+          . "$env:GITHUB_WORKSPACE\packaging\windows\release-version.ps1"
+          $baseline = (Select-String -LiteralPath "$env:GITHUB_WORKSPACE\app\pubspec.yaml" -Pattern '^version:\s*([^+\s]+)' | Select-Object -First 1).Matches.Groups[1].Value
+          $tags = @(git tag --list 'v*')
+          $version = Get-NextOpenoteVersion -Baseline $baseline -Tags $tags
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "tag=v$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Get Flutter packages
         working-directory: app
+        run: flutter pub get
+
+      - name: Build the Windows app
+        working-directory: app
+        env:
+          OPENOTE_VERSION: ${{ steps.version.outputs.version }}
+        run: flutter build windows --release --build-name=${{ steps.version.outputs.version }}
+
+      - name: Create the portable app archive
+        shell: pwsh
         run: |
-          flutter pub get
-          dart run pdfrx:remove_wasm_modules
-          dart run tool/strip_web_assets.dart
-          flutter build linux --release --build-name="$VERSION"
-          dart run tool/shake_icons.dart linux
+          $version = '${{ steps.version.outputs.version }}'
+          $bundle = "$env:GITHUB_WORKSPACE\app\build\windows\x64\runner\Release"
+          if (-not (Test-Path -LiteralPath "$bundle\openote.exe")) {
+            throw 'The Windows build did not produce openote.exe.'
+          }
+          Compress-Archive -Path "$bundle\*" -DestinationPath "$env:GITHUB_WORKSPACE\Openote-Windows-v$version.zip" -CompressionLevel Optimal
 
-      # Loader contract: libonote_core.so next to the 'openote' binary. The
-      # CMake hook installs it; this is belt-and-braces.
-      - name: Stage native library into the bundle
-        run: cp rust/onote_core/target/release/libonote_core.so app/build/linux/x64/release/bundle/
-
-      # The check that would have caught shipping a jammy-linked binary to
-      # Fedora. libmpv is a LINK-time dependency of media_kit_video's plugin,
-      # so its soname is a property of the artifact, not of this file's
-      # comments — and the failure mode it guards is silent: the package
-      # installs, then the app does not start. Assert the soname the binary
-      # actually asks for against the one the packages declare.
-      - name: Verify shared-library dependencies
-        run: |
-          set -euo pipefail
-          plugin=app/build/linux/x64/release/bundle/lib/libmedia_kit_video_plugin.so
-          [ -f "$plugin" ] || { echo "::error::$plugin is missing — media_kit_video did not build, so there is no video in this release"; exit 1; }
-          soname="$(objdump -p "$plugin" | awk '/NEEDED/ && /libmpv/ {print $2}')"
-          echo "libmedia_kit_video_plugin.so needs: ${soname:-<nothing>}"
-          if [ "$soname" != "libmpv.so.2" ]; then
-            echo "::error::expected libmpv.so.2, got '${soname:-<nothing>}'."
-            echo "::error::The packages declare libmpv2 (deb) and mpv-libs (rpm), both of which provide .so.2."
-            echo "::error::A mismatch here ships packages that install cleanly and then fail to launch."
-            exit 1
-          fi
-
-      # The container tag is the INTENT; this is the measurement. A binary's
-      # real floor is the highest versioned glibc symbol anything in the bundle
-      # references — a property of what the compiler emitted, not of the image
-      # name — so a dependency that starts calling a newer symbol, or an edit
-      # to the base above, is caught here rather than by a student whose app
-      # will not start. That failure gives them "version `GLIBC_2.38' not
-      # found" and nothing else to go on.
-      #
-      # This checks the bundled prebuilt .so files too (pdfium, mpv's deps):
-      # they are loaded at startup like everything else, so their floor is the
-      # app's floor.
-      - name: Verify the glibc floor
-        run: |
-          set -euo pipefail
-          bundle=app/build/linux/x64/release/bundle
-          # Per-file breakdown FIRST, so a failure below names its culprit —
-          # the aggregate alone says "GLIBC_2.38" without saying which library
-          # demanded it, and the prebuilt ones (pdfium) are the likely suspects.
-          for f in "$bundle/openote" "$bundle/libonote_core.so" "$bundle"/lib/*.so; do
-            m="$({ objdump -T "$f" 2>/dev/null || true; } \
-              | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sed 's/GLIBC_//' | sort -uV | tail -1 || true)"
-            echo "  ${m:-none}  ${f##*/}"
-          done | sort -V
-          floor="$(
-            { objdump -T "$bundle/openote" "$bundle/libonote_core.so" "$bundle"/lib/*.so 2>/dev/null || true; } \
-              | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sed 's/GLIBC_//' | sort -uV | tail -1 || true
-          )"
-          echo "highest glibc symbol version required by this bundle: ${floor:-none found}"
-          # 2.36 is bookworm's. Higher means the build escaped the container's
-          # baseline and Debian 12 is shut out again.
-          if [ -n "$floor" ] && [ "$(printf '%s\n2.36\n' "$floor" | sort -V | tail -1)" != "2.36" ]; then
-            echo "::error::this bundle needs glibc ${floor}, above debian:12's 2.36."
-            echo "::error::Debian 12 and Fedora 37/38 users would get a loader error naming GLIBC_${floor} and no app."
-            echo "::error::Something is being built or bundled outside the container — check that step."
-            exit 1
-          fi
-          echo "floor is at or below 2.36: Debian 12+, Ubuntu 24.04+, Mint 22+, Fedora 37+ can run this"
-
-      # Fallback artifact: always produced, works everywhere tar does.
-      - name: Package tar.gz
-        run: |
-          cp -r app/build/linux/x64/release/bundle "openote-${VERSION}-linux-x64"
-          tar czf "openote-${VERSION}-linux-x64.tar.gz" "openote-${VERSION}-linux-x64"
-
-      # A .deb and an .rpm, replacing the AppImage.
-      #
-      # The AppImage was one file you chmod +x and ran, and it stayed that way
-      # forever: AppImages deliberately touch nothing, so there was no menu
-      # entry and no icon. The ask was "the equivalent of an .exe I download" —
-      # something you double-click, that installs, and that then shows up in
-      # the applications menu. On Linux that is a distro package, and it takes
-      # two to cover the desktop: .deb for Debian/Ubuntu/Mint, .rpm for
-      # Fedora/RHEL/openSUSE.
-      #
-      # The .tar.gz above stays as the universal fallback for everything else
-      # (Arch, NixOS, a locked-down machine), so dropping the AppImage narrows
-      # convenience, not reach.
-      #
-      # rpmbuild comes from the `rpm` package. It is installed with the rest of
-      # the toolchain at the top of this job rather than in a separate `sudo
-      # apt-get` step here, because the container has no sudo — one apt call,
-      # in one place, is also one fewer thing to forget. Both packages are
-      # built from ONE staged tree by the script, so they cannot drift apart.
-      - name: Package .deb and .rpm
-        run: |
-          chmod +x packaging/linux/build-packages.sh
-          packaging/linux/build-packages.sh             "$VERSION"             "app/build/linux/x64/release/bundle"             "$PWD"
-
-      # Prove the packages actually contain what they promise, here rather than
-      # on a user's machine. `dpkg-deb -c` and `rpm -qlp` list the payload
-      # without installing it.
-      - name: Verify package contents
-        run: |
-          set -euo pipefail
-          deb="openote-${VERSION}-linux-amd64.deb"
-          rpm="openote-${VERSION}-linux-x86_64.rpm"
-          for f in "$deb" "$rpm"; do
-            [ -f "$f" ] || { echo "::error::$f was not produced"; exit 1; }
-          done
-          # `dpkg-deb -c` prints ls -l style, and a SYMLINK line ends with its
-          # target: "... ./usr/bin/openote -> /opt/openote/openote". Taking the
-          # last field would therefore record the target and never the link, so
-          # /usr/bin/openote would be reported missing from a package that has
-          # it. Strip the " -> ..." tail first, then take the path.
-          echo "--- deb ---"
-          dpkg-deb -c "$deb" | sed 's/ -> .*$//' | awk '{print $NF}' > deb.list
-          echo "--- rpm ---"; rpm -qlp "$rpm" > rpm.list
-          for want in /opt/openote/openote                       /opt/openote/libonote_core.so                       /opt/openote/data/flutter_assets                       /usr/bin/openote                       /usr/share/applications/org.openote.openote.desktop                       /usr/share/icons/hicolor/512x512/apps/openote.png; do
-            grep -q -- "$want" deb.list || { echo "::error::deb is missing $want"; exit 1; }
-            grep -q -- "$want" rpm.list || { echo "::error::rpm is missing $want"; exit 1; }
-          done
-          echo "both packages carry the binary, the Rust core, the launcher and the icon"
-
-      - uses: actions/upload-artifact@v4
+      - name: Publish the GitHub release
+        uses: softprops/action-gh-release@v2
         with:
-          name: linux-x64
-          path: |
-            openote-*.tar.gz
-            openote-*.deb
-            openote-*.rpm
-          if-no-files-found: error
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Openote Windows v${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          files: Openote-Windows-v${{ steps.version.outputs.version }}.zip
