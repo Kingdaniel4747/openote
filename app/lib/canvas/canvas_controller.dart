@@ -41,6 +41,29 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Apply a two-finger zoom without making a visible page edge drift away
+  /// from the window. Once an edge has scrolled off-screen, that axis instead
+  /// follows the pinch focal point so the content remains under the fingers.
+  /// The normal page boundary is restored when the gesture ends.
+  void transformPinchAt(
+    Offset previousFocal,
+    double factor,
+    Offset currentFocal,
+  ) {
+    // An origin at zero is the visible top/left edge. Keep that edge pinned
+    // while it is visible, but never force a distant page origin back into
+    // view in the middle of a pinch.
+    final pinLeftEdge = offset.dx >= -0.5;
+    final pinTopEdge = offset.dy >= -0.5;
+    final pageFocal = screenToPage(previousFocal);
+    final newScale = (scale * factor).clamp(minScale, maxScale);
+    scale = newScale;
+    offset = currentFocal - pageFocal * scale;
+    if (pinLeftEdge) offset = Offset(0, offset.dy);
+    if (pinTopEdge) offset = Offset(offset.dx, 0);
+    notifyListeners();
+  }
+
   /// Restore an exact view (used by PDF export).
   void jumpTo(double s, Offset o) {
     scale = s;
@@ -81,6 +104,13 @@ class CanvasController extends ChangeNotifier {
       axis(offset.dx, viewport.width, ps.width * scale),
       axis(offset.dy, viewport.height, ps.height * scale),
     );
+  }
+
+  /// Apply the page boundary once after a gesture has finished, rather than
+  /// during every pinch sample where it would move content away from fingers.
+  void settleToPage() {
+    clampToPage();
+    notifyListeners();
   }
 
   /// Initial view: page anchored top-left, filling the window (the page is at

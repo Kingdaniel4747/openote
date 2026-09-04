@@ -803,15 +803,18 @@ class _PageCanvasState extends State<PageCanvas> {
       final focal = (pts[0] + pts[1]) / 2;
       if (_pinchBaseDist! > 0 && d > 0) {
         final previous = _pinchLastFocal ?? focal;
-        // Do not clamp mid-pinch. Clamping each sample to the page origin
-        // moves the content after the focal-point calculation and is exactly
-        // the visible up/down jump reported when zooming with two fingers.
-        controller.transformAt(previous, d / _pinchBaseDist!, focal - previous,
-            clamp: false);
+        // Keep a visible upper/left page edge pinned, but when it is already
+        // off-screen zoom around the fingers. A full clamp mid-pinch moves
+        // content away from the focal point and caused the visible jump.
+        controller.transformPinchAt(
+          previous,
+          d / _pinchBaseDist!,
+          focal,
+        );
         _pinchBaseDist = d;
         _pinchLastFocal = focal;
       }
-    } else if (_touches.length == 1) {
+    } else if (_touches.length == 1 && !_multiTouchSeen) {
       final delta = e.localPosition - _lastScreen;
       controller.panBy(delta);
       if (elapsed > 0) {
@@ -836,8 +839,17 @@ class _PageCanvasState extends State<PageCanvas> {
       _pinchLastFocal = null;
     }
     if (_touches.length == 1) _lastScreen = _touches.values.first;
-    if (_touches.isEmpty && !_multiTouchSeen) _startInertia();
-    if (_touches.isEmpty) _multiTouchSeen = false;
+    if (_touches.isEmpty) {
+      if (_multiTouchSeen) {
+        // Both fingers are finally gone. Now, and only now, restore the
+        // page boundary. This prevents the surviving finger from producing a
+        // last clamped pan that visibly jerks the canvas during the pinch.
+        controller.settleToPage();
+      } else {
+        _startInertia();
+      }
+      _multiTouchSeen = false;
+    }
   }
 
   void _startInertia() {
