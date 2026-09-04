@@ -714,6 +714,29 @@ class _BlockViewState extends State<BlockView> {
     final touchable = GestureDetector(
       supportedDevices: const {PointerDeviceKind.touch},
       onTap: editing || _locked ? null : () => app.select(b.id),
+      onPanStart: editing || _locked || !selected
+          ? null
+          : (d) {
+              app.pushUndo();
+              app.setDragging(true);
+              _touchMoveLast = d.localPosition;
+            },
+      onPanUpdate: editing || _locked || !selected
+          ? null
+          : (d) {
+              final last = _touchMoveLast;
+              if (last == null) return;
+              final delta = d.localPosition - last;
+              _touchMoveLast = d.localPosition;
+              app.moveSelectedBy(delta.dx / widget.controller.scale,
+                  delta.dy / widget.controller.scale);
+            },
+      onPanEnd: (_) {
+        if (_touchMoveLast == null) return;
+        _touchMoveLast = null;
+        app.settleSelected();
+        app.setDragging(false);
+      },
       onLongPressStart: editing || _locked
           ? null
           : (d) {

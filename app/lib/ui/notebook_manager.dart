@@ -9,7 +9,6 @@ import '../export/onenote_import.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
-import 'onboarding.dart';
 import 'sync_dot.dart';
 import '../theme/tokens.dart';
 import 'onote_dialog.dart';
@@ -173,12 +172,22 @@ class _NotebookManagerState extends State<_NotebookManager> {
       ]),
       contentPadding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
       content: SizedBox(
-        width: 760,
+        width: 980,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 620),
+          constraints: const BoxConstraints(maxHeight: 680),
           child: ListView(
             children: [
-              for (final nb in notebooks) _row(nb, scheme),
+              GridView.count(
+                crossAxisCount: 4,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                mainAxisSpacing: 18,
+                crossAxisSpacing: 18,
+                childAspectRatio: .72,
+                children: [
+                  for (final nb in notebooks) _coverCard(nb, scheme),
+                ],
+              ),
               if (trashed.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 _sectionLabel(
@@ -265,27 +274,6 @@ class _NotebookManagerState extends State<_NotebookManager> {
             icon: const Icon(Icons.restore, size: 18),
             label: const AppText('Restore'),
             onPressed: _busyId == null ? _restoreBackup : null,
-          ),
-          TextButton.icon(
-            icon: const Icon(Icons.healing_outlined, size: 18),
-            label: const AppText('Repair'),
-            onPressed: () => _repairWithProgress(context, app),
-          ),
-          // The welcome flow is where "open the notebook that's already in my
-          // Drive" lives, and it should not be a one-shot you can never get
-          // back to — that path matters most on a machine you set up months
-          // after the first one.
-          TextButton.icon(
-            icon: const Icon(Icons.explore_outlined, size: 18),
-            label: const AppText('Get started'),
-            onPressed: () async {
-              // Root navigator's context, captured before the pop — the same
-              // trap as the import row below: `showDialog` on a route that has
-              // just been popped has no live Navigator to attach to.
-              final root = Navigator.of(context, rootNavigator: true).context;
-              Navigator.pop(context);
-              await showOnboarding(root, app);
-            },
           ),
           const Spacer(),
           TextButton(
@@ -444,6 +432,103 @@ class _NotebookManagerState extends State<_NotebookManager> {
                 letterSpacing: .6,
                 color: context.surfaces.textSecondary)),
       );
+
+  Widget _coverCard(NotebookRef nb, ColorScheme scheme) {
+    final current = nb.id == app.notebookId;
+    final counts = app.notebookCounts(nb.id);
+    final cover = _coverColor(app.notebookColor(nb.id), nb.id);
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () async {
+        if (current) return;
+        Navigator.pop(context);
+        await app.selectNotebook(nb.id);
+      },
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Expanded(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: cover,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                  color: current
+                      ? scheme.primary
+                      : Colors.black.withValues(alpha: .15),
+                  width: current ? 2 : 1),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withValues(alpha: .16),
+                    blurRadius: 5,
+                    offset: const Offset(1, 3)),
+              ],
+            ),
+            child: Stack(children: [
+              Positioned.fill(
+                child: Row(children: [
+                  Container(
+                      width: 11, color: Colors.black.withValues(alpha: .18)),
+                  const Spacer(),
+                  Container(
+                      width: 7, color: Colors.white.withValues(alpha: .22)),
+                  Container(
+                      width: 4, color: Colors.white.withValues(alpha: .52)),
+                ]),
+              ),
+              Center(
+                  child: Icon(Icons.menu_book_outlined,
+                      size: 44, color: Colors.white.withValues(alpha: .9))),
+              Positioned(
+                top: 2,
+                right: 0,
+                child: PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert, color: Colors.white),
+                  tooltip: 'Notebook options',
+                  onSelected: (value) async {
+                    if (value == 'rename') {
+                      final title = await promptForText(context,
+                          title: 'Rename notebook',
+                          okLabel: 'Save',
+                          hintText: nb.title);
+                      if (title != null) await app.renameNotebook(nb.id, title);
+                    }
+                    if (value == 'duplicate') _duplicate(nb);
+                    if (value == 'delete') {
+                      setState(() => _confirmDeleteId = nb.id);
+                    }
+                    if (value.startsWith('color:')) {
+                      app.setNotebookColor(nb.id, value.substring(6));
+                    }
+                  },
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(value: 'rename', child: Text('Rename')),
+                    const PopupMenuItem(
+                        value: 'duplicate', child: Text('Duplicate')),
+                    const PopupMenuDivider(),
+                    for (final color in _coverTokens.whereType<String>())
+                      PopupMenuItem(value: 'color:$color', child: Text(color)),
+                    const PopupMenuDivider(),
+                    const PopupMenuItem(
+                        value: 'delete', child: Text('Move to recycle bin')),
+                  ],
+                ),
+              ),
+            ]),
+          ),
+        ),
+        const SizedBox(height: 7),
+        Text(nb.title,
+            textAlign: TextAlign.center,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+                fontWeight: current ? FontWeight.w700 : FontWeight.w600,
+                color: current ? scheme.primary : null)),
+        Text('${counts.sections} sections · ${counts.pages} pages',
+            textAlign: TextAlign.center,
+            style:
+                TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
+      ]),
+    );
+  }
 
   Widget _row(NotebookRef nb, ColorScheme scheme) {
     final current = nb.id == app.notebookId;
@@ -623,6 +708,11 @@ class _NotebookManagerState extends State<_NotebookManager> {
     'Green',
     'Orange',
     'Red',
+    'Teal',
+    'Pink',
+    'Indigo',
+    'Brown',
+    'Slate',
   ];
 
   static Color _coverColor(String? token, String id) {
@@ -632,6 +722,11 @@ class _NotebookManagerState extends State<_NotebookManager> {
       'Green': Color(0xFF3D8B70),
       'Orange': Color(0xFFB56D32),
       'Red': Color(0xFFAD5155),
+      'Teal': Color(0xFF2C8888),
+      'Pink': Color(0xFFB9507B),
+      'Indigo': Color(0xFF3F548F),
+      'Brown': Color(0xFF7A5847),
+      'Slate': Color(0xFF4C5563),
     };
     if (token != null) return colors[token] ?? colors['Blue']!;
     return colors.values

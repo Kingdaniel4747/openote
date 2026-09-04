@@ -31,12 +31,13 @@ class CanvasController extends ChangeNotifier {
 
   /// Apply one pan/zoom frame and repaint once. Trackpads used to notify after
   /// zoom and again after pan, rebuilding a populated page twice per event.
-  void transformAt(Offset screenFocal, double factor, Offset panDelta) {
+  void transformAt(Offset screenFocal, double factor, Offset panDelta,
+      {bool clamp = true}) {
     final newScale = (scale * factor).clamp(minScale, maxScale);
     final pageFocal = screenToPage(screenFocal);
     scale = newScale;
     offset = screenFocal - pageFocal * scale + panDelta;
-    clampToPage();
+    if (clamp) clampToPage();
     notifyListeners();
   }
 

@@ -803,7 +803,11 @@ class _PageCanvasState extends State<PageCanvas> {
       final focal = (pts[0] + pts[1]) / 2;
       if (_pinchBaseDist! > 0 && d > 0) {
         final previous = _pinchLastFocal ?? focal;
-        controller.transformAt(previous, d / _pinchBaseDist!, focal - previous);
+        // Do not clamp mid-pinch. Clamping each sample to the page origin
+        // moves the content after the focal-point calculation and is exactly
+        // the visible up/down jump reported when zooming with two fingers.
+        controller.transformAt(previous, d / _pinchBaseDist!, focal - previous,
+            clamp: false);
         _pinchBaseDist = d;
         _pinchLastFocal = focal;
       }
