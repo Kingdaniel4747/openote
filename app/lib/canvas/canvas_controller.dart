@@ -44,7 +44,11 @@ class CanvasController extends ChangeNotifier {
   /// Apply a two-finger zoom without making a visible page edge drift away
   /// from the window. Once an edge has scrolled off-screen, that axis instead
   /// follows the pinch focal point so the content remains under the fingers.
-  /// The normal page boundary is restored when the gesture ends.
+  ///
+  /// Bounds are applied to each axis in this same transform frame. Previously
+  /// the view was allowed outside the page until the fingers lifted, then was
+  /// corrected by [settleToPage]. That delayed correction was the visible jump
+  /// on every pinch, especially on a page containing PDF printouts.
   void transformPinchAt(
     Offset previousFocal,
     double factor,
@@ -58,9 +62,29 @@ class CanvasController extends ChangeNotifier {
     final pageFocal = screenToPage(previousFocal);
     final newScale = (scale * factor).clamp(minScale, maxScale);
     scale = newScale;
-    offset = currentFocal - pageFocal * scale;
-    if (pinLeftEdge) offset = Offset(0, offset.dy);
-    if (pinTopEdge) offset = Offset(offset.dx, 0);
+    final proposed = currentFocal - pageFocal * scale;
+    final ps = pageSize;
+    if (ps == null || viewport == Size.zero) {
+      offset = proposed;
+    } else {
+      double axis(double current, double next, double viewportExtent,
+          double contentExtent, bool pinOrigin) {
+        // Keep the named edge in place once it is visible. If the gesture
+        // reaches it from inside the page, stop at the edge in this frame —
+        // never after the gesture has ended.
+        if (pinOrigin || contentExtent <= viewportExtent || next >= 0) {
+          return 0;
+        }
+        return next.clamp(viewportExtent - contentExtent, 0.0);
+      }
+
+      offset = Offset(
+        axis(offset.dx, proposed.dx, viewport.width, ps.width * scale,
+            pinLeftEdge),
+        axis(offset.dy, proposed.dy, viewport.height, ps.height * scale,
+            pinTopEdge),
+      );
+    }
     notifyListeners();
   }
 

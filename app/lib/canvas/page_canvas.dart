@@ -840,12 +840,10 @@ class _PageCanvasState extends State<PageCanvas> {
     }
     if (_touches.length == 1) _lastScreen = _touches.values.first;
     if (_touches.isEmpty) {
-      if (_multiTouchSeen) {
-        // Both fingers are finally gone. Now, and only now, restore the
-        // page boundary. This prevents the surviving finger from producing a
-        // last clamped pan that visibly jerks the canvas during the pinch.
-        controller.settleToPage();
-      } else {
+      // Pinch bounds are already handled for every motion sample. Do not
+      // perform a second correction on lift: that used to move the page
+      // after the fingers had stopped and looked like a sudden jump.
+      if (!_multiTouchSeen) {
         _startInertia();
       }
       _multiTouchSeen = false;
@@ -1168,11 +1166,17 @@ class _PageCanvasState extends State<PageCanvas> {
     // the viewport create content, so zooming out lets you place a box out in
     // the margin; if you don't, the page reconstrains to content next frame.
     final ext = app.contentExtent();
-    final pw =
-        math.max(app.pageProps.pageWidth, ext.right + AppState.pageGrowMargin);
-    final ph = math.max(
-        AppState.defaultPageHeight, ext.bottom + AppState.pageGrowMargin);
-    final pageSize = Size(pw, ph);
+    // A PDF-only page has an explicit, immutable paper size. Giving the
+    // camera a separately grown canvas size made it clamp against invisible
+    // margins after reopening a PDF, which felt like the page was sliding.
+    final pageSize = app.pageProps.pdfOnly
+        ? app.pageSize()
+        : Size(
+            math.max(
+                app.pageProps.pageWidth, ext.right + AppState.pageGrowMargin),
+            math.max(AppState.defaultPageHeight,
+                ext.bottom + AppState.pageGrowMargin),
+          );
     controller.pageSize = pageSize;
 
     Widget canvas = LayoutBuilder(builder: (context, constraints) {
