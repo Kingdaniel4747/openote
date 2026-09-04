@@ -10,13 +10,11 @@ WindowControls::WindowControls(HWND window, flutter::BinaryMessenger* messenger)
       [this](const flutter::MethodCall<flutter::EncodableValue>& call,
              std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
         if (call.method_name() == "customChrome") {
-          // Keep the native resize border and system menu. Flutter supplies
-          // the caption only once its replacement controls are mounted.
-          SetWindowLongPtr(window_, GWL_STYLE,
-              GetWindowLongPtr(window_, GWL_STYLE) & ~WS_CAPTION);
-          SetWindowPos(window_, nullptr, 0, 0, 0, 0,
-              SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-          result->Success(flutter::EncodableValue(true));
+          // Use the real Windows caption and caption buttons. Besides looking
+          // familiar, this gives Windows 11 its Snap Layout suggestions,
+          // native taskbar behaviour and the normal minimize/maximize/close
+          // animations without trying to reproduce them in Flutter.
+          result->Success(flutter::EncodableValue(false));
         } else if (call.method_name() == "chromeColor") {
           const auto color = call.arguments() ? std::get_if<int32_t>(call.arguments()) : nullptr;
           if (!color) { result->Error("argument", "Expected COLORREF"); return; }

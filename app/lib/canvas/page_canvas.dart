@@ -130,6 +130,8 @@ class _PageCanvasState extends State<PageCanvas> {
       app.tool == Tool.eraser ||
       app.tool == Tool.shape;
 
+  bool get _shapeEnabled => app.shapeRecognition && _contactTool == Tool.pen;
+
   bool _onPaper(Offset point) =>
       !app.pageProps.pdfOnly || (Offset.zero & app.pageSize()).contains(point);
 
@@ -270,7 +272,7 @@ class _PageCanvasState extends State<PageCanvas> {
     _shapeRaw.clear();
     _shapeAnchor = null;
     _shapeLastMotion = null;
-    if (_contactTool == Tool.shape) {
+    if (_shapeEnabled) {
       _shapeAnchor = pt;
       _shapeLastMotion = pt;
     }
@@ -278,7 +280,7 @@ class _PageCanvasState extends State<PageCanvas> {
       _wet = Stroke(
         tool: _contactTool == Tool.highlighter
             ? 'highlighter'
-            : _contactTool == Tool.ballpoint || _contactTool == Tool.shape
+            : _contactTool == Tool.ballpoint
                 ? 'ballpoint'
                 : 'pen',
         colorHex: customColor != null
@@ -338,7 +340,7 @@ class _PageCanvasState extends State<PageCanvas> {
 
   void _addPoint(PointerEvent e, Offset pagePt) {
     final w = _wet!;
-    if (_contactTool == Tool.shape) {
+    if (_shapeEnabled) {
       _shapeRaw.add(pagePt);
       if (_shapeKind != null) {
         _rewriteWetShape(pagePt);
@@ -349,9 +351,9 @@ class _PageCanvasState extends State<PageCanvas> {
         _shapeLastMotion = pagePt;
         _shapeHold?.cancel();
         // Snapping is a deliberate gesture: finish the rough outline, then
-        // keep the pen down and still for two seconds. Normal handwriting
+        // keep the pen down and still briefly. Normal handwriting
         // never pauses in this exact state, so it remains ordinary ink.
-        _shapeHold = Timer(const Duration(seconds: 2), _snapWetShape);
+        _shapeHold = Timer(const Duration(milliseconds: 850), _snapWetShape);
       }
     }
     w.x.add(pagePt.dx);

@@ -4242,10 +4242,18 @@ class AppState extends ChangeNotifier
   // Canvas settings
   Tool tool = Tool.select;
   bool writingMode = false;
+  bool shapeRecognition = true;
 
   void setWritingMode(bool value) {
     writingMode = value;
     if (value) requestDrawTab();
+    notifyListeners();
+  }
+
+  void setShapeRecognition(bool value) {
+    if (shapeRecognition == value) return;
+    shapeRecognition = value;
+    _repo.setSetting('shapeRecognition', value);
     notifyListeners();
   }
 
@@ -6234,6 +6242,10 @@ class AppState extends ChangeNotifier
     if (penColour is String &&
         RegExp(r'^[0-9A-Fa-f]{6}$').hasMatch(penColour)) {
       penCustomColor = penColour.toUpperCase();
+    }
+    final storedShapeRecognition = _repo.getSetting('shapeRecognition');
+    if (storedShapeRecognition is bool) {
+      shapeRecognition = storedShapeRecognition;
     }
     final notebookColourSettings = _repo.getSetting('notebookColors');
     if (notebookColourSettings is Map) {

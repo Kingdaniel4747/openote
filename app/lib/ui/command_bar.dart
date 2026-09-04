@@ -344,6 +344,19 @@ class _CommandBarState extends State<CommandBar> {
                   visualDensity: VisualDensity.compact,
                   onPressed: () => app.setWritingMode(true),
                 ),
+                IconButton(
+                  icon: const Icon(Icons.undo, size: 18),
+                  tooltip: tr(context, 'Undo  (Ctrl+Z)'),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: app.canUndo ? app.undo : null,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.redo, size: 18),
+                  tooltip: tr(context, 'Redo  (Ctrl+Y)'),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: app.canRedo ? app.redo : null,
+                ),
+                const SizedBox(width: 4),
                 // **No leading gutter.** A fixed chrome region runs to the edge
                 // of the region it owns (§7d); the first control's own padding
                 // is the optical margin. An extra 6px here made the toolbar
@@ -840,8 +853,13 @@ class _CommandBarState extends State<CommandBar> {
           Tool.highlighter, Icons.border_color_outlined, 'Highlighter  (H)'),
       toolButton(Tool.eraser, Icons.cleaning_services_outlined, 'Eraser  (E)'),
       toolButton(Tool.lasso, Icons.gesture_outlined, 'Lasso-select ink'),
-      toolButton(Tool.shape, Icons.category_outlined,
-          'Shape recognition — draw and hold'),
+      IconButton(
+        icon: const Icon(Icons.category_outlined, size: 18),
+        tooltip: 'Shape recognition — draw with the pen and hold',
+        isSelected: app.shapeRecognition,
+        visualDensity: VisualDensity.compact,
+        onPressed: () => app.setShapeRecognition(!app.shapeRecognition),
+      ),
       const _Div(),
       if (inkActive) ...[
         for (final (i, c) in colors.indexed)

@@ -81,6 +81,7 @@ class _BlockViewState extends State<BlockView> {
   bool get _hover => _hoverBody || _hoverChrome;
   bool _dragUndoPushed = false;
   bool _resizeUndoPushed = false;
+  Offset? _touchMoveLast;
 
   /// Whether the in-progress body drag is allowed to move the block. Editable
   /// blocks say no unless Alt is held — see [_bodyDragStart].
@@ -436,6 +437,7 @@ class _BlockViewState extends State<BlockView> {
   /// True for a background layer that must not be moved or resized —
   /// currently an imported PDF slide (see `export/pdf_import.dart`).
   bool get _locked => b.content['locked'] == true;
+  bool get _isPdf => b.content['pdf'] is String;
 
   /// Height is only draggable for blocks that own one. A text block's height
   /// comes from its text, so a height handle there would fight the content.
@@ -466,6 +468,20 @@ class _BlockViewState extends State<BlockView> {
     final scale = widget.controller.scale;
     final oldW = b.w;
     final oldH = b.h ?? app.renderSizes[b.id]?.height;
+    if (_isPdf) {
+      // A PDF page is a sheet of paper, never a freeform rectangle. Every
+      // edge and corner scales its two dimensions together, preserving the
+      // source page's proportions exactly.
+      final sourceH = oldH ?? oldW * 1.414;
+      final requested =
+          width ? oldW + d.delta.dx / scale : sourceH + d.delta.dy / scale;
+      final factor = (requested / (width ? oldW : sourceH)).clamp(.1, 8.0);
+      b.w = (oldW * factor).clamp(80.0, 4000.0);
+      b.h = (sourceH * factor).clamp(80.0, 6000.0);
+      app.markDirty();
+      setState(() {});
+      return;
+    }
 
     if (width) {
       // Manual resize locks the width (text boxes stop auto-growing).
@@ -604,6 +620,7 @@ class _BlockViewState extends State<BlockView> {
     // as far as the eye can tell, until the first character lands in it.
     final showChrome = !inkToolActive &&
         !_locked &&
+        !_isPdf &&
         !_pendingEmpty &&
         (_hover || selected || editing);
 
@@ -619,6 +636,11 @@ class _BlockViewState extends State<BlockView> {
       PointerDeviceKind.invertedStylus,
     };
 
+    const directDevices = {
+      PointerDeviceKind.mouse,
+      PointerDeviceKind.stylus,
+      PointerDeviceKind.invertedStylus,
+    };
     final body = MouseRegion(
       onEnter: (_) => setState(() => _hoverBody = true),
       onExit: (_) => setState(() => _hoverBody = false),
@@ -627,7 +649,7 @@ class _BlockViewState extends State<BlockView> {
           : MouseCursor.defer,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        supportedDevices: devices,
+        supportedDevices: directDevices,
         onTap: editing ? null : _tap,
         onSecondaryTapUp: editing
             ? null
@@ -686,16 +708,40 @@ class _BlockViewState extends State<BlockView> {
       ),
     );
 
-    // Touch has no right button. Hold for the same object menu; select then
-    // use the visible handle to move. Editors retain their own text selection.
+    // A finger never moves a sheet by accident: hold once to pick it up and
+    // then drag. Hold an already selected sheet without moving to open its
+    // object menu, the touch equivalent of a right-click.
     final touchable = GestureDetector(
-      supportedDevices: const {
-        PointerDeviceKind.touch,
-        PointerDeviceKind.stylus,
-      },
-      onLongPressStart: editing
+      supportedDevices: const {PointerDeviceKind.touch},
+      onTap: editing || _locked ? null : () => app.select(b.id),
+      onLongPressStart: editing || _locked
           ? null
-          : (d) => showBlockMenu(context, app, b, d.globalPosition),
+          : (d) {
+              if (selected) {
+                showBlockMenu(context, app, b, d.globalPosition);
+                return;
+              }
+              app.select(b.id);
+              app.pushUndo();
+              app.setDragging(true);
+              _touchMoveLast = d.localPosition;
+            },
+      onLongPressMoveUpdate: editing || _locked
+          ? null
+          : (d) {
+              final last = _touchMoveLast;
+              if (last == null) return;
+              final delta = d.localPosition - last;
+              _touchMoveLast = d.localPosition;
+              app.moveSelectedBy(delta.dx / widget.controller.scale,
+                  delta.dy / widget.controller.scale);
+            },
+      onLongPressEnd: (_) {
+        if (_touchMoveLast == null) return;
+        _touchMoveLast = null;
+        app.settleSelected();
+        app.setDragging(false);
+      },
       child: body,
     );
 

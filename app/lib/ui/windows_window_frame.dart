@@ -204,7 +204,9 @@ class WindowsCaptionButtons extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final window = WindowsWindowFrame.of(context);
-    if (window == null) return const SizedBox.shrink();
+    if (window == null || !window.customChrome) {
+      return const SizedBox.shrink();
+    }
     return ListenableBuilder(
       listenable: window,
       builder: (context, _) => Row(mainAxisSize: MainAxisSize.min, children: [

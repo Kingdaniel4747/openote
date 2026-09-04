@@ -69,10 +69,10 @@ class CanvasController extends ChangeNotifier {
     final ps = pageSize;
     if (ps == null || viewport == Size.zero) return;
     double axis(double o, double vp, double contentPx) {
-      // When a zoom crosses from larger-than-viewport to smaller, forcing the
-      // origin straight to zero creates a visible one-frame jerk. Keep the
-      // focal point stable anywhere in the available margin instead.
-      if (contentPx <= vp) return o.clamp(0.0, vp - contentPx);
+      // The named page origin stays in the upper-left corner at every zoom.
+      // Letting a small page drift right/down made an endless page look as if
+      // it had grown a new margin on the left when pinching out.
+      if (contentPx <= vp) return 0.0;
       return o.clamp(vp - contentPx, 0.0); // fills → stay within the page
     }
 
