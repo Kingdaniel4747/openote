@@ -3,8 +3,8 @@ import 'package:perfect_freehand/perfect_freehand.dart';
 
 import '../model/models.dart';
 
-Color colorFromHex(String hex) =>
-    Color(0xFF000000 | (int.tryParse(hex.replaceFirst('#', ''), radix: 16) ?? 0));
+Color colorFromHex(String hex) => Color(
+    0xFF000000 | (int.tryParse(hex.replaceFirst('#', ''), radix: 16) ?? 0));
 
 /// Renders strokes as pressure-responsive variable-width outlines
 /// (Ink Data Spec §4 — the perfect-freehand pipeline).
@@ -21,7 +21,8 @@ class InkPainter extends CustomPainter {
       this.fixedBackdrops = const [],
       super.repaint});
   final List<Stroke> strokes;
-  final Stroke? wet; // in-progress stroke, drawn last (mutated between repaints)
+  final Stroke?
+      wet; // in-progress stroke, drawn last (mutated between repaints)
   final Color autoColor;
   final List<Rect> fixedBackdrops;
 
@@ -62,8 +63,8 @@ class InkPainter extends CustomPainter {
     // #211F1B. Treat that legacy default as automatic too, except where the
     // stroke sits on a fixed image/PDF — there its chosen colour must stay
     // stable while the app theme changes.
-    final onFixedBackdrop = fixedBackdrops.any((r) =>
-        r.contains(Offset(s.x.first, s.y.first)));
+    final onFixedBackdrop =
+        fixedBackdrops.any((r) => r.contains(Offset(s.x.first, s.y.first)));
     final automatic = s.colorHex == 'auto' ||
         (s.colorHex.toUpperCase() == '#211F1B' && !onFixedBackdrop);
     final base = automatic ? autoColor : colorFromHex(s.colorHex);
@@ -80,6 +81,7 @@ class InkPainter extends CustomPainter {
   /// Solve one stroke's variable-width outline into a fillable path.
   Path? _outlinePath(Stroke s) {
     final hasPressure = s.p.isNotEmpty;
+    final constantWidth = s.tool == 'highlighter' || s.tool == 'ballpoint';
     final points = [
       for (var i = 0; i < s.x.length; i++)
         PointVector(s.x[i], s.y[i], hasPressure ? s.p[i] : 0.5),
@@ -88,12 +90,12 @@ class InkPainter extends CustomPainter {
       points,
       options: StrokeOptions(
         size: s.size * (s.tool == 'highlighter' ? 3 : 1),
-        thinning: s.tool == 'highlighter' ? 0.0 : 0.6,
+        thinning: constantWidth ? 0.0 : 0.6,
         // Samsung's digitizer samples very densely. A little more filtering
         // removes the visible micro-jitter without turning corners into arcs.
         smoothing: 0.72,
         streamline: 0.68,
-        simulatePressure: !hasPressure,
+        simulatePressure: !hasPressure && !constantWidth,
       ),
     );
     if (outline.isEmpty) return null;

@@ -127,14 +127,19 @@ class _OpenoteBootState extends State<OpenoteBoot> {
               _closeFailed = false;
             });
           await WidgetsBinding.instance.endOfFrame;
+          // The save remains fully awaited, but the Windows window can leave
+          // the screen at once. If anything cannot be saved it is restored
+          // below with the existing recovery message.
+          await WindowsWindowController.hideForExit();
           try {
             await app.shutdown();
             // A page render may otherwise keep pdfium and its worker alive for
             // up to its 30-second timeout after the window has been closed.
             // Cancel first, then give cleanup a short bounded opportunity.
-            await PdfPages.reset().timeout(const Duration(milliseconds: 750),
-                onTimeout: () {});
+            await PdfPages.reset()
+                .timeout(const Duration(milliseconds: 150), onTimeout: () {});
             if (app.hasUnsavedChanges) {
+              await WindowsWindowController.restoreAfterFailedExit();
               if (mounted)
                 setState(() {
                   _closing = false;
@@ -145,6 +150,7 @@ class _OpenoteBootState extends State<OpenoteBoot> {
             await widget.instance?.dispose();
             return AppExitResponse.exit;
           } catch (_) {
+            await WindowsWindowController.restoreAfterFailedExit();
             if (mounted)
               setState(() {
                 _closing = false;

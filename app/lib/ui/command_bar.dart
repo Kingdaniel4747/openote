@@ -793,6 +793,7 @@ class _CommandBarState extends State<CommandBar> {
     // The swatches also appear with ink selected, so a lassoed diagram can be
     // recoloured without first re-picking the pen.
     final inkActive = app.tool == Tool.pen ||
+        app.tool == Tool.ballpoint ||
         app.tool == Tool.highlighter ||
         app.hasInkSelection;
     final colors = OnoteColors.drawingColors(
@@ -803,6 +804,8 @@ class _CommandBarState extends State<CommandBar> {
       toolButton(Tool.select, Icons.near_me_outlined, 'Select / move  (V)'),
       toolButton(Tool.text, Icons.text_fields, 'Text  (T)'),
       toolButton(Tool.pen, Icons.edit_outlined, 'Pen  (P)'),
+      toolButton(
+          Tool.ballpoint, Icons.create_outlined, 'Ballpoint — constant width'),
       toolButton(
           Tool.highlighter, Icons.border_color_outlined, 'Highlighter  (H)'),
       toolButton(Tool.eraser, Icons.cleaning_services_outlined, 'Eraser  (E)'),
@@ -816,6 +819,7 @@ class _CommandBarState extends State<CommandBar> {
               borderRadius: BorderRadius.circular(99),
               onTap: () {
                 app.penColor = i;
+                app.setCustomPenColor(null);
                 // With ink selected (typically just lassoed), a colour click
                 // recolours it rather than only arming the next stroke —
                 // recolouring after the fact is most of why you lasso a
@@ -836,13 +840,44 @@ class _CommandBarState extends State<CommandBar> {
                   shape: BoxShape.circle,
                   border: Border.all(
                     width: 2,
-                    color:
-                        app.penColor == i ? scheme.primary : Colors.transparent,
+                    color: app.penCustomColor == null && app.penColor == i
+                        ? scheme.primary
+                        : Colors.transparent,
                   ),
                 ),
               ),
             ),
           ),
+        IconButton(
+          key: const ValueKey('pen-colour-picker'),
+          tooltip: tr(context, 'Mix a custom colour'),
+          visualDensity: VisualDensity.compact,
+          icon: app.penCustomColor == null
+              ? const Icon(Icons.palette_outlined, size: 19)
+              : Container(
+                  width: 18,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    color: onoteColorFromHex(app.penCustomColor),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: scheme.primary, width: 2),
+                  ),
+                ),
+          onPressed: () async {
+            final preset = colors[app.penColor % colors.length];
+            final initial = app.penCustomColor ??
+                (preset.toARGB32() & 0xFFFFFF)
+                    .toRadixString(16)
+                    .padLeft(6, '0')
+                    .toUpperCase();
+            final picked = await showOnoteColorPicker(context, app,
+                initial: initial, title: 'Pen colour');
+            if (picked == null) return;
+            final opaque = picked.replaceFirst('#', '').substring(0, 6);
+            app.setCustomPenColor(opaque);
+            if (app.hasInkSelection) app.recolorSelectedInk('#$opaque');
+          },
+        ),
         const SizedBox(width: 6),
         SizedBox(
           width: 110,

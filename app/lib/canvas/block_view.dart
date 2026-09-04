@@ -124,7 +124,10 @@ class _BlockViewState extends State<BlockView> {
       b.type == BlockType.table;
 
   void _tap() {
-    if (app.tool == Tool.pen || app.tool == Tool.highlighter || app.tool == Tool.eraser) return;
+    if (app.tool == Tool.pen ||
+        app.tool == Tool.ballpoint ||
+        app.tool == Tool.highlighter ||
+        app.tool == Tool.eraser) return;
     final shift = HardwareKeyboard.instance.isShiftPressed;
     if (shift) {
       app.select(b.id, additive: true);
@@ -190,7 +193,8 @@ class _BlockViewState extends State<BlockView> {
     // just as they do in the empty margin. Stylus input is handled by the
     // canvas too while an ink tool is active.
     if (_locked && e.kind == PointerDeviceKind.touch) return;
-    if ((e.kind == PointerDeviceKind.stylus || e.kind == PointerDeviceKind.invertedStylus) &&
+    if ((e.kind == PointerDeviceKind.stylus ||
+            e.kind == PointerDeviceKind.invertedStylus) &&
         (app.tool == Tool.select || app.tool == Tool.text)) {
       return;
     }
@@ -344,12 +348,14 @@ class _BlockViewState extends State<BlockView> {
         onPanStart: _dragStart,
         onPanUpdate: _drag,
         onPanEnd: _dragEnd,
-        onTap: () =>
-            app.select(b.id, additive: HardwareKeyboard.instance.isShiftPressed),
+        onTap: () => app.select(b.id,
+            additive: HardwareKeyboard.instance.isShiftPressed),
         // Block actions stay reachable while editing, which they were not
         // when the only right-click target was the text itself.
-        onSecondaryTapUp: (d) => showBlockMenu(context, app, b, d.globalPosition),
-        onLongPressStart: (d) => showBlockMenu(context, app, b, d.globalPosition),
+        onSecondaryTapUp: (d) =>
+            showBlockMenu(context, app, b, d.globalPosition),
+        onLongPressStart: (d) =>
+            showBlockMenu(context, app, b, d.globalPosition),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: _kChromePad),
           child: Container(
@@ -357,7 +363,8 @@ class _BlockViewState extends State<BlockView> {
               color: live
                   ? primaryColor.withValues(alpha: .85)
                   : (dark ? OnoteColors.night200 : OnoteColors.paper200),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(8)),
             ),
             child: Row(
               children: [
@@ -369,8 +376,12 @@ class _BlockViewState extends State<BlockView> {
                         : OnoteColors.graphite400),
                 const Spacer(),
                 if (primary) ...[
-                  _barButton(context, Icons.copy_all_outlined,
-                      'Duplicate (Ctrl+D)', () => app.duplicateBlock(b.id), live),
+                  _barButton(
+                      context,
+                      Icons.copy_all_outlined,
+                      'Duplicate (Ctrl+D)',
+                      () => app.duplicateBlock(b.id),
+                      live),
                   _barButton(context, Icons.close, 'Delete (Del)',
                       () => app.removeSelected(), live),
                   const SizedBox(width: 2),
@@ -403,19 +414,16 @@ class _BlockViewState extends State<BlockView> {
   String _a11yLabel() {
     final t = switch (b.type) {
       BlockType.text => b.content['text'] as String? ?? '',
-      BlockType.code =>
-        'Code block. ${b.content['source'] as String? ?? ''}',
+      BlockType.code => 'Code block. ${b.content['source'] as String? ?? ''}',
       BlockType.math =>
         'Equation. ${b.content['linearSource'] ?? b.content['latex'] ?? ''}',
       BlockType.image => 'Image',
       BlockType.file => 'Attachment: ${b.content['name'] ?? 'file'}',
-      BlockType.flashcard =>
-        'Flashcard: ${b.content['front'] ?? 'empty'}',
+      BlockType.flashcard => 'Flashcard: ${b.content['front'] ?? 'empty'}',
       BlockType.embed => 'Window to another page',
       BlockType.board => 'Task board',
       BlockType.graph => 'Graph of ${b.content['latex'] ?? 'an equation'}',
-      BlockType.substitute =>
-        'Evaluate ${b.content['latex'] ?? 'an equation'}',
+      BlockType.substitute => 'Evaluate ${b.content['latex'] ?? 'an equation'}',
       _ => '${b.type.name} block',
     };
     return t.trim().isEmpty ? '${b.type.name} block' : t;
@@ -580,8 +588,10 @@ class _BlockViewState extends State<BlockView> {
     // While an ink tool is active, blocks are inert — the pen draws OVER
     // them instead of dragging/editing them (fixes ink-over-block dragging).
     final inkToolActive = app.tool == Tool.pen ||
+        app.tool == Tool.ballpoint ||
         app.tool == Tool.highlighter ||
-        app.tool == Tool.eraser || app.tool == Tool.lasso;
+        app.tool == Tool.eraser ||
+        app.tool == Tool.lasso;
 
     // Chrome is only live for its OWN block, so two abutting blocks can never
     // both offer a bar at once even though the reserved strips overlap.
@@ -678,8 +688,9 @@ class _BlockViewState extends State<BlockView> {
         PointerDeviceKind.touch,
         PointerDeviceKind.stylus,
       },
-      onLongPressStart: editing ? null :
-          (d) => showBlockMenu(context, app, b, d.globalPosition),
+      onLongPressStart: editing
+          ? null
+          : (d) => showBlockMenu(context, app, b, d.globalPosition),
       child: body,
     );
 
@@ -799,7 +810,8 @@ class _BlockViewState extends State<BlockView> {
                     child: MouseRegion(
                       cursor: SystemMouseCursors.resizeUpDown,
                       child: GestureDetector(
-                        behavior: HitTestBehavior.opaque, // whole strip, as above
+                        behavior:
+                            HitTestBehavior.opaque, // whole strip, as above
                         supportedDevices: devices,
                         onPanUpdate: (d) =>
                             _resizeBy(d, width: false, height: true),

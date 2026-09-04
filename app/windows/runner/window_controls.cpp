@@ -35,6 +35,13 @@ WindowControls::WindowControls(HWND window, flutter::BinaryMessenger* messenger)
         } else if (call.method_name() == "minimize") {
           ShowWindow(window_, SW_MINIMIZE);
           result->Success();
+        } else if (call.method_name() == "hide") {
+          ShowWindow(window_, SW_HIDE);
+          result->Success();
+        } else if (call.method_name() == "show") {
+          ShowWindow(window_, SW_SHOW);
+          SetForegroundWindow(window_);
+          result->Success();
         } else {
           result->NotImplemented();
         }

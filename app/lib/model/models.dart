@@ -437,7 +437,7 @@ class Stroke {
         strokeStart = strokeStart ?? nowMs();
 
   final String id;
-  final String tool; // pen | highlighter
+  final String tool; // pen | ballpoint | highlighter
   final String colorHex; // "#RRGGBB"
   final double size;
   final double opacity;

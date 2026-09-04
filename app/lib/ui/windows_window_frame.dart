@@ -16,6 +16,31 @@ class WindowsWindowController extends ChangeNotifier {
   bool _disposed = false;
   bool closing = false;
 
+  /// Hide the Windows window immediately while the cancelable exit handler
+  /// settles the last durable save. This changes perceived close time without
+  /// trading away data safety; a failed save restores the same window.
+  static Future<void> hideForExit() async {
+    if (!Platform.isWindows) return;
+    try {
+      await channel.invokeMethod<void>('hide');
+    } on MissingPluginException {
+      // Older runners simply keep showing the closing overlay.
+    } on PlatformException {
+      // Saving and the ordinary exit path still continue.
+    }
+  }
+
+  static Future<void> restoreAfterFailedExit() async {
+    if (!Platform.isWindows) return;
+    try {
+      await channel.invokeMethod<void>('show');
+    } on MissingPluginException {
+      // It was not hidden by an older runner.
+    } on PlatformException {
+      // Best effort; the lifecycle handler keeps the process alive.
+    }
+  }
+
   Future<void> configureChrome(Color color) async {
     if (!enabled || _disposed) return;
     try {

@@ -275,7 +275,10 @@ Block _slideBlock(
         'naturalH': page.height,
         // The two properties that make this an annotation surface rather
         // than a picture someone dropped on the page.
-        'locked': true,
+        // A normal printout is an ordinary canvas object and can be selected,
+        // moved and arranged. In PDF-only/page-per-slide mode it is the page
+        // itself, so it stays fixed as the background.
+        'locked': background,
         if (background) 'background': true,
         if (text != null && text.isNotEmpty) 'sourceText': text,
       },

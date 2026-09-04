@@ -145,6 +145,28 @@ void main() {
       expectEquivalent(mixed, back);
     });
 
+    test('ballpoint keeps its constant-width brush after saving', () {
+      final source = sample(count: 1, pressure: false).single;
+      final stroke = Stroke(
+        id: source.id,
+        tool: 'ballpoint',
+        colorHex: source.colorHex,
+        size: source.size,
+        opacity: source.opacity,
+        x: source.x,
+        y: source.y,
+        p: source.p,
+        tx: source.tx,
+        ty: source.ty,
+        t: source.t,
+        strokeStart: source.strokeStart,
+      );
+      final bytes = InkCodec.encode([stroke], originX: 0, originY: 0);
+      final back = InkCodec.decode(bytes, originX: 0, originY: 0).single;
+      expect(back.tool, 'ballpoint');
+      expect(back.p, isEmpty);
+    });
+
     test('no strokes at all', () {
       final bytes = InkCodec.encode(const [], originX: 0, originY: 0);
       expect(InkCodec.decode(bytes, originX: 0, originY: 0), isEmpty);

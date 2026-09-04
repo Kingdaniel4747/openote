@@ -210,9 +210,10 @@ List<InsertItem> get kInsertRibbon {
 /// The items the right-click menu offers — see [InsertItem.onMenu].
 List<InsertGroup> get kMenuGroups => [
       for (final g in kInsertGroups)
-        InsertGroup(
-            title: g.title,
-            items: [for (final i in g.items) if (i.onMenu) i]),
+        InsertGroup(title: g.title, items: [
+          for (final i in g.items)
+            if (i.onMenu) i
+        ]),
     ];
 
 /// The same, with each item's own second choices after it.
@@ -222,8 +223,9 @@ List<InsertGroup> get kMenuGroups => [
 /// surfaces read it from here — which is the whole point of this file, and
 /// was quietly untrue for as long as "Table ▸ From a file" existed on one
 /// and not the other.
-List<InsertItem> get kInsertItemsAndExtras =>
-    [for (final i in kInsertItems) ...[i, ...i.extras]];
+List<InsertItem> get kInsertItemsAndExtras => [
+      for (final i in kInsertItems) ...[i, ...i.extras]
+    ];
 
 /// The same again for the right-click menu: what it shows, and what its rows
 /// can therefore ask to run.
@@ -283,17 +285,13 @@ final List<InsertGroup> kInsertGroups = [
         ),
       ],
       run: (context, app, at) async {
-        final b = app.addBlock(Block(
-            type: BlockType.table,
-            x: at.dx,
-            y: at.dy,
-            w: 360,
-            content: {
-              'cells': [
-                ['Header', 'Header'],
-                ['', ''],
-              ]
-            }));
+        final b = app.addBlock(
+            Block(type: BlockType.table, x: at.dx, y: at.dy, w: 360, content: {
+          'cells': [
+            ['Header', 'Header'],
+            ['', ''],
+          ]
+        }));
         app.select(b.id, edit: true);
       },
     ),
@@ -348,21 +346,13 @@ final List<InsertGroup> kInsertGroups = [
       size: Size.zero, // it lays itself out down the page
       extras: [
         InsertItem(
-          id: 'pdf-here',
-          icon: Icons.vertical_align_bottom,
-          label: 'Printout on this page',
-          opensPicker: true,
-          size: Size.zero,
-          run: (c, a, at) =>
-              importPdfWithProgress(c, a, placement: PdfPlacement.currentPage),
-        ),
-        InsertItem(
           id: 'pdf-only',
           icon: Icons.picture_as_pdf_outlined,
           label: 'PDF editor (pages only)',
           opensPicker: true,
           size: Size.zero,
-          run: (c, a, at) => importPdfWithProgress(c, a, placement: PdfPlacement.pdfOnly),
+          run: (c, a, at) =>
+              importPdfWithProgress(c, a, placement: PdfPlacement.pdfOnly),
         ),
         InsertItem(
           id: 'pdf-card',
@@ -446,8 +436,7 @@ final List<InsertGroup> kInsertGroups = [
 /// Tell the user something went wrong, if there is still a screen to tell.
 void _say(BuildContext context, String message) {
   if (!context.mounted) return;
-  ScaffoldMessenger.of(context)
-      .showSnackBar(SnackBar(content: Text(message)));
+  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
 }
 
 Future<XFile?> _pick(BuildContext context,
@@ -499,17 +488,13 @@ Future<void> insertPickedFile(
   final Uint8List bytes = await file.readAsBytes();
   final hash = app.tryAddBlob(bytes, 'application/octet-stream');
   if (hash == null) return;
-  final b = app.addBlock(Block(
-      type: BlockType.file,
-      x: at.dx,
-      y: at.dy,
-      w: 280,
-      content: {
-        'blob': 'sha256:$hash',
-        'name': file.name,
-        'mime': 'application/octet-stream',
-        'size': bytes.length,
-      }));
+  final b = app.addBlock(
+      Block(type: BlockType.file, x: at.dx, y: at.dy, w: 280, content: {
+    'blob': 'sha256:$hash',
+    'name': file.name,
+    'mime': 'application/octet-stream',
+    'size': bytes.length,
+  }));
   app.select(b.id);
 }
 

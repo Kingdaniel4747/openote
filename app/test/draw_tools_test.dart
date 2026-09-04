@@ -63,6 +63,7 @@ void main() {
 
     for (final (tip, want) in const [
       ('Pen  (P)', Tool.pen),
+      ('Ballpoint — constant width', Tool.ballpoint),
       ('Highlighter  (H)', Tool.highlighter),
       ('Eraser  (E)', Tool.eraser),
       ('Lasso-select ink', Tool.lasso),

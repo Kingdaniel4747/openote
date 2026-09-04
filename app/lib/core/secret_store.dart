@@ -1,5 +1,6 @@
 /// The operating system's own password storage, for the one secret Openote
-/// keeps: the user's GitHub access key.
+/// keeps: account keys such as the user's GitHub access key and WebDAV app
+/// password.
 ///
 /// Task #73: the key used to be written into `workspace.json` in clear text,
 /// where anything that can read files could read it — a synced Documents

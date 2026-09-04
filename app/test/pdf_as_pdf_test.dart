@@ -95,8 +95,8 @@ void main() {
       expect(s.content['blob'], startsWith('sha256:'),
           reason: 'each page carries an immutable visual preview');
       expect(app.blob(s.content['blob'] as String), isNotNull);
-      expect(s.content['locked'], true,
-          reason: 'still an annotation surface, exactly as before');
+      expect(s.content['locked'], false,
+          reason: 'a normal printout can be selected and moved page by page');
     }
     expect(slides.map((s) => s.content['page']).toSet(), {0, 1});
     expect(slides.first.content['sourceText'], contains('alpha'),
