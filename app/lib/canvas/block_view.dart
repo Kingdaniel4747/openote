@@ -185,6 +185,11 @@ class _BlockViewState extends State<BlockView> {
   }
 
   void _pointerDown(PointerDownEvent e) {
+    // A PDF/image printout is a backdrop, not a touch surface. Let every
+    // finger reach PageCanvas so panning and pinch-zoom work over the sheet
+    // just as they do in the empty margin. Stylus input is handled by the
+    // canvas too while an ink tool is active.
+    if (_locked && e.kind == PointerDeviceKind.touch) return;
     if ((e.kind == PointerDeviceKind.stylus || e.kind == PointerDeviceKind.invertedStylus) &&
         (app.tool == Tool.select || app.tool == Tool.text)) {
       return;
@@ -673,7 +678,7 @@ class _BlockViewState extends State<BlockView> {
         PointerDeviceKind.touch,
         PointerDeviceKind.stylus,
       },
-      onLongPressStart: editing ? null :
+      onLongPressStart: editing || _locked ? null :
           (d) => showBlockMenu(context, app, b, d.globalPosition),
       child: body,
     );

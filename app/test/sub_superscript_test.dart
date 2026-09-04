@@ -564,6 +564,7 @@ void main() {
     Future<void> settle(WidgetTester tester) async {
       await tester.pump(const Duration(milliseconds: 900));
       await tester.pumpAndSettle();
+      app.cancelPendingSave();
     }
 
     testWidgets('Ctrl+= subscripts, Ctrl+Shift+= superscripts', (tester) async {

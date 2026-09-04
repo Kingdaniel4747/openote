@@ -130,9 +130,9 @@ class _NotebookManagerState extends State<_NotebookManager> {
       ]),
       contentPadding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
       content: SizedBox(
-        width: 520,
+        width: 760,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 460),
+          constraints: const BoxConstraints(maxHeight: 620),
           child: ListView(
             children: [
               for (final nb in notebooks) _row(nb, scheme),
@@ -384,6 +384,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
     final busy = _busyId == nb.id;
     final counts = app.notebookCounts(nb.id);
     final highlight = _highlightId == nb.id;
+    final cover = _coverColor(app.notebookColor(nb.id), nb.id);
 
     return InkWell(
       // Clicking the row opens that notebook — the switching the dropdown did.
@@ -413,10 +414,20 @@ class _NotebookManagerState extends State<_NotebookManager> {
         children: [
           Row(
             children: [
-              Icon(current ? Icons.menu_book : Icons.menu_book_outlined,
-                  size: 18,
-                  color: current ? scheme.primary : context.surfaces.textSecondary),
-              const SizedBox(width: 6),
+              Container(
+                width: 58,
+                height: 74,
+                decoration: BoxDecoration(
+                  color: cover,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.black.withValues(alpha: .12)),
+                ),
+                child: Center(
+                  child: Icon(Icons.menu_book_outlined,
+                      size: 26, color: Colors.white.withValues(alpha: .92)),
+                ),
+              ),
+              const SizedBox(width: 10),
               // Which of these is safe if this laptop dies — answerable by
               // scanning the list, rather than by opening each one in turn.
               SyncDot(app: app, notebookId: nb.id),
@@ -462,6 +473,29 @@ class _NotebookManagerState extends State<_NotebookManager> {
                       child: CircularProgressIndicator(strokeWidth: 2)),
                 )
               else if (!renaming && !confirming) ...[
+                PopupMenuButton<String?>(
+                  tooltip: 'Cover colour',
+                  onSelected: (value) => app.setNotebookColor(nb.id, value),
+                  itemBuilder: (_) => [
+                    for (final value in _coverTokens)
+                      PopupMenuItem(
+                        value: value,
+                        child: Row(children: [
+                          Container(
+                            width: 16,
+                            height: 16,
+                            decoration: BoxDecoration(
+                              color: _coverColor(value, nb.id),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(value == null ? 'Automatic' : value),
+                        ]),
+                      ),
+                  ],
+                  icon: const Icon(Icons.palette_outlined, size: 17),
+                ),
                 if (!current)
                   _act(Icons.open_in_new, 'Open this notebook', () async {
                     Navigator.pop(context);
@@ -507,6 +541,27 @@ class _NotebookManagerState extends State<_NotebookManager> {
       ),
       ),
     );
+  }
+
+  static const List<String?> _coverTokens = [
+    null,
+    'Blue',
+    'Purple',
+    'Green',
+    'Orange',
+    'Red',
+  ];
+
+  static Color _coverColor(String? token, String id) {
+    const colors = {
+      'Blue': Color(0xFF426BB2),
+      'Purple': Color(0xFF7351A6),
+      'Green': Color(0xFF3D8B70),
+      'Orange': Color(0xFFB56D32),
+      'Red': Color(0xFFAD5155),
+    };
+    if (token != null) return colors[token] ?? colors['Blue']!;
+    return colors.values.elementAt(id.codeUnits.fold<int>(0, (a, b) => a + b) % colors.length);
   }
 
   Widget _trashRow(NotebookRef nb) {

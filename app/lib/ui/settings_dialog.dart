@@ -224,8 +224,6 @@ class _SettingsDialogState extends State<_SettingsDialog> {
               if (app.writingServiceProblem != null)
                 AppText(app.writingServiceProblem!,
                     style: const TextStyle(fontSize: 11)),
-              _row('Pen near the page switches to inking',
-                  _toggle(app.penProximitySwitch, app.setPenProximitySwitch)),
               _section('Connections'),
               _door(
                   Icons.sync,

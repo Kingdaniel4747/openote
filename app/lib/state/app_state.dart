@@ -4525,26 +4525,11 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
-  /// Bringing a pen NEAR the page switches to inking (PLANNING.md: "auto
-  /// detect when a pen is in proximity of the page and always assume to use
-  /// it for inking rather than selecting"). Only ever switches FROM the
-  /// select tool, and once per approach of the pen — so choosing Select (or
-  /// anything else) while the pen hovers sticks until the pen leaves and
-  /// comes back, which is the "unless the user specifically selects another
-  /// option" half of the ask.
-  bool penProximitySwitch = true;
-
   bool startMaximized = true;
 
   void setStartMaximized(bool value) {
     startMaximized = value;
     _repo.setSetting('startMaximized', value);
-    notifyListeners();
-  }
-
-  void setPenProximitySwitch(bool v) {
-    penProximitySwitch = v;
-    _repo.setSetting('penProximity', v);
     notifyListeners();
   }
 
@@ -4796,6 +4781,20 @@ class AppState extends ChangeNotifier
 
   String lastColor = 'C63838'; // last-used ink colour; default red
   final List<String> customColors = []; // recent/custom, persisted
+  final Map<String, String> notebookColors = {};
+
+  String? notebookColor(String notebookId) => notebookColors[notebookId];
+
+  void setNotebookColor(String notebookId, String? color) {
+    if (color == null) {
+      notebookColors.remove(notebookId);
+    } else {
+      notebookColors[notebookId] = color;
+    }
+    _repo.setSetting('notebookColors', notebookColors);
+    notifyListeners();
+  }
+
   void rememberCustomColor(String hex) {
     customColors.remove(hex);
     customColors.insert(0, hex);
@@ -5710,6 +5709,10 @@ class AppState extends ChangeNotifier
 
   // Save & undo
   Timer? _saveDebounce;
+  // A save can still be awaiting disk I/O when a widget test tears its app
+  // down. The generation prevents that old save from arming a fresh workspace
+  // debounce after the test has cancelled every timer it knew about.
+  int _saveCancellationGeneration = 0;
   bool _dirty = false;
   bool get hasUnsavedChanges => _dirty;
   final List<String> _undo = [];
@@ -5792,8 +5795,6 @@ class AppState extends ChangeNotifier
     if (td != null) {
       touchDrawing = TouchDrawing.values.asNameMap()[td] ?? touchDrawing;
     }
-    final pp = _repo.getSetting('penProximity');
-    if (pp is bool) penProximitySwitch = pp;
     final maximized = _repo.getSetting('startMaximized') ??
         _repo.getSetting('startFullscreen');
     if (maximized is bool) startMaximized = maximized;
@@ -5806,6 +5807,12 @@ class AppState extends ChangeNotifier
     unawaited(checkForAppUpdate());
     final cc = _repo.getSetting('customColors');
     if (cc is List) customColors.addAll(cc.cast<String>());
+    final notebookColourSettings = _repo.getSetting('notebookColors');
+    if (notebookColourSettings is Map) {
+      notebookColourSettings.forEach((key, value) {
+        if (key is String && value is String) notebookColors[key] = value;
+      });
+    }
     final vm = _repo.getSetting('viewMemory');
     if (vm is Map) {
       vm.forEach((k, v) {
@@ -8511,6 +8518,7 @@ class AppState extends ChangeNotifier
   }
 
   Future<void> flushSave() async {
+    final saveCancellationGeneration = _saveCancellationGeneration;
     _saveDebounce?.cancel();
     if (!_dirty || pageId == null || notebookId == null) return;
     // Wait out a pull that is mid-write rather than racing it. See
@@ -8608,6 +8616,9 @@ class AppState extends ChangeNotifier
       notifyListeners();
       return;
     }
+    // A test can cancel timers while this save awaits disk work. Do not arm a
+    // new workspace timer after that cancellation; normal saves are unchanged.
+    if (saveCancellationGeneration != _saveCancellationGeneration) return;
     // Keep session state fresh so closing the app never loses your place.
     _rememberView();
     _persistSession();
@@ -8641,6 +8652,7 @@ class AppState extends ChangeNotifier
   /// test's own "no pending timers" invariant.
   @visibleForTesting
   void cancelPendingSave() {
+    _saveCancellationGeneration++;
     _saveDebounce?.cancel();
     _gitDebounce?.cancel();
     // Housekeeping arms timers too (the post-open delay, the deferral retry,
@@ -8663,6 +8675,7 @@ class AppState extends ChangeNotifier
   @override
   void dispose() {
     _disposed = true;
+    _saveCancellationGeneration++;
     // The caret watcher outlives nothing. A widget test builds and tears down
     // an AppState per case, and a listener left on a controller from the last
     // one is a leak that only shows up as a confusing failure in the next.

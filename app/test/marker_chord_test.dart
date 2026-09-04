@@ -478,6 +478,7 @@ void main() {
     Future<void> flush(WidgetTester tester) async {
       await tester.pump(const Duration(milliseconds: 900));
       await tester.pumpAndSettle();
+      app.cancelPendingSave();
     }
 
     testWidgets('Ctrl+* climbs italic, bold, both, then refuses',

@@ -16,10 +16,14 @@ Color colorFromHex(String hex) =>
 /// their colour.
 class InkPainter extends CustomPainter {
   InkPainter(this.strokes,
-      {this.wet, this.autoColor = const Color(0xFF211F1B), super.repaint});
+      {this.wet,
+      this.autoColor = const Color(0xFF211F1B),
+      this.fixedBackdrops = const [],
+      super.repaint});
   final List<Stroke> strokes;
   final Stroke? wet; // in-progress stroke, drawn last (mutated between repaints)
   final Color autoColor;
+  final List<Rect> fixedBackdrops;
 
   /// Tessellated outlines, attached to the **Stroke object itself**.
   ///
@@ -54,7 +58,15 @@ class InkPainter extends CustomPainter {
       if (path == null) return;
       if (cache) _outlines[s] = path;
     }
-    final base = s.colorHex == 'auto' ? autoColor : colorFromHex(s.colorHex);
+    // Old documents stored the automatic light-paper black as a literal
+    // #211F1B. Treat that legacy default as automatic too, except where the
+    // stroke sits on a fixed image/PDF — there its chosen colour must stay
+    // stable while the app theme changes.
+    final onFixedBackdrop = fixedBackdrops.any((r) =>
+        r.contains(Offset(s.x.first, s.y.first)));
+    final automatic = s.colorHex == 'auto' ||
+        (s.colorHex.toUpperCase() == '#211F1B' && !onFixedBackdrop);
+    final base = automatic ? autoColor : colorFromHex(s.colorHex);
     final paint = Paint()
       ..color = base.withValues(alpha: s.opacity)
       ..style = PaintingStyle.fill
@@ -77,8 +89,10 @@ class InkPainter extends CustomPainter {
       options: StrokeOptions(
         size: s.size * (s.tool == 'highlighter' ? 3 : 1),
         thinning: s.tool == 'highlighter' ? 0.0 : 0.6,
-        smoothing: 0.5,
-        streamline: 0.5,
+        // Samsung's digitizer samples very densely. A little more filtering
+        // removes the visible micro-jitter without turning corners into arcs.
+        smoothing: 0.72,
+        streamline: 0.68,
         simulatePressure: !hasPressure,
       ),
     );
@@ -97,6 +111,7 @@ class InkPainter extends CustomPainter {
   bool shouldRepaint(covariant InkPainter old) =>
       old.wet != wet ||
       old.autoColor != autoColor ||
+      old.fixedBackdrops != fixedBackdrops ||
       old.strokes.length != strokes.length ||
       (strokes.isNotEmpty &&
           (!identical(old.strokes.first, strokes.first) ||

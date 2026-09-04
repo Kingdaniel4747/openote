@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -47,13 +48,14 @@ class _PageCanvasState extends State<PageCanvas> {
   bool _pendingErase = false;
   Tool _penReturnTool = Tool.pen;
   Tool _contactTool = Tool.pen;
+  Offset? _eraserScreen;
 
   void _windowsPenChanged() {
     if (!mounted) return;
     _pendingErase = _windowsPen.nativeEraser;
-    // Button changes during contact are queued until lift-off, not applied
-    // halfway through writing/erasing. The ribbon follows the active tool.
-    if (_windowsInkPointer == null && _lasso == null) _showPenButtonTool(_pendingErase);
+    // The barrel state is deliberately only applied at a pen contact boundary
+    // in _inkDown/_inkUp. Switching a tool while the pen merely hovers makes
+    // choosing a toolbar option frustrating and can cut an active stroke.
     setState(() {});
   }
 
@@ -97,6 +99,10 @@ class _PageCanvasState extends State<PageCanvas> {
   double? _pinchBaseDist;
   Offset? _pinchLastFocal;
   double _pzLastScale = 1.0;
+  Timer? _inertia;
+  Offset _touchVelocity = Offset.zero;
+  DateTime? _lastTouchMove;
+  bool _multiTouchSeen = false;
 
   /// The pointer of a trackpad pan/pinch a block has claimed for itself
   /// (a graph, panning its own window) — null once nothing has. Latched
@@ -139,17 +145,6 @@ class _PageCanvasState extends State<PageCanvas> {
     return t != null && DateTime.now().difference(t) < _stylusGrace;
   }
 
-  /// Whether this touch should draw rather than pan.
-  ///
-  /// Single finger only: a second finger always means pan/zoom, which is what
-  /// every drawing app does and what makes the canvas navigable while a drawing
-  /// tool is selected.
-  bool _touchDraws() => touchShouldDraw(
-        mode: app.touchDrawing,
-        activeTouches: _touches.length,
-        stylusActive: _stylusActive,
-      );
-
   void _noteStylus(PointerEvent e) {
     if (e.kind == PointerDeviceKind.stylus ||
         e.kind == PointerDeviceKind.invertedStylus) {
@@ -169,12 +164,9 @@ class _PageCanvasState extends State<PageCanvas> {
         e.kind != PointerDeviceKind.invertedStylus) {
       return;
     }
-    final approaching = !_stylusActive;
     _lastStylus = DateTime.now();
-    if (approaching && app.penProximitySwitch && app.tool == Tool.select) {
-      app.setTool(Tool.pen);
-    }
-    if (_windowsInkPointer == null && _lasso == null) _showPenButtonTool(_windowsPen.erases(e));
+    // Hover is only a palm-rejection signal. A real pen contact chooses the
+    // pen in _inkDown; hovering must never steal a selected tool.
   }
 
   /// True while the CURRENT ink gesture erases regardless of the selected
@@ -223,6 +215,7 @@ class _PageCanvasState extends State<PageCanvas> {
 
   @override
   void dispose() {
+    _inertia?.cancel();
     _windowsPen.removeListener(_windowsPenChanged);
     _windowsPen.dispose();
     _wetTick.dispose();
@@ -277,6 +270,7 @@ class _PageCanvasState extends State<PageCanvas> {
     final pt = _clampToPagePoint(controller.screenToPage(e.localPosition));
     if (!_onPaper(controller.screenToPage(e.localPosition))) return;
     if (_contactTool == Tool.eraser || _gestureErase) {
+      setState(() => _eraserScreen = e.localPosition);
       _eraseAt(pt);
       return;
     }
@@ -288,11 +282,20 @@ class _PageCanvasState extends State<PageCanvas> {
     final colors = OnoteColors.drawingColors(
         dark: dark, highlighter: _contactTool == Tool.highlighter);
     final color = colors[app.penColor % colors.length];
+    // The first swatch is "automatic": ordinary paper ink follows the
+    // application theme even after it has been written.  A PDF/image is a
+    // fixed background, so it deliberately receives a real colour instead.
+    final fixedBackdrop = _hasFixedBackdropAt(pt);
     setState(() {
       _wet = Stroke(
         tool: _contactTool == Tool.highlighter ? 'highlighter' : 'pen',
-        colorHex:
-            '#${(color.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}',
+        colorHex: app.penColor == 0 && !fixedBackdrop
+            ? 'auto'
+            : '#${((fixedBackdrop && app.penColor == 0
+                        ? OnoteColors.graphite900
+                        : color)
+                    .toARGB32() &
+                0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}',
         size: app.penSize,
         opacity: _contactTool == Tool.highlighter ? 0.4 : 1.0,
       );
@@ -310,6 +313,9 @@ class _PageCanvasState extends State<PageCanvas> {
       return;
     }
     if (_contactTool == Tool.eraser || _gestureErase) {
+      if (_eraserScreen != e.localPosition) {
+        setState(() => _eraserScreen = e.localPosition);
+      }
       _eraseAt(controller.screenToPage(e.localPosition));
       return;
     }
@@ -331,6 +337,9 @@ class _PageCanvasState extends State<PageCanvas> {
   Offset _clampToPagePoint(Offset p) =>
       Offset(math.max(0, p.dx), math.max(0, p.dy));
 
+  bool _hasFixedBackdropAt(Offset point) => app.blocks.any((b) =>
+      b.content['background'] == true && _blockRect(b).contains(point));
+
   void _addPoint(PointerEvent e, Offset pagePt) {
     final w = _wet!;
     w.x.add(pagePt.dx);
@@ -348,6 +357,7 @@ class _PageCanvasState extends State<PageCanvas> {
     }
     _eraseUndoPushed = false;
     _gestureErase = false;
+    if (_eraserScreen != null) setState(() => _eraserScreen = null);
     _finishWetStroke();
     if (e.kind == PointerDeviceKind.stylus || e.kind == PointerDeviceKind.invertedStylus) {
       _showPenButtonTool(_pendingErase);
@@ -598,9 +608,13 @@ class _PageCanvasState extends State<PageCanvas> {
   // ── Touch pan/pinch (shared: pen-mode palm rejection & navigation) ──────
 
   void _touchDown(PointerDownEvent e) {
+    _inertia?.cancel();
     _touches[e.pointer] = e.localPosition;
     _lastScreen = e.localPosition;
+    _touchVelocity = Offset.zero;
+    _lastTouchMove = DateTime.now();
     if (_touches.length == 2) {
+      _multiTouchSeen = true;
       final pts = _touches.values.toList();
       _pinchBaseDist = (pts[0] - pts[1]).distance;
       _pinchLastFocal = (pts[0] + pts[1]) / 2;
@@ -608,6 +622,9 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _touchMove(PointerMoveEvent e) {
+    final now = DateTime.now();
+    final previous = _touches[e.pointer] ?? e.localPosition;
+    final elapsed = now.difference(_lastTouchMove ?? now).inMicroseconds;
     _touches[e.pointer] = e.localPosition;
     if (_touches.length >= 2 && _pinchBaseDist != null) {
       final pts = _touches.values.toList();
@@ -620,18 +637,40 @@ class _PageCanvasState extends State<PageCanvas> {
         _pinchLastFocal = focal;
       }
     } else if (_touches.length == 1) {
-      controller.panBy(e.localPosition - _lastScreen);
+      final delta = e.localPosition - _lastScreen;
+      controller.panBy(delta);
+      if (elapsed > 0) {
+        _touchVelocity = delta * (1000000 / elapsed);
+      }
       _lastScreen = e.localPosition;
     }
+    _lastTouchMove = now;
   }
 
-  void _touchUp(PointerUpEvent e) {
+  void _touchUp(PointerEvent e) {
     _touches.remove(e.pointer);
     if (_touches.length < 2) {
       _pinchBaseDist = null;
       _pinchLastFocal = null;
     }
     if (_touches.length == 1) _lastScreen = _touches.values.first;
+    if (_touches.isEmpty && !_multiTouchSeen) _startInertia();
+    if (_touches.isEmpty) _multiTouchSeen = false;
+  }
+
+  void _startInertia() {
+    var velocity = _touchVelocity;
+    if (velocity.distance < 120) return;
+    _inertia?.cancel();
+    var previous = DateTime.now();
+    _inertia = Timer.periodic(const Duration(milliseconds: 16), (timer) {
+      final now = DateTime.now();
+      final dt = now.difference(previous).inMicroseconds / 1000000;
+      previous = now;
+      controller.panBy(velocity * dt);
+      velocity *= math.pow(0.004, dt).toDouble();
+      if (velocity.distance < 12) timer.cancel();
+    });
   }
 
   // ── Select-mode pointer model ───────────────────────────────────────────
@@ -670,14 +709,17 @@ class _PageCanvasState extends State<PageCanvas> {
       return;
     }
     if (e.kind == PointerDeviceKind.touch) {
-      _touches[e.pointer] = e.localPosition;
-      if (_touches.length == 2) {
-        final pts = _touches.values.toList();
-        _pinchBaseDist = (pts[0] - pts[1]).distance;
-        _pinchLastFocal = (pts[0] + pts[1]) / 2;
+      _touchDown(e);
+      if (_touches.length >= 2) {
         _mode = _DragMode.none;
         return;
       }
+      // A finger is for navigation and a held context menu, never for moving
+      // or drawing a block. The pen/mouse still provide precise selection.
+      _mode = _DragMode.pending;
+      _marqueeStartPage = controller.screenToPage(e.localPosition);
+      _marqueeEndPage = _marqueeStartPage;
+      return;
     }
 
     final pagePt = controller.screenToPage(e.localPosition);
@@ -700,19 +742,13 @@ class _PageCanvasState extends State<PageCanvas> {
   void _selectMove(PointerMoveEvent e) {
     if (_windowsInkPointer == e.pointer) { _inkMove(e); return; }
     if (_touches.containsKey(e.pointer)) {
-      _touches[e.pointer] = e.localPosition;
-      if (_touches.length == 2 && _pinchBaseDist != null) {
-        final pts = _touches.values.toList();
-        final d = (pts[0] - pts[1]).distance;
-        final focal = (pts[0] + pts[1]) / 2;
-        if (_pinchBaseDist! > 0 && d > 0) {
-          final previous = _pinchLastFocal ?? focal;
-          controller.transformAt(previous, d / _pinchBaseDist!, focal - previous);
-          _pinchBaseDist = d;
-          _pinchLastFocal = focal;
-        }
-        return;
+      _touchMove(e);
+      if (_touches.length >= 2) return;
+      if (_mode == _DragMode.pending &&
+          (e.localPosition - _downScreen).distance > 5) {
+        _mode = _DragMode.pan;
       }
+      return;
     }
     final delta = e.localPosition - _lastScreen;
     _lastScreen = e.localPosition;
@@ -749,11 +785,8 @@ class _PageCanvasState extends State<PageCanvas> {
 
   void _selectUp(PointerUpEvent e) {
     if (_windowsInkPointer == e.pointer) { _inkUp(e); return; }
-    _touches.remove(e.pointer);
-    if (_touches.length < 2) {
-      _pinchBaseDist = null;
-      _pinchLastFocal = null;
-    }
+    final wasTouch = _touches.containsKey(e.pointer);
+    if (wasTouch) _touchUp(e);
     final mode = _mode;
     _mode = _DragMode.none;
     switch (mode) {
@@ -1073,7 +1106,12 @@ class _PageCanvasState extends State<PageCanvas> {
                                     // ink on light pages, light ink on dark.
                                     autoColor: dark
                                         ? OnoteColors.moon100
-                                        : OnoteColors.graphite900),
+                                        : OnoteColors.graphite900,
+                                    fixedBackdrops: [
+                                      for (final b in app.blocks)
+                                        if (b.content['background'] == true)
+                                          _blockRect(b),
+                                    ]),
                               ),
                             ),
                           ),
@@ -1155,11 +1193,30 @@ class _PageCanvasState extends State<PageCanvas> {
           // The scroll bar claims its pointers; a lasso must not start
           // under it.
           if (app.claimedPointers.remove(e.pointer)) return;
-          _lassoDown(e);
+          if (e.kind == PointerDeviceKind.touch) {
+            _touchDown(e);
+          } else {
+            _lassoDown(e);
+          }
         },
-        onPointerMove: _lassoMove,
-        onPointerUp: _lassoUp,
-        onPointerCancel: (_) => setState(() => _lasso = null),
+        onPointerMove: (e) {
+          if (_touches.containsKey(e.pointer)) {
+            _touchMove(e);
+          } else {
+            _lassoMove(e);
+          }
+        },
+        onPointerUp: (e) {
+          if (_touches.containsKey(e.pointer)) {
+            _touchUp(e);
+          } else {
+            _lassoUp(e);
+          }
+        },
+        onPointerCancel: (e) {
+          if (_touches.containsKey(e.pointer)) _touchUp(e);
+          setState(() => _lasso = null);
+        },
         child: canvas,
       );
     } else if (_inkTool) {
@@ -1180,21 +1237,15 @@ class _PageCanvasState extends State<PageCanvas> {
             _inkDown(e);
             return;
           }
-          _touches[e.pointer] = e.localPosition;
+          _touchDown(e);
           if (_touches.length > 1) {
             // The first finger may already be mid-stroke; a pinch is not a
             // drawing, so drop it rather than leaving a stray mark.
             _cancelWetStroke();
-            _touchDown(e);
             return;
           }
-          if (_touchDraws()) {
-            _touches.remove(e.pointer); // it's a drawing pointer, not a gesture
-            _inkDown(e);
-          } else {
-            _touches.remove(e.pointer); // _touchDown re-adds and sets up pinch
-            _touchDown(e);
-          }
+          // A finger only navigates. This keeps palm contact and a second
+          // finger from ever producing ink or an eraser mark.
         },
         onPointerMove: (e) {
           _noteStylus(e);
@@ -1222,6 +1273,11 @@ class _PageCanvasState extends State<PageCanvas> {
     } else {
       canvas = GestureDetector(
         onLongPressStart: (details) {
+          // Flutter's recognizer can finish the first finger's long press a
+          // moment after a second finger lands. Do not turn a pinch into a
+          // context menu.
+          if (_multiTouchSeen || _touches.length != 1 ||
+              _mode != _DragMode.pending) return;
           _mode = _DragMode.none;
           _touches.clear();
           _pinchBaseDist = null;
@@ -1291,8 +1347,8 @@ class _PageCanvasState extends State<PageCanvas> {
       child: Stack(children: [
         canvas,
         if (_dragOver)
-          Positioned.fill(
-            child: IgnorePointer(
+                Positioned.fill(
+                  child: IgnorePointer(
               child: Container(
                 color: Theme.of(context)
                     .colorScheme
@@ -1311,6 +1367,28 @@ class _PageCanvasState extends State<PageCanvas> {
                       padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                       child: Text('Drop to add to this page'),
                     ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        // The eraser is an area, not a crosshair: show its exact on-page
+        // diameter only during pen contact, never while hovering or touching.
+        if (_eraserScreen != null)
+          Positioned(
+            left: _eraserScreen!.dx - app.eraserSize / 2,
+            top: _eraserScreen!.dy - app.eraserSize / 2,
+            child: IgnorePointer(
+              child: Container(
+                width: app.eraserSize,
+                height: app.eraserSize,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Theme.of(context).colorScheme.primary
+                      .withValues(alpha: .10),
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.primary,
+                    width: 1.5,
                   ),
                 ),
               ),
