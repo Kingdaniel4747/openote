@@ -47,6 +47,8 @@ const german = <String, String>{
   'Maximized mode keeps the Windows taskbar available.':
       'Im maximierten Modus bleibt die Windows-Taskleiste erreichbar.',
   'Writing and drawing': 'Schreiben und Zeichnen',
+  'Writing mode': 'Schreibmodus',
+  'Draw with finger': 'Mit dem Finger zeichnen',
   'Spell check': 'Rechtschreibung prüfen',
   'Check handwriting': 'Handschrift prüfen',
   'Check language support': 'Sprachunterstützung prüfen',
@@ -78,6 +80,9 @@ const german = <String, String>{
   'Select / move  (V)': 'Auswählen / verschieben  (V)',
   'Text  (T)': 'Text  (T)',
   'Pen  (P)': 'Stift  (P)',
+  'Ballpoint — constant width': 'Kugelschreiber — gleichmäßige Breite',
+  'Shape recognition — draw and hold':
+      'Formerkennung — zeichnen und halten',
   'Highlighter  (H)': 'Textmarker  (H)',
   'Eraser  (E)': 'Radierer  (E)',
   'Lasso-select ink': 'Handschrift mit Lasso auswählen',
@@ -96,6 +101,7 @@ const german = <String, String>{
   'Deselect': 'Auswahl aufheben',
   'Lock in place': 'Position sperren',
   'Unlock': 'Entsperren',
+  'Save original': 'Original speichern',
   'Background colour…': 'Hintergrundfarbe…',
   'Remove background': 'Hintergrund entfernen',
   'Open the PDF…': 'PDF öffnen…',

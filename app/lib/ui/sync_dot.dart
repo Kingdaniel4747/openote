@@ -48,8 +48,6 @@ SyncState syncStateOf(AppState app, String notebookId) {
 String syncStateTooltip(AppState app, String notebookId) {
   final s = app.syncStatus(notebookId);
   if (s.isSynced) {
-    // `where`, never `folder!` — a git-synced notebook has no folder, and this
-    // is called for every row of the notebook list.
     final where = s.where ?? 'a remote';
     final how = s.isFolderSynced
         ? 'Syncing through $where — this notebook lives in a folder your '
@@ -57,8 +55,7 @@ String syncStateTooltip(AppState app, String notebookId) {
         // Named as a minute behind rather than as continuous. It is the
         // difference between the two mechanisms, and the moment it matters is
         // the moment someone closes a laptop mid-sentence.
-        : 'Syncing to $where — pushed a minute after you stop typing, and '
-            'again when you close Openote';
+        : 'Backed up to $where — updated one minute after you stop typing';
     return s.hasOtherDevices
         ? '$how · ${s.devices} devices have opened it'
         : how;
@@ -83,8 +80,8 @@ String syncChipTooltip(SyncStatus s) {
   if (s.isSynced) {
     b.write(s.isFolderSynced
         ? 'Syncing through ${s.where}.\n'
-        : 'Pushed to ${s.where} a minute after you stop typing, and again '
-            'when you close Openote.\n');
+        : 'Backed up to ${s.where}; updates run one minute after you stop '
+            'typing.\n');
     b.write(s.hasOtherDevices
         ? 'Edited on ${s.devices} devices — changes arrive automatically.'
         : 'Open this notebook on another device to sync it.');
@@ -150,8 +147,7 @@ class SyncDotWithLabel extends StatelessWidget {
         Flexible(
           child: Text(
             switch (state) {
-              SyncState.synced =>
-                app.syncStatus(notebookId).where ?? 'Syncing',
+              SyncState.synced => app.syncStatus(notebookId).where ?? 'Syncing',
               SyncState.mirrored => 'Backed up',
               SyncState.local => 'This computer only',
             },

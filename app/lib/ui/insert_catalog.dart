@@ -734,8 +734,11 @@ Future<void> importPdfWithProgress(BuildContext context, AppState app,
       Navigator.of(context, rootNavigator: true).pop();
     }
     if (context.mounted) {
+      final message = e is TimeoutException
+          ? 'This PDF took too long to open. Try saving it again or restart Openote.'
+          : 'PDF import failed: $e';
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('PDF import failed: $e')));
+          .showSnackBar(SnackBar(content: Text(message)));
     }
   } finally {
     progress.dispose();

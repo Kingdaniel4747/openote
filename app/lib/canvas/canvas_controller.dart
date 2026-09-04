@@ -69,7 +69,10 @@ class CanvasController extends ChangeNotifier {
     final ps = pageSize;
     if (ps == null || viewport == Size.zero) return;
     double axis(double o, double vp, double contentPx) {
-      if (contentPx <= vp) return 0; // smaller than viewport → pin top-left
+      // When a zoom crosses from larger-than-viewport to smaller, forcing the
+      // origin straight to zero creates a visible one-frame jerk. Keep the
+      // focal point stable anywhere in the available margin instead.
+      if (contentPx <= vp) return o.clamp(0.0, vp - contentPx);
       return o.clamp(vp - contentPx, 0.0); // fills → stay within the page
     }
 

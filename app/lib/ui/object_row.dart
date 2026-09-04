@@ -235,6 +235,22 @@ class PageFace extends StatelessWidget {
       ),
       const _Sep(),
       IconButton(
+        icon: Icon(
+            Theme.of(context).brightness == Brightness.dark
+                ? Icons.light_mode_outlined
+                : Icons.dark_mode_outlined,
+            size: OnoteIcon.md),
+        tooltip: Theme.of(context).brightness == Brightness.dark
+            ? 'Switch to light mode'
+            : 'Switch to dark mode',
+        visualDensity: VisualDensity.compact,
+        onPressed: () => app.setThemeMode(
+            Theme.of(context).brightness == Brightness.dark
+                ? ThemeMode.light
+                : ThemeMode.dark),
+      ),
+      const _Sep(),
+      IconButton(
         icon: const Icon(Icons.remove, size: OnoteIcon.md),
         tooltip: 'Zoom out  (Ctrl+-)',
         visualDensity: VisualDensity.compact,

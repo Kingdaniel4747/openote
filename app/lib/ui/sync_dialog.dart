@@ -53,7 +53,7 @@ String _ago(DateTime? t, String absent, String label) {
 }
 
 /// The foldable halves of the dialog.
-enum _Pane { webdav, git, mirrors, storage }
+enum _Pane { webdav, mirrors, storage }
 
 /// A section header that stands on its own, and its contents when opened.
 ///
@@ -252,10 +252,11 @@ class _SyncDialogState extends State<_SyncDialog> {
         username: _webDavUser.text,
         password: _webDavPassword.text,
       );
+      await app.uploadAllToWebDav();
       _webDavPassword.clear();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Connected. All notebooks can now be uploaded together.'),
+        content: Text('Connected and synced. Automatic backup is now on.'),
       ));
     } catch (e) {
       if (mounted) setState(() => _error = '$e');
@@ -280,15 +281,28 @@ class _SyncDialogState extends State<_SyncDialog> {
     }
   }
 
+  Future<void> _restoreWebDav() async {
+    setState(() => _error = null);
+    try {
+      final count = await app.restoreAllFromWebDav();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Restored $count notebooks from Nextcloud.'),
+      ));
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    }
+  }
+
   Widget _webDavSection() {
     final connected = app.webDavConfigured;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Creates one safe, one-way backup containing every notebook. '
-          'Openote never puts its live database on the server and never '
-          'downloads over your local notes.',
+          'Keeps one complete Openote Backup.zip in Nextcloud. It contains '
+          'every notebook, PDF and image and updates one minute after you '
+          'finish writing.',
           style: TextStyle(
               fontSize: 12, height: 1.4, color: context.surfaces.textSecondary),
         ),
@@ -332,9 +346,14 @@ class _SyncDialogState extends State<_SyncDialog> {
               style: const TextStyle(fontSize: 12)),
           if (app.webDavLastUpload != null) ...[
             const SizedBox(height: 4),
-            Text(_ago(app.webDavLastUpload, 'Not uploaded yet', 'Last upload'),
-                style: TextStyle(
-                    fontSize: 11, color: context.surfaces.textSecondary)),
+            Row(children: [
+              const Icon(Icons.cloud_done_outlined,
+                  size: 16, color: OnoteColors.success),
+              const SizedBox(width: 6),
+              Text(_ago(app.webDavLastUpload, 'Not uploaded yet', 'Synced'),
+                  style: TextStyle(
+                      fontSize: 11, color: context.surfaces.textSecondary)),
+            ]),
           ],
           if (app.webDavBusy || app.webDavProgress != null) ...[
             const SizedBox(height: 8),
@@ -357,7 +376,13 @@ class _SyncDialogState extends State<_SyncDialog> {
             FilledButton.icon(
               onPressed: app.webDavBusy ? null : _uploadWebDav,
               icon: const Icon(Icons.cloud_upload_outlined, size: 18),
-              label: const Text('Upload all notebooks'),
+              label: const Text('Sync now'),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              onPressed: app.webDavBusy ? null : _restoreWebDav,
+              icon: const Icon(Icons.restore, size: 18),
+              label: const Text('Restore backup'),
             ),
             const SizedBox(width: 8),
             TextButton(
@@ -493,26 +518,6 @@ class _SyncDialogState extends State<_SyncDialog> {
                     onTap: () => setState(() =>
                         _open = _open == _Pane.webdav ? null : _Pane.webdav),
                     child: _webDavSection(),
-                  ),
-                  _Disclosure(
-                    icon: Icons.commit,
-                    title: 'Sync with git',
-                    // The subtitle answers the question without opening anything,
-                    // which is most of what a collapsed section is for.
-                    subtitle: app.gitEnabled
-                        ? (app.gitRemote == null
-                            ? 'On — this computer only'
-                            : SyncStatus(
-                                    folder: null,
-                                    devices: 1,
-                                    mirrors: 0,
-                                    gitRemote: app.gitRemote)
-                                .gitLabel!)
-                        : 'Off',
-                    open: _open == _Pane.git,
-                    onTap: () => setState(
-                        () => _open = _open == _Pane.git ? null : _Pane.git),
-                    child: _GitSection(app: app),
                   ),
                   _Disclosure(
                     icon: Icons.folder_copy_outlined,

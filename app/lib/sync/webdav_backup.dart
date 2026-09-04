@@ -1,31 +1,22 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:path/path.dart' as p;
-
-class WebDavNotebook {
-  const WebDavNotebook({
-    required this.id,
-    required this.title,
-    required this.container,
-    required this.logDirectory,
-  });
-
-  final String id;
-  final String title;
-  final File container;
-  final Directory? logDirectory;
-}
-
 class WebDavUploadResult {
   const WebDavUploadResult({required this.files, required this.bytes});
   final int files;
   final int bytes;
 }
 
-/// Small dependency-free WebDAV uploader for Nextcloud and ordinary WebDAV
-/// servers. It deliberately uploads snapshots and never exposes the live WAL
-/// SQLite file to a remote filesystem.
+class WorkspaceBackupResult {
+  const WorkspaceBackupResult({required this.notebooks, required this.bytes});
+  final int notebooks;
+  final int bytes;
+}
+
+/// Small WebDAV client for one complete, portable workspace archive.
+///
+/// One ZIP means a notebook containing hundreds of PDF previews still costs
+/// one upload request instead of hundreds of slow WebDAV round trips.
 class WebDavBackupClient {
   WebDavBackupClient({
     required this.baseUrl,
@@ -39,6 +30,9 @@ class WebDavBackupClient {
   final Uri _base;
   final HttpClient _http = HttpClient()
     ..connectionTimeout = const Duration(seconds: 20);
+
+  static const remoteFolder = 'Openote';
+  static const remoteFile = 'Openote Backup.zip';
 
   static Uri _normaliseBase(String value) {
     final uri = Uri.parse(value.trim());
@@ -57,6 +51,16 @@ class WebDavBackupClient {
         ...extra,
       ]);
 
+  bool get _baseIsOpenote =>
+      _base.pathSegments
+          .where((part) => part.isNotEmpty)
+          .lastOrNull
+          ?.toLowerCase() ==
+      remoteFolder.toLowerCase();
+
+  List<String> get _remoteRoot =>
+      _baseIsOpenote ? const [] : const [remoteFolder];
+
   Future<void> testConnection() async {
     final status =
         await _emptyRequest('PROPFIND', _base, headers: const {'Depth': '0'});
@@ -65,76 +69,33 @@ class WebDavBackupClient {
     }
   }
 
-  Future<WebDavUploadResult> uploadAll(
-    List<WebDavNotebook> notebooks, {
-    void Function(String message)? onProgress,
-  }) async {
+  Future<int> uploadBackup(File archive,
+      {void Function(String message)? onProgress}) async {
     await testConnection();
-    await _ensureCollection(const ['Openote']);
-    var files = 0;
-    var bytes = 0;
-
-    for (final notebook in notebooks) {
-      onProgress?.call('Uploading ${notebook.title}…');
-      final root = ['Openote', notebook.id];
-      await _ensureCollection(root);
-
-      final manifest = utf8.encode(jsonEncode({
-        'id': notebook.id,
-        'title': notebook.title,
-        'uploadedAt': DateTime.now().toUtc().toIso8601String(),
-      }));
-      await _putBytes([...root, 'notebook.json'], manifest);
-      files++;
-      bytes += manifest.length;
-
-      await _putFile([...root, 'notebook.onote'], notebook.container);
-      files++;
-      bytes += await notebook.container.length();
-
-      final logs = notebook.logDirectory;
-      if (logs != null && await logs.exists()) {
-        await _ensureCollection([...root, 'notebook.onotebook']);
-        final directories = <String>{};
-        await for (final entity
-            in logs.list(recursive: true, followLinks: false)) {
-          if (entity is! File) continue;
-          final relative = p.relative(entity.path, from: logs.path);
-          final parts = p.split(relative);
-          if (_skip(parts, entity.path)) continue;
-          if (parts.length > 1) {
-            final parent = parts.take(parts.length - 1).join('/');
-            if (directories.add(parent)) {
-              for (var i = 1; i < parts.length; i++) {
-                await _ensureCollection([
-                  ...root,
-                  'notebook.onotebook',
-                  ...parts.take(i),
-                ]);
-              }
-            }
-          }
-          await _putFile([...root, 'notebook.onotebook', ...parts], entity);
-          files++;
-          bytes += await entity.length();
-        }
-      }
-    }
-    return WebDavUploadResult(files: files, bytes: bytes);
+    if (!_baseIsOpenote) await _ensureCollection(_remoteRoot);
+    onProgress?.call('Uploading one complete workspace backup...');
+    await _putFile([..._remoteRoot, remoteFile], archive);
+    return archive.length();
   }
 
-  bool _skip(List<String> parts, String path) {
-    if (parts.any((part) => part == '.git' || part == '.DS_Store')) return true;
-    final lower = path.toLowerCase();
-    return lower.endsWith('-wal') ||
-        lower.endsWith('-shm') ||
-        lower.endsWith('.tmp');
+  Future<int> downloadBackup(File destination,
+      {void Function(String message)? onProgress}) async {
+    await testConnection();
+    onProgress?.call('Downloading the complete workspace backup...');
+    final request = await _open('GET', _at([..._remoteRoot, remoteFile]));
+    final response = await request.close().timeout(const Duration(minutes: 2));
+    if (response.statusCode != HttpStatus.ok) {
+      final status = response.statusCode;
+      await response.drain<void>();
+      throw WebDavException('Could not download $remoteFile', status);
+    }
+    final sink = destination.openWrite();
+    await response.pipe(sink).timeout(const Duration(minutes: 10));
+    return destination.length();
   }
 
   Future<void> _ensureCollection(List<String> path) async {
     final status = await _emptyRequest('MKCOL', _at(path));
-    // 405 means the collection already exists on Nextcloud and most WebDAV
-    // servers. 301 is also accepted for servers that canonicalise a slash.
     if (status != HttpStatus.created &&
         status != HttpStatus.methodNotAllowed &&
         status != HttpStatus.movedPermanently) {
@@ -146,21 +107,7 @@ class WebDavBackupClient {
     final request = await _open('PUT', _at(path));
     request.contentLength = await file.length();
     await request.addStream(file.openRead());
-    final response = await request.close().timeout(const Duration(minutes: 5));
-    final status = response.statusCode;
-    await response.drain<void>();
-    if (status != HttpStatus.ok &&
-        status != HttpStatus.created &&
-        status != HttpStatus.noContent) {
-      throw WebDavException('Could not upload ${path.last}', status);
-    }
-  }
-
-  Future<void> _putBytes(List<String> path, List<int> bytes) async {
-    final request = await _open('PUT', _at(path));
-    request.contentLength = bytes.length;
-    request.add(bytes);
-    final response = await request.close().timeout(const Duration(seconds: 60));
+    final response = await request.close().timeout(const Duration(minutes: 10));
     final status = response.statusCode;
     await response.drain<void>();
     if (status != HttpStatus.ok &&

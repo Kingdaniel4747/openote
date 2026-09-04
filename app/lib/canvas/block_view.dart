@@ -126,6 +126,7 @@ class _BlockViewState extends State<BlockView> {
   void _tap() {
     if (app.tool == Tool.pen ||
         app.tool == Tool.ballpoint ||
+        app.tool == Tool.shape ||
         app.tool == Tool.highlighter ||
         app.tool == Tool.eraser) return;
     final shift = HardwareKeyboard.instance.isShiftPressed;
@@ -268,8 +269,11 @@ class _BlockViewState extends State<BlockView> {
     // Read per MOVE, not at drag start: the whole point is that pressing or
     // releasing the key part way through a drag changes what happens next.
     app.snapOverride = _modeOverrideHeld;
+    // This detector lives below the page transform, so delta is already in
+    // page space. Dividing it by zoom again made a PDF move twice as far as
+    // the finger at 50% zoom.
     final scale = widget.controller.scale;
-    app.moveSelectedBy(d.delta.dx / scale, d.delta.dy / scale);
+    app.moveSelectedBy(d.delta.dx, d.delta.dy);
     // Alignment guides (CANVAS-7). Computed after the move so the guide
     // reflects where the block actually is, and the snap nudges it flush.
     app.updateAlignGuides(scale);
@@ -589,6 +593,7 @@ class _BlockViewState extends State<BlockView> {
     // them instead of dragging/editing them (fixes ink-over-block dragging).
     final inkToolActive = app.tool == Tool.pen ||
         app.tool == Tool.ballpoint ||
+        app.tool == Tool.shape ||
         app.tool == Tool.highlighter ||
         app.tool == Tool.eraser ||
         app.tool == Tool.lasso;

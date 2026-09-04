@@ -7,16 +7,16 @@
 /// is Apple-locked and paid there. OneNote's equivalent ("Insert → PDF
 /// printout") rasterises pages into images.
 ///
-/// **The PDF is stored ONCE, and every page gets a durable preview.** The
+/// **The PDF is stored ONCE, and visible pages get a durable preview.** The
 /// source PDF remains one content-addressed blob, preserving searchable text
-/// and lossless export. Each slide also carries a content-addressed 2× PNG in
-/// `blob`, so drawing and scrolling use the same simple, immutable image path
-/// as ordinary pictures and do not keep pdfium involved after import.
+/// and lossless export. A preview is generated lazily when a slide is first
+/// visible, so importing a large deck is immediate rather than appearing to
+/// hang while every page is rasterised.
 ///
 /// This intentionally spends disk space for reliability. The blobs are
 /// content-addressed, so identical bytes are deduplicated, sync safely and can
-/// never become stale. A legacy `{pdf, page}` block without `blob` still works:
-/// the image view renders it once and upgrades it lazily.
+/// never become stale. The image view renders a `{pdf, page}` block once and
+/// upgrades it lazily.
 ///
 /// Two deliberate choices survive from the raster era:
 ///
@@ -29,6 +29,7 @@ library;
 
 import 'dart:io';
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -36,7 +37,6 @@ import 'package:pdfrx/pdfrx.dart';
 
 import '../model/models.dart';
 import '../state/app_state.dart';
-import '../media/pdf_pages.dart';
 import '../media/pdf_runtime.dart';
 
 /// Page width we lay imported slides out at, matching the default page width
@@ -198,7 +198,10 @@ Future<PdfImportResult> importPdfFile(
         batch.add((
           page: page,
           text: await _textOf(page),
-          preview: await _storePagePreview(app, nb, page),
+          // Page previews are generated lazily by ImageBlockView. Rendering a
+          // 100-page deck before inserting anything is why imports looked as
+          // though they were stuck forever on Windows.
+          preview: null,
           index: i,
         ));
       }
@@ -292,22 +295,13 @@ Future<String?> _textOf(PdfPage page) async {
         ?.fullText
         .trim();
   } on TimeoutException {
-    // Fail visibly instead of waiting once per remaining page of a stalled worker.
-    rethrow;
+    // A broken text layer must not stop someone annotating their PDF. The
+    // slide still imports and can be searched visually; a later page can
+    // still contribute text if its layer is healthy.
+    return null;
   } catch (_) {
     return null; // a scanned deck has no text layer; that's fine
   }
-}
-
-/// Persist the visual page beside the original PDF. A failed render does not
-/// abort the import: the `{pdf, page}` reference remains a complete fallback
-/// and the image view can retry and upgrade that one page later.
-Future<String?> _storePagePreview(
-    AppState app, String notebookId, PdfPage page) async {
-  final image = await renderPdfPageToPng(page);
-  if (image == null) return null;
-  final hash = app.importBlob(notebookId, image.png, 'image/png');
-  return 'sha256:$hash';
 }
 
 /// The card: one block, the deck behind a click.
@@ -365,7 +359,10 @@ Future<PdfImportResult> _importOntoCurrentPage(
   for (var i = 0; i < total; i++) {
     final page = doc.pages[i];
     final text = await _textOf(page);
-    final preview = await _storePagePreview(app, app.notebookId!, page);
+    // The original PDF is already safely stored. Its preview is cached the
+    // first time this slide appears on screen, so inserting a large deck is
+    // immediate instead of waiting for every PDF page to rasterise.
+    const String? preview = null;
     final h = page.height / page.width * width;
     final block = app.addBlock(
       _slideBlock(pdfHash, page, i, text,
@@ -424,7 +421,7 @@ Future<PdfImportResult> _importIntoPdfPage(
   for (var i = 0; i < doc.pages.length; i++) {
     final page = doc.pages[i];
     final text = await _textOf(page);
-    final preview = await _storePagePreview(app, app.notebookId!, page);
+    const String? preview = null;
     final height = page.height / page.width * width;
     final block = app.addBlock(
       _slideBlock(pdfHash, page, i, text,
@@ -433,12 +430,12 @@ Future<PdfImportResult> _importIntoPdfPage(
       recordUndo: false,
     );
     first ??= block;
-    y += height;
+    y += height + kPdfStackGap;
     onProgress?.call(i + 1, doc.pages.length);
     await Future<void>.delayed(const Duration(milliseconds: 2));
   }
 
-  app.pageProps.pdfPageHeight = y <= 0 ? 1.0 : y;
+  app.pageProps.pdfPageHeight = y <= 0 ? 1.0 : math.max(1.0, y - kPdfStackGap);
   app.markDirty();
   app.select(null);
   if (first != null) {

@@ -162,9 +162,13 @@ class _WindowsWindowFrameState extends State<WindowsWindowFrame> {
     _chromeColor = color;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
+      // Reserve the one-time startup action before the async bridge call.
+      // configureChrome notifies when custom chrome becomes active and can
+      // otherwise schedule a second maximize before the first await returns.
+      final startNow = !_started;
+      if (startNow) _started = true;
       await _window.configureChrome(color);
-      if (!mounted || _started) return;
-      _started = true;
+      if (!mounted || !startNow || !widget.startMaximized) return;
       // Openote is a writing surface. On Windows it always starts maximized
       // (not borderless fullscreen), so the normal taskbar remains available
       // and no old per-install setting can accidentally restore a tiny window.

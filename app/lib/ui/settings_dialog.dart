@@ -192,6 +192,20 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                     style: TextStyle(fontSize: 11)),
               ],
               _section('Writing and drawing'),
+              _row(
+                'Draw with finger',
+                DropdownButton<TouchDrawing>(
+                  value: app.touchDrawing,
+                  items: [
+                    for (final value in TouchDrawing.values)
+                      DropdownMenuItem(
+                          value: value, child: AppText(value.label)),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) app.setTouchDrawing(value);
+                  },
+                ),
+              ),
               _row('Spell check',
                   _toggle(app.spellCheckEnabled, app.setSpellCheck)),
               _row(
@@ -228,7 +242,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
               _door(
                   Icons.sync,
                   'Sync',
-                  'Back up and share this notebook — GitHub or a folder.',
+                  'Nextcloud backup, synced folders and extra copies.',
                   () => showSyncDialog(context, app)),
               _door(
                   Icons.smart_toy_outlined,

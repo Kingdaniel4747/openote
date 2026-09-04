@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:archive/archive_io.dart';
 import 'package:flutter/material.dart'; // ThemeMode + widgets
 import 'package:path/path.dart' as p;
 import 'package:super_clipboard/super_clipboard.dart'
@@ -61,7 +62,7 @@ import '../sync/mirrors.dart';
 import '../sync/sync_recorder.dart';
 import '../sync/webdav_backup.dart';
 
-enum Tool { select, text, pen, ballpoint, highlighter, eraser, lasso }
+enum Tool { select, text, pen, ballpoint, highlighter, eraser, lasso, shape }
 
 /// How the eraser removes ink (INK-6).
 enum EraserMode {
@@ -2533,6 +2534,7 @@ class AppState extends ChangeNotifier
   String? webDavProgress;
   String? webDavError;
   DateTime? webDavLastUpload;
+  Timer? _webDavUploadDebounce;
 
   bool get webDavConfigured =>
       webDavUrl != null && webDavUsername != null && _webDavPassword != null;
@@ -2583,6 +2585,7 @@ class AppState extends ChangeNotifier
   }
 
   void disconnectWebDav() {
+    _webDavUploadDebounce?.cancel();
     SecretStore.delete(_webDavSecretKey);
     webDavUrl = null;
     webDavUsername = null;
@@ -2594,9 +2597,208 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
-  /// Upload one consistent snapshot of every notebook into a single remote
-  /// `Openote` collection. This is a one-way backup: it never overwrites the
-  /// local workspace with remote files and therefore cannot create conflicts.
+  Future<WorkspaceBackupResult> createWorkspaceBackup(
+    String destination, {
+    String? onlyNotebookId,
+  }) async {
+    await flushSave();
+    await _repo.flushWorkspace();
+    final temporary =
+        await Directory.systemTemp.createTemp('openote-backup-build-');
+    final root = Directory(p.join(temporary.path, 'Openote'));
+    await root.create(recursive: true);
+    try {
+      // Preserve the familiar Documents/Openote layout as well as the
+      // portable manifest used by the Restore button.
+      if (onlyNotebookId == null) {
+        await _copyBackupDirectory(_repo.workspaceDir, root,
+            skipNotebookContainers: true);
+      }
+      final selected = notebooks
+          .where((n) => onlyNotebookId == null || n.id == onlyNotebookId)
+          .toList();
+      if (selected.isEmpty) throw StateError('No notebook was selected.');
+      final manifest = <Map<String, Object?>>[];
+      final usedNames = <String>{};
+      for (final ref in selected) {
+        webDavProgress = 'Preparing ${ref.title}...';
+        notifyListeners();
+        await awaitBlobBackfill(ref.id);
+        var stem = ref.title.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_').trim();
+        if (stem.isEmpty) stem = 'Notebook';
+        var uniqueStem = stem;
+        var suffix = 2;
+        while (!usedNames.add(uniqueStem.toLowerCase())) {
+          uniqueStem = '$stem $suffix';
+          suffix++;
+        }
+        final relativeFile = p.isWithin(_repo.workspaceDir.path, ref.file)
+            ? p.relative(ref.file, from: _repo.workspaceDir.path)
+            : '$uniqueStem.onote';
+        final snapshot = File(p.join(root.path, relativeFile));
+        await snapshot.parent.create(recursive: true);
+        if (!_repo.snapshotContainer(ref.id, snapshot.path)) {
+          throw FileSystemException(
+              'Could not create a safe snapshot of ${ref.title}', ref.file);
+        }
+        final relativeLogs = p.isWithin(_repo.workspaceDir.path, ref.logDirPath)
+            ? p.relative(ref.logDirPath, from: _repo.workspaceDir.path)
+            : '$uniqueStem.onotebook';
+        final logs = Directory(ref.logDirPath);
+        if (logs.existsSync() &&
+            (onlyNotebookId != null ||
+                !p.isWithin(_repo.workspaceDir.path, logs.path))) {
+          await _copyBackupDirectory(
+              logs, Directory(p.join(root.path, relativeLogs)));
+        }
+        manifest.add({
+          'id': ref.id,
+          'title': ref.title,
+          'file': 'Openote/$relativeFile',
+          'logs': 'Openote/$relativeLogs',
+        });
+      }
+      await File(p.join(temporary.path, 'backup.json'))
+          .writeAsString(jsonEncode({
+        'format': 1,
+        'createdAt': DateTime.now().toUtc().toIso8601String(),
+        'notebooks': manifest,
+      }));
+      final output = File(destination);
+      if (output.existsSync()) await output.delete();
+      final encoder = ZipFileEncoder();
+      // PDF and image data is already compressed. Storing it directly is much
+      // faster than recompressing the whole school archive every minute.
+      encoder.create(output.path, level: ZipFileEncoder.store);
+      await encoder.addDirectory(temporary,
+          includeDirName: false, level: ZipFileEncoder.store);
+      await encoder.close();
+      return WorkspaceBackupResult(
+          notebooks: selected.length, bytes: await output.length());
+    } finally {
+      try {
+        await temporary.delete(recursive: true);
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _copyBackupDirectory(
+    Directory source,
+    Directory destination, {
+    bool skipNotebookContainers = false,
+  }) async {
+    await destination.create(recursive: true);
+    await for (final entity
+        in source.list(recursive: true, followLinks: false)) {
+      final relative = p.relative(entity.path, from: source.path);
+      if (p
+          .split(relative)
+          .any((part) => part == '.git' || part == '.DS_Store')) {
+        continue;
+      }
+      final lower = entity.path.toLowerCase();
+      if ((skipNotebookContainers && lower.endsWith('.onote')) ||
+          lower.endsWith('-wal') ||
+          lower.endsWith('-shm') ||
+          lower.endsWith('.tmp')) {
+        continue;
+      }
+      final target = p.join(destination.path, relative);
+      if (entity is Directory) {
+        await Directory(target).create(recursive: true);
+      } else if (entity is File) {
+        await File(target).parent.create(recursive: true);
+        await entity.copy(target);
+      }
+    }
+  }
+
+  Future<int> restoreWorkspaceBackup(String archivePath) async {
+    final temporary =
+        await Directory.systemTemp.createTemp('openote-backup-restore-');
+    try {
+      final archive =
+          ZipDecoder().decodeBytes(await File(archivePath).readAsBytes());
+      for (final entry in archive) {
+        final normal = p.normalize(entry.name.replaceAll('/', p.separator));
+        if (p.isAbsolute(normal) || normal.startsWith('..')) {
+          throw const FormatException('The backup contains an unsafe path.');
+        }
+        final target = p.join(temporary.path, normal);
+        if (entry.isFile) {
+          await File(target).parent.create(recursive: true);
+          await File(target).writeAsBytes(entry.content as List<int>);
+        } else {
+          await Directory(target).create(recursive: true);
+        }
+      }
+      final manifestFile = File(p.join(temporary.path, 'backup.json'));
+      final candidates = <({String path, String? title, String? logs})>[];
+      if (manifestFile.existsSync()) {
+        final json = jsonDecode(await manifestFile.readAsString());
+        if (json is Map && json['notebooks'] is List) {
+          for (final raw in json['notebooks'] as List) {
+            if (raw is! Map || raw['file'] is! String) continue;
+            candidates.add((
+              path: p.join(temporary.path,
+                  (raw['file'] as String).replaceAll('/', p.separator)),
+              title: raw['title'] as String?,
+              logs: raw['logs'] is String
+                  ? p.join(temporary.path,
+                      (raw['logs'] as String).replaceAll('/', p.separator))
+                  : null,
+            ));
+          }
+        }
+      }
+      if (candidates.isEmpty) {
+        await for (final entity
+            in temporary.list(recursive: true, followLinks: false)) {
+          if (entity is File && p.extension(entity.path) == '.onote') {
+            candidates.add((path: entity.path, title: null, logs: null));
+          }
+        }
+      }
+      var restored = 0;
+      for (final candidate in candidates) {
+        if (!File(candidate.path).existsSync()) continue;
+        var stem =
+            (candidate.title ?? p.basenameWithoutExtension(candidate.path))
+                .replaceAll(RegExp(r'[<>:"/\\|?*]'), '_')
+                .trim();
+        if (stem.isEmpty) stem = 'Restored notebook';
+        var destination = p.join(_repo.workspaceDir.path, '$stem.onote');
+        var suffix = 2;
+        while (File(destination).existsSync()) {
+          destination = p.join(_repo.workspaceDir.path, '$stem $suffix.onote');
+          suffix++;
+        }
+        await File(candidate.path).copy(destination);
+        final sourceLogs =
+            candidate.logs == null ? null : Directory(candidate.logs!);
+        if (sourceLogs != null && sourceLogs.existsSync()) {
+          await _copyBackupDirectory(sourceLogs,
+              Directory('${p.withoutExtension(destination)}.onotebook'));
+        }
+        final result = await _repo.adoptWorkspaceNotebook(destination,
+            title: candidate.title);
+        restored++;
+        notebookId = result.id;
+      }
+      if (restored == 0) {
+        throw const FormatException('No Openote notebooks were found.');
+      }
+      await _loadNotebook();
+      notifyListeners();
+      return restored;
+    } finally {
+      try {
+        await temporary.delete(recursive: true);
+      } catch (_) {}
+    }
+  }
+
+  /// Upload one complete ZIP containing consistent snapshots of all notebooks.
   Future<WebDavUploadResult> uploadAllToWebDav() async {
     if (!webDavConfigured) {
       throw StateError('Connect a WebDAV server first.');
@@ -2611,30 +2813,14 @@ class AppState extends ChangeNotifier
     try {
       await flushSave();
       temporary = await Directory.systemTemp.createTemp('openote-webdav-');
-      final prepared = <WebDavNotebook>[];
-      for (final ref in notebooks) {
-        webDavProgress = 'Preparing ${ref.title}…';
-        notifyListeners();
-        await awaitBlobBackfill(ref.id);
-        final snapshot = File(p.join(temporary.path, '${ref.id}.onote'));
-        if (!_repo.snapshotContainer(ref.id, snapshot.path)) {
-          throw FileSystemException(
-              'Could not create a safe snapshot of ${ref.title}', ref.file);
-        }
-        final log = Directory(ref.logDirPath);
-        prepared.add(WebDavNotebook(
-          id: ref.id,
-          title: ref.title,
-          container: snapshot,
-          logDirectory: log.existsSync() ? log : null,
-        ));
-      }
+      final archive = File(p.join(temporary.path, 'Openote Backup.zip'));
+      await createWorkspaceBackup(archive.path);
       client = WebDavBackupClient(
         baseUrl: webDavUrl!,
         username: webDavUsername!,
         password: _webDavPassword!,
       );
-      final result = await client.uploadAll(prepared, onProgress: (message) {
+      final bytes = await client.uploadBackup(archive, onProgress: (message) {
         webDavProgress = message;
         notifyListeners();
       });
@@ -2644,8 +2830,9 @@ class AppState extends ChangeNotifier
         'username': webDavUsername,
         'lastUpload': webDavLastUpload!.toUtc().toIso8601String(),
       });
-      webDavProgress = 'Upload complete';
-      return result;
+      webDavProgress = 'Synced';
+      _syncStatusCache.clear();
+      return WebDavUploadResult(files: 1, bytes: bytes);
     } catch (e) {
       webDavError = '$e';
       rethrow;
@@ -2661,6 +2848,61 @@ class AppState extends ChangeNotifier
       webDavBusy = false;
       notifyListeners();
     }
+  }
+
+  Future<int> restoreAllFromWebDav() async {
+    if (!webDavConfigured) {
+      throw StateError('Connect a WebDAV server first.');
+    }
+    if (webDavBusy) throw StateError('A WebDAV operation is already running.');
+    webDavBusy = true;
+    webDavError = null;
+    Directory? temporary;
+    WebDavBackupClient? client;
+    try {
+      temporary = await Directory.systemTemp.createTemp('openote-webdav-get-');
+      final archive = File(p.join(temporary.path, 'Openote Backup.zip'));
+      client = WebDavBackupClient(
+          baseUrl: webDavUrl!,
+          username: webDavUsername!,
+          password: _webDavPassword!);
+      await client.downloadBackup(archive, onProgress: (message) {
+        webDavProgress = message;
+        notifyListeners();
+      });
+      webDavProgress = 'Restoring notebooks...';
+      notifyListeners();
+      final count = await restoreWorkspaceBackup(archive.path);
+      webDavProgress = 'Restored $count notebooks';
+      return count;
+    } catch (e) {
+      webDavError = '$e';
+      rethrow;
+    } finally {
+      client?.close();
+      if (temporary != null) {
+        try {
+          await temporary.delete(recursive: true);
+        } catch (_) {}
+      }
+      webDavBusy = false;
+      notifyListeners();
+    }
+  }
+
+  void _scheduleWebDavBackup() {
+    if (!webDavConfigured) return;
+    _webDavUploadDebounce?.cancel();
+    _webDavUploadDebounce = Timer(const Duration(minutes: 1), () {
+      // An edit made while a large archive is uploading deserves one later
+      // pass; otherwise it would be absent until the next edit.
+      if (webDavBusy) {
+        _scheduleWebDavBackup();
+        return;
+      }
+      unawaited(uploadAllToWebDav()
+          .catchError((_) => const WebDavUploadResult(files: 0, bytes: 0)));
+    });
   }
 
   /// Pull automatically when another device's log changes. On by default —
@@ -2932,6 +3174,7 @@ class AppState extends ChangeNotifier
       // Per notebook, not [gitRemote] — this is asked about every notebook in
       // the list, and the open one's remote is not their answer.
       gitRemote: gitRemoteFor(nb),
+      webDavBackedUp: webDavConfigured && webDavLastUpload != null,
     );
     _syncStatusCache[nb] = (status: status, at: now);
     return status;
@@ -3998,6 +4241,14 @@ class AppState extends ChangeNotifier
 
   // Canvas settings
   Tool tool = Tool.select;
+  bool writingMode = false;
+
+  void setWritingMode(bool value) {
+    writingMode = value;
+    if (value) requestDrawTab();
+    notifyListeners();
+  }
+
   bool snapToGrid = true; // on by default; the grid only shows while dragging
 
   /// Held down mid-drag to invert [snapToGrid] for THIS drag only.
@@ -8437,6 +8688,29 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
+  bool get selectedAreLocked {
+    final selected = blocks.where((b) => selectedIds.contains(b.id)).toList();
+    return selected.isNotEmpty &&
+        selected.every((b) => b.content['locked'] == true);
+  }
+
+  void toggleSelectedLock() {
+    final selected = blocks.where((b) => selectedIds.contains(b.id)).toList();
+    if (selected.isEmpty) return;
+    pushUndo();
+    final lock = !selected.every((b) => b.content['locked'] == true);
+    for (final b in selected) {
+      if (lock) {
+        b.content['locked'] = true;
+      } else {
+        b.content.remove('locked');
+      }
+      b.updatedAt = nowMs();
+    }
+    markDirty();
+    notifyListeners();
+  }
+
   /// Snap + clamp all selected at drag end. Ongoing left-margin alignment:
   /// if a block lands near the invisible writing margin, tuck it to the
   /// margin so everything stays neat (matches the smart initial placement).
@@ -8604,10 +8878,7 @@ class AppState extends ChangeNotifier
     study.noteContentChanged();
     _saveDebounce?.cancel();
     _saveDebounce = Timer(const Duration(seconds: 1), flushSave);
-    // "Would need to all be automated by default as most people wont remeber
-    // to save and push changes." Every edit pushes the git timer out, so a
-    // cycle runs once writing stops rather than in the middle of a sentence.
-    scheduleGitSync();
+    _scheduleWebDavBackup();
     notifyListeners();
   }
 
@@ -8823,6 +9094,7 @@ class AppState extends ChangeNotifier
   /// interval of edits was silently lost on every close.
   Future<void> shutdown() async {
     _saveDebounce?.cancel();
+    _webDavUploadDebounce?.cancel();
     _gitDebounce?.cancel();
     _housekeepingTimer?.cancel();
     final neededPageSave = _dirty;
@@ -8852,6 +9124,7 @@ class AppState extends ChangeNotifier
   void cancelPendingSave() {
     _saveCancellationGeneration++;
     _saveDebounce?.cancel();
+    _webDavUploadDebounce?.cancel();
     _gitDebounce?.cancel();
     // Housekeeping arms timers too (the post-open delay, the deferral retry,
     // the note clear), and a fake-async widget test that loaded a notebook
@@ -8885,6 +9158,7 @@ class AppState extends ChangeNotifier
     _housekeepingNoteClear?.cancel();
     _syncStatusPoll?.cancel();
     _saveDebounce?.cancel();
+    _webDavUploadDebounce?.cancel();
     // The planner owns a Timer. A `late final` touched here is constructed
     // just to be torn down, which costs nothing; a live timer left behind
     // keeps the isolate awake, which does.
@@ -9075,6 +9349,7 @@ class SyncStatus {
     required this.devices,
     required this.mirrors,
     this.gitRemote,
+    this.webDavBackedUp = false,
   });
 
   /// The detected cloud folder the notebook lives in, or null when it is only
@@ -9095,6 +9370,7 @@ class SyncStatus {
   /// computer only" — which is both wrong and the exact opposite of
   /// reassuring.
   final String? gitRemote;
+  final bool webDavBackedUp;
 
   /// Is a copy of these notes kept somewhere else, live?
   ///
@@ -9103,7 +9379,7 @@ class SyncStatus {
   /// answers is "if this laptop died, are the notes gone", and for that the
   /// two are the same answer. The distinction is carried by [where] and by the
   /// tooltip, not by pretending one of them does not exist.
-  bool get isSynced => folder != null || gitRemote != null;
+  bool get isSynced => folder != null || webDavBackedUp;
 
   /// Synced through a cloud folder specifically. The chooser and the storage
   /// rows still ask this, because those are about a FOLDER.
@@ -9133,7 +9409,8 @@ class SyncStatus {
   }
 
   /// Where the notes live, in as few words as fit. Null when nowhere else.
-  String? get where => folder?.name ?? gitLabel;
+  String? get where =>
+      folder?.name ?? (webDavBackedUp ? 'Nextcloud / WebDAV' : null);
 
   /// The chip label.
   ///
@@ -9155,9 +9432,6 @@ class SyncStatus {
       return mirrors > 0 ? Icons.backup_outlined : Icons.cloud_off_outlined;
     }
     if (hasOtherDevices) return Icons.devices;
-    // A distinct glyph for git, because "where are my notes" has a different
-    // answer and the icon is the first thing read.
-    if (folder == null) return Icons.commit;
     return Icons.cloud_done_outlined;
   }
 }

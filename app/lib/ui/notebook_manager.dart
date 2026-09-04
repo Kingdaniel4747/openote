@@ -9,7 +9,6 @@ import '../export/onenote_import.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
-import 'join_git_dialog.dart';
 import 'onboarding.dart';
 import 'sync_dot.dart';
 import '../theme/tokens.dart';
@@ -110,8 +109,52 @@ class _NotebookManagerState extends State<_NotebookManager> {
     }
   }
 
-  void _toast(String msg) => ScaffoldMessenger.of(context)
-      .showSnackBar(SnackBar(content: Text(msg)));
+  void _toast(String msg) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+
+  Future<void> _createBackup(String choice) async {
+    final only = choice == '__all__' ? null : choice;
+    final notebook = only == null
+        ? null
+        : app.notebooks.where((n) => n.id == only).firstOrNull;
+    final stamp = DateTime.now().toIso8601String().substring(0, 10);
+    final location = await getSaveLocation(
+      suggestedName: '${notebook?.title ?? 'Openote'} Backup $stamp.zip',
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'Openote backup', extensions: ['zip'])
+      ],
+    );
+    if (location == null || !mounted) return;
+    setState(() => _busyId = only ?? '__all__');
+    try {
+      final result =
+          await app.createWorkspaceBackup(location.path, onlyNotebookId: only);
+      if (mounted) {
+        _toast('Backup saved: ${result.notebooks} notebook'
+            '${result.notebooks == 1 ? '' : 's'}.');
+      }
+    } catch (e) {
+      if (mounted) _toast('Backup failed: $e');
+    } finally {
+      if (mounted) setState(() => _busyId = null);
+    }
+  }
+
+  Future<void> _restoreBackup() async {
+    final file = await openFile(acceptedTypeGroups: const [
+      XTypeGroup(label: 'Openote backup', extensions: ['zip'])
+    ]);
+    if (file == null || !mounted) return;
+    setState(() => _busyId = '__restore__');
+    try {
+      final count = await app.restoreWorkspaceBackup(file.path);
+      if (mounted) _toast('Restored $count notebooks.');
+    } catch (e) {
+      if (mounted) _toast('Restore failed: $e');
+    } finally {
+      if (mounted) setState(() => _busyId = null);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -125,8 +168,8 @@ class _NotebookManagerState extends State<_NotebookManager> {
         const AppText('Notebooks'),
         const Spacer(),
         Text('${notebooks.length} open',
-            style: TextStyle(
-                fontSize: 12, color: context.surfaces.textSecondary)),
+            style:
+                TextStyle(fontSize: 12, color: context.surfaces.textSecondary)),
       ]),
       contentPadding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
       content: SizedBox(
@@ -187,10 +230,41 @@ class _NotebookManagerState extends State<_NotebookManager> {
           // Import expands INLINE rather than opening a popup menu: a popup here
           // would be the second kind of menu this panel exists to remove.
           TextButton.icon(
-            icon: Icon(_importOpen ? Icons.expand_less : Icons.download_outlined,
+            icon: Icon(
+                _importOpen ? Icons.expand_less : Icons.download_outlined,
                 size: 18),
             label: const AppText('Import'),
             onPressed: () => setState(() => _importOpen = !_importOpen),
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'Create a portable ZIP backup',
+            onSelected: _createBackup,
+            itemBuilder: (_) => [
+              const PopupMenuItem(
+                value: '__all__',
+                child: Row(children: [
+                  Icon(Icons.inventory_2_outlined, size: 18),
+                  SizedBox(width: 8),
+                  Text('Back up all notebooks'),
+                ]),
+              ),
+              const PopupMenuDivider(),
+              for (final nb in notebooks)
+                PopupMenuItem(value: nb.id, child: Text(nb.title)),
+            ],
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: Row(children: [
+                Icon(Icons.backup_outlined, size: 18),
+                SizedBox(width: 7),
+                AppText('Backup'),
+              ]),
+            ),
+          ),
+          TextButton.icon(
+            icon: const Icon(Icons.restore, size: 18),
+            label: const AppText('Restore'),
+            onPressed: _busyId == null ? _restoreBackup : null,
           ),
           TextButton.icon(
             icon: const Icon(Icons.healing_outlined, size: 18),
@@ -244,7 +318,8 @@ class _NotebookManagerState extends State<_NotebookManager> {
             label: AppText(label, style: const TextStyle(fontSize: 13)),
             onPressed: () async {
               final messenger = ScaffoldMessenger.of(context);
-              final rootContext = Navigator.of(context, rootNavigator: true).context;
+              final rootContext =
+                  Navigator.of(context, rootNavigator: true).context;
               setState(() => _importOpen = false);
               // Close the panel first: the imports that still show a modal put
               // it over the shell, not over a list the user has finished with.
@@ -262,13 +337,6 @@ class _NotebookManagerState extends State<_NotebookManager> {
             (m, c) => importOneNoteSectionWithFeedback(c, app, messenger: m)),
         choice(Icons.drive_folder_upload_outlined, 'Markdown folder',
             (m, _) => importMarkdownWithFeedback(m, app)),
-        // The other end of "put this notebook on GitHub". It sits with the
-        // imports because that is where someone looks for "I have a notebook
-        // somewhere else and I want it here" — the fact that this one arrives
-        // over git rather than as a file is not the user's distinction to
-        // make.
-        choice(Icons.cloud_download_outlined, 'From a git address',
-            (m, c) => showJoinFromGitDialog(c, app, messenger: m)),
       ]),
     );
   }
@@ -396,149 +464,154 @@ class _NotebookManagerState extends State<_NotebookManager> {
               await app.selectNotebook(nb.id);
             },
       child: Container(
-      margin: const EdgeInsets.symmetric(vertical: 2),
-      decoration: BoxDecoration(
-        color: current
-            ? scheme.primary.withValues(alpha: .07)
-            : highlight
-                ? scheme.secondary.withValues(alpha: .10)
-                : null,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-            color: current ? scheme.primary.withValues(alpha: .35) : scheme.outline,
-            width: current ? 1.2 : .6),
-      ),
-      padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 58,
-                height: 74,
-                decoration: BoxDecoration(
-                  color: cover,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: Colors.black.withValues(alpha: .12)),
+        margin: const EdgeInsets.symmetric(vertical: 2),
+        decoration: BoxDecoration(
+          color: current
+              ? scheme.primary.withValues(alpha: .07)
+              : highlight
+                  ? scheme.secondary.withValues(alpha: .10)
+                  : null,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+              color: current
+                  ? scheme.primary.withValues(alpha: .35)
+                  : scheme.outline,
+              width: current ? 1.2 : .6),
+        ),
+        padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 58,
+                  height: 74,
+                  decoration: BoxDecoration(
+                    color: cover,
+                    borderRadius: BorderRadius.circular(6),
+                    border:
+                        Border.all(color: Colors.black.withValues(alpha: .12)),
+                  ),
+                  child: Center(
+                    child: Icon(Icons.menu_book_outlined,
+                        size: 26, color: Colors.white.withValues(alpha: .92)),
+                  ),
                 ),
-                child: Center(
-                  child: Icon(Icons.menu_book_outlined,
-                      size: 26, color: Colors.white.withValues(alpha: .92)),
+                const SizedBox(width: 10),
+                // Which of these is safe if this laptop dies — answerable by
+                // scanning the list, rather than by opening each one in turn.
+                SyncDot(app: app, notebookId: nb.id),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: renaming
+                      ? TextField(
+                          controller: _renameCtl,
+                          autofocus: true,
+                          style: const TextStyle(fontSize: 13),
+                          decoration: const InputDecoration(
+                              isDense: true, border: OutlineInputBorder()),
+                          onSubmitted: (_) => _commitRename(nb),
+                          onTapOutside: (_) => _commitRename(nb),
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(nb.title,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: current
+                                        ? FontWeight.w600
+                                        : FontWeight.w400,
+                                    color: current ? scheme.primary : null)),
+                            Text(
+                                '${counts.sections} section${counts.sections == 1 ? '' : 's'} · '
+                                '${counts.pages} page${counts.pages == 1 ? '' : 's'}'
+                                '${current ? ' · open' : ''}',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: context.surfaces.textSecondary)),
+                          ],
+                        ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              // Which of these is safe if this laptop dies — answerable by
-              // scanning the list, rather than by opening each one in turn.
-              SyncDot(app: app, notebookId: nb.id),
-              const SizedBox(width: 6),
-              Expanded(
-                child: renaming
-                    ? TextField(
-                        controller: _renameCtl,
-                        autofocus: true,
-                        style: const TextStyle(fontSize: 13),
-                        decoration: const InputDecoration(
-                            isDense: true, border: OutlineInputBorder()),
-                        onSubmitted: (_) => _commitRename(nb),
-                        onTapOutside: (_) => _commitRename(nb),
-                      )
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(nb.title,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: current
-                                      ? FontWeight.w600
-                                      : FontWeight.w400,
-                                  color: current ? scheme.primary : null)),
-                          Text(
-                              '${counts.sections} section${counts.sections == 1 ? '' : 's'} · '
-                              '${counts.pages} page${counts.pages == 1 ? '' : 's'}'
-                              '${current ? ' · open' : ''}',
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  color: context.surfaces.textSecondary)),
-                        ],
-                      ),
-              ),
-              if (busy)
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 10),
-                  child: SizedBox(
-                      width: 15,
-                      height: 15,
-                      child: CircularProgressIndicator(strokeWidth: 2)),
-                )
-              else if (!renaming && !confirming) ...[
-                PopupMenuButton<String?>(
-                  tooltip: 'Cover colour',
-                  onSelected: (value) => app.setNotebookColor(nb.id, value),
-                  itemBuilder: (_) => [
-                    for (final value in _coverTokens)
-                      PopupMenuItem(
-                        value: value,
-                        child: Row(children: [
-                          Container(
-                            width: 16,
-                            height: 16,
-                            decoration: BoxDecoration(
-                              color: _coverColor(value, nb.id),
-                              shape: BoxShape.circle,
+                if (busy)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 10),
+                    child: SizedBox(
+                        width: 15,
+                        height: 15,
+                        child: CircularProgressIndicator(strokeWidth: 2)),
+                  )
+                else if (!renaming && !confirming) ...[
+                  PopupMenuButton<String?>(
+                    tooltip: 'Cover colour',
+                    onSelected: (value) => app.setNotebookColor(nb.id, value),
+                    itemBuilder: (_) => [
+                      for (final value in _coverTokens)
+                        PopupMenuItem(
+                          value: value,
+                          child: Row(children: [
+                            Container(
+                              width: 16,
+                              height: 16,
+                              decoration: BoxDecoration(
+                                color: _coverColor(value, nb.id),
+                                shape: BoxShape.circle,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(value == null ? 'Automatic' : value),
-                        ]),
-                      ),
-                  ],
-                  icon: const Icon(Icons.palette_outlined, size: 17),
-                ),
-                if (!current)
-                  _act(Icons.open_in_new, 'Open this notebook', () async {
-                    Navigator.pop(context);
-                    await app.selectNotebook(nb.id);
-                  }),
-                _act(Icons.edit_outlined, 'Rename', () => _startRename(nb)),
-                _act(Icons.copy_all_outlined, 'Duplicate',
-                    () => _duplicate(nb)),
-                _act(Icons.delete_outline, 'Move to recycle bin',
-                    () => setState(() {
-                          _confirmDeleteId = nb.id;
-                          _renamingId = null;
-                        }),
-                    danger: true),
+                            const SizedBox(width: 8),
+                            Text(value == null ? 'Automatic' : value),
+                          ]),
+                        ),
+                    ],
+                    icon: const Icon(Icons.palette_outlined, size: 17),
+                  ),
+                  if (!current)
+                    _act(Icons.open_in_new, 'Open this notebook', () async {
+                      Navigator.pop(context);
+                      await app.selectNotebook(nb.id);
+                    }),
+                  _act(Icons.edit_outlined, 'Rename', () => _startRename(nb)),
+                  _act(Icons.copy_all_outlined, 'Duplicate',
+                      () => _duplicate(nb)),
+                  _act(
+                      Icons.delete_outline,
+                      'Move to recycle bin',
+                      () => setState(() {
+                            _confirmDeleteId = nb.id;
+                            _renamingId = null;
+                          }),
+                      danger: true),
+                ],
               ],
-            ],
-          ),
-          // Inline confirm — no second dialog, and the list stays put so you can
-          // change your mind or delete another one straight after.
-          if (confirming)
-            Padding(
-              padding: const EdgeInsets.only(top: 8, left: 28),
-              child: Row(children: [
-                const Expanded(
-                  child: Text(
-                      'Move to the recycle bin? You can restore it from here.',
-                      style: TextStyle(fontSize: 13)),
-                ),
-                TextButton(
-                    onPressed: () => setState(() => _confirmDeleteId = null),
-                    child: const AppText('Cancel')),
-                const SizedBox(width: 4),
-                FilledButton(
-                  style: FilledButton.styleFrom(
-                      backgroundColor: OnoteColors.danger,
-                      visualDensity: VisualDensity.compact),
-                  onPressed: () => _delete(nb),
-                  child: const AppText('Delete'),
-                ),
-              ]),
             ),
-        ],
-      ),
+            // Inline confirm — no second dialog, and the list stays put so you can
+            // change your mind or delete another one straight after.
+            if (confirming)
+              Padding(
+                padding: const EdgeInsets.only(top: 8, left: 28),
+                child: Row(children: [
+                  const Expanded(
+                    child: Text(
+                        'Move to the recycle bin? You can restore it from here.',
+                        style: TextStyle(fontSize: 13)),
+                  ),
+                  TextButton(
+                      onPressed: () => setState(() => _confirmDeleteId = null),
+                      child: const AppText('Cancel')),
+                  const SizedBox(width: 4),
+                  FilledButton(
+                    style: FilledButton.styleFrom(
+                        backgroundColor: OnoteColors.danger,
+                        visualDensity: VisualDensity.compact),
+                    onPressed: () => _delete(nb),
+                    child: const AppText('Delete'),
+                  ),
+                ]),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -561,7 +634,8 @@ class _NotebookManagerState extends State<_NotebookManager> {
       'Red': Color(0xFFAD5155),
     };
     if (token != null) return colors[token] ?? colors['Blue']!;
-    return colors.values.elementAt(id.codeUnits.fold<int>(0, (a, b) => a + b) % colors.length);
+    return colors.values
+        .elementAt(id.codeUnits.fold<int>(0, (a, b) => a + b) % colors.length);
   }
 
   Widget _trashRow(NotebookRef nb) {
@@ -621,7 +695,9 @@ String _daysLeft(int deletedAt, int retentionDays) {
       Duration(days: retentionDays).inMilliseconds -
       DateTime.now().millisecondsSinceEpoch;
   final days = (remaining / const Duration(days: 1).inMilliseconds).ceil();
-  return days <= 0 ? 'Deletes soon' : 'Deletes in $days day${days == 1 ? '' : 's'}';
+  return days <= 0
+      ? 'Deletes soon'
+      : 'Deletes in $days day${days == 1 ? '' : 's'}';
 }
 
 Future<bool> _confirmPurge(BuildContext context, NotebookRef nb,
@@ -692,7 +768,8 @@ Future<void> importOneNotePackageWithFeedback(
 /// that outlives the caller — the root navigator's, not a dialog's — or the
 /// progress dialog silently does not appear. [messenger] carries the result
 /// even if that context has gone by the time the import finishes.
-Future<void> importOneNoteSectionWithFeedback(BuildContext context, AppState app,
+Future<void> importOneNoteSectionWithFeedback(
+    BuildContext context, AppState app,
     {ScaffoldMessengerState? messenger}) async {
   final m = messenger ?? ScaffoldMessenger.of(context);
   try {

@@ -30,7 +30,32 @@ WindowControls::WindowControls(HWND window, flutter::BinaryMessenger* messenger)
           ReleaseCapture();
           PostMessage(window_, WM_SYSCOMMAND, SC_MOVE | HTCAPTION, 0);
         } else if (call.method_name() == "maximize") {
-          ShowWindow(window_, IsZoomed(window_) ? SW_RESTORE : SW_MAXIMIZE);
+          if (work_area_maximized_) {
+            SetWindowPos(window_, nullptr, restore_bounds_.left,
+                restore_bounds_.top,
+                restore_bounds_.right - restore_bounds_.left,
+                restore_bounds_.bottom - restore_bounds_.top,
+                SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+            work_area_maximized_ = false;
+          } else {
+            GetWindowRect(window_, &restore_bounds_);
+            const HMONITOR monitor =
+                MonitorFromWindow(window_, MONITOR_DEFAULTTONEAREST);
+            MONITORINFO info{};
+            info.cbSize = sizeof(info);
+            if (GetMonitorInfo(monitor, &info)) {
+              const RECT area = info.rcWork;
+              // Leave the bottom edge to Explorer. A borderless window that
+              // owns the final screen pixel can prevent an auto-hidden
+              // taskbar from opening when the pen or mouse reaches it.
+              const LONG available_height = area.bottom - area.top - 1;
+              SetWindowPos(window_, nullptr, area.left, area.top,
+                  area.right - area.left,
+                  available_height > 1 ? available_height : 1,
+                  SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+              work_area_maximized_ = true;
+            }
+          }
           result->Success();
         } else if (call.method_name() == "minimize") {
           ShowWindow(window_, SW_MINIMIZE);

@@ -35,9 +35,15 @@ import 'windows_window_frame.dart';
 /// View. OneNote's few-clicks accessibility in Openote's calm language — a
 /// slim tab row over a single command row of grouped icon buttons.
 class CommandBar extends StatefulWidget {
-  const CommandBar({super.key, required this.app, this.titlebarOnly = false});
+  const CommandBar({
+    super.key,
+    required this.app,
+    this.titlebarOnly = false,
+    this.drawOnly = false,
+  });
   final AppState app;
   final bool titlebarOnly;
+  final bool drawOnly;
 
   @override
   State<CommandBar> createState() => _CommandBarState();
@@ -268,6 +274,12 @@ class _CommandBarState extends State<CommandBar> {
           ),
         ),
         IconButton(
+          icon: const Icon(Icons.fullscreen, size: 18),
+          tooltip: tr(context, 'Writing mode'),
+          visualDensity: VisualDensity.compact,
+          onPressed: () => app.setWritingMode(true),
+        ),
+        IconButton(
           icon: const Icon(Icons.settings_outlined, size: 18),
           tooltip: tr(context, 'Settings…'),
           visualDensity: VisualDensity.compact,
@@ -279,6 +291,18 @@ class _CommandBarState extends State<CommandBar> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    if (widget.drawOnly) {
+      return Material(
+        color: scheme.surface,
+        child: SizedBox(
+          height: 48,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: _drawRow(context),
+          ),
+        ),
+      );
+    }
     if (widget.titlebarOnly) {
       final window = WindowsWindowFrame.of(context);
       return Material(
@@ -795,6 +819,7 @@ class _CommandBarState extends State<CommandBar> {
     final inkActive = app.tool == Tool.pen ||
         app.tool == Tool.ballpoint ||
         app.tool == Tool.highlighter ||
+        app.tool == Tool.shape ||
         app.hasInkSelection;
     final colors = OnoteColors.drawingColors(
       dark: Theme.of(context).brightness == Brightness.dark,
@@ -803,13 +828,15 @@ class _CommandBarState extends State<CommandBar> {
     return Row(children: [
       toolButton(Tool.select, Icons.near_me_outlined, 'Select / move  (V)'),
       toolButton(Tool.text, Icons.text_fields, 'Text  (T)'),
-      toolButton(Tool.pen, Icons.edit_outlined, 'Pen  (P)'),
+      toolButton(Tool.pen, Icons.brush_outlined, 'Pen  (P)'),
       toolButton(
-          Tool.ballpoint, Icons.create_outlined, 'Ballpoint — constant width'),
+          Tool.ballpoint, Icons.edit, 'Ballpoint — constant width'),
       toolButton(
           Tool.highlighter, Icons.border_color_outlined, 'Highlighter  (H)'),
       toolButton(Tool.eraser, Icons.cleaning_services_outlined, 'Eraser  (E)'),
       toolButton(Tool.lasso, Icons.gesture_outlined, 'Lasso-select ink'),
+      toolButton(Tool.shape, Icons.category_outlined,
+          'Shape recognition — draw and hold'),
       const _Div(),
       if (inkActive) ...[
         for (final (i, c) in colors.indexed)
@@ -935,40 +962,7 @@ class _CommandBarState extends State<CommandBar> {
         AppText('Pick the pen or highlighter to draw',
             style:
                 TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
-      // NO `Spacer` here, and none in any command row. Every row is built
-      // inside a horizontal `SingleChildScrollView`, which offers unbounded
-      // width — and a flex child (`Spacer` is `Expanded`) under an unbounded
-      // constraint is a hard layout assertion, not a soft one. The Draw row
-      // therefore failed to lay out *at all*: no pen, no highlighter, no
-      // eraser, nothing clickable. Push things apart with a fixed gap.
       const SizedBox(width: 12),
-      // Touch drawing (INK-1). Exposed because the right answer depends on
-      // hardware we can't detect reliably: "Auto" suits a pen-and-touch
-      // convertible, "Always" a touch-only tablet, "Never" anyone who rests a
-      // hand on the glass while thinking.
-      const _Div(),
-      Tooltip(
-        message: 'Draw with your finger.\nAuto: a finger draws until you use '
-            'the pen, then touch pans so your palm can\'t mark the page.\n'
-            'Two fingers always pan and zoom.',
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.touch_app_outlined,
-              size: 16, color: context.surfaces.textSecondary),
-          const SizedBox(width: 4),
-          DropdownButtonHideUnderline(
-            child: DropdownButton<TouchDrawing>(
-              value: app.touchDrawing,
-              isDense: true,
-              style: TextStyle(fontSize: 11, color: scheme.onSurface),
-              items: [
-                for (final v in TouchDrawing.values)
-                  DropdownMenuItem(value: v, child: AppText(v.label)),
-              ],
-              onChanged: (v) => v == null ? null : app.setTouchDrawing(v),
-            ),
-          ),
-        ]),
-      ),
       const SizedBox(width: 4),
     ]);
   }

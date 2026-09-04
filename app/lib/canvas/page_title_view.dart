@@ -52,6 +52,7 @@ class _PageTitleViewState extends State<PageTitleView> {
   }
 
   void _startEdit() {
+    if (_editing) return;
     final page = _page;
     if (page == null) return;
     _editingPageId = page.id;
@@ -95,63 +96,69 @@ class _PageTitleViewState extends State<PageTitleView> {
     );
     final isPlaceholder = page.title == 'Untitled page';
 
-    return SizedBox(
-      width: widget.width,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_editing)
-            TextField(
-              controller: _controller,
-              focusNode: _focus,
-              style: titleStyle,
-              maxLines: 1,
-              // Wrap-on-selection, same as every other content field.
-              inputFormatters: const [
-                WrapSelectionFormatter(
-                    pairs: WrapSelectionFormatter.bracketPairs,
-                    autoCloseFences: false)
-              ],
-              decoration: OnoteInput.bare.copyWith(
-                hintText: 'Page title',
-              ),
-              onSubmitted: (_) {
-                _commit();
-                // Enter from the title → straight into the first body box.
-                widget.app.startBodyFromTitle();
-              },
-              onTapOutside: (_) {
-                if (_editing) _commit();
-              },
-            )
-          else
-            Semantics(
-              label: 'Page title: ${page.title}',
-              button: true,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: _startEdit,
-                child: Text(
-                  isPlaceholder ? 'Untitled page' : page.title,
-                  style: titleStyle.copyWith(
-                    color: isPlaceholder ? OnoteColors.graphite400 : titleColor,
+    return Listener(
+      // PageCanvas receives the same pointer while the title is under it.
+      // Claim it first so a title tap cannot begin ink or an empty body box.
+      onPointerDown: (event) =>
+          widget.app.claimedPointers.add(event.pointer),
+      child: SizedBox(
+        width: widget.width,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_editing)
+              TextField(
+                controller: _controller,
+                focusNode: _focus,
+                style: titleStyle,
+                maxLines: 1,
+                inputFormatters: const [
+                  WrapSelectionFormatter(
+                      pairs: WrapSelectionFormatter.bracketPairs,
+                      autoCloseFences: false)
+                ],
+                decoration: OnoteInput.bare.copyWith(hintText: 'Page title'),
+                onSubmitted: (_) {
+                  _commit();
+                  widget.app.startBodyFromTitle();
+                },
+                onTapOutside: (_) {
+                  if (_editing) _commit();
+                },
+              )
+            else
+              Semantics(
+                label: 'Page title: ${page.title}',
+                button: true,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  // Activate at contact so the canvas cannot create a body box
+                  // before the title field receives focus.
+                  onTapDown: (_) => _startEdit(),
+                  child: Text(
+                    isPlaceholder ? 'Untitled page' : page.title,
+                    style: titleStyle.copyWith(
+                      color:
+                          isPlaceholder ? OnoteColors.graphite400 : titleColor,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ),
+            const SizedBox(height: 2),
+            Text(
+              _dateLine(page.createdAt),
+              style: const TextStyle(
+                  fontSize: 12, color: OnoteColors.graphite400),
             ),
-          const SizedBox(height: 2),
-          Text(
-            _dateLine(page.createdAt),
-            style: const TextStyle(fontSize: 12, color: OnoteColors.graphite400),
-          ),
-          const SizedBox(height: 6),
-          Container(
-              height: 1,
-              color: dark ? OnoteColors.night200 : OnoteColors.paper200),
-        ],
+            const SizedBox(height: 6),
+            Container(
+                height: 1,
+                color: dark ? OnoteColors.night200 : OnoteColors.paper200),
+          ],
+        ),
       ),
     );
   }

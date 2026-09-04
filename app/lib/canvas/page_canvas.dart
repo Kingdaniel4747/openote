@@ -16,7 +16,6 @@ import 'handwriting_spell_layer.dart';
 import 'block_view.dart';
 import 'align_guides.dart';
 import 'canvas_controller.dart';
-import 'ink_ops.dart';
 import 'media_drop.dart';
 import 'ink_painter.dart';
 import 'page_title_view.dart';
@@ -49,6 +48,10 @@ class _PageCanvasState extends State<PageCanvas> {
   Tool _penReturnTool = Tool.pen;
   Tool _contactTool = Tool.pen;
   Offset? _eraserScreen;
+  Timer? _shapeHold;
+  final List<Offset> _shapeRaw = [];
+  String? _shapeKind;
+  Offset? _shapeAnchor;
 
   void _windowsPenChanged() {
     if (!mounted) return;
@@ -123,57 +126,14 @@ class _PageCanvasState extends State<PageCanvas> {
       app.tool == Tool.pen ||
       app.tool == Tool.ballpoint ||
       app.tool == Tool.highlighter ||
-      app.tool == Tool.eraser;
+      app.tool == Tool.eraser ||
+      app.tool == Tool.shape;
 
   bool _onPaper(Offset point) =>
       !app.pageProps.pdfOnly || (Offset.zero & app.pageSize()).contains(point);
 
-  /// When a stylus was last seen, so palm rejection can be *conditional*
-  /// (INK-4) instead of absolute.
-  ///
-  /// The previous rule sent every touch to pan unconditionally, which does
-  /// implement palm rejection — and also means **a finger can never draw**, so
-  /// on a touch-only tablet ink was simply unreachable, contradicting INK-1.
-  /// The distinction the old rule missed is that a resting palm is only a
-  /// hazard when a pen is in use; with no pen present, a finger is the only
-  /// input the user has.
-  DateTime? _lastStylus;
-
   /// True while a file drag hovers the page, for the drop affordance.
   bool _dragOver = false;
-
-  /// A palm rests *while* writing, so the window only has to outlive the gap
-  /// between strokes, not a pause for thought.
-  static const _stylusGrace = Duration(seconds: 2);
-
-  bool get _stylusActive {
-    final t = _lastStylus;
-    return t != null && DateTime.now().difference(t) < _stylusGrace;
-  }
-
-  void _noteStylus(PointerEvent e) {
-    if (e.kind == PointerDeviceKind.stylus ||
-        e.kind == PointerDeviceKind.invertedStylus) {
-      _lastStylus = DateTime.now();
-    }
-  }
-
-  /// Pen proximity → inking. Hover events are how a pen announces itself
-  /// before it touches — Windows Ink and most drivers report the pen floating
-  /// over the digitiser — and OneNote's behaviour on that signal is the one
-  /// people's hands already know: the pen means ink, immediately, no toolbar
-  /// trip. Switches only FROM Select and only on the pen's APPROACH (the
-  /// first stylus signal after the grace window), so picking Select — or any
-  /// tool — while the pen hovers sticks until the pen leaves and comes back.
-  void _stylusProximity(PointerHoverEvent e) {
-    if (e.kind != PointerDeviceKind.stylus &&
-        e.kind != PointerDeviceKind.invertedStylus) {
-      return;
-    }
-    _lastStylus = DateTime.now();
-    // Hover is only a palm-rejection signal. A real pen contact chooses the
-    // pen in _inkDown; hovering must never steal a selected tool.
-  }
 
   /// True while the CURRENT ink gesture erases regardless of the selected
   /// tool: the pen's tail (invertedStylus — that end IS an eraser), or its
@@ -188,6 +148,10 @@ class _PageCanvasState extends State<PageCanvas> {
   /// finger lands, turning what looked like a draw into a pinch. Without this
   /// the first finger of every two-finger gesture would leave a stray mark.
   void _cancelWetStroke() {
+    _shapeHold?.cancel();
+    _shapeRaw.clear();
+    _shapeKind = null;
+    _shapeAnchor = null;
     _windowsInkPointer = null;
     _gestureErase = false;
     _eraseUndoPushed = false;
@@ -222,6 +186,7 @@ class _PageCanvasState extends State<PageCanvas> {
   @override
   void dispose() {
     _inertia?.cancel();
+    _shapeHold?.cancel();
     _windowsPen.removeListener(_windowsPenChanged);
     _windowsPen.dispose();
     _wetTick.dispose();
@@ -298,11 +263,19 @@ class _PageCanvasState extends State<PageCanvas> {
     // application theme even after it has been written.  A PDF/image is a
     // fixed background, so it deliberately receives a real colour instead.
     final fixedBackdrop = _hasFixedBackdropAt(pt);
+    _shapeHold?.cancel();
+    _shapeKind = null;
+    _shapeRaw.clear();
+    _shapeAnchor = null;
+    if (_contactTool == Tool.shape) {
+      _shapeAnchor = pt;
+      _shapeHold = Timer(const Duration(milliseconds: 550), _snapWetShape);
+    }
     setState(() {
       _wet = Stroke(
         tool: _contactTool == Tool.highlighter
             ? 'highlighter'
-            : _contactTool == Tool.ballpoint
+            : _contactTool == Tool.ballpoint || _contactTool == Tool.shape
                 ? 'ballpoint'
                 : 'pen',
         colorHex: customColor != null
@@ -353,11 +326,22 @@ class _PageCanvasState extends State<PageCanvas> {
   Offset _clampToPagePoint(Offset p) =>
       Offset(math.max(0, p.dx), math.max(0, p.dy));
 
-  bool _hasFixedBackdropAt(Offset point) => app.blocks.any(
-      (b) => b.content['background'] == true && _blockRect(b).contains(point));
+  bool _hasFixedBackdropAt(Offset point) => app.blocks.any((b) =>
+      b.type == BlockType.image &&
+      _blockRect(b).contains(point) &&
+      (b.content['background'] == true ||
+          b.content['pdf'] is String ||
+          b.content['blob'] is String));
 
   void _addPoint(PointerEvent e, Offset pagePt) {
     final w = _wet!;
+    if (_contactTool == Tool.shape) {
+      _shapeRaw.add(pagePt);
+      if (_shapeKind != null) {
+        _rewriteWetShape(pagePt);
+        return;
+      }
+    }
     w.x.add(pagePt.dx);
     w.y.add(pagePt.dy);
     // Ballpoint ink has a deliberately constant width. Leaving the pressure
@@ -369,6 +353,113 @@ class _PageCanvasState extends State<PageCanvas> {
           : 0.5);
     }
     w.t.add(nowMs() - w.strokeStart);
+  }
+
+  void _snapWetShape() {
+    final w = _wet;
+    if (!mounted || w == null || _shapeRaw.length < 3) return;
+    final bounds = Rect.fromPoints(_shapeRaw.first, _shapeRaw.last)
+        .expandToInclude(_pointsBounds(_shapeRaw));
+    final diagonal =
+        math.sqrt(bounds.width * bounds.width + bounds.height * bounds.height);
+    final closed = (_shapeRaw.first - _shapeRaw.last).distance <
+        math.max(20, diagonal * .3);
+    if (!closed) {
+      _shapeKind = 'line';
+    } else {
+      final center = bounds.center;
+      final rx = math.max(1.0, bounds.width / 2);
+      final ry = math.max(1.0, bounds.height / 2);
+      var radialError = 0.0;
+      for (final point in _shapeRaw) {
+        final dx = (point.dx - center.dx) / rx;
+        final dy = (point.dy - center.dy) / ry;
+        radialError += (math.sqrt(dx * dx + dy * dy) - 1).abs();
+      }
+      radialError /= _shapeRaw.length;
+      _shapeKind = radialError < .24
+          ? 'ellipse'
+          : _roughCornerCount(_shapeRaw) <= 3
+              ? 'triangle'
+              : 'rectangle';
+    }
+    _rewriteWetShape(_shapeRaw.last);
+    _wetTick.value++;
+  }
+
+  Rect _pointsBounds(List<Offset> points) {
+    var left = points.first.dx;
+    var top = points.first.dy;
+    var right = left;
+    var bottom = top;
+    for (final point in points.skip(1)) {
+      left = math.min(left, point.dx);
+      top = math.min(top, point.dy);
+      right = math.max(right, point.dx);
+      bottom = math.max(bottom, point.dy);
+    }
+    return Rect.fromLTRB(left, top, right, bottom);
+  }
+
+  int _roughCornerCount(List<Offset> points) {
+    if (points.length < 7) return 4;
+    final stride = math.max(1, points.length ~/ 20);
+    var corners = 0;
+    for (var i = stride; i < points.length - stride; i += stride) {
+      final a = points[i] - points[i - stride];
+      final b = points[i + stride] - points[i];
+      if (a.distance < 2 || b.distance < 2) continue;
+      final cosine = (a.dx * b.dx + a.dy * b.dy) / (a.distance * b.distance);
+      if (cosine < .45) corners++;
+    }
+    return corners.clamp(3, 4);
+  }
+
+  void _rewriteWetShape(Offset end) {
+    final w = _wet;
+    final start = _shapeAnchor;
+    final kind = _shapeKind;
+    if (w == null || start == null || kind == null) return;
+    final points = <Offset>[];
+    if (kind == 'line') {
+      points.addAll([start, end]);
+    } else {
+      final rect = Rect.fromPoints(start, end);
+      if (kind == 'rectangle') {
+        points.addAll([
+          rect.topLeft,
+          rect.topRight,
+          rect.bottomRight,
+          rect.bottomLeft,
+          rect.topLeft,
+        ]);
+      } else if (kind == 'triangle') {
+        points.addAll([
+          Offset(rect.center.dx, rect.top),
+          rect.bottomRight,
+          rect.bottomLeft,
+          Offset(rect.center.dx, rect.top),
+        ]);
+      } else {
+        for (var i = 0; i <= 48; i++) {
+          final angle = i / 48 * math.pi * 2;
+          points.add(Offset(
+            rect.center.dx + math.cos(angle) * rect.width / 2,
+            rect.center.dy + math.sin(angle) * rect.height / 2,
+          ));
+        }
+      }
+    }
+    w.x
+      ..clear()
+      ..addAll(points.map((point) => point.dx));
+    w.y
+      ..clear()
+      ..addAll(points.map((point) => point.dy));
+    w.p.clear();
+    w.t
+      ..clear()
+      ..addAll(List<int>.generate(points.length, (i) => i * 8));
   }
 
   void _inkUp(PointerUpEvent e) {
@@ -389,8 +480,13 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _finishWetStroke() {
+    _shapeHold?.cancel();
     final w = _wet;
     if (w == null || w.x.length < 2) {
+      _shapeHold?.cancel();
+      _shapeRaw.clear();
+      _shapeKind = null;
+      _shapeAnchor = null;
       setState(() => _wet = null);
       return;
     }
@@ -411,6 +507,9 @@ class _PageCanvasState extends State<PageCanvas> {
     _refitInkBounds(target);
     app.updateBlock(target);
     setState(() => _wet = null);
+    _shapeRaw.clear();
+    _shapeKind = null;
+    _shapeAnchor = null;
   }
 
   /// True area-erase (INK-6, Ink Spec §2): remove points within the eraser
@@ -526,7 +625,6 @@ class _PageCanvasState extends State<PageCanvas> {
   // ── Lasso-select ink (INK-7) ────────────────────────────────────────────
 
   void _lassoDown(PointerDownEvent e) {
-    _noteStylus(e);
     if (_windowsPen.erases(e)) {
       _inkDown(e);
       return;
@@ -1049,6 +1147,24 @@ class _PageCanvasState extends State<PageCanvas> {
             for (final b in inkBlocks)
               if (app.selectedIds.contains(b.id)) _blockRect(b),
           ];
+          Rect? selectedBounds;
+          for (final b
+              in app.blocks.where((b) => app.selectedIds.contains(b.id))) {
+            selectedBounds = selectedBounds == null
+                ? _blockRect(b)
+                : selectedBounds.expandToInclude(_blockRect(b));
+          }
+          Offset? selectionToolbar;
+          if (selectedBounds != null) {
+            final topLeft = controller.pageToScreen(selectedBounds.topLeft);
+            final topRight = controller.pageToScreen(selectedBounds.topRight);
+            selectionToolbar = Offset(
+              (topRight.dx - 300)
+                  .clamp(8.0, math.max(8.0, controller.viewport.width - 330)),
+              (topLeft.dy - 52)
+                  .clamp(8.0, math.max(8.0, controller.viewport.height - 48)),
+            );
+          }
           return RepaintBoundary(
             key: app.canvasKey,
             child: ClipRect(
@@ -1097,7 +1213,9 @@ class _PageCanvasState extends State<PageCanvas> {
                                 left: AppState.pageLeftMargin,
                                 top: 20,
                                 child: IgnorePointer(
-                                  ignoring: _inkTool || _lassoTool,
+                                  // The title remains a direct control even
+                                  // while a drawing tool is selected.
+                                  ignoring: false,
                                   child: PageTitleView(
                                     key: ValueKey('title-${app.pageId}'),
                                     app: app,
@@ -1231,7 +1349,9 @@ class _PageCanvasState extends State<PageCanvas> {
                       _lasso == null &&
                       _wet == null)
                     Positioned(
-                        right: 18, top: 8, child: SelectionToolbar(app: app)),
+                        left: selectionToolbar?.dx ?? 8,
+                        top: selectionToolbar?.dy ?? 8,
+                        child: SelectionToolbar(app: app)),
                 ],
               ),
             ),
@@ -1288,7 +1408,6 @@ class _PageCanvasState extends State<PageCanvas> {
           // The scroll bar claims its pointers; the pen must not draw a
           // stroke behind it.
           if (app.claimedPointers.remove(e.pointer)) return;
-          _noteStylus(e);
           if (e.kind != PointerDeviceKind.touch) {
             _inkDown(e);
             return;
@@ -1304,7 +1423,6 @@ class _PageCanvasState extends State<PageCanvas> {
           // finger from ever producing ink or an eraser mark.
         },
         onPointerMove: (e) {
-          _noteStylus(e);
           if (_touches.containsKey(e.pointer)) {
             _touchMove(e);
           } else {
@@ -1462,8 +1580,6 @@ class _PageCanvasState extends State<PageCanvas> {
 
     return Listener(
       onPointerSignal: _onScroll,
-      // Hover is how a pen announces its approach; see _stylusProximity.
-      onPointerHover: _stylusProximity,
       // **Trackpad pan/pinch, claim-checked exactly like a mouse drag.**
       //
       // Reported: scrolling and zooming inside a graph moved the PAGE
@@ -1508,7 +1624,8 @@ class _PageCanvasState extends State<PageCanvas> {
                 Tool.text => SystemMouseCursors.text,
                 Tool.pen ||
                 Tool.ballpoint ||
-                Tool.highlighter =>
+                Tool.highlighter ||
+                Tool.shape =>
                   SystemMouseCursors.precise,
                 Tool.eraser => SystemMouseCursors.cell,
                 Tool.lasso => SystemMouseCursors.precise,
