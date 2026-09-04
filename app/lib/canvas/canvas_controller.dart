@@ -1,11 +1,8 @@
-import 'dart:math' as math;
-
 import 'package:flutter/widgets.dart';
 
 /// First-party pan/zoom (Tech Eval §7.3: own transform, no InteractiveViewer).
-/// Maps between screen space and page space. The model has a bounded overview
-/// at minimum zoom: when the whole page fits, it may be positioned anywhere
-/// inside the viewport; when it is larger, its edges bound the camera.
+/// Maps between screen space and page space. The page origin stays in the
+/// upper-left corner, so the canvas cannot drift into an empty margin.
 class CanvasController extends ChangeNotifier {
   double scale = 1.0;
   Offset offset = Offset.zero; // page-space origin's screen position
@@ -43,14 +40,8 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Apply a two-finger zoom without making a visible page edge drift away
-  /// from the window. Once an edge has scrolled off-screen, that axis instead
-  /// follows the pinch focal point so the content remains under the fingers.
-  ///
-  /// Bounds are applied to each axis in this same transform frame. Previously
-  /// the view was allowed outside the page until the fingers lifted, then was
-  /// corrected by [settleToPage]. That delayed correction was the visible jump
-  /// on every pinch, especially on a page containing PDF printouts.
+  /// Apply a two-finger zoom. A visible upper or left page edge stays fixed;
+  /// elsewhere the focal point remains under the fingers.
   void transformPinchAt(
     Offset previousFocal,
     double factor,
@@ -59,36 +50,13 @@ class CanvasController extends ChangeNotifier {
     final pageFocal = screenToPage(previousFocal);
     final newScale = (scale * factor).clamp(minScale, maxScale);
     final proposed = currentFocal - pageFocal * newScale;
-    final ps = pageSize;
-    if (ps == null || viewport == Size.zero) {
-      scale = newScale;
-      offset = proposed;
-    } else {
-      final pinLeftEdge =
-          offset.dx.abs() <= 0.5 && ps.width * scale >= viewport.width;
-      final pinTopEdge =
-          offset.dy.abs() <= 0.5 && ps.height * scale >= viewport.height;
-      scale = newScale;
-
-      double axis(double next, double viewportExtent, double contentExtent,
-          bool pinOrigin) {
-        // Keep the named edge in place once it is visible. If the gesture
-        // reaches it from inside the page, stop at the edge in this frame —
-        // never after the gesture has ended.
-        final travel = viewportExtent - contentExtent;
-        if (pinOrigin && travel <= 0) return 0;
-        // With the entire page on screen, its origin may travel between the
-        // two opposing edges. This is what lets a student zoom into the
-        // upper-right of a fully zoomed-out endless page instead of being
-        // pulled back to the left edge.
-        return next.clamp(math.min(0, travel), math.max(0, travel));
-      }
-
-      offset = Offset(
-        axis(proposed.dx, viewport.width, ps.width * scale, pinLeftEdge),
-        axis(proposed.dy, viewport.height, ps.height * scale, pinTopEdge),
-      );
-    }
+    final pinLeftEdge = offset.dx >= -0.5;
+    final pinTopEdge = offset.dy >= -0.5;
+    scale = newScale;
+    offset = proposed;
+    if (pinLeftEdge) offset = Offset(0, offset.dy);
+    if (pinTopEdge) offset = Offset(offset.dx, 0);
+    clampToPage();
     notifyListeners();
   }
 
@@ -113,15 +81,14 @@ class CanvasController extends ChangeNotifier {
   /// used to clamp panning so the page can't be lost (CANVAS-1 v0.3).
   Size? pageSize;
 
-  /// Keep the camera within the page. When a page is smaller than the window,
-  /// its origin can travel from one visible edge to the other, rather than
-  /// being forced back to top-left; this makes the low-zoom overview useful.
+  /// Keep the page origin at upper-left. A small, zoomed-out page also stays
+  /// there rather than floating inside the viewport.
   void clampToPage() {
     final ps = pageSize;
     if (ps == null || viewport == Size.zero) return;
     double axis(double o, double vp, double contentPx) {
-      final travel = vp - contentPx;
-      return o.clamp(math.min(0, travel), math.max(0, travel));
+      if (contentPx <= vp) return 0.0;
+      return o.clamp(vp - contentPx, 0.0);
     }
 
     offset = Offset(

@@ -15,7 +15,6 @@ import '../markdown/md_syntax.dart';
 import '../model/tags.dart';
 import '../planner/agenda.dart';
 import '../state/app_state.dart';
-import '../study/study_stats.dart';
 import '../theme/onote_theme.dart';
 import 'color_picker.dart';
 import 'command_button.dart';
@@ -125,20 +124,8 @@ class _CommandBarState extends State<CommandBar> {
                     onPressed: () => showUpdateDialog(context, app),
                   ),
                 ),
-              // Study: the due count is the whole nudge, so it's on the
-              // badge rather than hidden behind the panel.
-              ToolbarControl(
-                width: 40,
-                icon: Icons.school_outlined,
-                label: 'Study',
-                selected: app.showStudyPanel,
-                onPressed: app.toggleStudyPanel,
-                inline: _StudyButton(app: app),
-              ),
-              // The planner sits beside Study rather than in a menu:
-              // it is the other half of the same daily question, and
-              // the whole complaint it answers was that dates were
-              // reachable only from places you had to already be in.
+              // Planner and quick homework capture stay beside the app-wide
+              // controls, so a due task is reachable from every page.
               ToolbarControl(
                 width: 40,
                 icon: Icons.event_note_outlined,
@@ -146,6 +133,18 @@ class _CommandBarState extends State<CommandBar> {
                 selected: app.showPlannerPanel,
                 onPressed: app.togglePlannerPanel,
                 inline: _PlannerButton(app: app),
+              ),
+              ToolbarControl(
+                width: 40,
+                icon: Icons.add_task_outlined,
+                label: 'Add homework',
+                onPressed: () => _addQuickHomework(context, app),
+                inline: IconButton(
+                  icon: const Icon(Icons.add_task_outlined, size: 18),
+                  tooltip: 'Add homework for this page',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _addQuickHomework(context, app),
+                ),
               ),
               ToolbarControl(
                 width: 40,
@@ -159,20 +158,6 @@ class _CommandBarState extends State<CommandBar> {
                   isSelected: app.showTagsPanel,
                   visualDensity: VisualDensity.compact,
                   onPressed: app.toggleTagsPanel,
-                ),
-              ),
-              ToolbarControl(
-                width: 40,
-                icon: Icons.toc,
-                label: 'Page outline',
-                selected: app.showTocPanel,
-                onPressed: app.toggleTocPanel,
-                inline: IconButton(
-                  icon: const Icon(Icons.toc, size: 18),
-                  tooltip: tr(context, 'Page outline'),
-                  isSelected: app.showTocPanel,
-                  visualDensity: VisualDensity.compact,
-                  onPressed: app.toggleTocPanel,
                 ),
               ),
               ToolbarControl(
@@ -860,6 +845,13 @@ class _CommandBarState extends State<CommandBar> {
         visualDensity: VisualDensity.compact,
         onPressed: () => app.setShapeRecognition(!app.shapeRecognition),
       ),
+      IconButton(
+        icon: const Icon(Icons.straighten_outlined, size: 18),
+        tooltip: 'Ruler — drag the grip, pinch to resize or rotate',
+        isSelected: app.rulerVisible,
+        visualDensity: VisualDensity.compact,
+        onPressed: () => app.setRulerVisible(!app.rulerVisible),
+      ),
       const _Div(),
       if (inkActive) ...[
         for (final (i, c) in colors.indexed)
@@ -1326,76 +1318,6 @@ class _MakeCardButton extends StatelessWidget {
   }
 }
 
-/// Study button with a due badge.
-///
-/// The count is the feature's entire nudge — "12 due" the week before an exam
-/// is what turns notes into revision, and a bare icon says nothing.
-class _StudyButton extends StatelessWidget {
-  const _StudyButton({required this.app});
-  final AppState app;
-
-  /// How close an exam has to be before the badge changes colour. A week is
-  /// when revision stops being a good intention, and it keeps the accent rare
-  /// enough to still mean something when it appears.
-  static const _urgentDays = 7;
-
-  @override
-  Widget build(BuildContext context) {
-    final (due, total) = app.study.deckCounts(sectionId: app.activeSectionId);
-    // Read from the date map and the counts already in hand — deliberately not
-    // through `examPlanFor`, which would walk the deck a second time on a
-    // widget that rebuilds with every keystroke.
-    final exam = app.study.examDate(app.activeSectionId);
-    final daysLeft = exam == null ? null : daysBetween(DateTime.now(), exam);
-    final urgent =
-        daysLeft != null && daysLeft >= 0 && daysLeft <= _urgentDays && due > 0;
-    final countdown = daysLeft == null || daysLeft < 0
-        ? ''
-        : ' · exam ${formatCountdown(daysLeft)}';
-    return Tooltip(
-      message: total == 0
-          ? 'Study — tag a line Question or Definition to make a card'
-          : '$due of $total card${total == 1 ? '' : 's'} due in this section'
-              '$countdown',
-      child: Stack(clipBehavior: Clip.none, children: [
-        IconButton(
-          icon: const Icon(Icons.school_outlined, size: 18),
-          isSelected: app.showStudyPanel,
-          visualDensity: VisualDensity.compact,
-          onPressed: app.toggleStudyPanel,
-        ),
-        if (due > 0)
-          Positioned(
-            right: 2,
-            top: 2,
-            child: IgnorePointer(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                decoration: BoxDecoration(
-                  // Brass once the exam is inside a week. Colour never carries
-                  // this alone (style guide §3.5) — the tooltip says how many
-                  // days, and the count itself is unchanged.
-                  color: urgent
-                      ? OnoteColors.brass500
-                      : Theme.of(context).colorScheme.primary,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: AppText('$due',
-                    style: TextStyle(
-                        fontSize: 11,
-                        height: 1.2,
-                        fontWeight: FontWeight.w700,
-                        color: urgent
-                            ? Colors.white
-                            : Theme.of(context).colorScheme.onPrimary)),
-              ),
-            ),
-          ),
-      ]),
-    );
-  }
-}
-
 /// Opens the planner, and says what is on today without opening it.
 ///
 /// The badge counts **today's and overdue** rows, not everything dated. A
@@ -1468,6 +1390,126 @@ class _PlannerButton extends StatelessWidget {
           ),
       ]),
     );
+  }
+}
+
+/// Fast capture for a homework task while the student is already on the page
+/// it belongs to. The planner remains the place to review everything; this is
+/// deliberately only the three decisions needed to avoid losing a task.
+Future<void> _addQuickHomework(BuildContext context, AppState app) async {
+  final result = await showOnoteDialog<({String subject, String task, DateTime due})>(
+    context: context,
+    builder: (_) => const _QuickHomeworkDialog(),
+  );
+  if (result == null || !context.mounted) return;
+  final title = result.subject.trim().isEmpty
+      ? result.task.trim()
+      : '${result.subject.trim()} — ${result.task.trim()}';
+  app.planner.reminders.add(
+    text: title,
+    at: result.due,
+    notebookId: app.notebookId,
+    // A reminder with this page id becomes a direct jump back to the exact
+    // worksheet/note that created it in the Planner.
+    pageId: app.pageId,
+  );
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('Homework added and linked to this page.')));
+}
+
+class _QuickHomeworkDialog extends StatefulWidget {
+  const _QuickHomeworkDialog();
+
+  @override
+  State<_QuickHomeworkDialog> createState() => _QuickHomeworkDialogState();
+}
+
+class _QuickHomeworkDialogState extends State<_QuickHomeworkDialog> {
+  final _subject = TextEditingController();
+  final _task = TextEditingController();
+  late DateTime _due;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _due = DateTime(now.year, now.month, now.day + 1, 17);
+  }
+
+  @override
+  void dispose() {
+    _subject.dispose();
+    _task.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDay() async {
+    final chosen = await showDatePicker(
+      context: context,
+      initialDate: _due,
+      firstDate: DateTime(DateTime.now().year - 1),
+      lastDate: DateTime(DateTime.now().year + 5),
+      helpText: 'Homework due date',
+    );
+    if (chosen == null || !mounted) return;
+    setState(() => _due = DateTime(
+        chosen.year, chosen.month, chosen.day, _due.hour, _due.minute));
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('Add homework'),
+        content: SizedBox(
+          width: 380,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(
+              controller: _subject,
+              autofocus: true,
+              decoration: const InputDecoration(
+                  labelText: 'Subject', hintText: 'For example: Chemistry'),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _task,
+              maxLines: 2,
+              onSubmitted: (_) => _submit(),
+              decoration: const InputDecoration(
+                  labelText: 'Homework', hintText: 'What needs to be done?'),
+            ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: _pickDay,
+                icon: const Icon(Icons.event_outlined, size: 18),
+                label: Text(MaterialLocalizations.of(context)
+                    .formatMediumDate(_due)),
+              ),
+            ),
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: EdgeInsets.only(top: 6),
+                child: Text('Linked to the page currently open.',
+                    style: TextStyle(fontSize: 12)),
+              ),
+            ),
+          ]),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel')),
+          FilledButton(onPressed: _submit, child: const Text('Add')),
+        ],
+      );
+
+  void _submit() {
+    final task = _task.text.trim();
+    if (task.isEmpty) return;
+    Navigator.of(context)
+        .pop((subject: _subject.text.trim(), task: task, due: _due));
   }
 }
 

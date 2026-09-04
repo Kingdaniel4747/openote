@@ -111,6 +111,10 @@ class _PageCanvasState extends State<PageCanvas> {
   DateTime? _lastTouchMove;
   bool _multiTouchSeen = false;
 
+  Offset? _rulerCenter;
+  double _rulerAngle = 0;
+  double _rulerLength = 360;
+
   /// A block may own a single touch for direct object movement. We still
   /// record that contact here, passively, so a second finger can always turn
   /// the interaction into a canvas pinch. Before this, a PDF claimed the
@@ -254,7 +258,8 @@ class _PageCanvasState extends State<PageCanvas> {
         e.kind == PointerDeviceKind.invertedStylus;
     if (stylus) _pendingErase = _gestureErase;
     _contactTool = !stylus && _buttonOverride ? _penReturnTool : app.tool;
-    final pt = _clampToPagePoint(controller.screenToPage(e.localPosition));
+    final pt = _snapToRuler(
+        _clampToPagePoint(controller.screenToPage(e.localPosition)));
     if (!_onPaper(controller.screenToPage(e.localPosition))) return;
     if (_contactTool == Tool.eraser || _gestureErase) {
       setState(() => _eraserScreen = e.localPosition);
@@ -325,18 +330,50 @@ class _PageCanvasState extends State<PageCanvas> {
               _contactTool == Tool.highlighter)) {
         // Re-entering a PDF starts a segment; never bridge the off-paper gap.
         _beginWetStroke(
-            e, _clampToPagePoint(controller.screenToPage(e.localPosition)));
+            e,
+            _snapToRuler(
+                _clampToPagePoint(controller.screenToPage(e.localPosition))));
       }
       return;
     }
     // Repaint-only: grow the stroke and nudge the ink painter. No setState —
     // rebuilding every visible block per point made inking sluggish.
-    _addPoint(e, _clampToPagePoint(controller.screenToPage(e.localPosition)));
+    _addPoint(
+        e,
+        _snapToRuler(
+            _clampToPagePoint(controller.screenToPage(e.localPosition))));
     _wetTick.value++;
   }
 
   Offset _clampToPagePoint(Offset p) =>
       Offset(math.max(0, p.dx), math.max(0, p.dy));
+
+  Offset _rulerCenterForViewport() {
+    final v = controller.viewport;
+    return _rulerCenter ?? Offset(v.width / 2, math.min(v.height / 2, 210));
+  }
+
+  /// Pull a pen point onto either long edge of the on-screen ruler, but only
+  /// while it is genuinely close to that edge. Ordinary handwriting elsewhere
+  /// on the page therefore remains completely unaffected.
+  Offset _snapToRuler(Offset pagePoint) {
+    if (!app.rulerVisible || controller.viewport == Size.zero) {
+      return pagePoint;
+    }
+    final center = _rulerCenterForViewport();
+    final screen = controller.pageToScreen(pagePoint);
+    final direction = Offset(math.cos(_rulerAngle), math.sin(_rulerAngle));
+    final normal = Offset(-direction.dy, direction.dx);
+    final relative = screen - center;
+    final along = (relative.dx * direction.dx + relative.dy * direction.dy)
+        .clamp(-_rulerLength / 2, _rulerLength / 2);
+    final across = relative.dx * normal.dx + relative.dy * normal.dy;
+    const edge = 22.0;
+    final edgeOffset = across >= 0 ? edge : -edge;
+    final candidate = center + direction * along + normal * edgeOffset;
+    if ((screen - candidate).distance > 24) return pagePoint;
+    return controller.screenToPage(candidate);
+  }
 
   bool _hasFixedBackdropAt(Offset point) => app.blocks.any((b) =>
       b.type == BlockType.image &&
@@ -1422,6 +1459,19 @@ class _PageCanvasState extends State<PageCanvas> {
                       ),
                     ),
                   ),
+                  if (app.rulerVisible)
+                    Positioned.fill(
+                      child: _RulerOverlay(
+                        center: _rulerCenterForViewport(),
+                        angle: _rulerAngle,
+                        length: _rulerLength,
+                        onChanged: (center, angle, length) => setState(() {
+                          _rulerCenter = center;
+                          _rulerAngle = angle;
+                          _rulerLength = length;
+                        }),
+                      ),
+                    ),
                   // A real scroll bar for the page — "there is also no scroll
                   // bar for the page". Wheel and drag still pan; this is the
                   // instrument for POSITION: see where you are in a long page,
@@ -1721,6 +1771,120 @@ class _PageCanvasState extends State<PageCanvas> {
       ),
     );
   }
+}
+
+/// Screen-space ruler. Its transparent body never captures the pen; only the
+/// central grip accepts touch/mouse gestures, so writing can continue directly
+/// along either visible edge.
+class _RulerOverlay extends StatefulWidget {
+  const _RulerOverlay({
+    required this.center,
+    required this.angle,
+    required this.length,
+    required this.onChanged,
+  });
+
+  final Offset center;
+  final double angle;
+  final double length;
+  final void Function(Offset center, double angle, double length) onChanged;
+
+  @override
+  State<_RulerOverlay> createState() => _RulerOverlayState();
+}
+
+class _RulerOverlayState extends State<_RulerOverlay> {
+  Offset _startCenter = Offset.zero;
+  double _startAngle = 0;
+  double _startLength = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(children: [
+      Positioned(
+        left: widget.center.dx - widget.length / 2,
+        top: widget.center.dy - 24,
+        child: IgnorePointer(
+          child: Transform.rotate(
+            angle: widget.angle,
+            alignment: Alignment.center,
+            child: CustomPaint(
+              size: Size(widget.length, 48),
+              painter: _RulerPainter(
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+          ),
+        ),
+      ),
+      Positioned(
+        left: widget.center.dx - 22,
+        top: widget.center.dy - 22,
+        child: GestureDetector(
+          supportedDevices: const {
+            PointerDeviceKind.mouse,
+            PointerDeviceKind.touch,
+          },
+          onScaleStart: (_) {
+            _startCenter = widget.center;
+            _startAngle = widget.angle;
+            _startLength = widget.length;
+          },
+          onScaleUpdate: (details) {
+            widget.onChanged(
+              _startCenter + details.focalPointDelta,
+              _startAngle + details.rotation,
+              (_startLength * details.scale).clamp(180.0, 900.0),
+            );
+          },
+          child: Material(
+            color: Theme.of(context).colorScheme.primary,
+            shape: const CircleBorder(),
+            elevation: 3,
+            child: const SizedBox(
+              width: 44,
+              height: 44,
+              child: Icon(Icons.open_with, size: 19, color: Colors.white),
+            ),
+          ),
+        ),
+      ),
+    ]);
+  }
+}
+
+class _RulerPainter extends CustomPainter {
+  const _RulerPainter({required this.color});
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final body = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      const Radius.circular(7),
+    );
+    canvas.drawRRect(body, Paint()..color = color.withValues(alpha: .18));
+    canvas.drawRRect(
+      body,
+      Paint()
+        ..color = color.withValues(alpha: .72)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2,
+    );
+    final ticks = Paint()
+      ..color = color.withValues(alpha: .75)
+      ..strokeWidth = 1;
+    for (var x = 12.0; x < size.width - 8; x += 12) {
+      final major = ((x / 60).round() * 60 - x).abs() < 1;
+      final h = major ? 16.0 : 9.0;
+      canvas.drawLine(Offset(x, 2), Offset(x, 2 + h), ticks);
+      canvas.drawLine(
+          Offset(x, size.height - 2), Offset(x, size.height - 2 - h), ticks);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RulerPainter old) => old.color != color;
 }
 
 /// The page surface. At normal zoom the page fills the whole viewport so it

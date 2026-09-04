@@ -51,9 +51,10 @@ jobs:
 
       - name: Build the Windows app
         working-directory: app
-        env:
-          OPENOTE_VERSION: ${{ steps.version.outputs.version }}
-        run: flutter build windows --release --build-name=${{ steps.version.outputs.version }}
+        # `String.fromEnvironment` reads Dart defines, not Windows environment
+        # variables. Passing this explicitly makes the installed app report its
+        # real release version to the in-app updater instead of always 0.8.0.
+        run: flutter build windows --release --build-name=${{ steps.version.outputs.version }} --dart-define=OPENOTE_VERSION=${{ steps.version.outputs.version }} --dart-define=OPENOTE_REPOSITORY=Kingdaniel4747/openote
 
       - name: Install the installer builder
         shell: pwsh

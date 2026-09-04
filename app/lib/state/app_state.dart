@@ -4248,6 +4248,7 @@ class AppState extends ChangeNotifier
   Tool tool = Tool.select;
   bool writingMode = false;
   bool shapeRecognition = true;
+  bool rulerVisible = false;
 
   void setWritingMode(bool value) {
     writingMode = value;
@@ -4259,6 +4260,12 @@ class AppState extends ChangeNotifier
     if (shapeRecognition == value) return;
     shapeRecognition = value;
     _repo.setSetting('shapeRecognition', value);
+    notifyListeners();
+  }
+
+  void setRulerVisible(bool value) {
+    if (rulerVisible == value) return;
+    rulerVisible = value;
     notifyListeners();
   }
 
