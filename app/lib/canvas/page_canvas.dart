@@ -434,6 +434,7 @@ class _PageCanvasState extends State<PageCanvas> {
   List<Offset>? _recognisedOutline;
   Offset? _shapeResizeStart;
   Offset? _shapeResizeCenter;
+  double _shapeResizeAngle = 0;
 
   void _snapWetShape() {
     final w = _wet;
@@ -448,6 +449,8 @@ class _PageCanvasState extends State<PageCanvas> {
       bounds = bounds.expandToInclude(p & Size.zero);
     }
     _shapeResizeCenter = bounds.center;
+    final startVector = _shapeResizeStart! - _shapeResizeCenter!;
+    _shapeResizeAngle = math.atan2(startVector.dy, startVector.dx);
     // Recognised geometry always uses constant-width ink.
     // InkPainter holds the wet Stroke by reference. Replacing it without a
     // rebuild kept the rough stroke visible until PointerUp even though the
@@ -474,11 +477,26 @@ class _PageCanvasState extends State<PageCanvas> {
       outline = [original.first, end];
     } else {
       final center = _shapeResizeCenter!;
-      final initial = (_shapeResizeStart! - center).distance;
+      final startVector = _shapeResizeStart! - center;
+      final currentVector = end - center;
+      final initial = startVector.distance;
       final factor = initial < 1
           ? 1.0
-          : ((end - center).distance / initial).clamp(.1, 10.0);
-      outline = [for (final p in original) center + (p - center) * factor];
+          : (currentVector.distance / initial).clamp(.1, 10.0);
+      final angle = math.atan2(currentVector.dy, currentVector.dx);
+      // A circle is rotationally identical. Polygons, however, follow the
+      // pen around their centre while the tip remains down, so the same hold
+      // gesture can resize and rotate them without another tool.
+      final rotation =
+          _shapeKind == 'ellipse' ? 0.0 : angle - _shapeResizeAngle;
+      final c = math.cos(rotation), s = math.sin(rotation);
+      outline = [
+        for (final p in original)
+          center +
+              Offset((p.dx - center.dx) * c - (p.dy - center.dy) * s,
+                      (p.dx - center.dx) * s + (p.dy - center.dy) * c) *
+                  factor,
+      ];
     }
     final points = sampleOutline(outline, 2);
     w.x
@@ -1782,8 +1800,10 @@ class _PageCanvasState extends State<PageCanvas> {
       // page mid-gesture the instant something unrelated cleared the set.
       onPointerPanZoomStart: (e) {
         _pzLastScale = 1.0;
-        _panZoomClaimedBy =
-            app.claimedPointers.contains(e.pointer) ? e.pointer : null;
+        _panZoomClaimedBy = app.claimedPointers.contains(e.pointer) ||
+                (app.rulerVisible && _screenHitsRuler(e.localPosition))
+            ? e.pointer
+            : null;
       },
       onPointerPanZoomUpdate: (e) {
         if (_panZoomClaimedBy == e.pointer) return;

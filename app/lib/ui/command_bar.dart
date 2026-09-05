@@ -931,7 +931,7 @@ class _CommandBarState extends State<CommandBar> {
         ),
         const SizedBox(width: 6),
         SizedBox(
-          width: 86,
+          width: 118,
           child: Slider(
             value: app.penSize,
             min: .5,

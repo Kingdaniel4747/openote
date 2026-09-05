@@ -36,7 +36,8 @@ void main() {
     expect(r.points.first, r.points.last);
     expect(t.points.first, t.points.last);
   });
-  test('ellipse keeps the drawn bounds; waves are not straight lines', () {
+  test('a rough ellipse becomes a round circle; waves are not straight lines',
+      () {
     final circle = [
       for (var i = 0; i <= 96; i++)
         Offset(250 + 150 * math.cos(i * math.pi / 48),
@@ -45,7 +46,10 @@ void main() {
     final shape = recogniseShape(circle)!;
     expect(shape.kind, 'ellipse');
     expect(shape.points.first, shape.points.last);
-    expect(shape.points.map((p) => p.dx).reduce(math.max), closeTo(400, 1));
+    final xs = shape.points.map((p) => p.dx);
+    final ys = shape.points.map((p) => p.dy);
+    expect(xs.reduce(math.max) - xs.reduce(math.min), closeTo(250, 1));
+    expect(ys.reduce(math.max) - ys.reduce(math.min), closeTo(250, 1));
     expect(
         recogniseShape([
           for (var i = 0; i <= 100; i++)

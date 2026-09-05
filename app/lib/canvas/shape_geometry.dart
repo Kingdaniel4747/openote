@@ -129,12 +129,16 @@ RecognisedShape? recogniseShape(List<Offset> raw) {
     error += (math.sqrt(x * x + y * y) - 1).abs();
   }
   if (error / points.length > .16) return null;
-  final ellipse = <Offset>[
+  // Hand-drawn circles are rarely identical in width and height. Recognition
+  // normalises the two radii so the result is a geometrically round circle,
+  // centred on and sized from the rough outline.
+  final radius = (bounds.width + bounds.height) / 4;
+  final circle = <Offset>[
     for (var i = 0; i < 96; i++)
-      Offset(bounds.center.dx + math.cos(i * math.pi / 48) * bounds.width / 2,
-          bounds.center.dy + math.sin(i * math.pi / 48) * bounds.height / 2),
+      Offset(bounds.center.dx + math.cos(i * math.pi / 48) * radius,
+          bounds.center.dy + math.sin(i * math.pi / 48) * radius),
   ];
-  return RecognisedShape('ellipse', [...ellipse, ellipse.first]);
+  return RecognisedShape('ellipse', [...circle, circle.first]);
 }
 
 /// Sample geometric segments so area erasing sees their interiors as well as
