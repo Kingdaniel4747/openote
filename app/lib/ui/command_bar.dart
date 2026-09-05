@@ -931,13 +931,20 @@ class _CommandBarState extends State<CommandBar> {
         ),
         const SizedBox(width: 6),
         SizedBox(
-          width: 110,
+          width: 86,
           child: Slider(
             value: app.penSize,
-            min: 1,
-            max: 100,
+            min: .5,
+            max: app.maxInkSizeFor(app.tool),
+            divisions: app.tool == Tool.highlighter ? 79 : 23,
+            label: '${app.penSize.toStringAsFixed(1)} px',
             onChanged: app.setInkSize,
           ),
+        ),
+        SizedBox(
+          width: 43,
+          child: AppText('${app.penSize.toStringAsFixed(1)} px',
+              style: const TextStyle(fontSize: 10)),
         ),
       ] else if (app.tool == Tool.eraser) ...[
         SizedBox(
@@ -946,8 +953,8 @@ class _CommandBarState extends State<CommandBar> {
               key: const ValueKey('eraser-size'),
               value: app.eraserSize,
               min: 4,
-              max: 100,
-              divisions: 48,
+              max: 80,
+              divisions: 38,
               label: '${app.eraserSize.round()} px',
               onChanged: app.setEraserSize,
             )),

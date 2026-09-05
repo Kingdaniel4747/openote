@@ -190,7 +190,7 @@ void main() {
     app.setEraserSize(double.nan);
     expect(app.eraserSize, 80);
     app.setEraserSize(999);
-    expect(app.eraserSize, 100);
+    expect(app.eraserSize, 80);
     app.cancelPendingSave();
     await t.pumpWidget(const SizedBox());
   });

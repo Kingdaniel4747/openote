@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:desktop_drop/desktop_drop.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -406,13 +407,15 @@ class _PageCanvasState extends State<PageCanvas> {
       }
       _shapeRaw.add(pagePt);
       final last = _shapeLastMotion;
-      if (last == null || (pagePt - last).distance > 4) {
+      // Normal digitizer jitter must not restart the hold countdown. Only a
+      // deliberate move away from the hold point arms a fresh countdown.
+      if (last == null || (pagePt - last).distance > 12) {
         _shapeLastMotion = pagePt;
         _shapeHold?.cancel();
         // Snapping is a deliberate gesture: finish the rough outline, then
         // keep the pen down and still briefly. Normal handwriting
         // never pauses in this exact state, so it remains ordinary ink.
-        _shapeHold = Timer(const Duration(milliseconds: 650), _snapWetShape);
+        _shapeHold = Timer(const Duration(milliseconds: 900), _snapWetShape);
       }
     }
     w.x.add(pagePt.dx);
@@ -446,12 +449,18 @@ class _PageCanvasState extends State<PageCanvas> {
     }
     _shapeResizeCenter = bounds.center;
     // Recognised geometry always uses constant-width ink.
-    _wet = Stroke(
-        tool: 'ballpoint',
-        colorHex: w.colorHex,
-        size: w.size,
-        opacity: w.opacity,
-        strokeStart: w.strokeStart);
+    // InkPainter holds the wet Stroke by reference. Replacing it without a
+    // rebuild kept the rough stroke visible until PointerUp even though the
+    // recognised geometry already existed. One rebuild at recognition time
+    // makes the snapped shape visible while the stylus is still down.
+    setState(() {
+      _wet = Stroke(
+          tool: 'ballpoint',
+          colorHex: w.colorHex,
+          size: w.size,
+          opacity: w.opacity,
+          strokeStart: w.strokeStart);
+    });
     _rewriteWetShape(_shapeRaw.last);
     _wetTick.value++;
   }
@@ -801,6 +810,16 @@ class _PageCanvasState extends State<PageCanvas> {
 
   void _touchDown(PointerDownEvent e) {
     _inertia?.cancel();
+    // Pointer-down reaches this parent before the ruler's child listener can
+    // claim it. Intercept the ruler geometry here so its two fingers never
+    // enter the page's pan/zoom state machine as well.
+    if (e.kind == PointerDeviceKind.touch &&
+        app.rulerVisible &&
+        _screenHitsRuler(e.localPosition)) {
+      _rulerPointers.add(e.pointer);
+      app.claimedPointers.add(e.pointer);
+      return;
+    }
     _touches[e.pointer] = e.localPosition;
     _lastScreen = e.localPosition;
     _touchVelocity = Offset.zero;
@@ -811,6 +830,14 @@ class _PageCanvasState extends State<PageCanvas> {
       _pinchBaseDist = (pts[0] - pts[1]).distance;
       _pinchLastFocal = (pts[0] + pts[1]) / 2;
     }
+  }
+
+  bool _screenHitsRuler(Offset screenPoint) {
+    final relative = screenPoint - _rulerCenterForViewport();
+    final c = math.cos(-_rulerAngle), s = math.sin(-_rulerAngle);
+    final local = Offset(
+        relative.dx * c - relative.dy * s, relative.dx * s + relative.dy * c);
+    return local.dx.abs() <= _rulerLength / 2 + 10 && local.dy.abs() <= 34;
   }
 
   void _touchMove(PointerMoveEvent e) {
@@ -899,6 +926,13 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _selectDown(PointerDownEvent e) {
+    if (e.kind == PointerDeviceKind.touch &&
+        app.rulerVisible &&
+        _screenHitsRuler(e.localPosition)) {
+      _rulerPointers.add(e.pointer);
+      app.claimedPointers.add(e.pointer);
+      return;
+    }
     if (_rulerPointers.contains(e.pointer)) {
       app.claimedPointers.remove(e.pointer);
       return;
@@ -2137,7 +2171,7 @@ class _OverlayPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _OverlayPainter old) =>
       old.marquee != marquee ||
-      old.inkSelections.length != inkSelections.length ||
+      !listEquals(old.inkSelections, inkSelections) ||
       old.lasso != lasso ||
       old.lassoPointCount != lassoPointCount ||
       old.viewOffset != viewOffset ||

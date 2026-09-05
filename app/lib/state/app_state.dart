@@ -4313,9 +4313,11 @@ class AppState extends ChangeNotifier
 
   double inkSizeFor(Tool value) => _inkToolSizes[value] ?? penSize;
 
+  double maxInkSizeFor(Tool value) => value == Tool.highlighter ? 40.0 : 12.0;
+
   void setInkSize(double value) {
     if (!value.isFinite) return;
-    final size = value.clamp(1.0, 100.0);
+    final size = value.clamp(.5, maxInkSizeFor(tool));
     penSize = size;
     if (_hasInkSize(tool)) _inkToolSizes[tool] = size;
     _repo.setSetting('inkToolSizes', {
@@ -4955,11 +4957,11 @@ class AppState extends ChangeNotifier
   EraserMode eraserMode = EraserMode.area;
 
   /// Diameter in logical screen pixels (independent of zoom and pen width).
-  double eraserSize = 24;
+  double eraserSize = 20;
 
   void setEraserSize(double value) {
     if (!value.isFinite) return;
-    eraserSize = value.clamp(4.0, 100.0);
+    eraserSize = value.clamp(4.0, 80.0);
     _repo.setSetting('eraserSize', eraserSize);
     notifyListeners();
   }
@@ -6272,7 +6274,7 @@ class AppState extends ChangeNotifier
     if (maximized is bool) startMaximized = maximized;
     final eraser = _repo.getSetting('eraserSize');
     if (eraser is num && eraser.isFinite) {
-      eraserSize = eraser.toDouble().clamp(4.0, 100.0);
+      eraserSize = eraser.toDouble().clamp(4.0, 80.0);
     }
     final storedEraserMode = _repo.getSetting('eraserMode');
     if (storedEraserMode is String) {
@@ -6285,7 +6287,8 @@ class AppState extends ChangeNotifier
         if (entry.key is! String || entry.value is! num) continue;
         final storedTool = Tool.values.asNameMap()[entry.key];
         if (storedTool != null && _hasInkSize(storedTool)) {
-          _inkToolSizes[storedTool] = entry.value.toDouble().clamp(1.0, 100.0);
+          _inkToolSizes[storedTool] =
+              entry.value.toDouble().clamp(.5, maxInkSizeFor(storedTool));
         }
       }
       if (_hasInkSize(tool)) penSize = inkSizeFor(tool);

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:openote/canvas/page_canvas.dart';
+import 'package:openote/canvas/ink_painter.dart';
 import 'package:openote/canvas/shape_geometry.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
@@ -141,7 +142,16 @@ void main() {
         await pen.moveTo(Offset(x, 300));
         await t.pump();
       }
-      await t.pump(const Duration(milliseconds: 900));
+      await t.pump(const Duration(milliseconds: 1000));
+      final livePainter = t
+          .widgetList<CustomPaint>(find.byType(CustomPaint))
+          .map((widget) => widget.painter)
+          .whereType<InkPainter>()
+          .single;
+      expect(livePainter.wet?.tool, 'ballpoint',
+          reason: 'the shape must be visible before PointerUp');
+      expect(app.blocks.where((b) => b.type == BlockType.ink), isEmpty,
+          reason: 'the stylus is still touching the page');
       await pen.moveTo(const Offset(460, 300));
       await pen.up();
       await t.pump();
@@ -281,6 +291,8 @@ void main() {
       final rulerDelta = t.getCenter(body) - rulerBefore;
       expect(rulerDelta.dx, closeTo(-72, .5));
       expect(rulerDelta.dy, closeTo(48, .5));
+      app.setTool(Tool.select);
+      await t.pump();
       final first = await t.startGesture(const Offset(280, 250), pointer: 11);
       final rulerWidth = t.getSize(body).width;
       final second = await t.startGesture(const Offset(380, 250), pointer: 12);
