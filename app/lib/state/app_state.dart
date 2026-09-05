@@ -4295,6 +4295,35 @@ class AppState extends ChangeNotifier
   String? penCustomColor;
   double penSize = 2.5;
 
+  /// The pen, ballpoint and highlighter deliberately remember different
+  /// widths. [penSize] remains the width of the currently selected ink tool
+  /// for compatibility with the rendering code.
+  final Map<Tool, double> _inkToolSizes = {
+    Tool.pen: 2.5,
+    Tool.ballpoint: 2.5,
+    Tool.highlighter: 12,
+    Tool.shape: 2.5,
+  };
+
+  bool _hasInkSize(Tool value) =>
+      value == Tool.pen ||
+      value == Tool.ballpoint ||
+      value == Tool.highlighter ||
+      value == Tool.shape;
+
+  double inkSizeFor(Tool value) => _inkToolSizes[value] ?? penSize;
+
+  void setInkSize(double value) {
+    if (!value.isFinite) return;
+    final size = value.clamp(1.0, 100.0);
+    penSize = size;
+    if (_hasInkSize(tool)) _inkToolSizes[tool] = size;
+    _repo.setSetting('inkToolSizes', {
+      for (final entry in _inkToolSizes.entries) entry.key.name: entry.value,
+    });
+    notifyListeners();
+  }
+
   void setCustomPenColor(String? value) {
     final raw = value?.replaceFirst('#', '').toUpperCase();
     penCustomColor =
@@ -4922,8 +4951,7 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
-  /// Eraser behaviour (INK-6). Session-scoped like tool/penSize — a mode, not
-  /// a preference.
+  /// Eraser behaviour is stored with the other drawing preferences.
   EraserMode eraserMode = EraserMode.area;
 
   /// Diameter in logical screen pixels (independent of zoom and pen width).
@@ -4944,7 +4972,9 @@ class AppState extends ChangeNotifier
   }
 
   void setEraserMode(EraserMode m) {
+    if (eraserMode == m) return;
     eraserMode = m;
+    _repo.setSetting('eraserMode', m.name);
     notifyListeners();
   }
 
@@ -6243,6 +6273,22 @@ class AppState extends ChangeNotifier
     final eraser = _repo.getSetting('eraserSize');
     if (eraser is num && eraser.isFinite) {
       eraserSize = eraser.toDouble().clamp(4.0, 100.0);
+    }
+    final storedEraserMode = _repo.getSetting('eraserMode');
+    if (storedEraserMode is String) {
+      eraserMode =
+          EraserMode.values.asNameMap()[storedEraserMode] ?? eraserMode;
+    }
+    final storedInkSizes = _repo.getSetting('inkToolSizes');
+    if (storedInkSizes is Map) {
+      for (final entry in storedInkSizes.entries) {
+        if (entry.key is! String || entry.value is! num) continue;
+        final storedTool = Tool.values.asNameMap()[entry.key];
+        if (storedTool != null && _hasInkSize(storedTool)) {
+          _inkToolSizes[storedTool] = entry.value.toDouble().clamp(1.0, 100.0);
+        }
+      }
+      if (_hasInkSize(tool)) penSize = inkSizeFor(tool);
     }
     _loadWebDav();
     // Detached: binding a port must never gate the app opening.
@@ -8761,7 +8807,13 @@ class AppState extends ChangeNotifier
 
   void setTool(Tool t, {bool temporary = false}) {
     if (!temporary) toolChoiceRevision++;
+    if (t == tool) {
+      notifyListeners();
+      return;
+    }
+    if (_hasInkSize(tool)) _inkToolSizes[tool] = penSize;
     tool = t;
+    if (_hasInkSize(t)) penSize = inkSizeFor(t);
     if (t != Tool.select) select(null);
     notifyListeners();
   }

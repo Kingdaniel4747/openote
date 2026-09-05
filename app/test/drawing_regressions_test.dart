@@ -181,6 +181,78 @@ void main() {
       expect(t.takeException(), isNull);
       await t.pumpWidget(const SizedBox());
     });
+    testWidgets('drawing tools keep independent sizes and persist eraser mode',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      app.setTool(Tool.pen);
+      app.setInkSize(7);
+      app.setTool(Tool.ballpoint);
+      app.setInkSize(4);
+      app.setTool(Tool.highlighter);
+      app.setInkSize(26);
+      app.setEraserMode(EraserMode.stroke);
+      expect(app.inkSizeFor(Tool.pen), 7);
+      expect(app.inkSizeFor(Tool.ballpoint), 4);
+      expect(app.inkSizeFor(Tool.highlighter), 26);
+      app.setTool(Tool.pen);
+      expect(app.penSize, 7);
+      app.setTool(Tool.highlighter);
+      expect(app.penSize, 26);
+      expect(repo.getSetting('eraserMode'), EraserMode.stroke.name);
+      final stored = repo.getSetting('inkToolSizes') as Map;
+      expect(stored[Tool.pen.name], 7);
+      expect(stored[Tool.ballpoint.name], 4);
+      expect(stored[Tool.highlighter.name], 26);
+      app.cancelPendingSave();
+      expect(t.takeException(), isNull);
+    });
+    testWidgets('a lasso-selected block follows one finger, not the canvas',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      app.snapToGrid = false;
+      app.setTool(Tool.lasso);
+      await t.pumpWidget(MaterialApp(
+          home: Scaffold(
+              body: ListenableBuilder(
+                  listenable: app,
+                  builder: (_, __) => PageCanvas(state: app)))));
+      await t.pump();
+      const start = Offset(220, 280);
+      final page = app.canvas.screenToPage(start);
+      final selected = app.addBlock(
+        Block(
+            type: BlockType.ink,
+            x: page.dx - 40,
+            y: page.dy - 20,
+            w: 140,
+            h: 40,
+            content: {
+              'strokes': [
+                Stroke(
+                    tool: 'pen',
+                    colorHex: '#000000',
+                    size: 2,
+                    x: [page.dx - 30, page.dx + 80],
+                    y: [page.dy, page.dy],
+                    t: [0, 1]).toJson(),
+              ],
+            }),
+      );
+      app.select(selected.id);
+      await t.pump();
+      final canvasBefore = app.canvas.offset;
+      final finger = await t.startGesture(start, kind: PointerDeviceKind.touch);
+      await finger.moveBy(const Offset(80, 30));
+      await t.pump();
+      await finger.up();
+      await t.pump();
+      expect(selected.x, closeTo(page.dx + 40, .1));
+      expect(selected.y, closeTo(page.dy + 10, .1));
+      expect(app.canvas.offset, canvasBefore);
+      app.cancelPendingSave();
+      expect(t.takeException(), isNull);
+      await t.pumpWidget(const SizedBox());
+    });
     testWidgets('moving and stretching the ruler never moves the canvas',
         (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
@@ -206,9 +278,9 @@ void main() {
       await g.up();
       await t.pump();
       expect(app.canvas.offset, before);
-      expect((t.getCenter(body) - rulerBefore).distance, greaterThan(40));
-      // The ruler center moved substantially rather than repeatedly resetting
-      // to its initial center plus one tiny event delta.
+      final rulerDelta = t.getCenter(body) - rulerBefore;
+      expect(rulerDelta.dx, closeTo(-72, .5));
+      expect(rulerDelta.dy, closeTo(48, .5));
       final first = await t.startGesture(const Offset(280, 250), pointer: 11);
       final rulerWidth = t.getSize(body).width;
       final second = await t.startGesture(const Offset(380, 250), pointer: 12);

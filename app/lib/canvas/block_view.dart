@@ -133,7 +133,8 @@ class _BlockViewState extends State<BlockView> {
         app.tool == Tool.ballpoint ||
         app.tool == Tool.shape ||
         app.tool == Tool.highlighter ||
-        app.tool == Tool.eraser) return;
+        app.tool == Tool.eraser ||
+        app.tool == Tool.lasso) return;
     final shift = HardwareKeyboard.instance.isShiftPressed;
     if (shift) {
       app.select(b.id, additive: true);
@@ -204,6 +205,9 @@ class _BlockViewState extends State<BlockView> {
     // just as they do in the empty margin. Stylus input is handled by the
     // canvas too while an ink tool is active.
     if (_locked && e.kind == PointerDeviceKind.touch) return;
+    // Lasso owns a finger dragged over an already selected item. Let the
+    // canvas route it there instead of a block gesture claiming the pointer.
+    if (app.tool == Tool.lasso && e.kind == PointerDeviceKind.touch) return;
     if ((e.kind == PointerDeviceKind.stylus ||
             e.kind == PointerDeviceKind.invertedStylus) &&
         (app.tool == Tool.select || app.tool == Tool.text)) {

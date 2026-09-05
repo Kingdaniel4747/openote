@@ -935,16 +935,13 @@ class _CommandBarState extends State<CommandBar> {
           child: Slider(
             value: app.penSize,
             min: 1,
-            max: 10,
-            onChanged: (v) {
-              app.penSize = v;
-              app.refresh();
-            },
+            max: 100,
+            onChanged: app.setInkSize,
           ),
         ),
       ] else if (app.tool == Tool.eraser) ...[
         SizedBox(
-            width: 135,
+            width: 118,
             child: Slider(
               key: const ValueKey('eraser-size'),
               value: app.eraserSize,
@@ -954,38 +951,30 @@ class _CommandBarState extends State<CommandBar> {
               label: '${app.eraserSize.round()} px',
               onChanged: app.setEraserSize,
             )),
-        AppText('${app.eraserSize.round()} px',
-            style: const TextStyle(fontSize: 11)),
-        SegmentedButton<EraserMode>(
-          segments: [
-            for (final m in EraserMode.values)
-              ButtonSegment(
-                  value: m,
-                  label:
-                      AppText(m.label, style: const TextStyle(fontSize: 11))),
-          ],
-          selected: {app.eraserMode},
-          onSelectionChanged: (s) => app.setEraserMode(s.first),
-          showSelectedIcon: false,
-          style: const ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+        Padding(
+          padding: const EdgeInsets.only(right: 10),
+          child: AppText('${app.eraserSize.round()} px',
+              style: const TextStyle(fontSize: 11)),
         ),
-        const SizedBox(width: 8),
-        Text(
-            app.eraserMode == EraserMode.area
-                ? 'Splits strokes where you rub'
-                : 'Removes any stroke you touch',
-            style:
-                TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
-      ] else if (app.tool == Tool.lasso && !widget.drawOnly)
-        AppText('Draw a loop around ink to select it — then drag or delete',
-            style:
-                TextStyle(fontSize: 11, color: context.surfaces.textSecondary))
-      else if (!widget.drawOnly)
-        AppText('Pick the pen or highlighter to draw',
-            style:
-                TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
+        SizedBox(
+          height: 28,
+          child: SegmentedButton<EraserMode>(
+            segments: [
+              for (final m in EraserMode.values)
+                ButtonSegment(
+                    value: m,
+                    label:
+                        AppText(m.label, style: const TextStyle(fontSize: 10))),
+            ],
+            selected: {app.eraserMode},
+            onSelectionChanged: (s) => app.setEraserMode(s.first),
+            showSelectedIcon: false,
+            style: const ButtonStyle(
+                visualDensity: VisualDensity.compact,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+          ),
+        ),
+      ],
       const SizedBox(width: 12),
       const SizedBox(width: 4),
     ]);

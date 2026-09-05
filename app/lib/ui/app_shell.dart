@@ -1242,22 +1242,6 @@ class _AppShellState extends State<AppShell> {
                 ),
                 AlertPopup(app: app, regionFocus: _alertRegion),
                 ImportProgressCard(app: app),
-                // An independent exit route means the writing surface can
-                // never trap the user even if a floating toolbar is moved or
-                // a platform compositor delays drawing it.
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: Material(
-                    elevation: 5,
-                    borderRadius: BorderRadius.circular(20),
-                    child: IconButton(
-                      tooltip: 'Leave writing mode',
-                      icon: const Icon(Icons.close_fullscreen, size: 19),
-                      onPressed: () => app.setWritingMode(false),
-                    ),
-                  ),
-                ),
               ])),
             ),
           );

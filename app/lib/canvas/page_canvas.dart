@@ -137,6 +137,8 @@ class _PageCanvasState extends State<PageCanvas> {
 
   // Lasso-select (INK-7): the freeform loop being drawn, in page space.
   List<Offset>? _lasso;
+  int? _lassoMovePointer;
+  Offset _lassoMoveLast = Offset.zero;
 
   AppState get app => widget.state;
   CanvasController get controller => app.canvas;
@@ -410,7 +412,7 @@ class _PageCanvasState extends State<PageCanvas> {
         // Snapping is a deliberate gesture: finish the rough outline, then
         // keep the pen down and still briefly. Normal handwriting
         // never pauses in this exact state, so it remains ordinary ink.
-        _shapeHold = Timer(const Duration(milliseconds: 850), _snapWetShape);
+        _shapeHold = Timer(const Duration(milliseconds: 650), _snapWetShape);
       }
     }
     w.x.add(pagePt.dx);
@@ -682,6 +684,42 @@ class _PageCanvasState extends State<PageCanvas> {
         e.kind == PointerDeviceKind.invertedStylus) {
       _showPenButtonTool(_pendingErase);
     }
+  }
+
+  bool _canFingerMoveLassoSelection(Offset pagePoint) =>
+      app.selectedIds.isNotEmpty &&
+      app.selectedIds.any((id) {
+        final block = app.blocks.where((b) => b.id == id).firstOrNull;
+        return block != null &&
+            _blockRect(block).inflate(10).contains(pagePoint);
+      });
+
+  void _startLassoFingerMove(PointerDownEvent e) {
+    _lassoMovePointer = e.pointer;
+    _lassoMoveLast = e.localPosition;
+    _moveUndoPushed = false;
+    app.setDragging(true);
+  }
+
+  void _moveLassoFingerSelection(PointerMoveEvent e) {
+    if (_lassoMovePointer != e.pointer) return;
+    final delta = e.localPosition - _lassoMoveLast;
+    _lassoMoveLast = e.localPosition;
+    if (delta == Offset.zero) return;
+    if (!_moveUndoPushed) {
+      app.pushUndo();
+      _moveUndoPushed = true;
+    }
+    app.moveSelectedBy(
+        delta.dx / controller.scale, delta.dy / controller.scale);
+  }
+
+  void _finishLassoFingerMove(PointerEvent e) {
+    if (_lassoMovePointer != e.pointer) return;
+    _lassoMovePointer = null;
+    _moveUndoPushed = false;
+    app.settleSelected();
+    app.setDragging(false);
   }
 
   /// Gather every stroke whose points mostly fall inside the drawn loop into a
@@ -1455,12 +1493,21 @@ class _PageCanvasState extends State<PageCanvas> {
           // under it.
           if (app.claimedPointers.remove(e.pointer)) return;
           if (e.kind == PointerDeviceKind.touch) {
+            if (_canFingerMoveLassoSelection(
+                controller.screenToPage(e.localPosition))) {
+              _startLassoFingerMove(e);
+              return;
+            }
             _touchDown(e);
           } else {
             _lassoDown(e);
           }
         },
         onPointerMove: (e) {
+          if (_lassoMovePointer == e.pointer) {
+            _moveLassoFingerSelection(e);
+            return;
+          }
           if (_touches.containsKey(e.pointer)) {
             _touchMove(e);
           } else {
@@ -1468,6 +1515,10 @@ class _PageCanvasState extends State<PageCanvas> {
           }
         },
         onPointerUp: (e) {
+          if (_lassoMovePointer == e.pointer) {
+            _finishLassoFingerMove(e);
+            return;
+          }
           if (_touches.containsKey(e.pointer)) {
             _touchUp(e);
           } else {
@@ -1476,6 +1527,10 @@ class _PageCanvasState extends State<PageCanvas> {
         },
         onPointerCancel: (e) {
           if (_rulerPointers.remove(e.pointer)) return;
+          if (_lassoMovePointer == e.pointer) {
+            _finishLassoFingerMove(e);
+            return;
+          }
           if (_touches.containsKey(e.pointer)) _touchUp(e);
           setState(() => _lasso = null);
         },
@@ -1750,6 +1805,8 @@ class _RulerOverlay extends StatefulWidget {
 }
 
 class _RulerOverlayState extends State<_RulerOverlay> {
+  Offset _startCenter = Offset.zero;
+  Offset _startFocal = Offset.zero;
   double _startAngle = 0;
   double _startLength = 0;
 
@@ -1770,13 +1827,15 @@ class _RulerOverlayState extends State<_RulerOverlay> {
                 PointerDeviceKind.mouse,
                 PointerDeviceKind.touch,
               },
-              onScaleStart: (_) {
+              onScaleStart: (details) {
+                _startCenter = widget.center;
+                _startFocal = details.focalPoint;
                 _startAngle = widget.angle;
                 _startLength = widget.length;
               },
               onScaleUpdate: (details) {
                 widget.onChanged(
-                  widget.center + details.focalPointDelta,
+                  _startCenter + (details.focalPoint - _startFocal),
                   // Rotation stays available to two fingers, while a one-finger
                   // drag has a zero rotation and simply moves the rule.
                   _startAngle + details.rotation,
