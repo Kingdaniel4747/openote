@@ -53,6 +53,28 @@ class InkPainter extends CustomPainter {
 
   void _paintStroke(Canvas canvas, Stroke s, {required bool cache}) {
     if (s.x.isEmpty) return;
+    final onFixedBackdrop =
+        fixedBackdrops.any((r) => r.contains(Offset(s.x.first, s.y.first)));
+    final automatic = s.colorHex == 'auto' ||
+        (s.colorHex.toUpperCase() == '#211F1B' && !onFixedBackdrop);
+    final base = automatic ? autoColor : colorFromHex(s.colorHex);
+    if (s.tool == 'ballpoint') {
+      // Exact geometry for rulers and recognised shapes: pressure smoothing
+      // used to round corners and pull the line back from the pen tip.
+      final path = Path()..moveTo(s.x.first, s.y.first);
+      for (var i = 1; i < s.x.length; i++) {
+        path.lineTo(s.x[i], s.y[i]);
+      }
+      canvas.drawPath(
+          path,
+          Paint()
+            ..color = base.withValues(alpha: s.opacity)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = s.size
+            ..strokeCap = StrokeCap.round
+            ..strokeJoin = StrokeJoin.round);
+      return;
+    }
     Path? path = cache ? _outlines[s] : null;
     if (path == null) {
       path = _outlinePath(s);
@@ -63,17 +85,16 @@ class InkPainter extends CustomPainter {
     // #211F1B. Treat that legacy default as automatic too, except where the
     // stroke sits on a fixed image/PDF — there its chosen colour must stay
     // stable while the app theme changes.
-    final onFixedBackdrop =
-        fixedBackdrops.any((r) => r.contains(Offset(s.x.first, s.y.first)));
-    final automatic = s.colorHex == 'auto' ||
-        (s.colorHex.toUpperCase() == '#211F1B' && !onFixedBackdrop);
-    final base = automatic ? autoColor : colorFromHex(s.colorHex);
     final paint = Paint()
       ..color = base.withValues(alpha: s.opacity)
       ..style = PaintingStyle.fill
       ..isAntiAlias = true;
     if (s.tool == 'highlighter') {
-      paint.blendMode = BlendMode.multiply;
+      // Multiply on dark paper can only darken it further. Alpha compositing
+      // retains a visible highlight there; white worksheets keep multiply.
+      paint.blendMode = autoColor.computeLuminance() > .5 && !onFixedBackdrop
+          ? BlendMode.srcOver
+          : BlendMode.multiply;
     }
     canvas.drawPath(path, paint);
   }

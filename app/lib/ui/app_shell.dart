@@ -330,6 +330,10 @@ class _AppShellState extends State<AppShell> {
       // the dialog's own text field on the way past. Traversal already
       // checked this; the ladder never did.
       if (_routeOnTop) return false;
+      if (app.writingMode) {
+        app.setWritingMode(false);
+        return true;
+      }
       // While an equation holds the keyboard, Escape means "leave the
       // equation" and nothing else — the field's own handler runs onExit,
       // and the HOST decides where the caret lands. Without this gate one
@@ -1197,11 +1201,15 @@ class _AppShellState extends State<AppShell> {
           return Scaffold(
             body: LayoutBuilder(
               builder: (context, constraints) => SafeArea(
-                  child: Stack(children: [
+                  child: Stack(fit: StackFit.expand, children: [
                 Positioned.fill(child: writingSurface),
                 Positioned(
-                  left: _writingToolbarOffset.dx.clamp(8.0,
-                      (constraints.maxWidth - 220).clamp(8.0, double.infinity)),
+                  left: _writingToolbarOffset.dx.clamp(
+                      8.0,
+                      (constraints.maxWidth -
+                              math.min(760.0,
+                                  math.max(220.0, constraints.maxWidth - 32)))
+                          .clamp(8.0, double.infinity)),
                   top: _writingToolbarOffset.dy.clamp(8.0,
                       (constraints.maxHeight - 60).clamp(8.0, double.infinity)),
                   child: Material(

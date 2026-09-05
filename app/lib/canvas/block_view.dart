@@ -76,7 +76,7 @@ const double _kChromePad = 8;
 /// a drag moves the container. OneNote's model, and the reason for it is that
 /// a click-drag inside a text box means "select this text" to everyone who has
 /// ever used a text box.
-const double _kBarH = 16;
+const double _kBarH = _kChromePad;
 
 class _BlockViewState extends State<BlockView> {
   bool _hoverBody = false;
@@ -345,86 +345,18 @@ class _BlockViewState extends State<BlockView> {
   /// own first line of text, and clicking it selects the whole container,
   /// which is the reliable way to get a text box into a multi-selection.
   Widget _moveBar(BuildContext context, Color primaryColor, bool dark) {
-    final live = selected || editing;
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hoverChrome = true),
-      onExit: (_) => setState(() => _hoverChrome = false),
-      cursor: SystemMouseCursors.move,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        supportedDevices: const {
-          PointerDeviceKind.mouse,
-          PointerDeviceKind.touch,
-          PointerDeviceKind.stylus,
-          PointerDeviceKind.invertedStylus,
-        },
-        // Moving is allowed WHILE editing — OneNote lets you drag a container
-        // by its bar with the caret still in it.
-        onPanStart: _locked ? null : _dragStart,
-        onPanUpdate: _locked ? null : _drag,
-        onPanEnd: _locked ? null : _dragEnd,
-        onTap: () => app.select(b.id,
-            additive: HardwareKeyboard.instance.isShiftPressed),
-        // Block actions stay reachable while editing, which they were not
-        // when the only right-click target was the text itself.
-        onSecondaryTapUp: (d) =>
-            showBlockMenu(context, app, b, d.globalPosition),
-        onLongPressStart: (d) =>
-            showBlockMenu(context, app, b, d.globalPosition),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: _kChromePad),
-          child: Container(
-            decoration: BoxDecoration(
-              color: live
-                  ? primaryColor.withValues(alpha: .85)
-                  : (dark ? OnoteColors.night200 : OnoteColors.paper200),
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(8)),
-            ),
-            child: Row(
-              children: [
-                const SizedBox(width: 6),
-                Icon(Icons.drag_indicator,
-                    size: 12,
-                    color: live
-                        ? Theme.of(context).colorScheme.onPrimary
-                        : OnoteColors.graphite400),
-                const Spacer(),
-                if (primary) ...[
-                  _barButton(
-                      context,
-                      Icons.copy_all_outlined,
-                      'Duplicate (Ctrl+D)',
-                      () => app.duplicateBlock(b.id),
-                      live),
-                  _barButton(context, Icons.close, 'Delete (Del)',
-                      () => app.removeSelected(), live),
-                  const SizedBox(width: 2),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
+    // A transparent edge hit target retains mouse dragging for editable
+    // objects. All visible actions live in the floating selection toolbar.
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onPanStart: _locked ? null : _dragStart,
+      onPanUpdate: _locked ? null : _drag,
+      onPanEnd: _locked ? null : _dragEnd,
+      onTap: () => app.select(b.id),
+      onSecondaryTapUp: (d) => showBlockMenu(context, app, b, d.globalPosition),
+      child: const SizedBox.expand(),
     );
   }
-
-  Widget _barButton(BuildContext context, IconData icon, String tip,
-          VoidCallback onTap, bool live) =>
-      Tooltip(
-        message: tip,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 3),
-            child: Icon(icon,
-                size: 11,
-                color: live
-                    ? Theme.of(context).colorScheme.onPrimary
-                    : OnoteColors.graphite400),
-          ),
-        ),
-      );
 
   String _a11yLabel() {
     final t = switch (b.type) {
@@ -480,9 +412,21 @@ class _BlockViewState extends State<BlockView> {
       app.pushUndo();
       _resizeUndoPushed = true;
     }
-    final scale = widget.controller.scale;
     final oldW = b.w;
     final oldH = b.h ?? app.renderSizes[b.id]?.height;
+    // Gesture deltas below the canvas transform are already page units.
+    const scale = 1.0;
+    if (b.type == BlockType.table && width && height && oldH != null) {
+      final previous = (b.content['tableScale'] as num?)?.toDouble() ?? 1;
+      final delta = (d.delta.dx / oldW + d.delta.dy / oldH) / 2;
+      final next = (previous * (1 + delta)).clamp(.25, 8.0);
+      final factor = next / previous;
+      b.w *= factor;
+      b.h = oldH * factor;
+      b.content['tableScale'] = next;
+      app.updateBlock(b);
+      return;
+    }
     if (_scalesProportionally) {
       // A PDF or image is a document/picture, never a freeform rectangle.
       // Every handle scales it as one unit. For a corner drag, use the axis
@@ -504,8 +448,11 @@ class _BlockViewState extends State<BlockView> {
               ? byWidth
               : byHeight;
       final factor = requestedFactor.clamp(.1, 8.0);
-      b.w = (oldW * factor).clamp(80.0, 4000.0);
-      b.h = (sourceH * factor).clamp(80.0, 6000.0);
+      // Clamp the scale once; independent width/height clamps distort images.
+      final bounded =
+          factor.clamp((80 / oldW).clamp(0.0, double.infinity), 4000 / oldW);
+      b.w = oldW * bounded;
+      b.h = sourceH * bounded;
       app.updateBlock(b);
       setState(() {});
       return;

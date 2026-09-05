@@ -842,6 +842,11 @@ class _CommandBarState extends State<CommandBar> {
         icon: const Icon(Icons.category_outlined, size: 18),
         tooltip: 'Shape recognition — draw with the pen and hold',
         isSelected: app.shapeRecognition,
+        style: IconButton.styleFrom(
+            backgroundColor: app.shapeRecognition
+                ? scheme.primary.withValues(alpha: .18)
+                : null,
+            foregroundColor: app.shapeRecognition ? scheme.primary : null),
         visualDensity: VisualDensity.compact,
         onPressed: () => app.setShapeRecognition(!app.shapeRecognition),
       ),
@@ -849,6 +854,10 @@ class _CommandBarState extends State<CommandBar> {
         icon: const Icon(Icons.straighten_outlined, size: 18),
         tooltip: 'Ruler — drag the grip, pinch to resize or rotate',
         isSelected: app.rulerVisible,
+        style: IconButton.styleFrom(
+            backgroundColor:
+                app.rulerVisible ? scheme.primary.withValues(alpha: .18) : null,
+            foregroundColor: app.rulerVisible ? scheme.primary : null),
         visualDensity: VisualDensity.compact,
         onPressed: () => app.setRulerVisible(!app.rulerVisible),
       ),
@@ -969,11 +978,11 @@ class _CommandBarState extends State<CommandBar> {
                 : 'Removes any stroke you touch',
             style:
                 TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
-      ] else if (app.tool == Tool.lasso)
+      ] else if (app.tool == Tool.lasso && !widget.drawOnly)
         AppText('Draw a loop around ink to select it — then drag or delete',
             style:
                 TextStyle(fontSize: 11, color: context.surfaces.textSecondary))
-      else
+      else if (!widget.drawOnly)
         AppText('Pick the pen or highlighter to draw',
             style:
                 TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
@@ -1397,7 +1406,8 @@ class _PlannerButton extends StatelessWidget {
 /// it belongs to. The planner remains the place to review everything; this is
 /// deliberately only the three decisions needed to avoid losing a task.
 Future<void> _addQuickHomework(BuildContext context, AppState app) async {
-  final result = await showOnoteDialog<({String subject, String task, DateTime due})>(
+  final result =
+      await showOnoteDialog<({String subject, String task, DateTime due})>(
     context: context,
     builder: (_) => const _QuickHomeworkDialog(),
   );
@@ -1414,8 +1424,8 @@ Future<void> _addQuickHomework(BuildContext context, AppState app) async {
     pageId: app.pageId,
   );
   if (!context.mounted) return;
-  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text('Homework added and linked to this page.')));
+  ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Homework added and linked to this page.')));
 }
 
 class _QuickHomeworkDialog extends StatefulWidget {
@@ -1483,8 +1493,8 @@ class _QuickHomeworkDialogState extends State<_QuickHomeworkDialog> {
               child: OutlinedButton.icon(
                 onPressed: _pickDay,
                 icon: const Icon(Icons.event_outlined, size: 18),
-                label: Text(MaterialLocalizations.of(context)
-                    .formatMediumDate(_due)),
+                label: Text(
+                    MaterialLocalizations.of(context).formatMediumDate(_due)),
               ),
             ),
             const Align(

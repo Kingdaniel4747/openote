@@ -8757,7 +8757,10 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
-  void setTool(Tool t) {
+  int toolChoiceRevision = 0;
+
+  void setTool(Tool t, {bool temporary = false}) {
+    if (!temporary) toolChoiceRevision++;
     tool = t;
     if (t != Tool.select) select(null);
     notifyListeners();

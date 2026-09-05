@@ -178,6 +178,18 @@ LRESULT CALLBACK PenButtons::Observe(HWND hwnd, UINT message, WPARAM wparam,
   auto self = reinterpret_cast<PenButtons*>(data);
   self->ReadPointer(message, wparam);
   switch (message) {
+    case WM_POINTERACTIVATE:
+      // The Flutter child view must allow a finger to activate its owning
+      // window, just as a mouse click does (including outside Start).
+      return PA_ACTIVATE;
+    case WM_POINTERDOWN: {
+      POINTER_INPUT_TYPE type{};
+      if (GetPointerType(GET_POINTERID_WPARAM(wparam), &type) && type == PT_TOUCH) {
+        const HWND root = GetAncestor(hwnd, GA_ROOT);
+        if (root && GetForegroundWindow() != root) SetForegroundWindow(root);
+      }
+      break;
+    }
     case WM_INPUT:
       self->ReadRawInput(reinterpret_cast<HRAWINPUT>(lparam));
       break;

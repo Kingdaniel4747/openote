@@ -18,6 +18,7 @@ import 'align_guides.dart';
 import 'canvas_controller.dart';
 import 'media_drop.dart';
 import 'ink_painter.dart';
+import 'shape_geometry.dart';
 import 'page_title_view.dart';
 import 'windows_pen_buttons.dart';
 
@@ -44,6 +45,7 @@ class _PageCanvasState extends State<PageCanvas> {
   final WindowsPenButtons _windowsPen = WindowsPenButtons();
   int? _windowsInkPointer;
   bool _buttonOverride = false;
+  int _overrideToolRevision = -1;
   bool _pendingErase = false;
   Tool _penReturnTool = Tool.pen;
   Tool _contactTool = Tool.pen;
@@ -51,7 +53,6 @@ class _PageCanvasState extends State<PageCanvas> {
   Timer? _shapeHold;
   final List<Offset> _shapeRaw = [];
   String? _shapeKind;
-  Offset? _shapeAnchor;
   Offset? _shapeLastMotion;
 
   void _windowsPenChanged() {
@@ -64,6 +65,11 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _showPenButtonTool(bool erase) {
+    // A deliberate toolbar choice supersedes the tool remembered by an old
+    // barrel-button gesture, even if the pen is still hovering.
+    if (_buttonOverride && _overrideToolRevision != app.toolChoiceRevision) {
+      _buttonOverride = false;
+    }
     if (erase) {
       if (!_buttonOverride) {
         _penReturnTool = (app.tool == Tool.highlighter ||
@@ -73,10 +79,11 @@ class _PageCanvasState extends State<PageCanvas> {
             : Tool.pen;
       }
       _buttonOverride = true;
-      if (app.tool != Tool.eraser) app.setTool(Tool.eraser);
+      _overrideToolRevision = app.toolChoiceRevision;
+      if (app.tool != Tool.eraser) app.setTool(Tool.eraser, temporary: true);
     } else if (_buttonOverride) {
       _buttonOverride = false;
-      app.setTool(_penReturnTool);
+      app.setTool(_penReturnTool, temporary: true);
     }
   }
 
@@ -114,6 +121,7 @@ class _PageCanvasState extends State<PageCanvas> {
   Offset? _rulerCenter;
   double _rulerAngle = 0;
   double _rulerLength = 360;
+  final Set<int> _rulerPointers = {};
 
   /// A block may own a single touch for direct object movement. We still
   /// record that contact here, passively, so a second finger can always turn
@@ -140,7 +148,10 @@ class _PageCanvasState extends State<PageCanvas> {
       app.tool == Tool.eraser ||
       app.tool == Tool.shape;
 
-  bool get _shapeEnabled => app.shapeRecognition && _contactTool == Tool.pen;
+  bool get _shapeEnabled =>
+      app.shapeRecognition &&
+      !app.rulerVisible &&
+      (_contactTool == Tool.pen || _contactTool == Tool.ballpoint);
 
   bool _onPaper(Offset point) =>
       !app.pageProps.pdfOnly || (Offset.zero & app.pageSize()).contains(point);
@@ -164,7 +175,6 @@ class _PageCanvasState extends State<PageCanvas> {
     _shapeHold?.cancel();
     _shapeRaw.clear();
     _shapeKind = null;
-    _shapeAnchor = null;
     _shapeLastMotion = null;
     _windowsInkPointer = null;
     _gestureErase = false;
@@ -282,24 +292,24 @@ class _PageCanvasState extends State<PageCanvas> {
     _shapeHold?.cancel();
     _shapeKind = null;
     _shapeRaw.clear();
-    _shapeAnchor = null;
     _shapeLastMotion = null;
     if (_shapeEnabled) {
-      _shapeAnchor = pt;
       _shapeLastMotion = pt;
     }
     setState(() {
       _wet = Stroke(
         tool: _contactTool == Tool.highlighter
             ? 'highlighter'
-            : _contactTool == Tool.ballpoint
+            : _contactTool == Tool.ballpoint || app.rulerVisible
                 ? 'ballpoint'
                 : 'pen',
         colorHex: customColor != null
             ? '#$customColor'
-            : app.penColor == 0 && !fixedBackdrop
+            : app.penColor == 0 &&
+                    !fixedBackdrop &&
+                    _contactTool != Tool.highlighter
                 ? 'auto'
-                : '#${((fixedBackdrop && app.penColor == 0 ? OnoteColors.graphite900 : color).toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}',
+                : '#${((fixedBackdrop && app.penColor == 0 && _contactTool != Tool.highlighter ? OnoteColors.graphite900 : color).toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}',
         size: app.penSize,
         opacity: _contactTool == Tool.highlighter ? 0.4 : 1.0,
       );
@@ -308,6 +318,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _inkMove(PointerMoveEvent e) {
+    if (_rulerPointers.contains(e.pointer)) return;
     if (_windowsPen.enabled) {
       if (_windowsInkPointer != e.pointer) return;
       _pendingErase = _windowsPen.erases(e);
@@ -368,7 +379,9 @@ class _PageCanvasState extends State<PageCanvas> {
     final along = (relative.dx * direction.dx + relative.dy * direction.dy)
         .clamp(-_rulerLength / 2, _rulerLength / 2);
     final across = relative.dx * normal.dx + relative.dy * normal.dy;
-    const edge = 22.0;
+    // The rule is 48 screen pixels thick. Keep the entire ink width just
+    // outside its edge, rather than placing the stroke inside the ruler.
+    final edge = 24.0 + app.penSize * controller.scale / 2 + 1;
     final edgeOffset = across >= 0 ? edge : -edge;
     final candidate = center + direction * along + normal * edgeOffset;
     if ((screen - candidate).distance > 24) return pagePoint;
@@ -385,11 +398,11 @@ class _PageCanvasState extends State<PageCanvas> {
   void _addPoint(PointerEvent e, Offset pagePt) {
     final w = _wet!;
     if (_shapeEnabled) {
-      _shapeRaw.add(pagePt);
       if (_shapeKind != null) {
         _rewriteWetShape(pagePt);
         return;
       }
+      _shapeRaw.add(pagePt);
       final last = _shapeLastMotion;
       if (last == null || (pagePt - last).distance > 4) {
         _shapeLastMotion = pagePt;
@@ -413,140 +426,64 @@ class _PageCanvasState extends State<PageCanvas> {
     w.t.add(nowMs() - w.strokeStart);
   }
 
+  List<Offset>? _recognisedOutline;
+  Offset? _shapeResizeStart;
+  Offset? _shapeResizeCenter;
+
   void _snapWetShape() {
     final w = _wet;
-    if (!mounted || w == null || _shapeRaw.length < 3) return;
-    final bounds = Rect.fromPoints(_shapeRaw.first, _shapeRaw.last)
-        .expandToInclude(_pointsBounds(_shapeRaw));
-    final diagonal =
-        math.sqrt(bounds.width * bounds.width + bounds.height * bounds.height);
-    if (diagonal < 28) return;
-    final closed = (_shapeRaw.first - _shapeRaw.last).distance <
-        math.max(14, diagonal * .13);
-    if (!closed) {
-      if (_lineDeviation(_shapeRaw) > .045) return;
-      _shapeKind = 'line';
-    } else {
-      final center = bounds.center;
-      final rx = math.max(1.0, bounds.width / 2);
-      final ry = math.max(1.0, bounds.height / 2);
-      var radialError = 0.0;
-      for (final point in _shapeRaw) {
-        final dx = (point.dx - center.dx) / rx;
-        final dy = (point.dy - center.dy) / ry;
-        radialError += (math.sqrt(dx * dx + dy * dy) - 1).abs();
-      }
-      radialError /= _shapeRaw.length;
-      if (radialError < .13) {
-        _shapeKind = 'ellipse';
-      } else {
-        final corners = _roughCornerCount(_shapeRaw);
-        if (corners == 3) {
-          _shapeKind = 'triangle';
-        } else if (corners == 4) {
-          _shapeKind = 'rectangle';
-        } else {
-          return;
-        }
-      }
+    if (!mounted || w == null) return;
+    final shape = recogniseShape(_shapeRaw);
+    if (shape == null) return;
+    _shapeKind = shape.kind;
+    _recognisedOutline = shape.points;
+    _shapeResizeStart = _shapeRaw.last;
+    var bounds = Rect.fromPoints(shape.points.first, shape.points.last);
+    for (final p in shape.points) {
+      bounds = bounds.expandToInclude(p & Size.zero);
     }
+    _shapeResizeCenter = bounds.center;
+    // Recognised geometry always uses constant-width ink.
+    _wet = Stroke(
+        tool: 'ballpoint',
+        colorHex: w.colorHex,
+        size: w.size,
+        opacity: w.opacity,
+        strokeStart: w.strokeStart);
     _rewriteWetShape(_shapeRaw.last);
     _wetTick.value++;
   }
 
-  Rect _pointsBounds(List<Offset> points) {
-    var left = points.first.dx;
-    var top = points.first.dy;
-    var right = left;
-    var bottom = top;
-    for (final point in points.skip(1)) {
-      left = math.min(left, point.dx);
-      top = math.min(top, point.dy);
-      right = math.max(right, point.dx);
-      bottom = math.max(bottom, point.dy);
-    }
-    return Rect.fromLTRB(left, top, right, bottom);
-  }
-
-  int _roughCornerCount(List<Offset> points) {
-    if (points.length < 7) return 0;
-    final stride = math.max(1, points.length ~/ 20);
-    var corners = 0;
-    for (var i = stride; i < points.length - stride; i += stride) {
-      final a = points[i] - points[i - stride];
-      final b = points[i + stride] - points[i];
-      if (a.distance < 2 || b.distance < 2) continue;
-      final cosine = (a.dx * b.dx + a.dy * b.dy) / (a.distance * b.distance);
-      if (cosine < .45) corners++;
-    }
-    return corners;
-  }
-
-  double _lineDeviation(List<Offset> points) {
-    final start = points.first;
-    final end = points.last;
-    final chord = end - start;
-    final length = chord.distance;
-    if (length < 1) return double.infinity;
-    var greatest = 0.0;
-    for (final point in points) {
-      final distance =
-          ((point.dx - start.dx) * chord.dy - (point.dy - start.dy) * chord.dx)
-                  .abs() /
-              length;
-      greatest = math.max(greatest, distance);
-    }
-    return greatest / length;
-  }
-
   void _rewriteWetShape(Offset end) {
     final w = _wet;
-    final start = _shapeAnchor;
-    final kind = _shapeKind;
-    if (w == null || start == null || kind == null) return;
-    final points = <Offset>[];
-    if (kind == 'line') {
-      points.addAll([start, end]);
+    final original = _recognisedOutline;
+    if (w == null || original == null || _shapeKind == null) return;
+    List<Offset> outline;
+    if (_shapeKind == 'line') {
+      outline = [original.first, end];
     } else {
-      final rect = Rect.fromPoints(start, end);
-      if (kind == 'rectangle') {
-        points.addAll([
-          rect.topLeft,
-          rect.topRight,
-          rect.bottomRight,
-          rect.bottomLeft,
-          rect.topLeft,
-        ]);
-      } else if (kind == 'triangle') {
-        points.addAll([
-          Offset(rect.center.dx, rect.top),
-          rect.bottomRight,
-          rect.bottomLeft,
-          Offset(rect.center.dx, rect.top),
-        ]);
-      } else {
-        for (var i = 0; i <= 48; i++) {
-          final angle = i / 48 * math.pi * 2;
-          points.add(Offset(
-            rect.center.dx + math.cos(angle) * rect.width / 2,
-            rect.center.dy + math.sin(angle) * rect.height / 2,
-          ));
-        }
-      }
+      final center = _shapeResizeCenter!;
+      final initial = (_shapeResizeStart! - center).distance;
+      final factor = initial < 1
+          ? 1.0
+          : ((end - center).distance / initial).clamp(.1, 10.0);
+      outline = [for (final p in original) center + (p - center) * factor];
     }
+    final points = sampleOutline(outline, 2);
     w.x
       ..clear()
-      ..addAll(points.map((point) => point.dx));
+      ..addAll(points.map((p) => p.dx));
     w.y
       ..clear()
-      ..addAll(points.map((point) => point.dy));
+      ..addAll(points.map((p) => p.dy));
     w.p.clear();
     w.t
       ..clear()
-      ..addAll(List<int>.generate(points.length, (i) => i * 8));
+      ..addAll(List.generate(points.length, (i) => i * 8));
   }
 
   void _inkUp(PointerUpEvent e) {
+    if (_rulerPointers.remove(e.pointer)) return;
     if (_windowsPen.enabled ||
         e.kind == PointerDeviceKind.stylus ||
         e.kind == PointerDeviceKind.invertedStylus) {
@@ -570,7 +507,6 @@ class _PageCanvasState extends State<PageCanvas> {
       _shapeHold?.cancel();
       _shapeRaw.clear();
       _shapeKind = null;
-      _shapeAnchor = null;
       _shapeLastMotion = null;
       setState(() => _wet = null);
       return;
@@ -594,7 +530,6 @@ class _PageCanvasState extends State<PageCanvas> {
     setState(() => _wet = null);
     _shapeRaw.clear();
     _shapeKind = null;
-    _shapeAnchor = null;
     _shapeLastMotion = null;
   }
 
@@ -625,9 +560,10 @@ class _PageCanvasState extends State<PageCanvas> {
       var blockChanged = false;
       for (var si = 0; si < strokes.length; si++) {
         final sj = strokes[si] as Map;
-        final s = si < decoded.length
+        var s = si < decoded.length
             ? decoded[si]
             : Stroke.fromJson(sj.cast<String, dynamic>());
+        s = sampleStroke(s, math.max(.25, radius / 2));
         // Squared distance — avoids a sqrt per point per sample.
         final keep = List<bool>.generate(s.x.length, (i) {
           final dx = s.x[i] - pt.dx, dy = s.y[i] - pt.dy;
@@ -723,6 +659,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _lassoMove(PointerMoveEvent e) {
+    if (_rulerPointers.contains(e.pointer)) return;
     if (_windowsInkPointer == e.pointer) {
       _inkMove(e);
       return;
@@ -733,6 +670,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _lassoUp(PointerUpEvent e) {
+    if (_rulerPointers.remove(e.pointer)) return;
     if (_windowsInkPointer == e.pointer) {
       _inkUp(e);
       return;
@@ -923,6 +861,10 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _selectDown(PointerDownEvent e) {
+    if (_rulerPointers.contains(e.pointer)) {
+      app.claimedPointers.remove(e.pointer);
+      return;
+    }
     if (e.kind == PointerDeviceKind.stylus ||
         e.kind == PointerDeviceKind.invertedStylus) {
       if (!app.claimedPointers.remove(e.pointer)) _inkDown(e);
@@ -985,6 +927,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _selectMove(PointerMoveEvent e) {
+    if (_rulerPointers.contains(e.pointer)) return;
     if (_windowsInkPointer == e.pointer) {
       _inkMove(e);
       return;
@@ -1037,6 +980,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _selectUp(PointerUpEvent e) {
+    if (_rulerPointers.remove(e.pointer)) return;
     if (_windowsInkPointer == e.pointer) {
       _inkUp(e);
       return;
@@ -1465,6 +1409,13 @@ class _PageCanvasState extends State<PageCanvas> {
                         center: _rulerCenterForViewport(),
                         angle: _rulerAngle,
                         length: _rulerLength,
+                        onPointerDown: (e) {
+                          if (e.kind != PointerDeviceKind.touch &&
+                              e.kind != PointerDeviceKind.mouse) return;
+                          _inertia?.cancel();
+                          _rulerPointers.add(e.pointer);
+                          app.claimedPointers.add(e.pointer);
+                        },
                         onChanged: (center, angle, length) => setState(() {
                           _rulerCenter = center;
                           _rulerAngle = angle;
@@ -1524,6 +1475,7 @@ class _PageCanvasState extends State<PageCanvas> {
           }
         },
         onPointerCancel: (e) {
+          if (_rulerPointers.remove(e.pointer)) return;
           if (_touches.containsKey(e.pointer)) _touchUp(e);
           setState(() => _lasso = null);
         },
@@ -1571,6 +1523,7 @@ class _PageCanvasState extends State<PageCanvas> {
           }
         },
         onPointerCancel: (e) {
+          if (_rulerPointers.remove(e.pointer)) return;
           _touches.remove(e.pointer);
           if (_windowsPen.enabled && _windowsInkPointer != e.pointer) return;
           _gestureErase = false;
@@ -1607,7 +1560,8 @@ class _PageCanvasState extends State<PageCanvas> {
             onPointerDown: _selectDown,
             onPointerMove: _selectMove,
             onPointerUp: _selectUp,
-            onPointerCancel: (_) {
+            onPointerCancel: (e) {
+              if (_rulerPointers.remove(e.pointer)) return;
               _mode = _DragMode.none;
               _touches.clear();
               _blockOwnedTouches.clear();
@@ -1782,19 +1736,20 @@ class _RulerOverlay extends StatefulWidget {
     required this.angle,
     required this.length,
     required this.onChanged,
+    required this.onPointerDown,
   });
 
   final Offset center;
   final double angle;
   final double length;
   final void Function(Offset center, double angle, double length) onChanged;
+  final void Function(PointerDownEvent event) onPointerDown;
 
   @override
   State<_RulerOverlay> createState() => _RulerOverlayState();
 }
 
 class _RulerOverlayState extends State<_RulerOverlay> {
-  Offset _startCenter = Offset.zero;
   double _startAngle = 0;
   double _startLength = 0;
 
@@ -1807,30 +1762,33 @@ class _RulerOverlayState extends State<_RulerOverlay> {
         child: Transform.rotate(
           angle: widget.angle,
           alignment: Alignment.center,
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            supportedDevices: const {
-              PointerDeviceKind.mouse,
-              PointerDeviceKind.touch,
-            },
-            onScaleStart: (_) {
-              _startCenter = widget.center;
-              _startAngle = widget.angle;
-              _startLength = widget.length;
-            },
-            onScaleUpdate: (details) {
-              widget.onChanged(
-                _startCenter + details.focalPointDelta,
-                // Rotation stays available to two fingers, while a one-finger
-                // drag has a zero rotation and simply moves the rule.
-                _startAngle + details.rotation,
-                (_startLength * details.scale).clamp(180.0, 900.0),
-              );
-            },
-            child: CustomPaint(
-              size: Size(widget.length, 48),
-              painter: _RulerPainter(
-                color: Theme.of(context).colorScheme.primary,
+          child: Listener(
+            onPointerDown: widget.onPointerDown,
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              supportedDevices: const {
+                PointerDeviceKind.mouse,
+                PointerDeviceKind.touch,
+              },
+              onScaleStart: (_) {
+                _startAngle = widget.angle;
+                _startLength = widget.length;
+              },
+              onScaleUpdate: (details) {
+                widget.onChanged(
+                  widget.center + details.focalPointDelta,
+                  // Rotation stays available to two fingers, while a one-finger
+                  // drag has a zero rotation and simply moves the rule.
+                  _startAngle + details.rotation,
+                  (_startLength * details.scale).clamp(180.0, 900.0),
+                );
+              },
+              child: CustomPaint(
+                key: const ValueKey('ruler-body'),
+                size: Size(widget.length, 48),
+                painter: _RulerPainter(
+                  color: Theme.of(context).colorScheme.primary,
+                ),
               ),
             ),
           ),

@@ -22,7 +22,8 @@ class TableBlockView extends StatefulWidget {
 }
 
 class _CellMove extends Intent {
-  const _CellMove(this.dr, this.dc, {this.caretAware = false, this.wrap = false});
+  const _CellMove(this.dr, this.dc,
+      {this.caretAware = false, this.wrap = false});
   final int dr, dc;
   final bool caretAware;
   final bool wrap;
@@ -116,7 +117,8 @@ class _TableBlockViewState extends State<TableBlockView> {
     }
     _disposeGrid();
     _ctls = [
-      for (final row in cells) [for (final c in row) TextEditingController(text: c)]
+      for (final row in cells)
+        [for (final c in row) TextEditingController(text: c)]
     ];
     _nodes = [
       for (final row in cells) [for (final _ in row) FocusNode()]
@@ -135,7 +137,8 @@ class _TableBlockViewState extends State<TableBlockView> {
     if (r < 0 || c < 0 || r >= _rows || c >= _cols) return;
     _nodes[r][c].requestFocus();
     final ctl = _ctls[r][c];
-    ctl.selection = TextSelection.collapsed(offset: atEnd ? ctl.text.length : 0);
+    ctl.selection =
+        TextSelection.collapsed(offset: atEnd ? ctl.text.length : 0);
   }
 
   Object? _onMove(int r, int c, _CellMove m) {
@@ -194,6 +197,8 @@ class _TableBlockViewState extends State<TableBlockView> {
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
+    final tableScale =
+        (widget.block.content['tableScale'] as num?)?.toDouble() ?? 1;
     final cells = _cells;
     final rows = cells.length;
     final cols = cells.isEmpty ? 0 : cells[0].length;
@@ -209,7 +214,7 @@ class _TableBlockViewState extends State<TableBlockView> {
 
     Widget cellWidget(int r, int c) {
       final style = TextStyle(
-          fontSize: 13,
+          fontSize: 13 * tableScale,
           fontWeight: r == 0 ? FontWeight.w600 : FontWeight.w400,
           color: dark ? OnoteColors.moon100 : OnoteColors.graphite700);
       if (!editing) {
@@ -220,8 +225,13 @@ class _TableBlockViewState extends State<TableBlockView> {
         // Markdown grammar every text block already renders. The raw source
         // still shows while the cell is being edited, same as text blocks.
         return Container(
-          constraints: const BoxConstraints(minHeight: 30),
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          constraints: BoxConstraints(
+              minHeight: widget.block.h == null
+                  ? 30 * tableScale
+                  : (widget.block.h! / rows)
+                      .clamp(30 * tableScale, double.infinity)),
+          padding: EdgeInsets.symmetric(
+              horizontal: 8 * tableScale, vertical: 6 * tableScale),
           color: r == 0 ? headerFill : null,
           child: Text.rich(
             TextSpan(
@@ -232,11 +242,17 @@ class _TableBlockViewState extends State<TableBlockView> {
         );
       }
       return Container(
+        constraints: BoxConstraints(
+            minHeight: widget.block.h == null
+                ? 30 * tableScale
+                : ((widget.block.h! - 40) / rows)
+                    .clamp(30 * tableScale, double.infinity)),
         color: r == 0 ? headerFill : null,
-        padding: const EdgeInsets.symmetric(horizontal: 6),
+        padding: EdgeInsets.symmetric(horizontal: 6 * tableScale),
         child: Shortcuts(
           shortcuts: const {
-            SingleActivator(LogicalKeyboardKey.tab): _CellMove(0, 1, wrap: true),
+            SingleActivator(LogicalKeyboardKey.tab):
+                _CellMove(0, 1, wrap: true),
             SingleActivator(LogicalKeyboardKey.tab, shift: true):
                 _CellMove(0, -1, wrap: true),
             SingleActivator(LogicalKeyboardKey.arrowUp): _CellMove(-1, 0),
@@ -251,8 +267,8 @@ class _TableBlockViewState extends State<TableBlockView> {
           },
           child: Actions(
             actions: {
-              _CellMove: CallbackAction<_CellMove>(
-                  onInvoke: (i) => _onMove(r, c, i)),
+              _CellMove:
+                  CallbackAction<_CellMove>(onInvoke: (i) => _onMove(r, c, i)),
               _CellEnter:
                   CallbackAction<_CellEnter>(onInvoke: (_) => _onEnter(r, c)),
               _CellBreak:
@@ -270,7 +286,8 @@ class _TableBlockViewState extends State<TableBlockView> {
                     autoCloseFences: false)
               ],
               decoration: OnoteInput.bare.copyWith(
-                  contentPadding: const EdgeInsets.symmetric(vertical: 6)),
+                  contentPadding:
+                      EdgeInsets.symmetric(vertical: 6 * tableScale)),
               onChanged: (v) {
                 final cur = _cells;
                 cur[r][c] = v;
@@ -290,7 +307,7 @@ class _TableBlockViewState extends State<TableBlockView> {
       if (stored is List && stored.length == cols)
         for (var c = 0; c < cols; c++)
           if ((stored[c] as num?) != null && (stored[c] as num) > 1)
-            c: FixedColumnWidth((stored[c] as num).toDouble()),
+            c: FlexColumnWidth((stored[c] as num).toDouble()),
     };
     final table = Table(
       border: TableBorder.all(color: border, width: 1),
@@ -320,7 +337,8 @@ class _TableBlockViewState extends State<TableBlockView> {
           padding: const EdgeInsets.only(top: 4),
           child: Row(children: [
             ctlBtn(Icons.add, 'Add row', () {
-              _write(_cells..add(List.filled(cols, '', growable: true)), structural: true);
+              _write(_cells..add(List.filled(cols, '', growable: true)),
+                  structural: true);
               setState(() {});
             }),
             ctlBtn(Icons.remove, 'Remove row', () {
@@ -330,12 +348,14 @@ class _TableBlockViewState extends State<TableBlockView> {
             }),
             const SizedBox(width: 8),
             ctlBtn(Icons.view_column_outlined, 'Add column', () {
-              _write([for (final row in _cells) row..add('')], structural: true);
+              _write([for (final row in _cells) row..add('')],
+                  structural: true);
               setState(() {});
             }),
             ctlBtn(Icons.view_column, 'Remove column', () {
               if (cols <= 1) return;
-              _write([for (final row in _cells) row..removeLast()], structural: true);
+              _write([for (final row in _cells) row..removeLast()],
+                  structural: true);
               setState(() {});
             }),
           ]),
