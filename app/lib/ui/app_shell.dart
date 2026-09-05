@@ -1196,7 +1196,8 @@ class _AppShellState extends State<AppShell> {
                       PageCanvas(key: ValueKey(app.pageId), state: app));
           return Scaffold(
             body: LayoutBuilder(
-              builder: (context, constraints) => Stack(children: [
+              builder: (context, constraints) => SafeArea(
+                  child: Stack(children: [
                 Positioned.fill(child: writingSurface),
                 Positioned(
                   left: _writingToolbarOffset.dx.clamp(8.0,
@@ -1233,7 +1234,23 @@ class _AppShellState extends State<AppShell> {
                 ),
                 AlertPopup(app: app, regionFocus: _alertRegion),
                 ImportProgressCard(app: app),
-              ]),
+                // An independent exit route means the writing surface can
+                // never trap the user even if a floating toolbar is moved or
+                // a platform compositor delays drawing it.
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Material(
+                    elevation: 5,
+                    borderRadius: BorderRadius.circular(20),
+                    child: IconButton(
+                      tooltip: 'Leave writing mode',
+                      icon: const Icon(Icons.close_fullscreen, size: 19),
+                      onPressed: () => app.setWritingMode(false),
+                    ),
+                  ),
+                ),
+              ])),
             ),
           );
         }

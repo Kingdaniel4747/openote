@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 
 import '../editor/wrap_selection.dart';
@@ -5,6 +8,7 @@ import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
+import '../ui/windows_window_frame.dart';
 
 /// In-page title band (OneNote-style): the title and date live at the top of
 /// the page itself, editable in place — no menu. Rendered in page-space so it
@@ -22,6 +26,7 @@ class _PageTitleViewState extends State<PageTitleView> {
   final _controller = TextEditingController();
   final _focus = FocusNode();
   bool _editing = false;
+  bool _touchOpenedEditor = false;
   // The page this title is bound to while editing. Captured at edit start so a
   // commit during teardown targets the right page even if app.pageId has
   // already advanced to the next page (the widget is keyed by page id).
@@ -31,7 +36,8 @@ class _PageTitleViewState extends State<PageTitleView> {
 
   /// Write the in-flight title back to the page it belongs to.
   void _commitTo(String pageId) {
-    if (widget.app.node(pageId) == null) return; // page gone — nothing to rename
+    if (widget.app.node(pageId) == null)
+      return; // page gone — nothing to rename
     final t = _controller.text.trim();
     widget.app.renameNode(pageId, t.isEmpty ? 'Untitled page' : t);
   }
@@ -61,8 +67,11 @@ class _PageTitleViewState extends State<PageTitleView> {
     setState(() => _editing = true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focus.requestFocus();
-      _controller.selection = TextSelection(
-          baseOffset: 0, extentOffset: _controller.text.length);
+      _controller.selection =
+          TextSelection(baseOffset: 0, extentOffset: _controller.text.length);
+      if (_touchOpenedEditor) {
+        unawaited(WindowsWindowController.showTouchKeyboard());
+      }
     });
   }
 
@@ -99,8 +108,10 @@ class _PageTitleViewState extends State<PageTitleView> {
     return Listener(
       // PageCanvas receives the same pointer while the title is under it.
       // Claim it first so a title tap cannot begin ink or an empty body box.
-      onPointerDown: (event) =>
-          widget.app.claimedPointers.add(event.pointer),
+      onPointerDown: (event) {
+        widget.app.claimedPointers.add(event.pointer);
+        _touchOpenedEditor = event.kind == PointerDeviceKind.touch;
+      },
       child: SizedBox(
         width: widget.width,
         child: Column(
@@ -150,8 +161,8 @@ class _PageTitleViewState extends State<PageTitleView> {
             const SizedBox(height: 2),
             Text(
               _dateLine(page.createdAt),
-              style: const TextStyle(
-                  fontSize: 12, color: OnoteColors.graphite400),
+              style:
+                  const TextStyle(fontSize: 12, color: OnoteColors.graphite400),
             ),
             const SizedBox(height: 6),
             Container(
@@ -164,8 +175,18 @@ class _PageTitleViewState extends State<PageTitleView> {
   }
 
   static const _months = [
-    'January', 'February', 'March', 'April', 'May', 'June', 'July',
-    'August', 'September', 'October', 'November', 'December'
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December'
   ];
   static const _days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 

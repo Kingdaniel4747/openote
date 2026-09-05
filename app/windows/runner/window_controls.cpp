@@ -1,5 +1,6 @@
 #include "window_controls.h"
 #include <dwmapi.h>
+#include <shellapi.h>
 
 WindowControls::WindowControls(HWND window, flutter::BinaryMessenger* messenger)
     : window_(window),
@@ -47,6 +48,19 @@ WindowControls::WindowControls(HWND window, flutter::BinaryMessenger* messenger)
         } else if (call.method_name() == "show") {
           ShowWindow(window_, SW_SHOW);
           SetForegroundWindow(window_);
+          result->Success();
+        } else if (call.method_name() == "showTouchKeyboard") {
+          // Flutter's Windows text connection accepts touch input but does not
+          // ask Windows to show its tablet keyboard. In tablet mode TabTip is
+          // the system-owned keyboard, so start it rather than implementing a
+          // second keyboard in the app.
+          const wchar_t* tab_tip =
+              L"C:\\Program Files\\Common Files\\microsoft shared\\ink\\TabTip.exe";
+          const auto launched = reinterpret_cast<INT_PTR>(
+              ShellExecuteW(nullptr, L"open", tab_tip, nullptr, nullptr, SW_SHOWNORMAL));
+          if (launched <= 32) {
+            ShellExecuteW(nullptr, L"open", L"TabTip.exe", nullptr, nullptr, SW_SHOWNORMAL);
+          }
           result->Success();
         } else {
           result->NotImplemented();

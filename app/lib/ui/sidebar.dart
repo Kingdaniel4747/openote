@@ -586,6 +586,7 @@ class _GroupHeaderState extends State<_GroupHeader> {
   Widget build(BuildContext context) {
     final collapsed = app.collapsedGroups.contains(group.id);
     final scheme = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
     // Drop a section ONTO a group → move it into the group (ORG-1).
     return DragTarget<String>(
       onWillAcceptWithDetails: (d) =>
@@ -634,8 +635,8 @@ class _GroupHeaderState extends State<_GroupHeader> {
                 Icon(collapsed ? Icons.chevron_right : Icons.expand_more,
                     size: 16, color: context.surfaces.textSecondary),
                 const SizedBox(width: 4),
-                const Icon(Icons.topic_outlined,
-                    size: 16, color: OnoteColors.graphite500),
+                Icon(Icons.topic_outlined,
+                    size: 16, color: _sectionColor(group.color, dark)),
                 const SizedBox(width: 6),
                 Expanded(
                   child: _renaming
@@ -1901,6 +1902,7 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
     {required bool canIndent, required Offset position}) async {
   final isPage = node.kind == NodeKind.page;
   final isSection = node.kind == NodeKind.section;
+  final isGroup = node.kind == NodeKind.sectionGroup;
   final overlay = Overlay.of(context).context.findRenderObject() as RenderBox?;
   final action = await showMenu<String>(
     context: context,
@@ -1911,9 +1913,10 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       position.dy,
     ),
     items: [
+      _nodeItem('rename', Icons.edit_outlined, 'Rename'),
       _nodeItem('up', Icons.keyboard_arrow_up, 'Move up'),
       _nodeItem('down', Icons.keyboard_arrow_down, 'Move down'),
-      if (isSection) ...[
+      if (isSection || isGroup) ...[
         const PopupMenuDivider(),
         // The colour chip is the obvious thing to right-click, so this is
         // where people look for it — a row of swatches rather than a submenu,
@@ -1924,6 +1927,8 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
           child: _SectionColorRow(app: app, section: node),
         ),
         const PopupMenuDivider(),
+      ],
+      if (isSection) ...[
         // The one-click add lived on every section row until the two-column
         // layout tightened those rows; the pages pane's [+] covers the ACTIVE
         // section, and this covers the rest.
@@ -1989,6 +1994,12 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
   );
   if (!context.mounted) return;
   switch (action) {
+    case 'rename':
+      final title = await promptForText(context,
+          title: 'Rename', okLabel: 'Save', hintText: node.title);
+      if (title != null && title.trim().isNotEmpty) {
+        app.renameNode(node.id, title.trim());
+      }
     case 'protect':
       final set = await askNewPasscode(context, node.title);
       if (set == null) return;

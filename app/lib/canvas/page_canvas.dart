@@ -1773,9 +1773,9 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 }
 
-/// Screen-space ruler. Its transparent body never captures the pen; only the
-/// central grip accepts touch/mouse gestures, so writing can continue directly
-/// along either visible edge.
+/// Screen-space ruler. The full ruler responds to fingers: one finger moves
+/// it, two fingers change its length. Stylus events deliberately pass through
+/// it so a line can be drawn against either edge.
 class _RulerOverlay extends StatefulWidget {
   const _RulerOverlay({
     required this.center,
@@ -1804,47 +1804,34 @@ class _RulerOverlayState extends State<_RulerOverlay> {
       Positioned(
         left: widget.center.dx - widget.length / 2,
         top: widget.center.dy - 24,
-        child: IgnorePointer(
-          child: Transform.rotate(
-            angle: widget.angle,
-            alignment: Alignment.center,
+        child: Transform.rotate(
+          angle: widget.angle,
+          alignment: Alignment.center,
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            supportedDevices: const {
+              PointerDeviceKind.mouse,
+              PointerDeviceKind.touch,
+            },
+            onScaleStart: (_) {
+              _startCenter = widget.center;
+              _startAngle = widget.angle;
+              _startLength = widget.length;
+            },
+            onScaleUpdate: (details) {
+              widget.onChanged(
+                _startCenter + details.focalPointDelta,
+                // Rotation stays available to two fingers, while a one-finger
+                // drag has a zero rotation and simply moves the rule.
+                _startAngle + details.rotation,
+                (_startLength * details.scale).clamp(180.0, 900.0),
+              );
+            },
             child: CustomPaint(
               size: Size(widget.length, 48),
               painter: _RulerPainter(
                 color: Theme.of(context).colorScheme.primary,
               ),
-            ),
-          ),
-        ),
-      ),
-      Positioned(
-        left: widget.center.dx - 22,
-        top: widget.center.dy - 22,
-        child: GestureDetector(
-          supportedDevices: const {
-            PointerDeviceKind.mouse,
-            PointerDeviceKind.touch,
-          },
-          onScaleStart: (_) {
-            _startCenter = widget.center;
-            _startAngle = widget.angle;
-            _startLength = widget.length;
-          },
-          onScaleUpdate: (details) {
-            widget.onChanged(
-              _startCenter + details.focalPointDelta,
-              _startAngle + details.rotation,
-              (_startLength * details.scale).clamp(180.0, 900.0),
-            );
-          },
-          child: Material(
-            color: Theme.of(context).colorScheme.primary,
-            shape: const CircleBorder(),
-            elevation: 3,
-            child: const SizedBox(
-              width: 44,
-              height: 44,
-              child: Icon(Icons.open_with, size: 19, color: Colors.white),
             ),
           ),
         ),
@@ -1881,6 +1868,8 @@ class _RulerPainter extends CustomPainter {
       canvas.drawLine(
           Offset(x, size.height - 2), Offset(x, size.height - 2 - h), ticks);
     }
+    final grip = Paint()..color = color.withValues(alpha: .85);
+    canvas.drawCircle(Offset(size.width / 2, size.height / 2), 8, grip);
   }
 
   @override

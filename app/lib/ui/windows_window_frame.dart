@@ -35,6 +35,20 @@ class WindowsWindowController extends ChangeNotifier {
     }
   }
 
+  /// Request Windows' own tablet keyboard after a touch opens editable text.
+  /// A physical keyboard keeps working normally; this is only requested by
+  /// touch-originated edits, so mouse editing never makes a keyboard appear.
+  static Future<void> showTouchKeyboard() async {
+    if (!Platform.isWindows) return;
+    try {
+      await channel.invokeMethod<void>('showTouchKeyboard');
+    } on MissingPluginException {
+      // Older Windows runners still leave Flutter's normal text input usable.
+    } on PlatformException {
+      // The system keyboard is optional; a failure must not block editing.
+    }
+  }
+
   Future<void> configureChrome(Color color) async {
     if (!enabled || _disposed) return;
     try {

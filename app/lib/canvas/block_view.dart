@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,6 +19,7 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../ui/color_picker.dart';
 import '../ui/context_menus.dart';
+import '../ui/windows_window_frame.dart';
 import 'canvas_controller.dart';
 import 'portal_view.dart';
 
@@ -91,6 +94,7 @@ class _BlockViewState extends State<BlockView> {
   /// gesture recognizer so it never has to win an arena against the field's
   /// own selection gestures.
   Offset? _pressGlobal;
+  PointerDeviceKind? _pressKind;
   int? _selectBase;
   bool _textDragging = false;
 
@@ -157,6 +161,11 @@ class _BlockViewState extends State<BlockView> {
         app.pendingEmptyBlockId = b.id;
       }
       app.select(b.id, edit: true); // tap-to-edit (F-4)
+      if (_pressKind == PointerDeviceKind.touch) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          unawaited(WindowsWindowController.showTouchKeyboard());
+        });
+      }
     } else {
       app.select(b.id);
     }
@@ -202,6 +211,7 @@ class _BlockViewState extends State<BlockView> {
     }
     app.claimedPointers.add(e.pointer);
     _pressGlobal = e.position;
+    _pressKind = e.kind;
     _pressOnChrome = _isChromeAt(e.position);
     _selectBase = null;
     _textDragging = false;
@@ -350,9 +360,9 @@ class _BlockViewState extends State<BlockView> {
         },
         // Moving is allowed WHILE editing — OneNote lets you drag a container
         // by its bar with the caret still in it.
-        onPanStart: _dragStart,
-        onPanUpdate: _drag,
-        onPanEnd: _dragEnd,
+        onPanStart: _locked ? null : _dragStart,
+        onPanUpdate: _locked ? null : _drag,
+        onPanEnd: _locked ? null : _dragEnd,
         onTap: () => app.select(b.id,
             additive: HardwareKeyboard.instance.isShiftPressed),
         // Block actions stay reachable while editing, which they were not
@@ -439,6 +449,11 @@ class _BlockViewState extends State<BlockView> {
   bool get _locked => b.content['locked'] == true;
   bool get _isPdf => b.content['pdf'] is String;
 
+  /// Pictures and PDF pages are documents, not freeform rectangles. Their
+  /// resize handles therefore scale both dimensions together. Tables, boards
+  /// and file cards deliberately keep independent dimensions.
+  bool get _scalesProportionally => _isPdf || b.type == BlockType.image;
+
   /// Height is only draggable for blocks that own one. A text block's height
   /// comes from its text, so a height handle there would fight the content.
   bool get _canResizeHeight =>
@@ -468,17 +483,30 @@ class _BlockViewState extends State<BlockView> {
     final scale = widget.controller.scale;
     final oldW = b.w;
     final oldH = b.h ?? app.renderSizes[b.id]?.height;
-    if (_isPdf) {
-      // A PDF page is a sheet of paper, never a freeform rectangle. Every
-      // edge and corner scales its two dimensions together, preserving the
-      // source page's proportions exactly.
-      final sourceH = oldH ?? oldW * 1.414;
-      final requested =
-          width ? oldW + d.delta.dx / scale : sourceH + d.delta.dy / scale;
-      final factor = (requested / (width ? oldW : sourceH)).clamp(.1, 8.0);
+    if (_scalesProportionally) {
+      // A PDF or image is a document/picture, never a freeform rectangle.
+      // Every handle scales it as one unit. For a corner drag, use the axis
+      // that moved further in relative terms, so diagonal movement feels
+      // natural without distorting the source.
+      final naturalW = (b.content['naturalW'] as num?)?.toDouble();
+      final naturalH = (b.content['naturalH'] as num?)?.toDouble();
+      final sourceH = oldH ??
+          (naturalW != null && naturalW > 0 && naturalH != null && naturalH > 0
+              ? oldW * naturalH / naturalW
+              : oldW * 1.414);
+      final byWidth = (oldW + d.delta.dx / scale) / oldW;
+      final byHeight = (sourceH + d.delta.dy / scale) / sourceH;
+      final requestedFactor = width && height
+          ? (byWidth - 1).abs() >= (byHeight - 1).abs()
+              ? byWidth
+              : byHeight
+          : width
+              ? byWidth
+              : byHeight;
+      final factor = requestedFactor.clamp(.1, 8.0);
       b.w = (oldW * factor).clamp(80.0, 4000.0);
       b.h = (sourceH * factor).clamp(80.0, 6000.0);
-      app.markDirty();
+      app.updateBlock(b);
       setState(() {});
       return;
     }
@@ -618,11 +646,8 @@ class _BlockViewState extends State<BlockView> {
     // both offer a bar at once even though the reserved strips overlap.
     // Suppressed entirely while _pendingEmpty — the box does not exist yet,
     // as far as the eye can tell, until the first character lands in it.
-    final showChrome = !inkToolActive &&
-        !_locked &&
-        !_isPdf &&
-        !_pendingEmpty &&
-        (_hover || selected || editing);
+    final showChrome =
+        !inkToolActive && !_pendingEmpty && (_hover || selected || editing);
 
     const devices = {
       // Trackpad two-finger scrolls arrive as PointerPanZoom events, which
@@ -713,7 +738,10 @@ class _BlockViewState extends State<BlockView> {
     // object menu, the touch equivalent of a right-click.
     final touchable = GestureDetector(
       supportedDevices: const {PointerDeviceKind.touch},
-      onTap: editing || _locked ? null : () => app.select(b.id),
+      // A touch tap has the same intent as a mouse click: text enters edit
+      // mode (and requests Windows' tablet keyboard), other objects select.
+      // Requiring a second tap left tablet-mode users unable to type.
+      onTap: editing || _locked ? null : _tap,
       onPanStart: editing || _locked || !selected
           ? null
           : (d) {
