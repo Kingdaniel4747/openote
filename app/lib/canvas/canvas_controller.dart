@@ -40,8 +40,9 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Apply a two-finger zoom. A visible upper or left page edge stays fixed;
-  /// elsewhere the focal point remains under the fingers.
+  /// Apply a two-finger zoom around the fingers. This uses the same focal-point
+  /// invariant as mouse-wheel zoom; the previous special top/left pinning made
+  /// every zoom-in push content down and every zoom-out pull it up.
   void transformPinchAt(
     Offset previousFocal,
     double factor,
@@ -49,13 +50,8 @@ class CanvasController extends ChangeNotifier {
   ) {
     final pageFocal = screenToPage(previousFocal);
     final newScale = (scale * factor).clamp(minScale, maxScale);
-    final proposed = currentFocal - pageFocal * newScale;
-    final pinLeftEdge = offset.dx >= -0.5;
-    final pinTopEdge = offset.dy >= -0.5;
     scale = newScale;
-    offset = proposed;
-    if (pinLeftEdge) offset = Offset(0, offset.dy);
-    if (pinTopEdge) offset = Offset(offset.dx, 0);
+    offset = currentFocal - pageFocal * newScale;
     clampToPage();
     notifyListeners();
   }

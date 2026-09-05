@@ -13,6 +13,21 @@ import 'package:openote/ui/app_shell.dart';
 import 'support/sqlite.dart';
 
 void main() {
+  List<Offset> roughPolygon(List<Offset> corners) {
+    final result = <Offset>[];
+    for (var edge = 0; edge < corners.length; edge++) {
+      final a = corners[edge], b = corners[(edge + 1) % corners.length];
+      final vector = b - a;
+      final normal = Offset(-vector.dy, vector.dx) / vector.distance;
+      for (var i = 0; i < 24; i++) {
+        final t = i / 24;
+        result
+            .add(Offset.lerp(a, b, t)! + normal * math.sin(i * 1.7 + edge) * 4);
+      }
+    }
+    return [...result, result.first];
+  }
+
   test('closed rectangles and triangles keep their vertices and size', () {
     final rectangle = sampleOutline(const [
       Offset(100, 100),
@@ -56,6 +71,21 @@ void main() {
             Offset(i * 3, 20 * math.sin(i * math.pi / 20))
         ]),
         isNull);
+  });
+  test('wobbly triangles and rectangles never fall through as circles', () {
+    final triangle = recogniseShape(roughPolygon(const [
+      Offset(250, 80),
+      Offset(430, 330),
+      Offset(80, 330),
+    ]));
+    final rectangle = recogniseShape(roughPolygon(const [
+      Offset(90, 100),
+      Offset(430, 115),
+      Offset(420, 330),
+      Offset(80, 315),
+    ]));
+    expect(triangle?.kind, 'triangle');
+    expect(rectangle?.kind, 'rectangle');
   });
   test('old two-point lines expose their middle to area erasing', () {
     final s = Stroke(

@@ -29,4 +29,20 @@ void main() {
     c2.fitWidth(1400);
     expect(c2.scale, 1.0);
   });
+
+  test('finger pinch preserves its focal point exactly like mouse zoom', () {
+    final touch = CanvasController()
+      ..viewport = const Size(900, 700)
+      ..pageSize = const Size(2400, 1800);
+    final mouse = CanvasController()
+      ..viewport = const Size(900, 700)
+      ..pageSize = const Size(2400, 1800);
+    const focal = Offset(360, 280);
+    final pageUnderFinger = touch.screenToPage(focal);
+    touch.transformPinchAt(focal, 1.35, focal);
+    mouse.zoomAt(focal, 1.35);
+    expect(touch.scale, mouse.scale);
+    expect(touch.offset, mouse.offset);
+    expect(touch.pageToScreen(pageUnderFinger), focal);
+  });
 }

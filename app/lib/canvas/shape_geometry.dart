@@ -34,6 +34,41 @@ List<Offset> _simplify(List<Offset> points, double tolerance) {
   return [...left.take(left.length - 1), ...right];
 }
 
+List<Offset> _reduceCorners(List<Offset> source, int count) {
+  final result = List<Offset>.from(source);
+  while (result.length > count) {
+    var least = double.infinity;
+    var removeAt = 0;
+    for (var i = 0; i < result.length; i++) {
+      final significance = distanceToSegment(
+          result[i],
+          result[(i + result.length - 1) % result.length],
+          result[(i + 1) % result.length]);
+      if (significance < least) {
+        least = significance;
+        removeAt = i;
+      }
+    }
+    result.removeAt(removeAt);
+  }
+  return result;
+}
+
+double _polygonError(List<Offset> points, List<Offset> corners) {
+  var total = 0.0;
+  for (final point in points) {
+    var nearest = double.infinity;
+    for (var i = 0; i < corners.length; i++) {
+      nearest = math.min(
+          nearest,
+          distanceToSegment(
+              point, corners[i], corners[(i + 1) % corners.length]));
+    }
+    total += nearest;
+  }
+  return total / points.length;
+}
+
 RecognisedShape? recogniseShape(List<Offset> raw) {
   if (raw.length < 3) return null;
   final points = <Offset>[raw.first];
@@ -88,38 +123,36 @@ RecognisedShape? recogniseShape(List<Offset> raw) {
       }
     }
   }
-  if (corners.length == 3) {
-    return RecognisedShape('triangle', [...corners, corners.first]);
-  }
-  if (corners.length == 4) {
+  // Fit polygons before considering a circle. A rough rectangle commonly
+  // simplifies to five or six points because one wobbly edge contributes a
+  // harmless extra vertex; the old exact-length check skipped it and the
+  // ellipse fallback then incorrectly accepted it as a circle.
+  if (corners.length >= 4) {
+    final quad = _reduceCorners(corners, 4);
     // Rectify a roughly rectangular polygon while retaining its rotation.
-    final axis = corners[1] - corners[0];
+    final axis = quad[1] - quad[0];
     if (axis.distance < 1) return null;
     final u = axis / axis.distance;
     final v = Offset(-u.dy, u.dx);
     double dot(Offset x, Offset y) => x.dx * y.dx + x.dy * y.dy;
-    final center = corners.reduce((x, y) => x + y) / 4;
-    final w = corners.map((p) => dot(p - center, u).abs()).reduce(math.max);
-    final h = corners.map((p) => dot(p - center, v).abs()).reduce(math.max);
+    final center = quad.reduce((x, y) => x + y) / 4;
+    final w = quad.map((p) => dot(p - center, u).abs()).reduce(math.max);
+    final h = quad.map((p) => dot(p - center, v).abs()).reduce(math.max);
     final rect = [
       center - u * w - v * h,
       center + u * w - v * h,
       center + u * w + v * h,
       center - u * w + v * h
     ];
-    var error = 0.0;
-    for (final p in points) {
-      var nearest = double.infinity;
-      for (var i = 0; i < 4; i++) {
-        nearest =
-            math.min(nearest, distanceToSegment(p, rect[i], rect[(i + 1) % 4]));
-      }
-      error += nearest;
-    }
-    if (error / points.length < diagonal * .05) {
+    if (_polygonError(points, rect) < diagonal * .055) {
       return RecognisedShape('rectangle', [...rect, rect.first]);
     }
-    return null;
+  }
+  if (corners.length >= 3) {
+    final triangle = _reduceCorners(corners, 3);
+    if (_polygonError(points, triangle) < diagonal * .055) {
+      return RecognisedShape('triangle', [...triangle, triangle.first]);
+    }
   }
   if (bounds.width < 12 || bounds.height < 12) return null;
   var error = 0.0;

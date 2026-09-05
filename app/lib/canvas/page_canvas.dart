@@ -122,7 +122,13 @@ class _PageCanvasState extends State<PageCanvas> {
   Offset? _rulerCenter;
   double _rulerAngle = 0;
   double _rulerLength = 360;
-  final Set<int> _rulerPointers = {};
+  final Map<int, Offset> _rulerPointers = {};
+  Offset _rulerStartCenter = Offset.zero;
+  Offset _rulerStartFocal = Offset.zero;
+  double _rulerStartAngle = 0;
+  double _rulerStartLength = 360;
+  double _rulerStartSpan = 1;
+  double _rulerStartTouchAngle = 0;
 
   /// A block may own a single touch for direct object movement. We still
   /// record that contact here, passively, so a second finger can always turn
@@ -246,6 +252,7 @@ class _PageCanvasState extends State<PageCanvas> {
   // ── Ink capture (page-space, Ink Data Spec §1) ──────────────────────────
 
   void _inkDown(PointerDownEvent e) {
+    if (_beginRulerPointer(e)) return;
     if (e.kind == PointerDeviceKind.stylus ||
         e.kind == PointerDeviceKind.invertedStylus) {
       _showPenButtonTool(_windowsPen.erasesAtContact(e));
@@ -321,7 +328,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _inkMove(PointerMoveEvent e) {
-    if (_rulerPointers.contains(e.pointer)) return;
+    if (_updateRulerPointer(e)) return;
     if (_windowsPen.enabled) {
       if (_windowsInkPointer != e.pointer) return;
       _pendingErase = _windowsPen.erases(e);
@@ -512,7 +519,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _inkUp(PointerUpEvent e) {
-    if (_rulerPointers.remove(e.pointer)) return;
+    if (_endRulerPointer(e)) return;
     if (_windowsPen.enabled ||
         e.kind == PointerDeviceKind.stylus ||
         e.kind == PointerDeviceKind.invertedStylus) {
@@ -676,6 +683,7 @@ class _PageCanvasState extends State<PageCanvas> {
   // ── Lasso-select ink (INK-7) ────────────────────────────────────────────
 
   void _lassoDown(PointerDownEvent e) {
+    if (_beginRulerPointer(e)) return;
     if (_windowsPen.erases(e)) {
       _inkDown(e);
       return;
@@ -688,7 +696,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _lassoMove(PointerMoveEvent e) {
-    if (_rulerPointers.contains(e.pointer)) return;
+    if (_updateRulerPointer(e)) return;
     if (_windowsInkPointer == e.pointer) {
       _inkMove(e);
       return;
@@ -699,7 +707,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _lassoUp(PointerUpEvent e) {
-    if (_rulerPointers.remove(e.pointer)) return;
+    if (_endRulerPointer(e)) return;
     if (_windowsInkPointer == e.pointer) {
       _inkUp(e);
       return;
@@ -828,16 +836,7 @@ class _PageCanvasState extends State<PageCanvas> {
 
   void _touchDown(PointerDownEvent e) {
     _inertia?.cancel();
-    // Pointer-down reaches this parent before the ruler's child listener can
-    // claim it. Intercept the ruler geometry here so its two fingers never
-    // enter the page's pan/zoom state machine as well.
-    if (e.kind == PointerDeviceKind.touch &&
-        app.rulerVisible &&
-        _screenHitsRuler(e.localPosition)) {
-      _rulerPointers.add(e.pointer);
-      app.claimedPointers.add(e.pointer);
-      return;
-    }
+    if (_beginRulerPointer(e)) return;
     _touches[e.pointer] = e.localPosition;
     _lastScreen = e.localPosition;
     _touchVelocity = Offset.zero;
@@ -856,6 +855,66 @@ class _PageCanvasState extends State<PageCanvas> {
     final local = Offset(
         relative.dx * c - relative.dy * s, relative.dx * s + relative.dy * c);
     return local.dx.abs() <= _rulerLength / 2 + 10 && local.dy.abs() <= 34;
+  }
+
+  bool _beginRulerPointer(PointerDownEvent e) {
+    if (!app.rulerVisible ||
+        (e.kind != PointerDeviceKind.touch &&
+            e.kind != PointerDeviceKind.mouse) ||
+        !_screenHitsRuler(e.localPosition)) {
+      return false;
+    }
+    _inertia?.cancel();
+    _rulerPointers[e.pointer] = e.localPosition;
+    _resetRulerGestureBaseline();
+    return true;
+  }
+
+  void _resetRulerGestureBaseline() {
+    if (_rulerPointers.isEmpty) return;
+    final points = _rulerPointers.values.toList(growable: false);
+    _rulerStartCenter = _rulerCenterForViewport();
+    _rulerStartFocal =
+        points.length == 1 ? points.first : (points[0] + points[1]) / 2;
+    _rulerStartAngle = _rulerAngle;
+    _rulerStartLength = _rulerLength;
+    if (points.length >= 2) {
+      final vector = points[1] - points[0];
+      _rulerStartSpan = math.max(1, vector.distance);
+      _rulerStartTouchAngle = math.atan2(vector.dy, vector.dx);
+    } else {
+      _rulerStartSpan = 1;
+      _rulerStartTouchAngle = 0;
+    }
+  }
+
+  bool _updateRulerPointer(PointerMoveEvent e) {
+    if (!_rulerPointers.containsKey(e.pointer)) return false;
+    _rulerPointers[e.pointer] = e.localPosition;
+    final points = _rulerPointers.values.toList(growable: false);
+    final focal =
+        points.length == 1 ? points.first : (points[0] + points[1]) / 2;
+    var angle = _rulerStartAngle;
+    var length = _rulerStartLength;
+    if (points.length >= 2) {
+      final vector = points[1] - points[0];
+      angle += math.atan2(vector.dy, vector.dx) - _rulerStartTouchAngle;
+      length = (_rulerStartLength * vector.distance / _rulerStartSpan)
+          .clamp(180.0, 900.0);
+    }
+    setState(() {
+      _rulerCenter = _rulerStartCenter + (focal - _rulerStartFocal);
+      _rulerAngle = angle;
+      _rulerLength = length;
+    });
+    return true;
+  }
+
+  bool _endRulerPointer(PointerEvent e) {
+    if (_rulerPointers.remove(e.pointer) == null) return false;
+    app.claimedPointers.remove(e.pointer);
+    _resetRulerGestureBaseline();
+    return true;
   }
 
   void _touchMove(PointerMoveEvent e) {
@@ -944,14 +1003,8 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _selectDown(PointerDownEvent e) {
-    if (e.kind == PointerDeviceKind.touch &&
-        app.rulerVisible &&
-        _screenHitsRuler(e.localPosition)) {
-      _rulerPointers.add(e.pointer);
-      app.claimedPointers.add(e.pointer);
-      return;
-    }
-    if (_rulerPointers.contains(e.pointer)) {
+    if (_beginRulerPointer(e)) return;
+    if (_rulerPointers.containsKey(e.pointer)) {
       app.claimedPointers.remove(e.pointer);
       return;
     }
@@ -1017,7 +1070,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _selectMove(PointerMoveEvent e) {
-    if (_rulerPointers.contains(e.pointer)) return;
+    if (_updateRulerPointer(e)) return;
     if (_windowsInkPointer == e.pointer) {
       _inkMove(e);
       return;
@@ -1070,7 +1123,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _selectUp(PointerUpEvent e) {
-    if (_rulerPointers.remove(e.pointer)) return;
+    if (_endRulerPointer(e)) return;
     if (_windowsInkPointer == e.pointer) {
       _inkUp(e);
       return;
@@ -1499,18 +1552,6 @@ class _PageCanvasState extends State<PageCanvas> {
                         center: _rulerCenterForViewport(),
                         angle: _rulerAngle,
                         length: _rulerLength,
-                        onPointerDown: (e) {
-                          if (e.kind != PointerDeviceKind.touch &&
-                              e.kind != PointerDeviceKind.mouse) return;
-                          _inertia?.cancel();
-                          _rulerPointers.add(e.pointer);
-                          app.claimedPointers.add(e.pointer);
-                        },
-                        onChanged: (center, angle, length) => setState(() {
-                          _rulerCenter = center;
-                          _rulerAngle = angle;
-                          _rulerLength = length;
-                        }),
                       ),
                     ),
                   // A real scroll bar for the page — "there is also no scroll
@@ -1578,7 +1619,7 @@ class _PageCanvasState extends State<PageCanvas> {
           }
         },
         onPointerCancel: (e) {
-          if (_rulerPointers.remove(e.pointer)) return;
+          if (_endRulerPointer(e)) return;
           if (_lassoMovePointer == e.pointer) {
             _finishLassoFingerMove(e);
             return;
@@ -1630,7 +1671,7 @@ class _PageCanvasState extends State<PageCanvas> {
           }
         },
         onPointerCancel: (e) {
-          if (_rulerPointers.remove(e.pointer)) return;
+          if (_endRulerPointer(e)) return;
           _touches.remove(e.pointer);
           if (_windowsPen.enabled && _windowsInkPointer != e.pointer) return;
           _gestureErase = false;
@@ -1668,7 +1709,7 @@ class _PageCanvasState extends State<PageCanvas> {
             onPointerMove: _selectMove,
             onPointerUp: _selectUp,
             onPointerCancel: (e) {
-              if (_rulerPointers.remove(e.pointer)) return;
+              if (_endRulerPointer(e)) return;
               _mode = _DragMode.none;
               _touches.clear();
               _blockOwnedTouches.clear();
@@ -1836,78 +1877,41 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 }
 
-/// Screen-space ruler. The full ruler responds to fingers: one finger moves
-/// it, two fingers change its length. Stylus events deliberately pass through
-/// it so a line can be drawn against either edge.
-class _RulerOverlay extends StatefulWidget {
+/// Screen-space ruler. Gesture ownership lives in PageCanvas's single pointer
+/// router; this widget only paints. That prevents a nested recognizer and the
+/// canvas from both transforming something from the same two fingers.
+class _RulerOverlay extends StatelessWidget {
   const _RulerOverlay({
     required this.center,
     required this.angle,
     required this.length,
-    required this.onChanged,
-    required this.onPointerDown,
   });
 
   final Offset center;
   final double angle;
   final double length;
-  final void Function(Offset center, double angle, double length) onChanged;
-  final void Function(PointerDownEvent event) onPointerDown;
-
-  @override
-  State<_RulerOverlay> createState() => _RulerOverlayState();
-}
-
-class _RulerOverlayState extends State<_RulerOverlay> {
-  Offset _startCenter = Offset.zero;
-  Offset _startFocal = Offset.zero;
-  double _startAngle = 0;
-  double _startLength = 0;
 
   @override
   Widget build(BuildContext context) {
-    return Stack(children: [
-      Positioned(
-        left: widget.center.dx - widget.length / 2,
-        top: widget.center.dy - 24,
-        child: Transform.rotate(
-          angle: widget.angle,
-          alignment: Alignment.center,
-          child: Listener(
-            onPointerDown: widget.onPointerDown,
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              supportedDevices: const {
-                PointerDeviceKind.mouse,
-                PointerDeviceKind.touch,
-              },
-              onScaleStart: (details) {
-                _startCenter = widget.center;
-                _startFocal = details.focalPoint;
-                _startAngle = widget.angle;
-                _startLength = widget.length;
-              },
-              onScaleUpdate: (details) {
-                widget.onChanged(
-                  _startCenter + (details.focalPoint - _startFocal),
-                  // Rotation stays available to two fingers, while a one-finger
-                  // drag has a zero rotation and simply moves the rule.
-                  _startAngle + details.rotation,
-                  (_startLength * details.scale).clamp(180.0, 900.0),
-                );
-              },
-              child: CustomPaint(
-                key: const ValueKey('ruler-body'),
-                size: Size(widget.length, 48),
-                painter: _RulerPainter(
-                  color: Theme.of(context).colorScheme.primary,
-                ),
+    return IgnorePointer(
+      child: Stack(children: [
+        Positioned(
+          left: center.dx - length / 2,
+          top: center.dy - 24,
+          child: Transform.rotate(
+            angle: angle,
+            alignment: Alignment.center,
+            child: CustomPaint(
+              key: const ValueKey('ruler-body'),
+              size: Size(length, 48),
+              painter: _RulerPainter(
+                color: Theme.of(context).colorScheme.primary,
               ),
             ),
           ),
         ),
-      ),
-    ]);
+      ]),
+    );
   }
 }
 

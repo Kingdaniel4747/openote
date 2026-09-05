@@ -59,11 +59,21 @@ class InkPainter extends CustomPainter {
         (s.colorHex.toUpperCase() == '#211F1B' && !onFixedBackdrop);
     final base = automatic ? autoColor : colorFromHex(s.colorHex);
     if (s.tool == 'ballpoint') {
-      // Exact geometry for rulers and recognised shapes: pressure smoothing
-      // used to round corners and pull the line back from the pen tip.
+      // Smooth the centre line itself, not its thickness. Midpoint quadratic
+      // segments remove the tiny polygon corners visible at high zoom while
+      // retaining the exact first/last point and constant width. Recognised
+      // geometry is densely sampled, so its intended corners are only rounded
+      // by at most one sample rather than pulled away from the pen tip.
       final path = Path()..moveTo(s.x.first, s.y.first);
-      for (var i = 1; i < s.x.length; i++) {
-        path.lineTo(s.x[i], s.y[i]);
+      if (s.x.length == 2) {
+        path.lineTo(s.x.last, s.y.last);
+      } else {
+        for (var i = 1; i < s.x.length - 1; i++) {
+          final next = Offset(s.x[i + 1], s.y[i + 1]);
+          final middle = (Offset(s.x[i], s.y[i]) + next) / 2;
+          path.quadraticBezierTo(s.x[i], s.y[i], middle.dx, middle.dy);
+        }
+        path.lineTo(s.x.last, s.y.last);
       }
       canvas.drawPath(
           path,
@@ -123,9 +133,18 @@ class InkPainter extends CustomPainter {
     // Use dx/dy: getStroke's outline points are Offsets in some
     // perfect_freehand versions and PointVectors (an Offset subclass) in
     // others — dx/dy is the API that exists in both.
-    final path = Path()..moveTo(outline.first.dx, outline.first.dy);
-    for (final pt in outline.skip(1)) {
-      path.lineTo(pt.dx, pt.dy);
+    // The freehand solver returns a closed outline. Drawing straight chords
+    // between those samples exposes small facets on a thick pen/highlighter;
+    // a cyclic midpoint curve keeps the outside edge continuously round.
+    final last = outline.last;
+    final first = outline.first;
+    final start = Offset((last.dx + first.dx) / 2, (last.dy + first.dy) / 2);
+    final path = Path()..moveTo(start.dx, start.dy);
+    for (var i = 0; i < outline.length; i++) {
+      final point = outline[i];
+      final next = outline[(i + 1) % outline.length];
+      final middle = Offset((point.dx + next.dx) / 2, (point.dy + next.dy) / 2);
+      path.quadraticBezierTo(point.dx, point.dy, middle.dx, middle.dy);
     }
     return path..close();
   }
