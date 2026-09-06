@@ -253,7 +253,10 @@ void main() {
     testWidgets('a lasso-selected block follows one finger, not the canvas',
         (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-      app.snapToGrid = false;
+      // Ink remains freehand even when object snapping is enabled. The object
+      // grid must not flash behind a lasso move, and release must not quantise
+      // handwriting to a cell.
+      app.snapToGrid = true;
       app.setTool(Tool.lasso);
       await t.pumpWidget(MaterialApp(
           home: Scaffold(
@@ -285,14 +288,59 @@ void main() {
       app.select(selected.id);
       await t.pump();
       final canvasBefore = app.canvas.offset;
+      final inkBefore = Offset(selected.x, selected.y);
+      final pageDelta = const Offset(80, 30) / app.canvas.scale;
       final finger = await t.startGesture(start, kind: PointerDeviceKind.touch);
       await finger.moveBy(const Offset(80, 30));
       await t.pump();
+      expect(app.draggingBlock, isTrue);
+      expect(
+          find.byWidgetPredicate((widget) =>
+              widget is CustomPaint &&
+              widget.painter.runtimeType.toString() == '_DragGridPainter'),
+          findsNothing);
       await finger.up();
       await t.pump();
-      expect(selected.x, closeTo(page.dx + 40, .1));
-      expect(selected.y, closeTo(page.dy + 10, .1));
+      expect(selected.x, closeTo(inkBefore.dx + pageDelta.dx, .1));
+      expect(selected.y, closeTo(inkBefore.dy + pageDelta.dy, .1));
       expect(app.canvas.offset, canvasBefore);
+      app.cancelPendingSave();
+      expect(t.takeException(), isNull);
+      await t.pumpWidget(const SizedBox());
+    });
+    testWidgets('holding a table moves it and uses object snapping', (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      app.snapToGrid = true;
+      app.setTool(Tool.select);
+      final table = app.addBlock(
+          Block(type: BlockType.table, x: 180, y: 220, w: 320, content: {
+        'cells': [
+          ['Move me', 'Value'],
+          ['A', '1'],
+        ]
+      }));
+      await t.pumpWidget(MaterialApp(
+          home: Scaffold(
+              body: ListenableBuilder(
+                  listenable: app,
+                  builder: (_, __) => PageCanvas(state: app)))));
+      await t.pump();
+      await t.pump();
+      final cell = find.text('Move me');
+      expect(cell, findsOneWidget);
+
+      final finger = await t.startGesture(t.getCenter(cell),
+          kind: PointerDeviceKind.touch);
+      await t.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+      await finger.moveBy(const Offset(70, 45));
+      await t.pump();
+      expect(app.draggingBlock, isTrue);
+      expect(table.x, greaterThan(180));
+      await finger.up();
+      await t.pump();
+      expect(app.draggingBlock, isFalse);
+      expect(table.x % app.gridSize, closeTo(0, .01));
+      expect(table.y % app.gridSize, closeTo(0, .01));
       app.cancelPendingSave();
       expect(t.takeException(), isNull);
       await t.pumpWidget(const SizedBox());

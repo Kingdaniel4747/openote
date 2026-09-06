@@ -85,6 +85,8 @@ class _BlockViewState extends State<BlockView> {
   bool _dragUndoPushed = false;
   bool _resizeUndoPushed = false;
   Offset? _touchMoveLast;
+  Offset? _holdMoveLastGlobal;
+  bool _holdMovesTable = false;
 
   /// Whether the in-progress body drag is allowed to move the block. Editable
   /// blocks say no unless Alt is held — see [_bodyDragStart].
@@ -223,7 +225,7 @@ class _BlockViewState extends State<BlockView> {
 
   void _pointerMove(PointerMoveEvent e) {
     final from = _pressGlobal;
-    if (from == null || !_editableType || _locked) return;
+    if (from == null || !_editableType || _locked || _holdMovesTable) return;
     // A drag that began on the bar or a handle is a move or a resize. It must
     // never open the editor: the box keeps whatever edit state it already had.
     if (_pressOnChrome) return;
@@ -338,6 +340,36 @@ class _BlockViewState extends State<BlockView> {
   void _bodyDragEnd(DragEndDetails d) {
     if (_bodyDragMoves) _dragEnd(d);
     _bodyDragMoves = false;
+  }
+
+  void _tableHoldStart(LongPressStartDetails d) {
+    if (b.type != BlockType.table || _locked) return;
+    _holdMovesTable = true;
+    _textDragging = false;
+    _selectBase = null;
+    if (!selected || editing) app.select(b.id);
+    app.pushUndo();
+    app.setDragging(true);
+    _holdMoveLastGlobal = d.globalPosition;
+  }
+
+  void _tableHoldMove(LongPressMoveUpdateDetails d) {
+    if (!_holdMovesTable || app.touchCanvasGesture) return;
+    final last = _holdMoveLastGlobal;
+    if (last == null) return;
+    final delta = (d.globalPosition - last) / widget.controller.scale;
+    _holdMoveLastGlobal = d.globalPosition;
+    app.moveSelectedBy(delta.dx, delta.dy);
+    app.updateAlignGuides(widget.controller.scale);
+  }
+
+  void _tableHoldEnd(LongPressEndDetails d) {
+    if (!_holdMovesTable) return;
+    _holdMovesTable = false;
+    _holdMoveLastGlobal = null;
+    app.applyAlignSnap();
+    app.settleSelected();
+    app.setDragging(false);
   }
 
   /// The strip above the block: the only place a drag moves the container.
@@ -636,6 +668,12 @@ class _BlockViewState extends State<BlockView> {
         onPanStart: editing || _locked ? null : _bodyDragStart,
         onPanUpdate: editing || _locked ? null : _bodyDrag,
         onPanEnd: editing || _locked ? null : _bodyDragEnd,
+        onLongPressStart:
+            b.type == BlockType.table && !_locked ? _tableHoldStart : null,
+        onLongPressMoveUpdate:
+            b.type == BlockType.table && !_locked ? _tableHoldMove : null,
+        onLongPressEnd:
+            b.type == BlockType.table && !_locked ? _tableHoldEnd : null,
         child: Container(
           width: displayW,
           height: b.h,
@@ -723,9 +761,13 @@ class _BlockViewState extends State<BlockView> {
         app.settleSelected();
         app.setDragging(false);
       },
-      onLongPressStart: editing || _locked
+      onLongPressStart: (editing && b.type != BlockType.table) || _locked
           ? null
           : (d) {
+              if (b.type == BlockType.table) {
+                _tableHoldStart(d);
+                return;
+              }
               if (selected) {
                 showBlockMenu(context, app, b, d.globalPosition);
                 return;
@@ -735,9 +777,13 @@ class _BlockViewState extends State<BlockView> {
               app.setDragging(true);
               _touchMoveLast = d.localPosition;
             },
-      onLongPressMoveUpdate: editing || _locked
+      onLongPressMoveUpdate: (editing && b.type != BlockType.table) || _locked
           ? null
           : (d) {
+              if (b.type == BlockType.table) {
+                _tableHoldMove(d);
+                return;
+              }
               if (app.touchCanvasGesture) return;
               final last = _touchMoveLast;
               if (last == null) return;
@@ -746,7 +792,11 @@ class _BlockViewState extends State<BlockView> {
               app.moveSelectedBy(delta.dx / widget.controller.scale,
                   delta.dy / widget.controller.scale);
             },
-      onLongPressEnd: (_) {
+      onLongPressEnd: (details) {
+        if (b.type == BlockType.table) {
+          _tableHoldEnd(details);
+          return;
+        }
         if (app.touchCanvasGesture) {
           _touchMoveLast = null;
           app.setDragging(false);

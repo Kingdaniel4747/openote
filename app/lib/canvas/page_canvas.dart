@@ -736,6 +736,12 @@ class _PageCanvasState extends State<PageCanvas> {
     app.setDragging(true);
   }
 
+  bool get _selectionIsOnlyInk {
+    final selected = app.blocks.where((b) => app.selectedIds.contains(b.id));
+    return selected.isNotEmpty &&
+        selected.every((b) => b.type == BlockType.ink);
+  }
+
   void _moveLassoFingerSelection(PointerMoveEvent e) {
     if (_lassoMovePointer != e.pointer) return;
     final delta = e.localPosition - _lassoMoveLast;
@@ -858,14 +864,25 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   bool _beginRulerPointer(PointerDownEvent e) {
-    if (!app.rulerVisible ||
-        (e.kind != PointerDeviceKind.touch &&
-            e.kind != PointerDeviceKind.mouse) ||
-        !_screenHitsRuler(e.localPosition)) {
+    final supported =
+        e.kind == PointerDeviceKind.touch || e.kind == PointerDeviceKind.mouse;
+    if (!app.rulerVisible || !supported) {
+      return false;
+    }
+    // The first contact must land on the ruler. Once it owns a gesture, every
+    // additional contact belongs to that SAME gesture. Re-hit-testing the
+    // second finger against the narrow, already moving/rotating ruler let a
+    // near-edge contact fall through to the canvas pinch recognizer, so the
+    // ruler and page zoomed at the same time.
+    if (_rulerPointers.isEmpty && !_screenHitsRuler(e.localPosition)) {
       return false;
     }
     _inertia?.cancel();
+    app.claimedPointers.remove(e.pointer);
+    _touches.remove(e.pointer);
+    _blockOwnedTouches.remove(e.pointer);
     _rulerPointers[e.pointer] = e.localPosition;
+    if (e.kind == PointerDeviceKind.touch) app.touchCanvasGesture = true;
     _resetRulerGestureBaseline();
     return true;
   }
@@ -913,6 +930,9 @@ class _PageCanvasState extends State<PageCanvas> {
   bool _endRulerPointer(PointerEvent e) {
     if (_rulerPointers.remove(e.pointer) == null) return false;
     app.claimedPointers.remove(e.pointer);
+    if (_rulerPointers.isEmpty && _touches.isEmpty) {
+      app.touchCanvasGesture = false;
+    }
     _resetRulerGestureBaseline();
     return true;
   }
@@ -1503,7 +1523,9 @@ class _PageCanvasState extends State<PageCanvas> {
                   // the block out of the grid, and the grid must stop being
                   // drawn at the same moment or the overlay is telling the user
                   // something that is no longer true.
-                  if (app.draggingBlock && app.effectiveSnap)
+                  if (app.draggingBlock &&
+                      app.effectiveSnap &&
+                      !_selectionIsOnlyInk)
                     Positioned.fill(
                       child: IgnorePointer(
                         child: CustomPaint(
@@ -1582,6 +1604,10 @@ class _PageCanvasState extends State<PageCanvas> {
       canvas = Listener(
         behavior: HitTestBehavior.opaque,
         onPointerDown: (e) {
+          // The ruler is the topmost canvas instrument even though its painter
+          // intentionally ignores hit testing. Give it first refusal before a
+          // block or scroll bar claim can discard this pointer.
+          if (_beginRulerPointer(e)) return;
           // The scroll bar claims its pointers; a lasso must not start
           // under it.
           if (app.claimedPointers.remove(e.pointer)) return;
@@ -1639,6 +1665,7 @@ class _PageCanvasState extends State<PageCanvas> {
       canvas = Listener(
         behavior: HitTestBehavior.opaque,
         onPointerDown: (e) {
+          if (_beginRulerPointer(e)) return;
           // The scroll bar claims its pointers; the pen must not draw a
           // stroke behind it.
           if (app.claimedPointers.remove(e.pointer)) return;
