@@ -58,33 +58,6 @@ class InkPainter extends CustomPainter {
     final automatic = s.colorHex == 'auto' ||
         (s.colorHex.toUpperCase() == '#211F1B' && !onFixedBackdrop);
     final base = automatic ? autoColor : colorFromHex(s.colorHex);
-    if (s.tool == 'ballpoint') {
-      // Smooth the centre line itself, not its thickness. Midpoint quadratic
-      // segments remove the tiny polygon corners visible at high zoom while
-      // retaining the exact first/last point and constant width. Recognised
-      // geometry is densely sampled, so its intended corners are only rounded
-      // by at most one sample rather than pulled away from the pen tip.
-      final path = Path()..moveTo(s.x.first, s.y.first);
-      if (s.x.length == 2) {
-        path.lineTo(s.x.last, s.y.last);
-      } else {
-        for (var i = 1; i < s.x.length - 1; i++) {
-          final next = Offset(s.x[i + 1], s.y[i + 1]);
-          final middle = (Offset(s.x[i], s.y[i]) + next) / 2;
-          path.quadraticBezierTo(s.x[i], s.y[i], middle.dx, middle.dy);
-        }
-        path.lineTo(s.x.last, s.y.last);
-      }
-      canvas.drawPath(
-          path,
-          Paint()
-            ..color = base.withValues(alpha: s.opacity)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = s.size
-            ..strokeCap = StrokeCap.round
-            ..strokeJoin = StrokeJoin.round);
-      return;
-    }
     Path? path = cache ? _outlines[s] : null;
     if (path == null) {
       path = _outlinePath(s);
@@ -112,6 +85,10 @@ class InkPainter extends CustomPainter {
   /// Solve one stroke's variable-width outline into a fillable path.
   Path? _outlinePath(Stroke s) {
     final hasPressure = s.p.isNotEmpty;
+    // Ballpoint follows the same smoothed, filled-outline pipeline as the pen,
+    // but with thinning and simulated pressure disabled. A stroked centreline
+    // looks faceted at high zoom even with round joins; a filled freehand
+    // outline keeps both edges continuously smooth.
     final constantWidth = s.tool == 'highlighter' || s.tool == 'ballpoint';
     final points = [
       for (var i = 0; i < s.x.length; i++)

@@ -2692,9 +2692,11 @@ class AppState extends ChangeNotifier
     await for (final entity
         in source.list(recursive: true, followLinks: false)) {
       final relative = p.relative(entity.path, from: source.path);
-      if (p
-          .split(relative)
-          .any((part) => part == '.git' || part == '.DS_Store')) {
+      final parts = p.split(relative);
+      final name = parts.last.toLowerCase();
+      if (parts.any((part) => part == '.git' || part == '.DS_Store') ||
+          name == '.instance-lock' ||
+          name == '.open-request') {
         continue;
       }
       final lower = entity.path.toLowerCase();

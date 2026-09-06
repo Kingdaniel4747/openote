@@ -1199,6 +1199,10 @@ class _AppShellState extends State<AppShell> {
                   : _canvasKeys(
                       PageCanvas(key: ValueKey(app.pageId), state: app));
           return Scaffold(
+            // Tablet mode should let the Windows touch keyboard float over the
+            // page. Resizing this whole shell makes every canvas layer reflow
+            // and produces a long upward slide when a title field gains focus.
+            resizeToAvoidBottomInset: false,
             body: LayoutBuilder(
               builder: (context, constraints) => SafeArea(
                   child: Stack(fit: StackFit.expand, children: [
@@ -1247,6 +1251,9 @@ class _AppShellState extends State<AppShell> {
           );
         }
         return Scaffold(
+          // Keep the notebook and canvas fixed when Windows opens its touch
+          // keyboard; the keyboard is an overlay, not a new page boundary.
+          resizeToAvoidBottomInset: false,
           // A `Stack`, so a reminder floats OVER the page rather than pushing
           // it. An alert that reflowed the canvas would move the line you were
           // typing on, which is a worse interruption than the one it is
