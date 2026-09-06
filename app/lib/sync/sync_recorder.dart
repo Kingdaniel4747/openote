@@ -339,6 +339,16 @@ class SyncRecorder {
         _op(OpKind.nodeRestore, {'id': id})
       ]);
 
+  /// Record an explicit block deletion even when this recorder never saw the
+  /// block's original creation. This matters for notebooks created before the
+  /// operation log existed: a whole-page diff cannot remove an id absent from
+  /// its replayed baseline, so an older synced copy could otherwise bring the
+  /// deleted block back on the next launch.
+  void blocksRemoved(String pageId, Iterable<String> blockIds) => _commit([
+        for (final id in blockIds)
+          _op(OpKind.blockRemove, {'pageId': pageId, 'blockId': id})
+      ]);
+
   void nodePurged(String id) => _commit([
         _op(OpKind.nodePurge, {'id': id})
       ]);

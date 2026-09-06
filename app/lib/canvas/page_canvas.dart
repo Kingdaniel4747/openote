@@ -742,6 +742,15 @@ class _PageCanvasState extends State<PageCanvas> {
         selected.every((b) => b.type == BlockType.ink);
   }
 
+  bool get _selectionToolbarCanShow {
+    final editingId = app.editingBlockId;
+    if (editingId == null) return true;
+    // A table's short tap edits a cell, but it is still an inserted object and
+    // must keep the same duplicate/cut/delete toolbar as boards and files.
+    final editing = app.blocks.where((b) => b.id == editingId).firstOrNull;
+    return editing?.type == BlockType.table;
+  }
+
   void _moveLassoFingerSelection(PointerMoveEvent e) {
     if (_lassoMovePointer != e.pointer) return;
     final delta = e.localPosition - _lassoMoveLast;
@@ -1582,7 +1591,7 @@ class _PageCanvasState extends State<PageCanvas> {
                   // and cover all of it in one drag.
                   ..._scrollBar(context, dark),
                   if (app.selectedIds.isNotEmpty &&
-                      app.editingBlockId == null &&
+                      _selectionToolbarCanShow &&
                       !app.draggingBlock &&
                       _lasso == null &&
                       _wet == null)

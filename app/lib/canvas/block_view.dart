@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/gestures.dart' show PointerDeviceKind;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -86,7 +86,8 @@ class _BlockViewState extends State<BlockView> {
   bool _resizeUndoPushed = false;
   Offset? _touchMoveLast;
   Offset? _holdMoveLastGlobal;
-  bool _holdMovesTable = false;
+  bool _holdMovesObject = false;
+  bool _holdObjectMoved = false;
 
   /// Whether the in-progress body drag is allowed to move the block. Editable
   /// blocks say no unless Alt is held — see [_bodyDragStart].
@@ -129,6 +130,14 @@ class _BlockViewState extends State<BlockView> {
       b.type == BlockType.code ||
       b.type == BlockType.math ||
       b.type == BlockType.table;
+
+  /// Blocks inserted as objects share one interaction: tap uses the object's
+  /// own UI, while a short hold picks up the whole container. Text and ink are
+  /// excluded because holding those means text selection and lasso movement.
+  bool get _fastHoldMovable =>
+      b.type != BlockType.text &&
+      b.type != BlockType.ink &&
+      b.type != BlockType.unknown;
 
   void _tap() {
     if (app.tool == Tool.pen ||
@@ -215,6 +224,16 @@ class _BlockViewState extends State<BlockView> {
         (app.tool == Tool.select || app.tool == Tool.text)) {
       return;
     }
+    // Child editors (notably boards and tables) can win the tap gesture before
+    // BlockView sees an onTap. Selection belongs to the container, so establish
+    // it from the raw primary down event. The child's button/cell still receives
+    // the same pointer and keeps its normal short-tap behaviour.
+    if (_fastHoldMovable &&
+        !_locked &&
+        !selected &&
+        (e.buttons & kPrimaryButton) != 0) {
+      app.select(b.id);
+    }
     app.claimedPointers.add(e.pointer);
     _pressGlobal = e.position;
     _pressKind = e.kind;
@@ -225,7 +244,7 @@ class _BlockViewState extends State<BlockView> {
 
   void _pointerMove(PointerMoveEvent e) {
     final from = _pressGlobal;
-    if (from == null || !_editableType || _locked || _holdMovesTable) return;
+    if (from == null || !_editableType || _locked || _holdMovesObject) return;
     // A drag that began on the bar or a handle is a move or a resize. It must
     // never open the editor: the box keeps whatever edit state it already had.
     if (_pressOnChrome) return;
@@ -342,34 +361,68 @@ class _BlockViewState extends State<BlockView> {
     _bodyDragMoves = false;
   }
 
-  void _tableHoldStart(LongPressStartDetails d) {
-    if (b.type != BlockType.table || _locked) return;
-    _holdMovesTable = true;
+  void _objectHoldStart(LongPressStartDetails d) {
+    if (!_fastHoldMovable || _locked) return;
+    _holdMovesObject = true;
+    _holdObjectMoved = false;
     _textDragging = false;
     _selectBase = null;
     if (!selected || editing) app.select(b.id);
-    app.pushUndo();
     app.setDragging(true);
     _holdMoveLastGlobal = d.globalPosition;
   }
 
-  void _tableHoldMove(LongPressMoveUpdateDetails d) {
-    if (!_holdMovesTable || app.touchCanvasGesture) return;
+  void _objectHoldMove(LongPressMoveUpdateDetails d) {
+    if (!_holdMovesObject || app.touchCanvasGesture) return;
     final last = _holdMoveLastGlobal;
     if (last == null) return;
     final delta = (d.globalPosition - last) / widget.controller.scale;
     _holdMoveLastGlobal = d.globalPosition;
+    if (delta.distanceSquared < .01) return;
+    if (!_holdObjectMoved) {
+      app.pushUndo();
+      _holdObjectMoved = true;
+    }
     app.moveSelectedBy(delta.dx, delta.dy);
     app.updateAlignGuides(widget.controller.scale);
   }
 
-  void _tableHoldEnd(LongPressEndDetails d) {
-    if (!_holdMovesTable) return;
-    _holdMovesTable = false;
+  void _objectHoldEnd(LongPressEndDetails d) {
+    if (!_holdMovesObject) return;
+    _holdMovesObject = false;
     _holdMoveLastGlobal = null;
-    app.applyAlignSnap();
-    app.settleSelected();
+    if (_holdObjectMoved) {
+      app.applyAlignSnap();
+      app.settleSelected();
+    }
+    _holdObjectMoved = false;
     app.setDragging(false);
+  }
+
+  Widget _withFastObjectHold(Widget child) {
+    if (!_fastHoldMovable || _locked) return child;
+    return RawGestureDetector(
+      behavior: HitTestBehavior.opaque,
+      gestures: <Type, GestureRecognizerFactory>{
+        LongPressGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
+          () => LongPressGestureRecognizer(
+            duration: const Duration(milliseconds: 250),
+            supportedDevices: const {
+              PointerDeviceKind.touch,
+              PointerDeviceKind.mouse,
+            },
+          ),
+          (recognizer) {
+            recognizer
+              ..onLongPressStart = _objectHoldStart
+              ..onLongPressMoveUpdate = _objectHoldMove
+              ..onLongPressEnd = _objectHoldEnd;
+          },
+        ),
+      },
+      child: child,
+    );
   }
 
   /// The strip above the block: the only place a drag moves the container.
@@ -668,12 +721,6 @@ class _BlockViewState extends State<BlockView> {
         onPanStart: editing || _locked ? null : _bodyDragStart,
         onPanUpdate: editing || _locked ? null : _bodyDrag,
         onPanEnd: editing || _locked ? null : _bodyDragEnd,
-        onLongPressStart:
-            b.type == BlockType.table && !_locked ? _tableHoldStart : null,
-        onLongPressMoveUpdate:
-            b.type == BlockType.table && !_locked ? _tableHoldMove : null,
-        onLongPressEnd:
-            b.type == BlockType.table && !_locked ? _tableHoldEnd : null,
         child: Container(
           width: displayW,
           height: b.h,
@@ -761,13 +808,9 @@ class _BlockViewState extends State<BlockView> {
         app.settleSelected();
         app.setDragging(false);
       },
-      onLongPressStart: (editing && b.type != BlockType.table) || _locked
+      onLongPressStart: _fastHoldMovable || editing || _locked
           ? null
           : (d) {
-              if (b.type == BlockType.table) {
-                _tableHoldStart(d);
-                return;
-              }
               if (selected) {
                 showBlockMenu(context, app, b, d.globalPosition);
                 return;
@@ -777,13 +820,9 @@ class _BlockViewState extends State<BlockView> {
               app.setDragging(true);
               _touchMoveLast = d.localPosition;
             },
-      onLongPressMoveUpdate: (editing && b.type != BlockType.table) || _locked
+      onLongPressMoveUpdate: _fastHoldMovable || editing || _locked
           ? null
           : (d) {
-              if (b.type == BlockType.table) {
-                _tableHoldMove(d);
-                return;
-              }
               if (app.touchCanvasGesture) return;
               final last = _touchMoveLast;
               if (last == null) return;
@@ -793,10 +832,7 @@ class _BlockViewState extends State<BlockView> {
                   delta.dy / widget.controller.scale);
             },
       onLongPressEnd: (details) {
-        if (b.type == BlockType.table) {
-          _tableHoldEnd(details);
-          return;
-        }
+        if (_fastHoldMovable) return;
         if (app.touchCanvasGesture) {
           _touchMoveLast = null;
           app.setDragging(false);
@@ -844,7 +880,7 @@ class _BlockViewState extends State<BlockView> {
                       b.w = size.width;
                     }
                   },
-                  child: touchable,
+                  child: _withFastObjectHold(touchable),
                 ),
               ),
               // The bar strip is ALWAYS hover-sensing, and only sometimes

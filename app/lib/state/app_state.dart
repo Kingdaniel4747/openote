@@ -212,7 +212,8 @@ class SaveProblem {
 /// domain layer beneath it is what carries forward.
 class AppState extends ChangeNotifier
     implements StudyDocument, PlannerDocument {
-  AppState(this._repo) : engine = _selectEngine(_repo) {
+  AppState(this._repo, {DocumentEngine? documentEngine})
+      : engine = documentEngine ?? _selectEngine(_repo) {
     // Forwarded, not replaced. Every surface listens to `AppState`, so the
     // extraction must not change who wakes up when a card is graded — the
     // point of E3 is to give state an owner, not to renegotiate rebuilds in
@@ -6186,6 +6187,7 @@ class AppState extends ChangeNotifier
   // debounce after the test has cancelled every timer it knew about.
   int _saveCancellationGeneration = 0;
   bool _dirty = false;
+  int _dirtyRevision = 0;
   bool get hasUnsavedChanges => _dirty;
   final List<String> _undo = [];
   final List<String> _redo = [];
@@ -8640,6 +8642,7 @@ class AppState extends ChangeNotifier
 
   void removeBlock(String id, {bool recordUndo = true}) {
     if (recordUndo) pushUndo();
+    _recordBlockRemovals([id]);
     blocks.removeWhere((b) => b.id == id);
     selectedIds.remove(id);
     if (selectedBlockId == id) selectedBlockId = selectedIds.firstOrNull;
@@ -8651,12 +8654,28 @@ class AppState extends ChangeNotifier
   void removeSelected() {
     if (selectedIds.isEmpty) return;
     pushUndo();
+    _recordBlockRemovals(selectedIds);
     blocks.removeWhere((b) => selectedIds.contains(b.id));
     selectedIds.clear();
     selectedBlockId = null;
     editingBlockId = null;
     markDirty();
     notifyListeners();
+  }
+
+  void _recordBlockRemovals(Iterable<String> ids) {
+    final nb = notebookId, page = pageId;
+    if (nb == null || page == null || !syncLogEnabled) return;
+    try {
+      // Materialise the ids before selection is cleared by the caller.
+      _recorderFor(nb)?.blocksRemoved(page, ids.toList(growable: false));
+      _logError = null;
+    } catch (e) {
+      // The container save below remains authoritative and retries normally;
+      // surface the degraded history/sync copy instead of losing the deletion
+      // silently on an older notebook.
+      _noteLogProblem('recording deleted blocks on $page failed', e);
+    }
   }
 
   /// Duplicate with FRESH ids (Data Model Spec §2 rule 3).
@@ -8954,6 +8973,7 @@ class AppState extends ChangeNotifier
 
   void markDirty() {
     _dirty = true;
+    _dirtyRevision++;
     // Cheap counter, not a rebuild: it lets the open page's flashcards be
     // rederived once per edit, so tagging a line produces a card immediately
     // instead of only after you navigate away.
@@ -9087,6 +9107,10 @@ class AppState extends ChangeNotifier
       // triggers that. Null when the log is disabled or unavailable, which is
       // exactly what those call sites already handle.
       final rec = await warmRecorder(nb);
+      // A save can spend time opening/replaying the operation log. Remember
+      // precisely which edit generation the snapshot below contains; a newer
+      // keystroke must remain dirty even if this older disk write succeeds.
+      final savingRevision = _dirtyRevision;
       // **Ink becomes bytes here, once, for both destinations.**
       //
       // The container and the op log must agree, and they only agree if they
@@ -9105,7 +9129,7 @@ class AppState extends ChangeNotifier
       // mirror write, plus content-hash change-detection on the Rust engine (a
       // save whose hash is unchanged is skipped). See RustEngine/MirrorEngine.
       await engine.savePage(nb, id, toSave, pageProps);
-      _dirty = false;
+      _dirty = _dirtyRevision != savingRevision;
       _pageSaveError = null;
       // Record AFTER the container write succeeds, so the log never claims a
       // change the notebook doesn't have. The reverse order would be worse than
@@ -9182,6 +9206,10 @@ class AppState extends ChangeNotifier
     final neededPageSave = _dirty;
     try {
       await flushSave(closing: true);
+      // If an editor changed while the first flush was awaiting the recorder or
+      // disk, the revision guard deliberately left it dirty. Closing gets one
+      // immediate second pass instead of abandoning that last keystroke.
+      if (_dirty) await flushSave(closing: true);
     } catch (_) {
       // flushSave recorded the problem and left _dirty set. The lifecycle
       // handler keeps the app open so unsaved notes can still be recovered.

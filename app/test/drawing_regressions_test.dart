@@ -10,6 +10,7 @@ import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/ui/app_shell.dart';
+import 'package:openote/ui/selection_toolbar.dart';
 import 'support/sqlite.dart';
 
 void main() {
@@ -331,7 +332,8 @@ void main() {
 
       final finger = await t.startGesture(t.getCenter(cell),
           kind: PointerDeviceKind.touch);
-      await t.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+      // Object holds use half Flutter's normal 500 ms timeout.
+      await t.pump(const Duration(milliseconds: 300));
       await finger.moveBy(const Offset(70, 45));
       await t.pump();
       expect(app.draggingBlock, isTrue);
@@ -339,8 +341,19 @@ void main() {
       await finger.up();
       await t.pump();
       expect(app.draggingBlock, isFalse);
+      expect(find.byType(SelectionToolbar), findsOneWidget);
       expect(table.x % app.gridSize, closeTo(0, .01));
       expect(table.y % app.gridSize, closeTo(0, .01));
+
+      final beforeMouse = table.x;
+      final mouse = await t.startGesture(t.getCenter(cell),
+          kind: PointerDeviceKind.mouse);
+      await t.pump(const Duration(milliseconds: 300));
+      await mouse.moveBy(const Offset(55, 0));
+      await t.pump();
+      await mouse.up();
+      await t.pump();
+      expect(table.x, greaterThan(beforeMouse));
       app.cancelPendingSave();
       expect(t.takeException(), isNull);
       await t.pumpWidget(const SizedBox());

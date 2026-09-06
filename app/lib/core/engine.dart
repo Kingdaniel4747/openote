@@ -109,9 +109,11 @@ class RustEngine implements DocumentEngine {
     _lastSavedHash = hash;
     // Unchanged since the last persisted state → skip the write entirely.
     if (_hashes[pageId] == hash) return;
-    _hashes[pageId] = hash;
     // See [MirrorEngine.savePage]: the ten-minute page snapshot is gone with
     // `page_versions` (v0.17 plan, decision 1).
     repo.writePage(notebookId, pageId, blocks, props);
+    // Only remember a hash AFTER the write lands. Remembering it first made a
+    // failed write look unchanged on retry, so the retry was skipped forever.
+    _hashes[pageId] = hash;
   }
 }
