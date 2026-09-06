@@ -5025,6 +5025,7 @@ class AppState extends ChangeNotifier
       for (final raw in strokes) {
         if (raw is Map) raw['color'] = hex;
       }
+      invalidateInkStorage(b);
       b.updatedAt = nowMs();
     }
     markDirty();
@@ -6108,6 +6109,7 @@ class AppState extends ChangeNotifier
           m['x'] = [for (final v in (m['x'] as List)) (v as num) + dx];
           m['y'] = [for (final v in (m['y'] as List)) (v as num) + dy];
         }
+        invalidateInkStorage(fresh);
       }
       clampBlockToPage(fresh);
       blocks.add(fresh);
@@ -7385,6 +7387,7 @@ class AppState extends ChangeNotifier
         for (final sj in (fresh.content['strokes'] as List)) {
           (sj as Map)['id'] = newId();
         }
+        invalidateInkStorage(fresh);
       }
       incoming.add(fresh);
     }
@@ -7425,6 +7428,7 @@ class AppState extends ChangeNotifier
       final ys = m['y'];
       if (ys is List) m['y'] = [for (final v in ys) (v as num) + dy];
     }
+    invalidateInkStorage(b);
     // The canvas caches decoded strokes by `id#updatedAt`.
     b.updatedAt = nowMs();
   }
@@ -8635,9 +8639,18 @@ class AppState extends ChangeNotifier
   }
 
   void updateBlock(Block b) {
+    invalidateInkStorage(b);
     b.updatedAt = nowMs();
     markDirty();
     notifyListeners();
+  }
+
+  /// Forget a stale binary-ink reference before edited working geometry is
+  /// persisted. Bulk operations use this and notify only once at the end.
+  void invalidateInkStorage(Block b) {
+    if (b.type == BlockType.ink) {
+      InkStorage.markWorkingChanged(b.content);
+    }
   }
 
   void removeBlock(String id, {bool recordUndo = true}) {
@@ -8708,6 +8721,7 @@ class AppState extends ChangeNotifier
         m['x'] = [for (final v in (m['x'] as List)) (v as num) + dx];
         m['y'] = [for (final v in (m['y'] as List)) (v as num) + dy];
       }
+      invalidateInkStorage(fresh);
       fresh.updatedAt = nowMs(); // refresh the canvas stroke cache key
     }
     select(fresh.id);
@@ -8771,6 +8785,7 @@ class AppState extends ChangeNotifier
           m['x'] = [for (final v in (m['x'] as List)) (v as num) + dx];
           m['y'] = [for (final v in (m['y'] as List)) (v as num) + dy];
         }
+        invalidateInkStorage(b);
         // The canvas caches decoded strokes by `id#updatedAt`; bump it so the
         // painted ink follows the block instead of lagging until a reload.
         b.updatedAt = nowMs();

@@ -56,6 +56,21 @@ abstract final class InkStorage {
   static bool isLegacyForm(Map<String, dynamic> content) =>
       content[kStrokesKey] is List;
 
+  /// Invalidate the persisted blob after editing the decoded working strokes.
+  ///
+  /// [toWorking] deliberately keeps the old `ink` descriptor beside the
+  /// decoded `strokes`, so an untouched page can be saved without encoding the
+  /// same geometry again. Once a stroke is erased, moved, recoloured or
+  /// otherwise changed, that descriptor no longer describes the working list.
+  /// Leaving it in place makes [toPersisted] discard the edited strokes and
+  /// write the old blob reference back, which makes deleted handwriting return
+  /// after reopening the page.
+  static void markWorkingChanged(Map<String, dynamic> content) {
+    if (isRefForm(content) && isLegacyForm(content)) {
+      content.remove(kInkKey);
+    }
+  }
+
   /// How many strokes, WITHOUT opening a blob.
   ///
   /// Several callers only want a count — the export summaries, and the canvas's
@@ -138,8 +153,14 @@ abstract final class InkStorage {
     // create a hash every empty block shared, which is harmless but pointless.
     if (strokes.isEmpty) {
       final out = Map<String, dynamic>.of(content)..remove(kStrokesKey);
-      out[kInkKey] = {'v': 1, 'base': '', 'add': const [], 'gone': '', 'n': 0,
-        'o': const [0.0, 0.0]};
+      out[kInkKey] = {
+        'v': 1,
+        'base': '',
+        'add': const [],
+        'gone': '',
+        'n': 0,
+        'o': const [0.0, 0.0]
+      };
       return out;
     }
 
@@ -155,8 +176,7 @@ abstract final class InkStorage {
     if (!ox.isFinite) ox = 0;
     if (!oy.isFinite) oy = 0;
 
-    final hash =
-        putBlob(InkCodec.encode(strokes, originX: ox, originY: oy));
+    final hash = putBlob(InkCodec.encode(strokes, originX: ox, originY: oy));
     final out = Map<String, dynamic>.of(content)..remove(kStrokesKey);
     out[kInkKey] = {
       'v': 1,
@@ -200,7 +220,8 @@ abstract final class InkStorage {
             originX: ox,
             originY: oy,
             // Ids derive from the blob so they are stable across decodes.
-            idPrefix: base.length > 20 ? base.substring(base.length - 12) : base));
+            idPrefix:
+                base.length > 20 ? base.substring(base.length - 12) : base));
       } catch (_) {
         return content;
       }

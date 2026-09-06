@@ -56,6 +56,34 @@ class CanvasController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Resolve a touch pinch from one immutable gesture-start snapshot.
+  ///
+  /// Touchscreens report the two contacts as separate pointer events. Applying
+  /// an incremental transform for each event alternates between one fresh and
+  /// one stale contact and accumulates a visible vertical jump. Recomputing
+  /// from the start values makes the result independent of event ordering.
+  void transformGestureFrom({
+    required double startScale,
+    required Offset startOffset,
+    required Offset startFocal,
+    required Offset currentFocal,
+    required double scaleFactor,
+  }) {
+    final pageFocal = (startFocal - startOffset) / startScale;
+    scale = (startScale * scaleFactor).clamp(minScale, maxScale);
+    final proposed = currentFocal - pageFocal * scale;
+    // An edge that was visible when the gesture began remains attached to the
+    // viewport. Once the user has panned into a larger page and that edge is
+    // off-screen, the content under the fingers is the anchor instead.
+    const edgeEpsilon = .5;
+    offset = Offset(
+      startOffset.dx >= -edgeEpsilon ? 0 : proposed.dx,
+      startOffset.dy >= -edgeEpsilon ? 0 : proposed.dy,
+    );
+    clampToPage();
+    notifyListeners();
+  }
+
   /// Restore an exact view (used by PDF export).
   void jumpTo(double s, Offset o) {
     scale = s;

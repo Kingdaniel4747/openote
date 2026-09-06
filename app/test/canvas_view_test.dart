@@ -45,4 +45,53 @@ void main() {
     expect(touch.offset, mouse.offset);
     expect(touch.pageToScreen(pageUnderFinger), focal);
   });
+
+  test('touch pinch is stable when contacts update in alternating events', () {
+    final c = CanvasController()
+      ..viewport = const Size(900, 700)
+      ..pageSize = const Size(2400, 1800);
+    const startScale = 1.0;
+    const startOffset = Offset(-260, -180);
+    const startFocal = Offset(420, 310);
+    c.jumpTo(startScale, startOffset);
+    final pageUnderStartFocal = c.screenToPage(startFocal);
+
+    // Intermediate hardware samples may contain one newer contact. The final
+    // result must still be derived from the same immutable start transform.
+    c.transformGestureFrom(
+      startScale: startScale,
+      startOffset: startOffset,
+      startFocal: startFocal,
+      currentFocal: const Offset(417, 307),
+      scaleFactor: 1.18,
+    );
+    c.transformGestureFrom(
+      startScale: startScale,
+      startOffset: startOffset,
+      startFocal: startFocal,
+      currentFocal: const Offset(420, 310),
+      scaleFactor: 1.4,
+    );
+
+    expect(c.scale, closeTo(1.4, 0.0001));
+    expect(c.pageToScreen(pageUnderStartFocal), startFocal);
+  });
+
+  test('visible top and left page edges stay pinned during touch pinch', () {
+    final c = CanvasController()
+      ..viewport = const Size(900, 700)
+      ..pageSize = const Size(2400, 1800);
+
+    c.transformGestureFrom(
+      startScale: 1,
+      startOffset: Offset.zero,
+      startFocal: const Offset(500, 350),
+      currentFocal: const Offset(500, 350),
+      scaleFactor: 1.6,
+    );
+
+    expect(c.scale, 1.6);
+    expect(c.offset, Offset.zero,
+        reason: 'visible page edges are the anchor, not the finger focal');
+  });
 }

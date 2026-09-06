@@ -89,7 +89,9 @@ void main() {
         y: 80,
         w: 800,
         h: 600,
-        content: {'strokes': [for (final s in strokes) s.toJson()]},
+        content: {
+          'strokes': [for (final s in strokes) s.toJson()]
+        },
       );
 
   test('handwriting survives a save and a reload', () async {
@@ -126,8 +128,7 @@ void main() {
     app.markDirty();
     await app.flushSave();
 
-    final row = repo
-        .rawPageJsonForTest(app.notebookId!, pageId);
+    final row = repo.rawPageJsonForTest(app.notebookId!, pageId);
     expect(row, isNotNull);
     expect(row!, isNot(contains('"strokes"')),
         reason: 'the page mirror must hold a reference, not the geometry');
@@ -155,10 +156,8 @@ void main() {
     final store = OpLogStore.forNotebook(ref.file, logDir: ref.logDir);
 
     // The op stream declares the blob…
-    final puts = store
-        .readAll()
-        .where((o) => o.kind == OpKind.blobPut)
-        .toList();
+    final puts =
+        store.readAll().where((o) => o.kind == OpKind.blobPut).toList();
     expect(puts, isNotEmpty, reason: 'a blob.put must be recorded');
     expect(puts.any((o) => o.map['mime'] == inkMimeType), isTrue,
         reason: 'and it must be the ink blob');
@@ -173,10 +172,10 @@ void main() {
             'cannot rebuild a notebook whose handwriting it only references');
 
     // Prove it end to end: decode straight from the log's blob store.
-    final blockJson = jsonDecode(
-        repo.rawPageJsonForTest(app.notebookId!, pageId)!) as Map;
-    final content = ((blockJson['blocks'] as List).single as Map)['content']
-        as Map;
+    final blockJson =
+        jsonDecode(repo.rawPageJsonForTest(app.notebookId!, pageId)!) as Map;
+    final content =
+        ((blockJson['blocks'] as List).single as Map)['content'] as Map;
     final base = (content['ink'] as Map)['base'] as String;
     final bytes = store.readBlob(base.replaceFirst('sha256:', ''));
     expect(bytes, isNotNull, reason: 'the log holds the actual geometry');
@@ -200,6 +199,28 @@ void main() {
 
     expect(repo.blobIndex(app.notebookId!).length, first,
         reason: 'a round trip must be a fixed point, or ink accumulates');
+  });
+
+  test('erasing previously persisted handwriting survives reload', () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    app.blocks = [inkBlock(handwriting(count: 3))];
+    app.markDirty();
+    await app.flushSave();
+
+    // This is the state an old page has in the editor: the persisted ref and
+    // decoded working strokes coexist. Editing it must invalidate that ref.
+    app.blocks = repo.readPage(app.notebookId!, pageId).blocks;
+    final edited = app.blocks.single;
+    expect(edited.content['ink'], isA<Map>());
+    final strokes = edited.content['strokes'] as List;
+    strokes.removeAt(0);
+    app.updateBlock(edited);
+    expect(edited.content.containsKey('ink'), isFalse);
+    await app.flushSave();
+
+    final reloaded = repo.readPage(app.notebookId!, pageId).blocks.single;
+    expect((reloaded.content['strokes'] as List).length, 2,
+        reason: 'deleted old ink must not be restored from its stale blob');
   });
 
   test('the page declares its ink in blob_refs', () async {
@@ -230,7 +251,9 @@ void main() {
             y: 80,
             w: 800,
             h: 600,
-            content: {'strokes': [for (final s in strokes) s.toJson()]},
+            content: {
+              'strokes': [for (final s in strokes) s.toJson()]
+            },
           ).toJson()
         ],
       });
@@ -332,8 +355,13 @@ void main() {
               // in its log. What matters here is only that a foreign op is
               // outstanding while the conversion runs.
               'pageId': other.id,
-              'block': {'id': 'theirs', 'type': 'text', 'x': 0, 'y': 400,
-                'content': {'text': 'from the other machine'}}
+              'block': {
+                'id': 'theirs',
+                'type': 'text',
+                'x': 0,
+                'y': 400,
+                'content': {'text': 'from the other machine'}
+              }
             })
       ]);
 
@@ -360,7 +388,8 @@ void main() {
           .where((o) => (o.map['pageId']) == pageId)
           .toList();
       expect(logged, isNotEmpty,
-          reason: 'the conversion was never recorded, so a pull will revert it');
+          reason:
+              'the conversion was never recorded, so a pull will revert it');
       final lastContent = ((logged.last.map['block'] as Map)['content'] as Map)
           .cast<String, dynamic>();
       expect(InkStorage.isRefForm(lastContent), isTrue,
@@ -383,7 +412,8 @@ void main() {
       app.markDirty();
       await app.flushSave();
       expect((await app.convertInkToBinary(app.notebookId!)).candidates, 0);
-      expect(repo.readPage(app.notebookId!, pageId).blocks.single.content['text'],
+      expect(
+          repo.readPage(app.notebookId!, pageId).blocks.single.content['text'],
           'prose');
     });
 
@@ -397,13 +427,11 @@ void main() {
 
       final ref = repo.notebooks.firstWhere((n) => n.id == app.notebookId);
       final store = OpLogStore.forNotebook(ref.file, logDir: ref.logDir);
-      final sets = store
-          .readAll()
-          .where((o) => o.kind == OpKind.blockSet)
-          .toList();
+      final sets =
+          store.readAll().where((o) => o.kind == OpKind.blockSet).toList();
       expect(sets, isNotEmpty);
-      final content =
-          ((sets.last.map['block'] as Map)['content'] as Map).cast<String, dynamic>();
+      final content = ((sets.last.map['block'] as Map)['content'] as Map)
+          .cast<String, dynamic>();
       expect(content.containsKey('strokes'), isFalse,
           reason: 'the recorded block must carry the reference');
       expect(InkStorage.refsOf(content), isNotEmpty);
@@ -434,7 +462,9 @@ void main() {
             y: 80,
             w: 800,
             h: 600,
-            content: {'strokes': [for (final s in strokes) s.toJson()]},
+            content: {
+              'strokes': [for (final s in strokes) s.toJson()]
+            },
           ).toJson()
         ],
       });
@@ -502,7 +532,8 @@ void main() {
               'the pass');
     });
 
-    test('vacuum waits for manual maintenance, not the timer or shutdown', () async {
+    test('vacuum waits for manual maintenance, not the timer or shutdown',
+        () async {
       // reclaimFreeSpace is a synchronous whole-file rewrite whose own doc
       // comment says it "runs from an explicit user action rather than on a
       // timer". On a timer it froze the window for seconds with no dialog
@@ -531,11 +562,10 @@ void main() {
       }
 
       var fired = 0;
-      final r = await app.convertInkToBinary(app.notebookId!,
-          unattended: true,
+      final r = await app.convertInkToBinary(app.notebookId!, unattended: true,
           onProgress: (done, total) {
-            if (++fired == 1) app.markDirty(); // keystroke after page one
-          });
+        if (++fired == 1) app.markDirty(); // keystroke after page one
+      });
       app.cancelPendingSave();
 
       expect(r.deferred, isTrue,
@@ -570,7 +600,12 @@ void main() {
       // next save overwrite the reference with nothing — losing the ink for
       // everyone, permanently.
       final content = <String, dynamic>{
-        'ink': {'v': 1, 'base': 'sha256:deadbeef', 'n': 5, 'o': [0, 0]}
+        'ink': {
+          'v': 1,
+          'base': 'sha256:deadbeef',
+          'n': 5,
+          'o': [0, 0]
+        }
       };
       final out = InkStorage.toWorking(content, (_) => null);
       expect(out, same(content), reason: 'unchanged, ref intact');
@@ -617,9 +652,9 @@ void main() {
             y: [1, 2, 3])
       ];
       final store = <String, Uint8List>{};
-      final persisted = InkStorage.toPersisted(
-          <String, dynamic>{'strokes': [for (final s in strokes) s.toJson()]},
-          (bytes) {
+      final persisted = InkStorage.toPersisted(<String, dynamic>{
+        'strokes': [for (final s in strokes) s.toJson()]
+      }, (bytes) {
         const hash = 'sha256:aa';
         store[hash] = bytes;
         return hash;
@@ -644,15 +679,19 @@ void main() {
     test('counting strokes never opens a blob', () {
       var opened = false;
       final content = <String, dynamic>{
-        'ink': {'v': 1, 'base': 'sha256:aa', 'n': 4096, 'o': [0, 0]}
+        'ink': {
+          'v': 1,
+          'base': 'sha256:aa',
+          'n': 4096,
+          'o': [0, 0]
+        }
       };
       expect(InkStorage.strokeCount(content), 4096);
       expect(opened, isFalse);
     });
 
     test('an empty ink block round-trips without a blob', () {
-      final out =
-          InkStorage.toPersisted(<String, dynamic>{'strokes': []}, (_) {
+      final out = InkStorage.toPersisted(<String, dynamic>{'strokes': []}, (_) {
         fail('an empty block must not write a blob');
       });
       expect(InkStorage.strokeCount(out), 0);

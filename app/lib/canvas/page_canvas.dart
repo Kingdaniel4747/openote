@@ -111,8 +111,10 @@ class _PageCanvasState extends State<PageCanvas> {
 
   // Two-finger touch pinch tracking.
   final Map<int, Offset> _touches = {};
-  double? _pinchBaseDist;
-  Offset? _pinchLastFocal;
+  double? _pinchStartDist;
+  Offset? _pinchStartFocal;
+  double? _pinchStartScale;
+  Offset? _pinchStartOffset;
   double _pzLastScale = 1.0;
   Timer? _inertia;
   Offset _touchVelocity = Offset.zero;
@@ -810,6 +812,7 @@ class _PageCanvasState extends State<PageCanvas> {
       } else {
         b.content['strokes'] = entry.value;
         _refitInkBounds(b);
+        app.invalidateInkStorage(b);
         b.updatedAt = nowMs();
       }
     }
@@ -859,8 +862,10 @@ class _PageCanvasState extends State<PageCanvas> {
     if (_touches.length == 2) {
       _multiTouchSeen = true;
       final pts = _touches.values.toList();
-      _pinchBaseDist = (pts[0] - pts[1]).distance;
-      _pinchLastFocal = (pts[0] + pts[1]) / 2;
+      _pinchStartDist = (pts[0] - pts[1]).distance;
+      _pinchStartFocal = (pts[0] + pts[1]) / 2;
+      _pinchStartScale = controller.scale;
+      _pinchStartOffset = controller.offset;
     }
   }
 
@@ -950,22 +955,22 @@ class _PageCanvasState extends State<PageCanvas> {
     final now = DateTime.now();
     final elapsed = now.difference(_lastTouchMove ?? now).inMicroseconds;
     _touches[e.pointer] = e.localPosition;
-    if (_touches.length >= 2 && _pinchBaseDist != null) {
+    if (_touches.length >= 2 &&
+        _pinchStartDist != null &&
+        _pinchStartFocal != null &&
+        _pinchStartScale != null &&
+        _pinchStartOffset != null) {
       final pts = _touches.values.toList();
       final d = (pts[0] - pts[1]).distance;
       final focal = (pts[0] + pts[1]) / 2;
-      if (_pinchBaseDist! > 0 && d > 0) {
-        final previous = _pinchLastFocal ?? focal;
-        // Keep a visible upper/left page edge pinned, but when it is already
-        // off-screen zoom around the fingers. A full clamp mid-pinch moves
-        // content away from the focal point and caused the visible jump.
-        controller.transformPinchAt(
-          previous,
-          d / _pinchBaseDist!,
-          focal,
+      if (_pinchStartDist! > 0 && d > 0) {
+        controller.transformGestureFrom(
+          startScale: _pinchStartScale!,
+          startOffset: _pinchStartOffset!,
+          startFocal: _pinchStartFocal!,
+          currentFocal: focal,
+          scaleFactor: d / _pinchStartDist!,
         );
-        _pinchBaseDist = d;
-        _pinchLastFocal = focal;
       }
     } else if (_touches.length == 1 && !_multiTouchSeen) {
       final delta = e.localPosition - _lastScreen;
@@ -988,8 +993,10 @@ class _PageCanvasState extends State<PageCanvas> {
   void _touchUp(PointerEvent e) {
     _touches.remove(e.pointer);
     if (_touches.length < 2) {
-      _pinchBaseDist = null;
-      _pinchLastFocal = null;
+      _pinchStartDist = null;
+      _pinchStartFocal = null;
+      _pinchStartScale = null;
+      _pinchStartOffset = null;
     }
     if (_touches.length == 1) _lastScreen = _touches.values.first;
     if (_touches.isEmpty) {
@@ -1726,7 +1733,10 @@ class _PageCanvasState extends State<PageCanvas> {
                 _mode != _DragMode.pending) return;
             _mode = _DragMode.none;
             _touches.clear();
-            _pinchBaseDist = null;
+            _pinchStartDist = null;
+            _pinchStartFocal = null;
+            _pinchStartScale = null;
+            _pinchStartOffset = null;
             app.setDragging(false);
             final page = controller.screenToPage(details.localPosition);
             final ink = _hitInk(page);
@@ -1749,7 +1759,10 @@ class _PageCanvasState extends State<PageCanvas> {
               _mode = _DragMode.none;
               _touches.clear();
               _blockOwnedTouches.clear();
-              _pinchBaseDist = null;
+              _pinchStartDist = null;
+              _pinchStartFocal = null;
+              _pinchStartScale = null;
+              _pinchStartOffset = null;
               app.touchCanvasGesture = false;
               app.setDragging(false);
             },
