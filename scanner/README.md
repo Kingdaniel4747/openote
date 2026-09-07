@@ -26,5 +26,11 @@ phone is offline), the QR camera opens immediately.
 
 The Release workflow builds Windows and Android independently and in parallel.
 A short third job then publishes one GitHub release containing both the Windows
-installer and the versioned `openote-scanner-<version>.apk`. The `Android
-Scanner APK` workflow remains available as a manual APK-only development build.
+installer and the versioned `openote-scanner-<version>.apk`.
+
+Android updates must keep the same signing certificate. The workflow therefore
+keeps one Linux signing key under the fixed cache name
+`openote-scanner-signing-linux-v2`. Do not rename that cache key: the earlier
+OS-neutral name was first occupied by a Windows cache, which made every Linux
+run create a different certificate and Android rejected each release as a
+conflicting package.

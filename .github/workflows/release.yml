@@ -114,7 +114,11 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.android/debug.keystore
-          key: openote-scanner-signing-v1
+          # Do not reuse the former OS-neutral key. It was first saved by a
+          # Windows runner, so Linux could neither restore it nor save its own
+          # cache under the occupied name. The result was a new Android
+          # signature on every release and therefore un-installable updates.
+          key: openote-scanner-signing-linux-v2
 
       - name: Create scanner signing key when needed
         shell: bash
