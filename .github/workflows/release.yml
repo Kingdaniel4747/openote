@@ -93,12 +93,27 @@ jobs:
       - name: Install Android 36 platform
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
+      - name: Restore scanner package cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ github.workspace }}\.pub-cache
+          key: ${{ runner.os }}-scanner-pub-${{ hashFiles('scanner/pubspec.lock') }}
+
       - name: Get scanner packages
         working-directory: scanner
+        env:
+          # Keep plugin source and Gradle output on the same Windows drive.
+          # Kotlin's relocatable incremental cache cannot cross C: and D:.
+          PUB_CACHE: ${{ github.workspace }}\.pub-cache
         run: flutter pub get
 
       - name: Build Android scanner APK
         working-directory: scanner
+        env:
+          PUB_CACHE: ${{ github.workspace }}\.pub-cache
+          # A release build does not benefit from incremental compilation on a
+          # fresh runner. Disabling it also avoids plugin cache path failures.
+          GRADLE_OPTS: -Dkotlin.incremental=false -Dkotlin.compiler.execution.strategy=in-process
         run: flutter build apk --release --build-name=${{ steps.version.outputs.version }} --build-number=${{ github.run_number }}
 
       - name: Name the scanner APK
