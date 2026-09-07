@@ -36,6 +36,9 @@ jobs:
           flutter-version: 3.44.8
           cache: true
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
       # Android requires every update to have the same signature. Keeping the
       # generated testing key in Actions cache lets a newer workflow APK install
       # directly over the previous one instead of forcing an uninstall.
