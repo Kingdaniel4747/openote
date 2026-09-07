@@ -5,6 +5,8 @@
 #include <flutter/method_channel.h>
 #include <flutter/standard_method_codec.h>
 #include <windows.h>
+#include <shobjidl.h>
+#include <wrl/client.h>
 #include <memory>
 
 class WindowControls {
@@ -14,6 +16,9 @@ class WindowControls {
  private:
   HWND window_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> channel_;
+  Microsoft::WRL::ComPtr<IFrameworkInputPane> input_pane_;
+  Microsoft::WRL::ComPtr<IFrameworkInputPaneHandler> input_pane_handler_;
+  DWORD input_pane_cookie_ = 0;
 };
 
 #endif

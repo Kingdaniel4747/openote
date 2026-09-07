@@ -302,6 +302,8 @@ void main() {
 
   testWidgets('PDF-only pages reject off-paper ink and split re-entry',
       (t) async {
+    app.penColor = 0;
+    app.setCustomPenColor(null);
     app.pageProps =
         PageProps(layout: 'pdf', pageWidth: 400, pdfPageHeight: 400);
     await mount(t);
@@ -316,6 +318,8 @@ void main() {
     expect(strokes(), hasLength(2));
     for (final stroke in strokes()) {
       expect((stroke['x'] as List).every((x) => (x as num) < 400), true);
+      expect(stroke['brush']['color'], '#211F1B',
+          reason: 'automatic pen ink must remain black on white PDF paper');
     }
     app.cancelPendingSave();
     await t.pumpWidget(const SizedBox());

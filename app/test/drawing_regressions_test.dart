@@ -238,18 +238,35 @@ void main() {
       app.setEraserMode(EraserMode.stroke);
       expect(app.inkSizeFor(Tool.pen), 7);
       expect(app.inkSizeFor(Tool.ballpoint), 4);
-      expect(app.inkSizeFor(Tool.highlighter), 26);
+      expect(app.inkSizeFor(Tool.highlighter), 10);
       app.setTool(Tool.pen);
       expect(app.penSize, 7);
       app.setTool(Tool.highlighter);
-      expect(app.penSize, 26);
+      expect(app.penSize, 10);
       expect(repo.getSetting('eraserMode'), EraserMode.stroke.name);
       final stored = repo.getSetting('inkToolSizes') as Map;
       expect(stored[Tool.pen.name], 7);
       expect(stored[Tool.ballpoint.name], 4);
-      expect(stored[Tool.highlighter.name], 26);
+      expect(stored[Tool.highlighter.name], 10);
       app.cancelPendingSave();
       expect(t.takeException(), isNull);
+    });
+    testWidgets('pen and highlighter keep independent colours', (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      app.setTool(Tool.pen);
+      app.setInkColor(2);
+      app.setCustomInkColor('123456');
+      app.setTool(Tool.highlighter);
+      app.setInkColor(1);
+      app.setCustomInkColor('ABCDEF');
+
+      expect(app.inkColorFor(Tool.pen), 2);
+      expect(app.customInkColorFor(Tool.pen), '123456');
+      expect(app.inkColorFor(Tool.highlighter), 1);
+      expect(app.customInkColorFor(Tool.highlighter), 'ABCDEF');
+      expect(repo.getSetting('penCustomColor'), '123456');
+      expect(repo.getSetting('highlighterCustomColor'), 'ABCDEF');
+      app.cancelPendingSave();
     });
     testWidgets('a lasso-selected block follows one finger, not the canvas',
         (t) async {

@@ -72,13 +72,6 @@ class InkPainter extends CustomPainter {
       ..color = base.withValues(alpha: s.opacity)
       ..style = PaintingStyle.fill
       ..isAntiAlias = true;
-    if (s.tool == 'highlighter') {
-      // Multiply on dark paper can only darken it further. Alpha compositing
-      // retains a visible highlight there; white worksheets keep multiply.
-      paint.blendMode = autoColor.computeLuminance() > .5 && !onFixedBackdrop
-          ? BlendMode.srcOver
-          : BlendMode.multiply;
-    }
     canvas.drawPath(path, paint);
   }
 
@@ -97,7 +90,10 @@ class InkPainter extends CustomPainter {
     final outline = getStroke(
       points,
       options: StrokeOptions(
-        size: s.size * (s.tool == 'highlighter' ? 3 : 1),
+        // All toolbar sizes now mean their real visible width. The old
+        // highlighter silently tripled this value, producing coarse edges and
+        // making the eraser appear to miss a line it visibly touched.
+        size: s.size,
         thinning: constantWidth ? 0.0 : 0.6,
         // Samsung's digitizer samples very densely. A little more filtering
         // removes the visible micro-jitter without turning corners into arcs.

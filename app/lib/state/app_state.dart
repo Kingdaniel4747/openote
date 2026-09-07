@@ -4292,10 +4292,12 @@ class AppState extends ChangeNotifier
   /// Every drag-time decision reads THIS, never [snapToGrid] directly.
   bool get effectiveSnap => snapOverride ? !snapToGrid : snapToGrid;
   int penColor = 0;
+  int highlighterColor = 0;
 
   /// A mixed pen colour from the colour picker. Null means one of the fixed
   /// toolbar swatches (including the theme-aware automatic first swatch).
   String? penCustomColor;
+  String? highlighterCustomColor;
   double penSize = 2.5;
 
   /// The pen, ballpoint and highlighter deliberately remember different
@@ -4304,7 +4306,7 @@ class AppState extends ChangeNotifier
   final Map<Tool, double> _inkToolSizes = {
     Tool.pen: 2.5,
     Tool.ballpoint: 2.5,
-    Tool.highlighter: 12,
+    Tool.highlighter: 6,
     Tool.shape: 2.5,
   };
 
@@ -4316,7 +4318,7 @@ class AppState extends ChangeNotifier
 
   double inkSizeFor(Tool value) => _inkToolSizes[value] ?? penSize;
 
-  double maxInkSizeFor(Tool value) => value == Tool.highlighter ? 40.0 : 12.0;
+  double maxInkSizeFor(Tool value) => 10.0;
 
   void setInkSize(double value) {
     if (!value.isFinite) return;
@@ -4334,6 +4336,43 @@ class AppState extends ChangeNotifier
     penCustomColor =
         raw != null && RegExp(r'^[0-9A-F]{6}$').hasMatch(raw) ? raw : null;
     _repo.setSetting('penCustomColor', penCustomColor);
+    notifyListeners();
+  }
+
+  int inkColorFor(Tool value) =>
+      value == Tool.highlighter ? highlighterColor : penColor;
+
+  String? customInkColorFor(Tool value) =>
+      value == Tool.highlighter ? highlighterCustomColor : penCustomColor;
+
+  /// Colour choices belong to their brush. Switching to the highlighter must
+  /// never borrow the pen colour, and switching back must restore the pen.
+  void setInkColor(int value) {
+    if (tool == Tool.highlighter) {
+      highlighterColor = value;
+      highlighterCustomColor = null;
+      _repo.setSetting('highlighterColor', value);
+      _repo.setSetting('highlighterCustomColor', null);
+    } else {
+      penColor = value;
+      penCustomColor = null;
+      _repo.setSetting('penColor', value);
+      _repo.setSetting('penCustomColor', null);
+    }
+    notifyListeners();
+  }
+
+  void setCustomInkColor(String? value) {
+    final raw = value?.replaceFirst('#', '').toUpperCase();
+    final clean =
+        raw != null && RegExp(r'^[0-9A-F]{6}$').hasMatch(raw) ? raw : null;
+    if (tool == Tool.highlighter) {
+      highlighterCustomColor = clean;
+      _repo.setSetting('highlighterCustomColor', clean);
+    } else {
+      penCustomColor = clean;
+      _repo.setSetting('penCustomColor', clean);
+    }
     notifyListeners();
   }
 
@@ -6309,6 +6348,19 @@ class AppState extends ChangeNotifier
     if (penColour is String &&
         RegExp(r'^[0-9A-Fa-f]{6}$').hasMatch(penColour)) {
       penCustomColor = penColour.toUpperCase();
+    }
+    final storedPenColor = _repo.getSetting('penColor');
+    if (storedPenColor is int && storedPenColor >= 0) {
+      penColor = storedPenColor;
+    }
+    final storedHighlighterColor = _repo.getSetting('highlighterColor');
+    if (storedHighlighterColor is int && storedHighlighterColor >= 0) {
+      highlighterColor = storedHighlighterColor;
+    }
+    final highlighterColour = _repo.getSetting('highlighterCustomColor');
+    if (highlighterColour is String &&
+        RegExp(r'^[0-9A-Fa-f]{6}$').hasMatch(highlighterColour)) {
+      highlighterCustomColor = highlighterColour.toUpperCase();
     }
     final storedShapeRecognition = _repo.getSetting('shapeRecognition');
     if (storedShapeRecognition is bool) {

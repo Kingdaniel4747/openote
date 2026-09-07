@@ -2,11 +2,62 @@
 #include <dwmapi.h>
 #include <shellapi.h>
 
+namespace {
+
+// Registering a desktop window for input-pane notifications makes the app,
+// rather than Windows' default heuristic, responsible for keeping its focused
+// field visible. Openote deliberately keeps its canvas at its full size: the
+// touch keyboard overlays the lower part of the page instead of shrinking or
+// sliding the complete notebook window upward.
+class OverlayInputPaneHandler final : public IFrameworkInputPaneHandler {
+ public:
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** object) override {
+    if (object == nullptr) return E_POINTER;
+    *object = nullptr;
+    if (iid == IID_IUnknown || iid == __uuidof(IFrameworkInputPaneHandler)) {
+      *object = static_cast<IFrameworkInputPaneHandler*>(this);
+      AddRef();
+      return S_OK;
+    }
+    return E_NOINTERFACE;
+  }
+
+  ULONG STDMETHODCALLTYPE AddRef() override {
+    return static_cast<ULONG>(InterlockedIncrement(&references_));
+  }
+
+  ULONG STDMETHODCALLTYPE Release() override {
+    const auto remaining =
+        static_cast<ULONG>(InterlockedDecrement(&references_));
+    if (remaining == 0) delete this;
+    return remaining;
+  }
+
+  HRESULT STDMETHODCALLTYPE Showing(RECT*, BOOL) override { return S_OK; }
+  HRESULT STDMETHODCALLTYPE Hiding(BOOL) override { return S_OK; }
+
+ private:
+  ~OverlayInputPaneHandler() = default;
+  LONG references_ = 1;
+};
+
+}  // namespace
+
 WindowControls::WindowControls(HWND window, flutter::BinaryMessenger* messenger)
     : window_(window),
       channel_(std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           messenger, "openote/window_controls",
           &flutter::StandardMethodCodec::GetInstance())) {
+  input_pane_handler_.Attach(new OverlayInputPaneHandler());
+  if (SUCCEEDED(CoCreateInstance(CLSID_FrameworkInputPane, nullptr,
+                                 CLSCTX_INPROC_SERVER,
+                                 IID_PPV_ARGS(input_pane_.GetAddressOf())))) {
+    if (FAILED(input_pane_->AdviseWithHWND(
+            window_, input_pane_handler_.Get(), &input_pane_cookie_))) {
+      input_pane_cookie_ = 0;
+      input_pane_.Reset();
+    }
+  }
   channel_->SetMethodCallHandler(
       [this](const flutter::MethodCall<flutter::EncodableValue>& call,
              std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
@@ -68,4 +119,9 @@ WindowControls::WindowControls(HWND window, flutter::BinaryMessenger* messenger)
       });
 }
 
-WindowControls::~WindowControls() { channel_->SetMethodCallHandler(nullptr); }
+WindowControls::~WindowControls() {
+  channel_->SetMethodCallHandler(nullptr);
+  if (input_pane_ && input_pane_cookie_ != 0) {
+    input_pane_->Unadvise(input_pane_cookie_);
+  }
+}

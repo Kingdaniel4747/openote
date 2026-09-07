@@ -103,6 +103,10 @@ abstract final class OnoteColors {
           : [
               dark ? moon0 : graphite900,
               ...penColors.skip(1),
+              // Keep a real black beside the theme-aware automatic swatch.
+              // In dark mode the automatic colour is white, but worksheets
+              // and imported PDFs still need an explicitly selectable black.
+              Colors.black,
             ];
 
   static const penColors = <Color>[

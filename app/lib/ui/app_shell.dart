@@ -1198,144 +1198,155 @@ class _AppShellState extends State<AppShell> {
                   ? _LockedPage(app: app, page: page)
                   : _canvasKeys(
                       PageCanvas(key: ValueKey(app.pageId), state: app));
-          return Scaffold(
-            // Tablet mode should let the Windows touch keyboard float over the
-            // page. Resizing this whole shell makes every canvas layer reflow
-            // and produces a long upward slide when a title field gains focus.
-            resizeToAvoidBottomInset: false,
-            body: LayoutBuilder(
-              builder: (context, constraints) => SafeArea(
-                  child: Stack(fit: StackFit.expand, children: [
-                Positioned.fill(child: writingSurface),
-                Positioned(
-                  left: _writingToolbarOffset.dx.clamp(
-                      8.0,
-                      (constraints.maxWidth -
-                              math.min(760.0,
-                                  math.max(220.0, constraints.maxWidth - 32)))
-                          .clamp(8.0, double.infinity)),
-                  top: _writingToolbarOffset.dy.clamp(8.0,
-                      (constraints.maxHeight - 60).clamp(8.0, double.infinity)),
-                  child: Material(
-                    elevation: 10,
-                    clipBehavior: Clip.antiAlias,
-                    borderRadius: BorderRadius.circular(12),
-                    child: SizedBox(
-                      width: math.min(
-                          760.0, math.max(220.0, constraints.maxWidth - 32)),
-                      child: Row(children: [
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onPanUpdate: (details) => setState(() {
-                            _writingToolbarOffset += details.delta;
-                          }),
-                          child: const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 8),
-                            child: Icon(Icons.drag_indicator, size: 20),
+          return MediaQuery.removeViewInsets(
+            context: context,
+            removeBottom: true,
+            child: Scaffold(
+              // Tablet mode should let the Windows touch keyboard float over
+              // the page. Resizing this whole shell makes every canvas layer
+              // reflow and produces a long upward slide when a title field
+              // gains focus.
+              resizeToAvoidBottomInset: false,
+              body: LayoutBuilder(
+                builder: (context, constraints) => SafeArea(
+                    child: Stack(fit: StackFit.expand, children: [
+                  Positioned.fill(child: writingSurface),
+                  Positioned(
+                    left: _writingToolbarOffset.dx.clamp(
+                        8.0,
+                        (constraints.maxWidth -
+                                math.min(760.0,
+                                    math.max(220.0, constraints.maxWidth - 32)))
+                            .clamp(8.0, double.infinity)),
+                    top: _writingToolbarOffset.dy.clamp(
+                        8.0,
+                        (constraints.maxHeight - 60)
+                            .clamp(8.0, double.infinity)),
+                    child: Material(
+                      elevation: 10,
+                      clipBehavior: Clip.antiAlias,
+                      borderRadius: BorderRadius.circular(12),
+                      child: SizedBox(
+                        width: math.min(
+                            760.0, math.max(220.0, constraints.maxWidth - 32)),
+                        child: Row(children: [
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onPanUpdate: (details) => setState(() {
+                              _writingToolbarOffset += details.delta;
+                            }),
+                            child: const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 8),
+                              child: Icon(Icons.drag_indicator, size: 20),
+                            ),
                           ),
-                        ),
-                        Expanded(child: CommandBar(app: app, drawOnly: true)),
-                        IconButton(
-                          tooltip: 'Leave writing mode',
-                          icon: const Icon(Icons.close_fullscreen, size: 19),
-                          onPressed: () => app.setWritingMode(false),
-                        ),
-                      ]),
+                          Expanded(child: CommandBar(app: app, drawOnly: true)),
+                          IconButton(
+                            tooltip: 'Leave writing mode',
+                            icon: const Icon(Icons.close_fullscreen, size: 19),
+                            onPressed: () => app.setWritingMode(false),
+                          ),
+                        ]),
+                      ),
                     ),
                   ),
-                ),
-                AlertPopup(app: app, regionFocus: _alertRegion),
-                ImportProgressCard(app: app),
-              ])),
+                  AlertPopup(app: app, regionFocus: _alertRegion),
+                  ImportProgressCard(app: app),
+                ])),
+              ),
             ),
           );
         }
-        return Scaffold(
-          // Keep the notebook and canvas fixed when Windows opens its touch
-          // keyboard; the keyboard is an overlay, not a new page boundary.
-          resizeToAvoidBottomInset: false,
-          // A `Stack`, so a reminder floats OVER the page rather than pushing
-          // it. An alert that reflowed the canvas would move the line you were
-          // typing on, which is a worse interruption than the one it is
-          // delivering.
-          // Any click means "I am steering with the mouse now", so the F6
-          // ring stops advertising a region the user has left. `deferToChild`
-          // so this changes no hit testing — it only listens on the way past.
-          body: Listener(
-            onPointerDown: (_) => _ring.value = null,
-            child: Column(children: [
-              if (WindowsWindowFrame.of(context)?.customChrome == true)
-                CommandBar(app: app, titlebarOnly: true),
-              Expanded(
-                  child: Stack(children: [
-                Row(
-                  children: [
-                    _regionWrap(_Region.sidebar, _navigator()),
-                    const VerticalDivider(width: 1),
-                    Expanded(
-                      child: Column(
-                        children: [
-                          _regionWrap(_Region.toolbar, CommandBar(app: app)),
-                          // **The object row**, permanent and always 36 px.
-                          //
-                          // Permanent because a band that appeared with the
-                          // equation would push the page down and putting the page
-                          // back is a pan the canvas controller discards on a short
-                          // or zoomed-out page — so the page would jump exactly
-                          // where a student most often starts an equation. See
-                          // `object_row.dart`; the chrome is 112 px in every state
-                          // of the app and the canvas box never moves.
-                          _regionWrap(_Region.object, ObjectRow(app: app)),
-                          if (app.findOpen) _FindBar(app: app),
-                          // The breadcrumb is CONTEXT, not a second navigator
-                          // (§7d). With the navigator expanded it repeats what is
-                          // already on screen two inches to the left, so it spends a
-                          // full-width row saying nothing. Collapsed — or on the
-                          // rail — it is the only place the notebook and section are
-                          // named, and it earns the row.
-                          if (page != null && app.navCollapsed)
-                            _PageHeader(app: app, page: page),
-                          Expanded(
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  // The gate is HERE, at the point the canvas would
-                                  // be built, rather than only on the click that
-                                  // opened the page. A page can become locked while
-                                  // it is on screen — the policy expires, or "Lock
-                                  // now" is pressed — and gating only the click
-                                  // would leave the content sitting there.
-                                  child: _regionWrap(
-                                      _Region.page,
-                                      page == null
-                                          ? _EmptyState(app: app)
-                                          : app.isLocked(page.id)
-                                              ? _LockedPage(
-                                                  app: app, page: page)
-                                              : _canvasKeys(PageCanvas(
-                                                  key: ValueKey(app.pageId),
-                                                  state: app))),
-                                ),
-                                if (panel != null) ...[
-                                  const VerticalDivider(width: 1),
-                                  PanelEntryFocus(
-                                    node: _panelEntry,
-                                    child: _regionWrap(_Region.panel, panel),
+        return MediaQuery.removeViewInsets(
+          context: context,
+          removeBottom: true,
+          child: Scaffold(
+            // Keep the notebook and canvas fixed when Windows opens its touch
+            // keyboard; the keyboard is an overlay, not a new page boundary.
+            resizeToAvoidBottomInset: false,
+            // A `Stack`, so a reminder floats OVER the page rather than pushing
+            // it. An alert that reflowed the canvas would move the line you were
+            // typing on, which is a worse interruption than the one it is
+            // delivering.
+            // Any click means "I am steering with the mouse now", so the F6
+            // ring stops advertising a region the user has left. `deferToChild`
+            // so this changes no hit testing — it only listens on the way past.
+            body: Listener(
+              onPointerDown: (_) => _ring.value = null,
+              child: Column(children: [
+                if (WindowsWindowFrame.of(context)?.customChrome == true)
+                  CommandBar(app: app, titlebarOnly: true),
+                Expanded(
+                    child: Stack(children: [
+                  Row(
+                    children: [
+                      _regionWrap(_Region.sidebar, _navigator()),
+                      const VerticalDivider(width: 1),
+                      Expanded(
+                        child: Column(
+                          children: [
+                            _regionWrap(_Region.toolbar, CommandBar(app: app)),
+                            // **The object row**, permanent and always 36 px.
+                            //
+                            // Permanent because a band that appeared with the
+                            // equation would push the page down and putting the page
+                            // back is a pan the canvas controller discards on a short
+                            // or zoomed-out page — so the page would jump exactly
+                            // where a student most often starts an equation. See
+                            // `object_row.dart`; the chrome is 112 px in every state
+                            // of the app and the canvas box never moves.
+                            _regionWrap(_Region.object, ObjectRow(app: app)),
+                            if (app.findOpen) _FindBar(app: app),
+                            // The breadcrumb is CONTEXT, not a second navigator
+                            // (§7d). With the navigator expanded it repeats what is
+                            // already on screen two inches to the left, so it spends a
+                            // full-width row saying nothing. Collapsed — or on the
+                            // rail — it is the only place the notebook and section are
+                            // named, and it earns the row.
+                            if (page != null && app.navCollapsed)
+                              _PageHeader(app: app, page: page),
+                            Expanded(
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    // The gate is HERE, at the point the canvas would
+                                    // be built, rather than only on the click that
+                                    // opened the page. A page can become locked while
+                                    // it is on screen — the policy expires, or "Lock
+                                    // now" is pressed — and gating only the click
+                                    // would leave the content sitting there.
+                                    child: _regionWrap(
+                                        _Region.page,
+                                        page == null
+                                            ? _EmptyState(app: app)
+                                            : app.isLocked(page.id)
+                                                ? _LockedPage(
+                                                    app: app, page: page)
+                                                : _canvasKeys(PageCanvas(
+                                                    key: ValueKey(app.pageId),
+                                                    state: app))),
                                   ),
+                                  if (panel != null) ...[
+                                    const VerticalDivider(width: 1),
+                                    PanelEntryFocus(
+                                      node: _panelEntry,
+                                      child: _regionWrap(_Region.panel, panel),
+                                    ),
+                                  ],
                                 ],
-                              ],
+                              ),
                             ),
-                          ),
-                          _StatusBar(app: app),
-                        ],
+                            _StatusBar(app: app),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                AlertPopup(app: app, regionFocus: _alertRegion),
-                ImportProgressCard(app: app),
-              ])),
-            ]),
+                    ],
+                  ),
+                  AlertPopup(app: app, regionFocus: _alertRegion),
+                  ImportProgressCard(app: app),
+                ])),
+              ]),
+            ),
           ),
         );
       },

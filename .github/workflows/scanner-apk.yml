@@ -22,10 +22,10 @@ jobs:
 
     steps:
       - name: Check out the source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -37,13 +37,13 @@ jobs:
           cache: true
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       # Android requires every update to have the same signature. Keeping the
       # generated testing key in Actions cache lets a newer workflow APK install
       # directly over the previous one instead of forcing an uninstall.
       - name: Restore scanner signing key
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.android/debug.keystore
           key: openote-scanner-signing-v1
@@ -76,9 +76,8 @@ jobs:
         run: cp scanner/build/app/outputs/flutter-apk/app-release.apk openote-scanner.apk
 
       - name: Upload APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: openote-scanner-apk
           path: openote-scanner.apk
           if-no-files-found: error
-          compression-level: 0
+          archive: false

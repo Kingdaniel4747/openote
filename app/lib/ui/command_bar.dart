@@ -848,6 +848,10 @@ class _CommandBarState extends State<CommandBar> {
       dark: Theme.of(context).brightness == Brightness.dark,
       highlighter: app.tool == Tool.highlighter,
     );
+    final colourTool =
+        app.tool == Tool.highlighter ? Tool.highlighter : Tool.pen;
+    final activeColour = app.inkColorFor(colourTool);
+    final activeCustomColour = app.customInkColorFor(colourTool);
     return Row(children: [
       toolButton(Tool.select, Icons.near_me_outlined, 'Select / move  (V)'),
       toolButton(Tool.text, Icons.text_fields, 'Text  (T)'),
@@ -888,8 +892,7 @@ class _CommandBarState extends State<CommandBar> {
             child: InkWell(
               borderRadius: BorderRadius.circular(99),
               onTap: () {
-                app.penColor = i;
-                app.setCustomPenColor(null);
+                app.setInkColor(i);
                 // With ink selected (typically just lassoed), a colour click
                 // recolours it rather than only arming the next stroke —
                 // recolouring after the fact is most of why you lasso a
@@ -910,7 +913,7 @@ class _CommandBarState extends State<CommandBar> {
                   shape: BoxShape.circle,
                   border: Border.all(
                     width: 2,
-                    color: app.penCustomColor == null && app.penColor == i
+                    color: activeCustomColour == null && activeColour == i
                         ? scheme.primary
                         : Colors.transparent,
                   ),
@@ -922,20 +925,20 @@ class _CommandBarState extends State<CommandBar> {
           key: const ValueKey('pen-colour-picker'),
           tooltip: tr(context, 'Mix a custom colour'),
           visualDensity: VisualDensity.compact,
-          icon: app.penCustomColor == null
+          icon: activeCustomColour == null
               ? const Icon(Icons.palette_outlined, size: 19)
               : Container(
                   width: 18,
                   height: 18,
                   decoration: BoxDecoration(
-                    color: onoteColorFromHex(app.penCustomColor),
+                    color: onoteColorFromHex(activeCustomColour),
                     shape: BoxShape.circle,
                     border: Border.all(color: scheme.primary, width: 2),
                   ),
                 ),
           onPressed: () async {
-            final preset = colors[app.penColor % colors.length];
-            final initial = app.penCustomColor ??
+            final preset = colors[activeColour % colors.length];
+            final initial = activeCustomColour ??
                 (preset.toARGB32() & 0xFFFFFF)
                     .toRadixString(16)
                     .padLeft(6, '0')
@@ -944,7 +947,7 @@ class _CommandBarState extends State<CommandBar> {
                 initial: initial, title: 'Pen colour');
             if (picked == null) return;
             final opaque = picked.replaceFirst('#', '').substring(0, 6);
-            app.setCustomPenColor(opaque);
+            app.setCustomInkColor(opaque);
             if (app.hasInkSelection) app.recolorSelectedInk('#$opaque');
           },
         ),
@@ -955,7 +958,7 @@ class _CommandBarState extends State<CommandBar> {
             value: app.penSize,
             min: .5,
             max: app.maxInkSizeFor(app.tool),
-            divisions: app.tool == Tool.highlighter ? 79 : 23,
+            divisions: 19,
             label: '${app.penSize.toStringAsFixed(1)} px',
             onChanged: app.setInkSize,
           ),

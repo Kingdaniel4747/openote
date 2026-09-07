@@ -295,12 +295,13 @@ class _PageCanvasState extends State<PageCanvas> {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final colors = OnoteColors.drawingColors(
         dark: dark, highlighter: _contactTool == Tool.highlighter);
-    final color = colors[app.penColor % colors.length];
-    final customColor = app.penCustomColor;
+    final colorIndex = app.inkColorFor(_contactTool);
+    final color = colors[colorIndex % colors.length];
+    final customColor = app.customInkColorFor(_contactTool);
     // The first swatch is "automatic": ordinary paper ink follows the
     // application theme even after it has been written.  A PDF/image is a
     // fixed background, so it deliberately receives a real colour instead.
-    final fixedBackdrop = _hasFixedBackdropAt(pt);
+    final fixedBackdrop = app.pageProps.pdfOnly || _hasFixedBackdropAt(pt);
     _shapeHold?.cancel();
     _shapeKind = null;
     _shapeRaw.clear();
@@ -317,11 +318,11 @@ class _PageCanvasState extends State<PageCanvas> {
                 : 'pen',
         colorHex: customColor != null
             ? '#$customColor'
-            : app.penColor == 0 &&
+            : colorIndex == 0 &&
                     !fixedBackdrop &&
                     _contactTool != Tool.highlighter
                 ? 'auto'
-                : '#${((fixedBackdrop && app.penColor == 0 && _contactTool != Tool.highlighter ? OnoteColors.graphite900 : color).toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}',
+                : '#${((fixedBackdrop && colorIndex == 0 && _contactTool != Tool.highlighter ? OnoteColors.graphite900 : color).toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}',
         size: app.penSize,
         opacity: _contactTool == Tool.highlighter ? 0.4 : 1.0,
       );
@@ -579,7 +580,6 @@ class _PageCanvasState extends State<PageCanvas> {
       _eraseUndoPushed = true;
     }
     final radius = app.eraserSize / 2 / controller.scale;
-    final r2 = radius * radius;
     // INK-6: 'area' rubs points out mid-stroke (splitting survivors); 'stroke'
     // removes any stroke the eraser touches whole — OneNote's default, and the
     // mode that makes cleaning up a scratched-out word one swipe instead of
@@ -590,7 +590,10 @@ class _PageCanvasState extends State<PageCanvas> {
       // Cheap reject: the eraser can only affect a block whose rect it touches.
       // This runs per pointer sample, so skipping distant blocks before looking
       // at any stroke is what keeps erasing cheap on an ink-heavy page.
-      if (!_blockRect(b).inflate(radius).contains(pt)) continue;
+      // Stroke bounds store centre points. Include the widest legacy brush
+      // radius as well, or an eraser touching the visible edge of an older
+      // highlighter can be rejected before its strokes are examined.
+      if (!_blockRect(b).inflate(radius + 20).contains(pt)) continue;
       final strokes = (b.content['strokes'] as List);
       // Reuse the decoded strokes rather than re-parsing JSON per sample.
       final decoded = _strokesOf(b);
@@ -602,10 +605,15 @@ class _PageCanvasState extends State<PageCanvas> {
             ? decoded[si]
             : Stroke.fromJson(sj.cast<String, dynamic>());
         s = sampleStroke(s, math.max(.25, radius / 2));
+        // Collision is against the visible outline, not merely its invisible
+        // centre line. This matters most for a broad translucent highlighter:
+        // touching its edge must erase it just like touching a pen stroke.
+        final touchRadius = radius + s.size / 2;
+        final touchRadiusSquared = touchRadius * touchRadius;
         // Squared distance — avoids a sqrt per point per sample.
         final keep = List<bool>.generate(s.x.length, (i) {
           final dx = s.x[i] - pt.dx, dy = s.y[i] - pt.dy;
-          return dx * dx + dy * dy >= r2;
+          return dx * dx + dy * dy >= touchRadiusSquared;
         });
         if (!keep.contains(false)) {
           out.add(sj.cast<String, dynamic>());
