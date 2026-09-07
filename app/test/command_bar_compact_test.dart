@@ -73,7 +73,6 @@ void main() {
         reason: 'Planner');
     for (final tip in const [
       'Scan from phone',
-      'Find tags',
       'Links & backlinks',
       'Find on page  (Ctrl+F)',
       'Export page…',
@@ -83,6 +82,25 @@ void main() {
     }
     expect(find.byTooltip('More'), findsNothing,
         reason: 'a fold button folding nothing is worse than none');
+    app.cancelPendingSave();
+  });
+
+  testWidgets('planner badge counts unfinished homework on every page',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await pump(tester, const Size(2600, 1200));
+
+    app.planner.reminders.add(
+      text: 'Finish worksheet',
+      at: DateTime.now().add(const Duration(days: 10)),
+      notebookId: app.notebookId,
+      pageId: app.pageId,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('1 homework item waiting'), findsOneWidget);
+    expect(find.text('1'), findsOneWidget);
+    app.planner.dispose();
     app.cancelPendingSave();
   });
 
@@ -133,7 +151,8 @@ void main() {
         reason: 'the SAME dialog the inline button opens');
   });
 
-  testWidgets('folding the trailing cluster leaves the tabs and Home row '
+  testWidgets(
+      'folding the trailing cluster leaves the tabs and Home row '
       'exactly where they were', (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     await pump(tester, const Size(2600, 1200));

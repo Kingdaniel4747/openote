@@ -49,8 +49,8 @@ class _MonthGridState extends State<MonthGrid> {
   /// clear what you were looking at.
   late DateTime _month = DateTime(widget.now.year, widget.now.month);
 
-  void _step(int months) => setState(
-      () => _month = DateTime(_month.year, _month.month + months));
+  void _step(int months) =>
+      setState(() => _month = DateTime(_month.year, _month.month + months));
 
   @override
   Widget build(BuildContext context) {
@@ -73,13 +73,13 @@ class _MonthGridState extends State<MonthGrid> {
           ),
           Expanded(
             child: GestureDetector(
-              onTap: () => setState(() =>
-                  _month = DateTime(widget.now.year, widget.now.month)),
+              onTap: () => setState(
+                  () => _month = DateTime(widget.now.year, widget.now.month)),
               child: Text(
                 '${monthName(_month.month)} ${_month.year}',
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                    fontSize: 12, fontWeight: FontWeight.w600),
+                style:
+                    const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
               ),
             ),
           ),
@@ -132,10 +132,15 @@ class _MonthGridState extends State<MonthGrid> {
         margin: const EdgeInsets.all(1),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(6),
-          color: isPicked ? scheme.primary.withValues(alpha: .16) : null,
-          border: isToday
-              ? Border.all(color: scheme.primary.withValues(alpha: .7))
-              : null,
+          color: isPicked
+              ? scheme.primary.withValues(alpha: .16)
+              : context.surfaces.canvas.withValues(alpha: .42),
+          border: Border.all(
+            color: isToday
+                ? scheme.primary.withValues(alpha: .8)
+                : context.surfaces.border.withValues(alpha: .75),
+            width: isToday ? 1.4 : 1,
+          ),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -149,7 +154,8 @@ class _MonthGridState extends State<MonthGrid> {
                     // full weight makes the month's own boundary invisible.
                     color: inMonth
                         ? null
-                        : context.surfaces.textSecondary.withValues(alpha: .65))),
+                        : context.surfaces.textSecondary
+                            .withValues(alpha: .65))),
             const SizedBox(height: 2),
             SizedBox(
               height: 4,
@@ -178,8 +184,7 @@ class _MonthGridState extends State<MonthGrid> {
     );
   }
 
-  static Color _dotColour(
-          DatedKind k, ColorScheme scheme, OnoteSurfaces s) =>
+  static Color _dotColour(DatedKind k, ColorScheme scheme, OnoteSurfaces s) =>
       switch (k) {
         DatedKind.exam => OnoteColors.brass500,
         DatedKind.task => scheme.primary,

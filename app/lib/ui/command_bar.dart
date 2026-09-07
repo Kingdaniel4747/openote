@@ -39,10 +39,12 @@ class CommandBar extends StatefulWidget {
     required this.app,
     this.titlebarOnly = false,
     this.drawOnly = false,
+    this.verticalDrawOnly = false,
   });
   final AppState app;
   final bool titlebarOnly;
   final bool drawOnly;
+  final bool verticalDrawOnly;
 
   @override
   State<CommandBar> createState() => _CommandBarState();
@@ -161,20 +163,6 @@ class _CommandBarState extends State<CommandBar> {
               ),
               ToolbarControl(
                 width: 40,
-                icon: Icons.label_outline,
-                label: 'Find tags',
-                selected: app.showTagsPanel,
-                onPressed: app.toggleTagsPanel,
-                inline: IconButton(
-                  icon: const Icon(Icons.label_outline, size: 18),
-                  tooltip: tr(context, 'Find tags'),
-                  isSelected: app.showTagsPanel,
-                  visualDensity: VisualDensity.compact,
-                  onPressed: app.toggleTagsPanel,
-                ),
-              ),
-              ToolbarControl(
-                width: 40,
                 icon: Icons.account_tree_outlined,
                 label: 'Links & backlinks',
                 selected: app.showLinksPanel,
@@ -285,12 +273,10 @@ class _CommandBarState extends State<CommandBar> {
     if (widget.drawOnly) {
       return Material(
         color: scheme.surface,
-        child: SizedBox(
-          height: 48,
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: _drawRow(context),
-          ),
+        child: SingleChildScrollView(
+          scrollDirection:
+              widget.verticalDrawOnly ? Axis.vertical : Axis.horizontal,
+          child: _drawRow(context, vertical: widget.verticalDrawOnly),
         ),
       );
     }
@@ -665,10 +651,6 @@ class _CommandBarState extends State<CommandBar> {
           () => app.toggleList(ListKind.checkbox)),
       fmt(Icons.format_quote, 'Quote', () => app.toggleLinePrefix('> ')),
       const _Div(),
-      // Tags (TEXT-5). OneNote users organise around these, so they get a
-      // first-class place on Home rather than a submenu. The button shows the
-      // caret line's active tags, which is why it reads state on every build.
-      _TagButton(app: app),
       _MakeCardButton(app: app),
       const _Div(),
       // Text colour — split button (§7a.2): main area applies the current
@@ -823,7 +805,7 @@ class _CommandBarState extends State<CommandBar> {
             ),
         ],
       );
-  Widget _drawRow(BuildContext context) {
+  Widget _drawRow(BuildContext context, {bool vertical = false}) {
     final scheme = Theme.of(context).colorScheme;
     Widget toolButton(Tool t, IconData icon, String tip) => IconButton(
           icon: Icon(icon, size: 18),
@@ -852,161 +834,184 @@ class _CommandBarState extends State<CommandBar> {
         app.tool == Tool.highlighter ? Tool.highlighter : Tool.pen;
     final activeColour = app.inkColorFor(colourTool);
     final activeCustomColour = app.customInkColorFor(colourTool);
-    return Row(children: [
-      toolButton(Tool.select, Icons.near_me_outlined, 'Select / move  (V)'),
-      toolButton(Tool.text, Icons.text_fields, 'Text  (T)'),
-      toolButton(Tool.pen, Icons.brush_outlined, 'Pen  (P)'),
-      toolButton(Tool.ballpoint, Icons.edit, 'Ballpoint — constant width'),
-      toolButton(
-          Tool.highlighter, Icons.border_color_outlined, 'Highlighter  (H)'),
-      toolButton(Tool.eraser, Icons.cleaning_services_outlined, 'Eraser  (E)'),
-      toolButton(Tool.lasso, Icons.gesture_outlined, 'Lasso-select ink'),
-      IconButton(
-        icon: const Icon(Icons.category_outlined, size: 18),
-        tooltip: 'Shape recognition — draw with the pen and hold',
-        isSelected: app.shapeRecognition,
-        style: IconButton.styleFrom(
-            backgroundColor: app.shapeRecognition
-                ? scheme.primary.withValues(alpha: .18)
-                : null,
-            foregroundColor: app.shapeRecognition ? scheme.primary : null),
-        visualDensity: VisualDensity.compact,
-        onPressed: () => app.setShapeRecognition(!app.shapeRecognition),
-      ),
-      IconButton(
-        icon: const Icon(Icons.straighten_outlined, size: 18),
-        tooltip: 'Ruler — drag the grip, pinch to resize or rotate',
-        isSelected: app.rulerVisible,
-        style: IconButton.styleFrom(
-            backgroundColor:
-                app.rulerVisible ? scheme.primary.withValues(alpha: .18) : null,
-            foregroundColor: app.rulerVisible ? scheme.primary : null),
-        visualDensity: VisualDensity.compact,
-        onPressed: () => app.setRulerVisible(!app.rulerVisible),
-      ),
-      const _Div(),
-      if (inkActive) ...[
-        for (final (i, c) in colors.indexed)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(99),
-              onTap: () {
-                app.setInkColor(i);
-                // With ink selected (typically just lassoed), a colour click
-                // recolours it rather than only arming the next stroke —
-                // recolouring after the fact is most of why you lasso a
-                // diagram (INK-7).
-                if (app.hasInkSelection) {
-                  app.recolorSelectedInk('#'
-                      '${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}');
-                } else {
-                  app.refresh();
-                }
-              },
-              child: Container(
-                key: ValueKey('pen-swatch-$i'),
-                width: 18,
-                height: 18,
-                decoration: BoxDecoration(
-                  color: c,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    width: 2,
-                    color: activeCustomColour == null && activeColour == i
-                        ? scheme.primary
-                        : Colors.transparent,
+    Widget gap([double size = 4]) => SizedBox(
+          width: vertical ? 0 : size,
+          height: vertical ? size : 0,
+        );
+    Widget sizeSlider({required Key key}) {
+      final slider = Slider(
+        key: key,
+        value: app.penSize,
+        min: app.minInkSizeFor(app.tool),
+        max: app.maxInkSizeFor(app.tool),
+        divisions: app.tool == Tool.highlighter ? 20 : 19,
+        label: '${app.penSize.toStringAsFixed(1)} px',
+        onChanged: app.setInkSize,
+      );
+      return vertical
+          ? SizedBox(
+              width: 48,
+              height: 118,
+              child: RotatedBox(quarterTurns: 3, child: slider),
+            )
+          : SizedBox(width: 118, child: slider);
+    }
+
+    return Flex(
+        direction: vertical ? Axis.vertical : Axis.horizontal,
+        children: [
+          toolButton(Tool.select, Icons.near_me_outlined, 'Select / move  (V)'),
+          toolButton(Tool.text, Icons.text_fields, 'Text  (T)'),
+          toolButton(Tool.pen, Icons.brush_outlined, 'Pen  (P)'),
+          toolButton(Tool.ballpoint, Icons.edit, 'Ballpoint — constant width'),
+          toolButton(Tool.highlighter, Icons.border_color_outlined,
+              'Highlighter  (H)'),
+          toolButton(
+              Tool.eraser, Icons.cleaning_services_outlined, 'Eraser  (E)'),
+          toolButton(Tool.lasso, Icons.gesture_outlined, 'Lasso-select ink'),
+          IconButton(
+            icon: const Icon(Icons.category_outlined, size: 18),
+            tooltip: 'Shape recognition — draw with the pen and hold',
+            isSelected: app.shapeRecognition,
+            style: IconButton.styleFrom(
+                backgroundColor: app.shapeRecognition
+                    ? scheme.primary.withValues(alpha: .18)
+                    : null,
+                foregroundColor: app.shapeRecognition ? scheme.primary : null),
+            visualDensity: VisualDensity.compact,
+            onPressed: () => app.setShapeRecognition(!app.shapeRecognition),
+          ),
+          IconButton(
+            icon: const Icon(Icons.straighten_outlined, size: 18),
+            tooltip: 'Ruler — drag the grip, pinch to resize or rotate',
+            isSelected: app.rulerVisible,
+            style: IconButton.styleFrom(
+                backgroundColor: app.rulerVisible
+                    ? scheme.primary.withValues(alpha: .18)
+                    : null,
+                foregroundColor: app.rulerVisible ? scheme.primary : null),
+            visualDensity: VisualDensity.compact,
+            onPressed: () => app.setRulerVisible(!app.rulerVisible),
+          ),
+          _Div(vertical: vertical),
+          if (inkActive) ...[
+            for (final (i, c) in colors.indexed)
+              Padding(
+                padding: vertical
+                    ? const EdgeInsets.symmetric(vertical: 2)
+                    : const EdgeInsets.symmetric(horizontal: 2),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(99),
+                  onTap: () {
+                    app.setInkColor(i);
+                    // With ink selected (typically just lassoed), a colour click
+                    // recolours it rather than only arming the next stroke —
+                    // recolouring after the fact is most of why you lasso a
+                    // diagram (INK-7).
+                    if (app.hasInkSelection) {
+                      app.recolorSelectedInk('#'
+                          '${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}');
+                    } else {
+                      app.refresh();
+                    }
+                  },
+                  child: Container(
+                    key: ValueKey('pen-swatch-$i'),
+                    width: 18,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      color: c,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        width: 2,
+                        color: activeCustomColour == null && activeColour == i
+                            ? scheme.primary
+                            : Colors.transparent,
+                      ),
+                    ),
                   ),
                 ),
               ),
+            IconButton(
+              key: const ValueKey('pen-colour-picker'),
+              tooltip: tr(context, 'Mix a custom colour'),
+              visualDensity: VisualDensity.compact,
+              icon: activeCustomColour == null
+                  ? const Icon(Icons.palette_outlined, size: 19)
+                  : Container(
+                      width: 18,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        color: onoteColorFromHex(activeCustomColour),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: scheme.primary, width: 2),
+                      ),
+                    ),
+              onPressed: () async {
+                final preset = colors[activeColour % colors.length];
+                final initial = activeCustomColour ??
+                    (preset.toARGB32() & 0xFFFFFF)
+                        .toRadixString(16)
+                        .padLeft(6, '0')
+                        .toUpperCase();
+                final picked = await showOnoteColorPicker(context, app,
+                    initial: initial, title: 'Pen colour');
+                if (picked == null) return;
+                final opaque = picked.replaceFirst('#', '').substring(0, 6);
+                app.setCustomInkColor(opaque);
+                if (app.hasInkSelection) app.recolorSelectedInk('#$opaque');
+              },
             ),
-          ),
-        IconButton(
-          key: const ValueKey('pen-colour-picker'),
-          tooltip: tr(context, 'Mix a custom colour'),
-          visualDensity: VisualDensity.compact,
-          icon: activeCustomColour == null
-              ? const Icon(Icons.palette_outlined, size: 19)
-              : Container(
-                  width: 18,
-                  height: 18,
-                  decoration: BoxDecoration(
-                    color: onoteColorFromHex(activeCustomColour),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: scheme.primary, width: 2),
+            gap(6),
+            sizeSlider(key: const ValueKey('ink-size')),
+            SizedBox(
+              width: vertical ? 70 : 43,
+              child: AppText('${app.penSize.toStringAsFixed(1)} px',
+                  style: const TextStyle(fontSize: 10)),
+            ),
+          ] else if (app.tool == Tool.eraser) ...[
+            SizedBox(
+                width: vertical ? 48 : 118,
+                height: vertical ? 118 : null,
+                child: RotatedBox(
+                  quarterTurns: vertical ? 3 : 0,
+                  child: Slider(
+                    key: const ValueKey('eraser-size'),
+                    value: app.eraserSize,
+                    min: 4,
+                    max: 80,
+                    divisions: 38,
+                    label: '${app.eraserSize.round()} px',
+                    onChanged: app.setEraserSize,
                   ),
-                ),
-          onPressed: () async {
-            final preset = colors[activeColour % colors.length];
-            final initial = activeCustomColour ??
-                (preset.toARGB32() & 0xFFFFFF)
-                    .toRadixString(16)
-                    .padLeft(6, '0')
-                    .toUpperCase();
-            final picked = await showOnoteColorPicker(context, app,
-                initial: initial, title: 'Pen colour');
-            if (picked == null) return;
-            final opaque = picked.replaceFirst('#', '').substring(0, 6);
-            app.setCustomInkColor(opaque);
-            if (app.hasInkSelection) app.recolorSelectedInk('#$opaque');
-          },
-        ),
-        const SizedBox(width: 6),
-        SizedBox(
-          width: 118,
-          child: Slider(
-            value: app.penSize,
-            min: app.minInkSizeFor(app.tool),
-            max: app.maxInkSizeFor(app.tool),
-            divisions: app.tool == Tool.highlighter ? 20 : 19,
-            label: '${app.penSize.toStringAsFixed(1)} px',
-            onChanged: app.setInkSize,
-          ),
-        ),
-        SizedBox(
-          width: 43,
-          child: AppText('${app.penSize.toStringAsFixed(1)} px',
-              style: const TextStyle(fontSize: 10)),
-        ),
-      ] else if (app.tool == Tool.eraser) ...[
-        SizedBox(
-            width: 118,
-            child: Slider(
-              key: const ValueKey('eraser-size'),
-              value: app.eraserSize,
-              min: 4,
-              max: 80,
-              divisions: 38,
-              label: '${app.eraserSize.round()} px',
-              onChanged: app.setEraserSize,
-            )),
-        Padding(
-          padding: const EdgeInsets.only(right: 10),
-          child: AppText('${app.eraserSize.round()} px',
-              style: const TextStyle(fontSize: 11)),
-        ),
-        SizedBox(
-          height: 28,
-          child: SegmentedButton<EraserMode>(
-            segments: [
-              for (final m in EraserMode.values)
-                ButtonSegment(
-                    value: m,
-                    label:
-                        AppText(m.label, style: const TextStyle(fontSize: 10))),
-            ],
-            selected: {app.eraserMode},
-            onSelectionChanged: (s) => app.setEraserMode(s.first),
-            showSelectedIcon: false,
-            style: const ButtonStyle(
-                visualDensity: VisualDensity.compact,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-          ),
-        ),
-      ],
-      const SizedBox(width: 12),
-      const SizedBox(width: 4),
-    ]);
+                )),
+            Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: AppText('${app.eraserSize.round()} px',
+                  style: const TextStyle(fontSize: 11)),
+            ),
+            SizedBox(
+              height: 28,
+              child: SegmentedButton<EraserMode>(
+                segments: [
+                  for (final m in EraserMode.values)
+                    ButtonSegment(
+                        value: m,
+                        label: AppText(m.label,
+                            style: const TextStyle(fontSize: 10))),
+                ],
+                selected: {app.eraserMode},
+                onSelectionChanged: (s) => app.setEraserMode(s.first),
+                showSelectedIcon: false,
+                style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+              ),
+            ),
+          ],
+          gap(12),
+          gap(),
+        ]);
   }
 }
 
@@ -1030,12 +1035,15 @@ class _TextBtn extends StatelessWidget {
 }
 
 class _Div extends StatelessWidget {
-  const _Div();
+  const _Div({this.vertical = false});
+  final bool vertical;
   @override
   Widget build(BuildContext context) => Container(
-        width: 1,
-        height: 22,
-        margin: const EdgeInsets.symmetric(horizontal: 8),
+        width: vertical ? 22 : 1,
+        height: vertical ? 1 : 22,
+        margin: vertical
+            ? const EdgeInsets.symmetric(vertical: 8)
+            : const EdgeInsets.symmetric(horizontal: 8),
         color: Theme.of(context).dividerColor,
       );
 }
@@ -1119,135 +1127,6 @@ class _FontSizeField extends StatelessWidget {
         ],
       ),
     );
-  }
-}
-
-/// The tag button on Home: applies a tag to the caret's line, and shows which
-/// tags that line already carries.
-///
-/// A menu rather than a row of buttons because the set is open-ended (nine
-/// built-ins plus, later, user-defined ones) and the toolbar is already dense.
-class _TagButton extends StatelessWidget {
-  const _TagButton({required this.app});
-  final AppState app;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final active = app.tagsAtCaret();
-    final enabled = app.canFormatText;
-    return MenuAnchor(
-      builder: (context, controller, _) => Tooltip(
-        message: active.isEmpty
-            ? 'Tag this line (To Do, Important, Question…)'
-            : 'Tagged: ${active.map((k) => k.label).join(', ')}',
-        child: InkWell(
-          borderRadius: BorderRadius.circular(6),
-          onTap: enabled
-              ? () => controller.isOpen ? controller.close() : controller.open()
-              : null,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(active.isEmpty ? Icons.label_outline : active.first.icon,
-                  size: 18,
-                  color: !enabled
-                      ? context.surfaces.textSecondary
-                      : active.isEmpty
-                          ? null
-                          : active.first.color),
-              Icon(Icons.arrow_drop_down,
-                  size: 16,
-                  color: enabled ? null : context.surfaces.textSecondary),
-            ]),
-          ),
-        ),
-      ),
-      menuChildren: [
-        for (final k in TagKind.pickable)
-          MenuItemButton(
-            leadingIcon: Icon(k.icon, size: 16, color: k.color),
-            trailingIcon: active.contains(k)
-                ? Icon(Icons.check, size: 16, color: scheme.primary)
-                : null,
-            onPressed: () => app.toggleTagOnSelection(k),
-            child: AppText(k.label),
-          ),
-        // Dating a tag belongs here, beside applying one — a deadline you could
-        // only set from a separate panel would be a feature most people never
-        // found, and the line you want to date is the line you are on.
-        if (active.isNotEmpty) ...[
-          const Divider(height: 1),
-          MenuItemButton(
-            leadingIcon: const Icon(Icons.event_outlined, size: 16),
-            onPressed: () => _setDue(context),
-            child:
-                Text(_dueOfCaret() == null ? 'Due date…' : 'Change due date…'),
-          ),
-          if (_dueOfCaret() != null)
-            MenuItemButton(
-              leadingIcon: const Icon(Icons.event_busy_outlined, size: 16),
-              onPressed: _clearDue,
-              child: const AppText('Clear the due date'),
-            ),
-        ],
-      ],
-    );
-  }
-
-  /// The dated tag on the caret's line, if any. One date per line rather than
-  /// one per tag: a line tagged both To Do and Important has one deadline, and
-  /// asking which of the two icons owns it is a question nobody wants.
-  NoteTag? _dueOfCaret() {
-    final b = app.caretBlock();
-    if (b == null) return null;
-    final line = app.caretLineIndex();
-    for (final t in NoteTag.listFrom(b.content)) {
-      if (t.line == line && t.due != null) return t;
-    }
-    return null;
-  }
-
-  Future<void> _setDue(BuildContext context) async {
-    final b = app.caretBlock();
-    if (b == null) return;
-    final line = app.caretLineIndex();
-    final tags = [
-      for (final t in NoteTag.listFrom(b.content))
-        if (t.line == line) t
-    ];
-    if (tags.isEmpty) return;
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final existing = _dueOfCaret()?.dueDate;
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: existing != null && !existing.isBefore(today)
-          ? existing
-          : DateTime(today.year, today.month, today.day + 7),
-      firstDate: DateTime(today.year, today.month, today.day - 365),
-      lastDate: DateTime(today.year + 5, today.month, today.day),
-      helpText: 'Due date',
-      confirmText: 'Set',
-    );
-    if (picked == null) return;
-    // Onto the first tag on the line, and any other dated tag there is cleared,
-    // so the line keeps exactly one deadline however it was tagged.
-    app.setTagDue(b.id, line, tags.first.kind, picked);
-    for (final t in tags.skip(1)) {
-      if (t.due != null) app.setTagDue(b.id, line, t.kind, null);
-    }
-  }
-
-  void _clearDue() {
-    final b = app.caretBlock();
-    if (b == null) return;
-    final line = app.caretLineIndex();
-    for (final t in NoteTag.listFrom(b.content)) {
-      if (t.line == line && t.due != null) {
-        app.setTagDue(b.id, line, t.kind, null);
-      }
-    }
   }
 }
 
@@ -1345,12 +1224,9 @@ class _MakeCardButton extends StatelessWidget {
   }
 }
 
-/// Opens the planner, and says what is on today without opening it.
-///
-/// The badge counts **today's and overdue** rows, not everything dated. A
-/// number that included next month's exam would be permanently non-zero, and a
-/// badge that is always lit stops being read — the same reasoning that keeps
-/// the study badge on cards *due* rather than on the whole deck.
+/// Opens the planner and shows every unfinished homework item or reminder.
+/// The count is independent of the open notebook page, so it behaves like an
+/// app-wide notification badge rather than a property of the current note.
 class _PlannerButton extends StatelessWidget {
   const _PlannerButton({required this.app});
   final AppState app;
@@ -1358,26 +1234,24 @@ class _PlannerButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final sections = app.planner.sections(now: now);
-    var count = 0;
-    var overdue = false;
-    for (final s in sections) {
-      if (s.bucket == AgendaBucket.overdue) {
-        overdue = true;
-        count += s.items.length;
-      } else if (s.bucket == AgendaBucket.today) {
-        count += s.items.length;
-      }
-    }
-    final alerts = app.planner.pendingAlerts.length;
+    final homework = app.planner
+        .agenda(now: now)
+        .where((item) =>
+            !item.done &&
+            (item.kind == DatedKind.task || item.kind == DatedKind.reminder))
+        .toList(growable: false);
+    final count = homework.length;
+    final overdue = homework.any((item) => item.when.isBefore(DateTime(
+          now.year,
+          now.month,
+          now.day,
+        )));
     return Tooltip(
-      message: alerts > 0
-          ? '$alerts reminder${alerts == 1 ? '' : 's'} waiting'
-          : count == 0
-              ? 'Homework & reminders — every date in one place'
-              : overdue
-                  ? 'Homework & reminders — $count today or overdue'
-                  : 'Homework & reminders — $count today',
+      message: count == 0
+          ? 'No homework or reminders waiting'
+          : overdue
+              ? '$count homework item${count == 1 ? '' : 's'} — some overdue'
+              : '$count homework item${count == 1 ? '' : 's'} waiting',
       child: Stack(clipBehavior: Clip.none, children: [
         IconButton(
           icon: const Icon(Icons.event_note_outlined, size: 18),
@@ -1385,7 +1259,7 @@ class _PlannerButton extends StatelessWidget {
           visualDensity: VisualDensity.compact,
           onPressed: app.togglePlannerPanel,
         ),
-        if (count > 0 || alerts > 0)
+        if (count > 0)
           Positioned(
             right: 2,
             top: 2,
@@ -1399,17 +1273,15 @@ class _PlannerButton extends StatelessWidget {
                   // tooltip says which it is.
                   color: overdue
                       ? OnoteColors.danger
-                      : alerts > 0
-                          ? OnoteColors.brass500
-                          : Theme.of(context).colorScheme.primary,
+                      : Theme.of(context).colorScheme.primary,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: AppText('${alerts > 0 ? alerts : count}',
+                child: AppText('$count',
                     style: TextStyle(
                         fontSize: 11,
                         height: 1.2,
                         fontWeight: FontWeight.w700,
-                        color: overdue || alerts > 0
+                        color: overdue
                             ? Colors.white
                             : Theme.of(context).colorScheme.onPrimary)),
               ),

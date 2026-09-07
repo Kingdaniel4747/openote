@@ -71,7 +71,6 @@ const german = <String, String>{
   'Done': 'Fertig',
   'Study': 'Lernen',
   'Planner': 'Planer',
-  'Find tags': 'Tags suchen',
   'Page outline': 'Seitenübersicht',
   'Links & backlinks': 'Links und Rückverweise',
   'Export page…': 'Seite exportieren…',
@@ -81,8 +80,7 @@ const german = <String, String>{
   'Text  (T)': 'Text  (T)',
   'Pen  (P)': 'Stift  (P)',
   'Ballpoint — constant width': 'Kugelschreiber — gleichmäßige Breite',
-  'Shape recognition — draw and hold':
-      'Formerkennung — zeichnen und halten',
+  'Shape recognition — draw and hold': 'Formerkennung — zeichnen und halten',
   'Highlighter  (H)': 'Textmarker  (H)',
   'Eraser  (E)': 'Radierer  (E)',
   'Lasso-select ink': 'Handschrift mit Lasso auswählen',

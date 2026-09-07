@@ -100,7 +100,7 @@ void main() {
     }
   }
 
-  testWidgets('an empty planner offers a way out of being empty',
+  testWidgets('an empty planner stays clean and offers one add button',
       (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (app, _) = await newApp(tester);
@@ -108,11 +108,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('PLANNER'), findsOneWidget);
-    expect(find.text('Nothing dated yet.'), findsOneWidget);
-    // Never a dead end — the rule the study panel was rebuilt around.
-    expect(find.text('Set an exam date'), findsOneWidget);
-    expect(find.text('Add a reminder'), findsOneWidget);
-    expect(find.text('Subscribe to a timetable'), findsOneWidget);
+    expect(find.text('Nothing dated yet.'), findsNothing);
+    expect(find.byTooltip('Add homework, reminder or exam'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Add homework, reminder or exam'));
+    await tester.pumpAndSettle();
+    expect(find.text('Homework…'), findsOneWidget);
+    expect(find.text('Reminder…'), findsOneWidget);
+    expect(find.text('Exam…'), findsOneWidget);
+    expect(find.textContaining('Subscribe'), findsNothing);
   });
 
   testWidgets('an exam date is visible without opening the section it is on',
@@ -123,8 +127,8 @@ void main() {
     await tester.pumpAndSettle();
 
     final title = app.nodes.firstWhere((n) => n.id == section).title;
-    app.study.setExamDate(
-        section, DateTime.now().add(const Duration(days: 14)));
+    app.study
+        .setExamDate(section, DateTime.now().add(const Duration(days: 14)));
     await settle(tester);
 
     // This is the whole complaint: before the planner, that date could only be
@@ -169,7 +173,8 @@ void main() {
     expect(tag.checked, isTrue);
   });
 
-  testWidgets('a calendar row says it is read-only rather than offering an edit',
+  testWidgets(
+      'a calendar row says it is read-only rather than offering an edit',
       (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (app, _) = await newApp(tester);
@@ -190,14 +195,10 @@ void main() {
     await tester.pumpWidget(host(app));
     await settle(tester);
 
-    // Two: the agenda row, and the "up next" strip above it (v0.8 §2). The
-    // strip is not right-clickable, so the row is the LAST of the two — the
-    // strip is rendered above the list.
     final titles = find.text('Discrete Maths lecture');
-    expect(titles, findsNWidgets(2));
+    expect(titles, findsOneWidget);
 
-    await tester.tapAt(tester.getCenter(titles.last),
-        buttons: 2 /* secondary */);
+    await tester.tapAt(tester.getCenter(titles), buttons: 2 /* secondary */);
     await tester.pumpAndSettle();
     expect(find.text('From your calendar — read-only'), findsOneWidget);
     expect(find.text('Clear the date'), findsNothing);
@@ -214,16 +215,18 @@ void main() {
     await tester.pumpWidget(host(app));
     await settle(tester);
 
-    // Off by default: the agenda is what a student reads daily, and a grid is
-    // a lot of layout before any of it (v0.5 §4).
-    expect(find.byTooltip('Show the month'), findsOneWidget);
-    await tester.tap(find.byTooltip('Show the month'));
-    await settle(tester);
-
-    expect(find.byTooltip('Show the list'), findsOneWidget);
+    // The compact calendar is always open.
+    expect(find.byTooltip('Show the month'), findsNothing);
+    expect(find.byTooltip('Show the list'), findsNothing);
     expect(find.byTooltip('Next month'), findsOneWidget);
     // Monday-start weekday header.
     expect(find.text('W'), findsOneWidget);
+
+    await tester.tap(find.text('${DateTime.now().day}').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Add homework'), findsOneWidget);
+    expect(find.text('Add reminder'), findsOneWidget);
+    expect(find.text('Add exam'), findsOneWidget);
   });
 
   // A deadline visible only inside the planner would be a fact about a line
@@ -244,11 +247,7 @@ void main() {
       final due = DateTime.now().add(const Duration(days: 3));
       await tester.pumpWidget(note({
         0: [
-          NoteTag(
-              kind: TagKind.todo,
-              line: 0,
-              checked: false,
-              due: dayKey(due))
+          NoteTag(kind: TagKind.todo, line: 0, checked: false, due: dayKey(due))
         ]
       }));
       await tester.pumpAndSettle();
@@ -296,8 +295,6 @@ void main() {
     await settle(tester);
     expect(tester.takeException(), isNull);
 
-    await tester.tap(find.byTooltip('Show the month'));
-    await settle(tester);
     expect(tester.takeException(), isNull);
   });
 }

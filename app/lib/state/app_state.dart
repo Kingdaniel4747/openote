@@ -107,7 +107,6 @@ enum TouchDrawing {
 enum SidePanelKind {
   study('Study'),
   planner('Planner'),
-  tags('Tags'),
   outline('Outline'),
   links('Links');
 
@@ -4665,9 +4664,6 @@ class AppState extends ChangeNotifier
     _allTagsCache = (key: key, tags: out);
     return out;
   }
-
-  bool get showTagsPanel => openPanel == SidePanelKind.tags;
-  void toggleTagsPanel() => togglePanel(SidePanelKind.tags);
 
   // ── Study: flashcards, scheduling, stats (E3 — see study_state.dart) ──
 

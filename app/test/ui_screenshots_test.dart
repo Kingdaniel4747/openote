@@ -60,8 +60,8 @@ Future<void> _loadFonts() async {
   // Material icons ship in the SDK, not the app bundle.
   final root = Platform.environment['FLUTTER_ROOT'];
   if (root != null) {
-    final icons =
-        File('$root/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf');
+    final icons = File(
+        '$root/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf');
     if (icons.existsSync()) {
       final loader = FontLoader('MaterialIcons')
         ..addFont(Future.value(icons.readAsBytesSync().buffer.asByteData()));
@@ -94,7 +94,8 @@ void main() {
       final nb = await repo.createNotebook('Discrete Maths');
       app = AppState(repo)..notebookId = nb.id;
       app.reloadNodes();
-      final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section).id;
+      final section =
+          app.nodes.firstWhere((n) => n.kind == NodeKind.section).id;
       var pos = 0;
       TreeNode page(String title) => app.importNode(
           nb.id,
@@ -130,14 +131,14 @@ void main() {
       app.importPage(nb.id, p1.id, [b1, b2], PageProps());
       app.reloadNodes();
       await app.selectPage(p1.id);
-      app.study.setExamDate(
-          section, DateTime.now().add(const Duration(days: 14)));
+      app.study
+          .setExamDate(section, DateTime.now().add(const Duration(days: 14)));
     });
     return app;
   }
 
-  Future<void> shot(WidgetTester tester, AppState app, Brightness b,
-      String name) async {
+  Future<void> shot(
+      WidgetTester tester, AppState app, Brightness b, String name) async {
     tester.view.physicalSize = const Size(1440, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -168,15 +169,12 @@ void main() {
   }
 
   testWidgets('shell light', (t) => run(t, 'shell_light'));
-  testWidgets('shell dark',
-      (t) => run(t, 'shell_dark', brightness: Brightness.dark));
+  testWidgets(
+      'shell dark', (t) => run(t, 'shell_dark', brightness: Brightness.dark));
   testWidgets('study panel',
       (t) => run(t, 'shell_study', arrange: (a) => a.toggleStudyPanel()));
   testWidgets('planner panel',
       (t) => run(t, 'shell_planner', arrange: (a) => a.togglePlannerPanel()));
-  testWidgets('tags panel',
-      (t) => run(t, 'shell_tags', arrange: (a) => a.toggleTagsPanel()));
-
   // The Insert tab is rendered on its own because it is the one tab that used
   // a different control family, and so the one tab where "does this look like
   // the same app" can only be answered by looking (§7a.2 — a label does not
@@ -200,7 +198,8 @@ void main() {
     }
     await t.tap(find.text('Insert'));
     await t.pumpAndSettle();
-    await expectLater(find.byKey(key), matchesGoldenFile('goldens/insert_tab.png'));
+    await expectLater(
+        find.byKey(key), matchesGoldenFile('goldens/insert_tab.png'));
   });
 
   // The import progress card, mid-import and completed — states that only

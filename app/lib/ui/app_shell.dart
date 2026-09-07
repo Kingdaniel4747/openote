@@ -9,7 +9,6 @@ import '../canvas/media_drop.dart';
 import '../canvas/page_canvas.dart';
 import '../math/math_field.dart';
 import '../model/models.dart';
-import '../model/tags.dart';
 import '../core/onote_ffi.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
@@ -50,9 +49,13 @@ class AppShell extends StatefulWidget {
   State<AppShell> createState() => _AppShellState();
 }
 
+enum _WritingToolbarDock { floating, left, right }
+
 class _AppShellState extends State<AppShell> {
   AppState get app => widget.app;
-  Offset _writingToolbarOffset = const Offset(12, 12);
+  Offset _writingToolbarOffset = Offset.zero;
+  _WritingToolbarDock _writingToolbarDock = _WritingToolbarDock.floating;
+  bool _writingToolbarPlaced = false;
 
   /// Whether the Ctrl+/ shortcut reference is up. Tracked here because the
   /// global handler runs even under a dialog: Ctrl+/ must toggle rather than
@@ -506,20 +509,6 @@ class _AppShellState extends State<AppShell> {
           app.toggleTextColor();
           return true;
         }
-        // Ctrl+1/2/3 — tag the caret's line. OneNote's own chords, so the
-        // muscle memory a switching student already has keeps working.
-        final tag = switch (k) {
-          LogicalKeyboardKey.digit1 => TagKind.todo,
-          LogicalKeyboardKey.digit2 => TagKind.important,
-          LogicalKeyboardKey.digit3 => TagKind.question,
-          LogicalKeyboardKey.digit4 => TagKind.remember,
-          LogicalKeyboardKey.digit5 => TagKind.definition,
-          _ => null,
-        };
-        if (tag != null) {
-          app.toggleTagOnSelection(tag);
-          return true;
-        }
         // Ctrl + a Markdown marker character — wrap the word at the caret in
         // it, and press again for another layer: `*w*`, `**w**`, `***w***`,
         // and then nothing, because `****w****` is not emphasis. Which
@@ -888,7 +877,6 @@ class _AppShellState extends State<AppShell> {
   Widget? _openPanel(TreeNode? page) => switch (app.openPanel) {
         SidePanelKind.study => StudyPanel(app: app),
         SidePanelKind.planner => PlannerPanel(app: app),
-        SidePanelKind.tags => _TagsPanel(app: app),
         SidePanelKind.outline => page == null ? null : _TocPanel(app: app),
         SidePanelKind.links => page == null ? null : _LinksPanel(app: app),
         null => null,
@@ -1208,55 +1196,127 @@ class _AppShellState extends State<AppShell> {
               // gains focus.
               resizeToAvoidBottomInset: false,
               body: LayoutBuilder(
-                builder: (context, constraints) => SafeArea(
-                    child: Stack(fit: StackFit.expand, children: [
-                  Positioned.fill(child: writingSurface),
-                  Positioned(
-                    left: _writingToolbarOffset.dx.clamp(
+                builder: (context, constraints) {
+                  final horizontalWidth = math.min(
+                      760.0, math.max(220.0, constraints.maxWidth - 32));
+                  final vertical =
+                      _writingToolbarDock != _WritingToolbarDock.floating;
+                  final toolbarWidth = vertical ? 104.0 : horizontalWidth;
+                  final toolbarHeight = vertical
+                      ? math.min(760.0, constraints.maxHeight - 16)
+                      : 48.0;
+                  if (!_writingToolbarPlaced) {
+                    _writingToolbarOffset = Offset(
+                      (constraints.maxWidth - horizontalWidth) / 2,
+                      8,
+                    );
+                    _writingToolbarPlaced = true;
+                  }
+                  final left = switch (_writingToolbarDock) {
+                    _WritingToolbarDock.left => 8.0,
+                    _WritingToolbarDock.right =>
+                      constraints.maxWidth - toolbarWidth - 8,
+                    _WritingToolbarDock.floating =>
+                      _writingToolbarOffset.dx.clamp(
                         8.0,
-                        (constraints.maxWidth -
-                                math.min(760.0,
-                                    math.max(220.0, constraints.maxWidth - 32)))
-                            .clamp(8.0, double.infinity)),
-                    top: _writingToolbarOffset.dy.clamp(
-                        8.0,
-                        (constraints.maxHeight - 60)
-                            .clamp(8.0, double.infinity)),
-                    child: Material(
-                      elevation: 10,
-                      clipBehavior: Clip.antiAlias,
-                      borderRadius: BorderRadius.circular(12),
-                      child: SizedBox(
-                        width: math.min(
-                            760.0, math.max(220.0, constraints.maxWidth - 32)),
-                        child: Row(children: [
-                          GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onPanUpdate: (details) => setState(() {
-                              _writingToolbarOffset += details.delta;
-                            }),
-                            child: const Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 8),
-                              child: Icon(Icons.drag_indicator, size: 20),
-                            ),
-                          ),
-                          Expanded(child: CommandBar(app: app, drawOnly: true)),
-                          IconButton(
-                            tooltip: 'Leave writing mode',
-                            icon: const Icon(Icons.close_fullscreen, size: 19),
-                            onPressed: () => app.setWritingMode(false),
-                          ),
-                        ]),
+                        (constraints.maxWidth - toolbarWidth)
+                            .clamp(8.0, double.infinity),
                       ),
-                    ),
-                  ),
-                  AlertPopup(app: app, regionFocus: _alertRegion),
-                  ImportProgressCard(app: app),
-                ])),
+                  };
+                  final top = _writingToolbarOffset.dy.clamp(
+                    8.0,
+                    (constraints.maxHeight - toolbarHeight)
+                        .clamp(8.0, double.infinity),
+                  );
+
+                  void moveToolbar(DragUpdateDetails details) {
+                    setState(() {
+                      if (vertical) {
+                        _writingToolbarOffset = Offset(
+                          _writingToolbarDock == _WritingToolbarDock.right
+                              ? constraints.maxWidth - horizontalWidth - 8
+                              : 8,
+                          top,
+                        );
+                        _writingToolbarDock = _WritingToolbarDock.floating;
+                      }
+                      _writingToolbarOffset += details.delta;
+                    });
+                  }
+
+                  void finishToolbarMove() {
+                    setState(() {
+                      if (_writingToolbarOffset.dx <= 18) {
+                        _writingToolbarDock = _WritingToolbarDock.left;
+                      } else if (_writingToolbarOffset.dx + horizontalWidth >=
+                          constraints.maxWidth - 18) {
+                        _writingToolbarDock = _WritingToolbarDock.right;
+                      }
+                    });
+                  }
+
+                  return SafeArea(
+                    child: Stack(fit: StackFit.expand, children: [
+                      Positioned.fill(child: writingSurface),
+                      Positioned(
+                        left: left,
+                        top: top,
+                        child: Material(
+                          key: const ValueKey('writing-toolbar'),
+                          elevation: 10,
+                          clipBehavior: Clip.antiAlias,
+                          borderRadius: BorderRadius.circular(12),
+                          child: SizedBox(
+                            width: toolbarWidth,
+                            height: toolbarHeight,
+                            child: Flex(
+                                direction:
+                                    vertical ? Axis.vertical : Axis.horizontal,
+                                children: [
+                                  GestureDetector(
+                                    key: const ValueKey(
+                                        'writing-toolbar-drag-handle'),
+                                    behavior: HitTestBehavior.opaque,
+                                    onPanUpdate: moveToolbar,
+                                    onPanEnd: (_) => finishToolbarMove(),
+                                    child: Padding(
+                                      padding: vertical
+                                          ? const EdgeInsets.symmetric(
+                                              vertical: 8)
+                                          : const EdgeInsets.symmetric(
+                                              horizontal: 8),
+                                      child: const Icon(Icons.drag_indicator,
+                                          size: 20),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: CommandBar(
+                                      app: app,
+                                      drawOnly: true,
+                                      verticalDrawOnly: vertical,
+                                    ),
+                                  ),
+                                  IconButton(
+                                    tooltip: 'Leave writing mode',
+                                    icon: const Icon(Icons.close_fullscreen,
+                                        size: 19),
+                                    onPressed: () => app.setWritingMode(false),
+                                  ),
+                                ]),
+                          ),
+                        ),
+                      ),
+                      AlertPopup(app: app, regionFocus: _alertRegion),
+                      ImportProgressCard(app: app),
+                    ]),
+                  );
+                },
               ),
             ),
           );
         }
+        _writingToolbarPlaced = false;
+        _writingToolbarDock = _WritingToolbarDock.floating;
         return MediaQuery.removeViewInsets(
           context: context,
           removeBottom: true,
@@ -1548,95 +1608,6 @@ class _PageHeader extends StatelessWidget {
           ],
         ],
       ),
-    );
-  }
-}
-
-/// Right-side links panel: incoming backlinks + outgoing links (TEXT-8).
-/// Find tags (TEXT-5): every tagged line in the notebook, grouped by tag.
-///
-/// This is half the value of tags in OneNote — marking a line is only useful
-/// if you can later ask "what did I mark?". Scanning page mirrors rather than
-/// maintaining an index, for the same reason as notebook-wide search: one
-/// source of truth beats an index that can silently drift.
-class _TagsPanel extends StatelessWidget {
-  const _TagsPanel({required this.app});
-  final AppState app;
-
-  @override
-  Widget build(BuildContext context) {
-    final all = app.allTags();
-    final byKind = <TagKind, List<TaggedLine>>{};
-    for (final e in all) {
-      byKind.putIfAbsent(e.tag.kind, () => []).add(e);
-    }
-    return SidePanel(
-      title: SidePanelKind.tags.label,
-      icon: Icons.label_outline,
-      onClose: app.closePanel,
-      child: all.isEmpty
-          ? PanelEmpty(
-              headline: 'No tags in this notebook yet.',
-              body: 'Tags mark a line — to do, important, question, '
-                  'definition — so you can find it again, revise from it, or '
-                  'give it a deadline.',
-              actions: [
-                PanelAction(
-                    icon: Icons.label_outline,
-                    label: 'Tag the line you are on',
-                    onTap: () => app.toggleTagOnSelection(TagKind.todo)),
-              ],
-            )
-          : ListView(
-              padding: const EdgeInsets.only(bottom: 8),
-              children: [
-                for (final kind in byKind.keys)
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
-                        child: Row(children: [
-                          Icon(kind.icon, size: 16, color: kind.color),
-                          const SizedBox(width: 5),
-                          Text('${kind.label}  (${byKind[kind]!.length})',
-                              style: const TextStyle(
-                                  fontSize: 11, fontWeight: FontWeight.w600)),
-                        ]),
-                      ),
-                      for (final e in byKind[kind]!)
-                        InkWell(
-                          onTap: () => app.selectPage(e.pageId),
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(30, 3, 12, 3),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(e.text.isEmpty ? '(empty line)' : e.text,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                        fontSize: 12,
-                                        decoration: (e.tag.checked ?? false)
-                                            ? TextDecoration.lineThrough
-                                            : null,
-                                        color: (e.tag.checked ?? false)
-                                            ? context.surfaces.textSecondary
-                                            : null)),
-                                Text(e.pageTitle,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                        fontSize: 11,
-                                        color: context.surfaces.textSecondary)),
-                              ],
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-              ],
-            ),
     );
   }
 }

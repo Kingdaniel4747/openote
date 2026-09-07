@@ -149,7 +149,7 @@ void main() {
         tmp.deleteSync(recursive: true);
       } catch (_) {}
     });
-    testWidgets('writing mode fills the page and its exit is reachable',
+    testWidgets('writing toolbar starts centred, docks vertically and exits',
         (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       t.view.physicalSize = const Size(1400, 900);
@@ -164,6 +164,22 @@ void main() {
       expect(t.getSize(find.byType(PageCanvas)).width, greaterThan(1000));
       expect(t.getSize(find.byType(PageCanvas)).height, greaterThan(700));
       expect(find.byTooltip('Pen  (P)'), findsOneWidget);
+      final initialToolbar =
+          t.getRect(find.byKey(const ValueKey('writing-toolbar')));
+      expect(initialToolbar.center.dx, closeTo(700, 1));
+      expect(initialToolbar.top, closeTo(8, 1));
+
+      await t.drag(
+        find.byKey(const ValueKey('writing-toolbar-drag-handle')),
+        const Offset(-400, 40),
+      );
+      await t.pumpAndSettle();
+      final dockedToolbar =
+          t.getRect(find.byKey(const ValueKey('writing-toolbar')));
+      expect(dockedToolbar.left, closeTo(8, 1));
+      expect(dockedToolbar.height, greaterThan(dockedToolbar.width));
+      expect(t.takeException(), isNull);
+
       await t.tap(find.byTooltip('Pen  (P)'));
       await t.pump();
       expect(app.tool, Tool.pen);

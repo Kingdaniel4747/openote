@@ -36,15 +36,21 @@ const _defaultLeadDays = 14;
 /// Ask for a section's exam day (and time) and store it. Returns true if
 /// anything changed.
 Future<bool> pickExamDate(
-    BuildContext context, AppState app, String sectionId) async {
+  BuildContext context,
+  AppState app,
+  String sectionId, {
+  DateTime? initialDay,
+}) async {
   final today = DateTime.now();
   final start = DateTime(today.year, today.month, today.day);
   final existing = app.study.examDate(sectionId);
   // An exam that has already been and gone can't be the picker's opening date
   // — `showDatePicker` asserts when the initial date precedes the first one.
-  final initialDay = (existing != null && !existing.isBefore(start))
-      ? existing
-      : DateTime(start.year, start.month, start.day + _defaultLeadDays);
+  final chosenDay = initialDay != null && !initialDay.isBefore(start)
+      ? initialDay
+      : (existing != null && !existing.isBefore(start))
+          ? existing
+          : DateTime(start.year, start.month, start.day + _defaultLeadDays);
   final section = app.nodes.where((n) => n.id == sectionId).firstOrNull;
 
   final result = await showOnoteDialog<_ExamWhen>(
@@ -53,7 +59,7 @@ Future<bool> pickExamDate(
       title: section == null || section.title.isEmpty
           ? 'Exam date'
           : 'Exam — ${section.title}',
-      day: initialDay,
+      day: chosenDay,
       minuteOfDay: app.study.examMinuteOfDay(sectionId),
       firstDate: start,
     ),
@@ -83,7 +89,8 @@ void clearExamDate(BuildContext context, AppState app, String sectionId) {
 /// `'HH:mm'` for a minute-of-day, in the local 24-hour form the settings use.
 /// Display goes through [TimeOfDay.format] so it follows the locale instead.
 String examTimeLabel(BuildContext context, int minuteOfDay) =>
-    TimeOfDay(hour: minuteOfDay ~/ 60, minute: minuteOfDay % 60).format(context);
+    TimeOfDay(hour: minuteOfDay ~/ 60, minute: minuteOfDay % 60)
+        .format(context);
 
 class _ExamWhen {
   const _ExamWhen(this.day, this.minuteOfDay);
@@ -117,8 +124,8 @@ class _ExamWhenDialogState extends State<_ExamWhenDialog> {
       context: context,
       initialDate: _day,
       firstDate: widget.firstDate,
-      lastDate: DateTime(
-          widget.firstDate.year + 3, widget.firstDate.month, widget.firstDate.day),
+      lastDate: DateTime(widget.firstDate.year + 3, widget.firstDate.month,
+          widget.firstDate.day),
       helpText: 'Exam date',
       confirmText: 'Use this date',
     );
@@ -192,7 +199,8 @@ class _ExamWhenDialogState extends State<_ExamWhenDialog> {
       ),
       actions: [
         TextButton(
-            onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel')),
         FilledButton(
           // The only dialog in the app with no text field to carry Enter:
           // every control here is a picker, so without a default button

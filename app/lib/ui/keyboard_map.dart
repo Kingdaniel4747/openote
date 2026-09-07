@@ -36,55 +36,57 @@ const List<KeySection> keyboardMap = [
     KeyBinding('Ctrl+N', 'New page after this one'),
     KeyBinding('Ctrl+Shift+N', 'New sub-page of this one'),
     KeyBinding('Ctrl+\\', 'Hide or show the sidebar'),
-    KeyBinding('Alt+=',
+    KeyBinding(
+        'Alt+=',
         'Start a maths equation — with words selected, they become one '
-        'right where they are, in the sentence'),
-    KeyBinding('Alt+Shift+=',
-        'The same, but as an equation on a line of its own'),
+            'right where they are, in the sentence'),
+    KeyBinding(
+        'Alt+Shift+=', 'The same, but as an equation on a line of its own'),
     KeyBinding(
         'F6 / Shift+F6',
         'Jump between the sidebar, the toolbar, the row of controls for what '
-        'you are writing, the page, the open panel and a reminder that has '
-        'popped up'),
-    KeyBinding('Shift+F10  /  Menu key',
+            'you are writing, the page, the open panel and a reminder that has '
+            'popped up'),
+    KeyBinding(
+        'Shift+F10  /  Menu key',
         'The menu of things you can add, where you are \u2014 or, with a box '
-        'selected, that box\'s own menu'),
+            'selected, that box\'s own menu'),
     KeyBinding(
         'Esc',
         'One step back per press: close find, stop editing, clear selection, '
-        'dismiss a reminder'),
+            'dismiss a reminder'),
   ]),
   KeySection('While writing', [
     KeyBinding('Ctrl+B / Ctrl+I / Ctrl+U', 'Bold / italic / underline'),
-    KeyBinding('Ctrl+*',
+    KeyBinding(
+        'Ctrl+*',
         'Put the word you are on in italics; press it again for bold, again '
-        'for both, and a fourth press does nothing'),
-    KeyBinding('Ctrl+` / Ctrl+~ / Ctrl+^ / Ctrl+_ / Ctrl+\$',
+            'for both, and a fourth press does nothing'),
+    KeyBinding(
+        'Ctrl+` / Ctrl+~ / Ctrl+^ / Ctrl+_ / Ctrl+\$',
         'The same with the other Markdown characters: code / small below the '
-        'line, then crossed out / small above it / italic then bold / maths'),
+            'line, then crossed out / small above it / italic then bold / maths'),
     KeyBinding('Ctrl+= / Ctrl+Shift+=',
         'Small text below the line / above it — H₂O, x²'),
     KeyBinding('Ctrl+Shift+C',
         'Colour the selection (last used colour; again to remove)'),
-    KeyBinding('Ctrl+1 … Ctrl+5',
-        'Tag the line: to-do, important, question, remember, definition'),
-    KeyBinding('Ctrl+V',
-        'Paste — a copied image lands on the page as a picture'),
+    KeyBinding(
+        'Ctrl+V', 'Paste — a copied image lands on the page as a picture'),
     KeyBinding('Alt+X', 'Character to or from its U+ code'),
     KeyBinding('( " * … with text selected',
         'Wraps the selection instead of replacing it'),
   ]),
   KeySection('On the page (nothing focused)', [
-    KeyBinding('Tab / Shift+Tab',
-        'Select the next / previous box, in reading order'),
+    KeyBinding(
+        'Tab / Shift+Tab', 'Select the next / previous box, in reading order'),
     KeyBinding('↑ ↓ ← →', 'Select the nearest box in that direction'),
     KeyBinding('Enter', 'Edit the selected box (Esc climbs back out)'),
     KeyBinding('Just start typing',
         'A letter on a selected text or code box starts writing at its end'),
     KeyBinding('Ctrl+↑↓←→',
         'Move the selected box (one grid step; add Shift for 1 px)'),
-    KeyBinding('V / T / P / H / E',
-        'Tool: Select, Text, Pen, Highlighter, Eraser'),
+    KeyBinding(
+        'V / T / P / H / E', 'Tool: Select, Text, Pen, Highlighter, Eraser'),
     KeyBinding('Ctrl+C / Ctrl+X / Ctrl+V', 'Copy / cut / paste blocks'),
     KeyBinding('Ctrl+D', 'Duplicate the selected block'),
     KeyBinding('Del', 'Delete the selection'),
@@ -100,23 +102,27 @@ const List<KeySection> keyboardMap = [
     KeyBinding('Esc', 'Finish, and carry on with the sentence'),
     KeyBinding('Tab / Shift+Tab', 'The next / previous box left to fill'),
     KeyBinding('← →', 'Step through — INTO a fraction or a root, not over it'),
-    KeyBinding('↑ ↓',
+    KeyBinding(
+        '↑ ↓',
         'Between the halves: top and bottom of a fraction, a power and an '
-        'index, rows of a matrix'),
-    KeyBinding('A backslash, a name, then Space',
+            'index, rows of a matrix'),
+    KeyBinding(
+        'A backslash, a name, then Space',
         r'Symbols by name: \alpha, \sqrt, \sum, \sin. WITHOUT the '
-        r'backslash the letters stay letters, so ordinary words survive'),
+            r'backslash the letters stay letters, so ordinary words survive'),
     KeyBinding('/ then a number', 'A fraction — try 1/2, or (n+1)/2'),
     KeyBinding('<= >= != ->', 'Become ≤ ≥ ≠ → as you type them'),
-    KeyBinding('Space',
-        'A space — or finishes the backslash name in front of it'),
-    KeyBinding('Backspace',
+    KeyBinding(
+        'Space', 'A space — or finishes the backslash name in front of it'),
+    KeyBinding(
+        'Backspace',
         'Steps INSIDE a fraction, root or grid rather than deleting it, so '
-        'one press can never take the whole thing'),
+            'one press can never take the whole thing'),
     KeyBinding('Ctrl+= / Ctrl+Shift+=', 'A small index / a power'),
-    KeyBinding('Ctrl+C / Ctrl+X / Ctrl+V',
+    KeyBinding(
+        'Ctrl+C / Ctrl+X / Ctrl+V',
         'Copy, cut or paste the equation — it goes on the clipboard as '
-        'LaTeX, so it pastes into Word, Overleaf or a message'),
+            'LaTeX, so it pastes into Word, Overleaf or a message'),
     KeyBinding('Enter', 'Another row of a piecewise or a matrix'),
     KeyBinding('&', 'Another column of a matrix'),
     KeyBinding('= then space',
@@ -124,8 +130,8 @@ const List<KeySection> keyboardMap = [
   ]),
   KeySection('In a table', [
     KeyBinding('Tab / Shift+Tab', 'Next / previous cell'),
-    KeyBinding('↑ ↓ ← →',
-        'Move between cells (left/right from the text\'s edge)'),
+    KeyBinding(
+        '↑ ↓ ← →', 'Move between cells (left/right from the text\'s edge)'),
     KeyBinding('Enter', 'The cell below — a new row from the last one'),
     KeyBinding('Ctrl+Enter', 'Line break inside the cell'),
   ]),
