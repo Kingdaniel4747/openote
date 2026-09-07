@@ -608,7 +608,7 @@ class _PageCanvasState extends State<PageCanvas> {
         // Collision is against the visible outline, not merely its invisible
         // centre line. This matters most for a broad translucent highlighter:
         // touching its edge must erase it just like touching a pen stroke.
-        final touchRadius = radius + s.size / 2;
+        final touchRadius = radius + visibleStrokeWidth(s) / 2;
         final touchRadiusSquared = touchRadius * touchRadius;
         // Squared distance — avoids a sqrt per point per sample.
         final keep = List<bool>.generate(s.x.length, (i) {

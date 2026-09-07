@@ -29,6 +29,22 @@ void main() {
     return [...result, result.first];
   }
 
+  test('highlighter display range 0-10 paints as 10-20 px', () {
+    Stroke stroke(String tool, double size) => Stroke(
+          tool: tool,
+          colorHex: '#000000',
+          size: size,
+          x: const [0, 10],
+          y: const [0, 10],
+          p: const [1, 1],
+          t: const [0, 1],
+        );
+
+    expect(visibleStrokeWidth(stroke('highlighter', 0)), 10);
+    expect(visibleStrokeWidth(stroke('highlighter', 10)), 20);
+    expect(visibleStrokeWidth(stroke('pen', 10)), 10);
+  });
+
   test('closed rectangles and triangles keep their vertices and size', () {
     final rectangle = sampleOutline(const [
       Offset(100, 100),

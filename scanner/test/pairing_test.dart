@@ -12,6 +12,10 @@ void main() {
     expect(pairing, isNotNull);
     expect(pairing!.pageTitle, 'Physics');
     expect(pairing.uploadUri.toString(), 'http://192.168.1.5:27198/v1/scan');
+    expect(
+      pairing.completeUri.toString(),
+      'http://192.168.1.5:27198/v1/complete',
+    );
   });
 
   test('rejects ordinary and incomplete QR codes', () {

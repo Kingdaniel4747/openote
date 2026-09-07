@@ -58,21 +58,26 @@ class _ScannerPairingDialogState extends State<_ScannerPairingDialog> {
   @override
   void initState() {
     super.initState();
-    _receiver = ScannerReceiver(onScan: (bytes, mime, _) async {
-      if (mounted) setState(() => _importing = true);
-      try {
-        await importPhoneScan(
-          widget.app,
-          notebookId: widget.notebookId,
-          pageId: widget.pageId,
-          bytes: bytes,
-          mime: mime,
-        );
-        if (mounted) setState(() => _received++);
-      } finally {
-        if (mounted) setState(() => _importing = false);
-      }
-    });
+    _receiver = ScannerReceiver(
+      onScan: (bytes, mime, _) async {
+        if (mounted) setState(() => _importing = true);
+        try {
+          await importPhoneScan(
+            widget.app,
+            notebookId: widget.notebookId,
+            pageId: widget.pageId,
+            bytes: bytes,
+            mime: mime,
+          );
+          if (mounted) setState(() => _received++);
+        } finally {
+          if (mounted) setState(() => _importing = false);
+        }
+      },
+      onComplete: () {
+        if (mounted) Navigator.of(context).pop();
+      },
+    );
     unawaited(_start());
   }
 

@@ -956,9 +956,9 @@ class _CommandBarState extends State<CommandBar> {
           width: 118,
           child: Slider(
             value: app.penSize,
-            min: .5,
+            min: app.minInkSizeFor(app.tool),
             max: app.maxInkSizeFor(app.tool),
-            divisions: 19,
+            divisions: app.tool == Tool.highlighter ? 20 : 19,
             label: '${app.penSize.toStringAsFixed(1)} px',
             onChanged: app.setInkSize,
           ),

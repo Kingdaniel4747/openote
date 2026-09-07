@@ -6,6 +6,12 @@ import '../model/models.dart';
 Color colorFromHex(String hex) => Color(
     0xFF000000 | (int.tryParse(hex.replaceFirst('#', ''), radix: 16) ?? 0));
 
+/// Toolbar highlighter values stay in the familiar 0–10 range while the
+/// translucent mark is visibly useful from 10–20 page pixels.
+double visibleStrokeWidth(Stroke stroke) => stroke.tool == 'highlighter'
+    ? 10 + stroke.size.clamp(0.0, 10.0)
+    : stroke.size;
+
 /// Renders strokes as pressure-responsive variable-width outlines
 /// (Ink Data Spec §4 — the perfect-freehand pipeline).
 ///
@@ -90,10 +96,7 @@ class InkPainter extends CustomPainter {
     final outline = getStroke(
       points,
       options: StrokeOptions(
-        // All toolbar sizes now mean their real visible width. The old
-        // highlighter silently tripled this value, producing coarse edges and
-        // making the eraser appear to miss a line it visibly touched.
-        size: s.size,
+        size: visibleStrokeWidth(s),
         thinning: constantWidth ? 0.0 : 0.6,
         // Samsung's digitizer samples very densely. A little more filtering
         // removes the visible micro-jitter without turning corners into arcs.

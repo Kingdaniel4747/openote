@@ -11,6 +11,7 @@ typedef ScanReceived = Future<void> Function(
   String mime,
   String filename,
 );
+typedef ScanCompleted = FutureOr<void> Function();
 
 /// A short-lived, LAN-only receiver for the Openote Scanner Android app.
 ///
@@ -18,12 +19,13 @@ typedef ScanReceived = Future<void> Function(
 /// is embedded in the QR code, requests have a strict size/type limit, and no
 /// endpoint can read notebook data back from the computer.
 class ScannerReceiver {
-  ScannerReceiver({required this.onScan});
+  ScannerReceiver({required this.onScan, this.onComplete});
 
   static const int maxScanBytes = 30 * 1024 * 1024;
   static const int preferredPort = 27198;
 
   final ScanReceived onScan;
+  final ScanCompleted? onComplete;
   final String token = _newToken();
   HttpServer? _server;
 
@@ -79,13 +81,22 @@ class ScannerReceiver {
 
   Future<void> _handle(HttpRequest request) async {
     try {
-      if (request.method != 'POST' || request.uri.path != '/v1/scan') {
+      final path = request.uri.path;
+      if (request.method != 'POST' ||
+          (path != '/v1/scan' && path != '/v1/complete')) {
         await _reply(request, HttpStatus.notFound, 'Not found');
         return;
       }
       if (request.headers.value(HttpHeaders.authorizationHeader) !=
           'Bearer $token') {
         await _reply(request, HttpStatus.unauthorized, 'Pairing expired');
+        return;
+      }
+      if (path == '/v1/complete') {
+        // Finish the HTTP response before the dialog closes and disposes this
+        // server, so the phone receives an unambiguous successful completion.
+        await _reply(request, HttpStatus.ok, 'Complete');
+        await onComplete?.call();
         return;
       }
       final mime = request.headers.contentType?.mimeType.toLowerCase();

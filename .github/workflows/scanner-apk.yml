@@ -1,11 +1,9 @@
 name: Android Scanner APK
 
 on:
-  push:
-    branches: ["**"]
-    paths:
-      - "scanner/**"
-      - ".github/workflows/scanner-apk.yml"
+  # The normal Release workflow already builds and publishes this APK. Keep a
+  # manual APK-only build for quick Android debugging without making every push
+  # compile Android twice.
   workflow_dispatch:
 
 permissions:

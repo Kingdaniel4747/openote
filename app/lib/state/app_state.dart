@@ -4318,11 +4318,13 @@ class AppState extends ChangeNotifier
 
   double inkSizeFor(Tool value) => _inkToolSizes[value] ?? penSize;
 
+  double minInkSizeFor(Tool value) => value == Tool.highlighter ? 0.0 : 0.5;
+
   double maxInkSizeFor(Tool value) => 10.0;
 
   void setInkSize(double value) {
     if (!value.isFinite) return;
-    final size = value.clamp(.5, maxInkSizeFor(tool));
+    final size = value.clamp(minInkSizeFor(tool), maxInkSizeFor(tool));
     penSize = size;
     if (_hasInkSize(tool)) _inkToolSizes[tool] = size;
     _repo.setSetting('inkToolSizes', {
@@ -6332,8 +6334,10 @@ class AppState extends ChangeNotifier
         if (entry.key is! String || entry.value is! num) continue;
         final storedTool = Tool.values.asNameMap()[entry.key];
         if (storedTool != null && _hasInkSize(storedTool)) {
-          _inkToolSizes[storedTool] =
-              entry.value.toDouble().clamp(.5, maxInkSizeFor(storedTool));
+          _inkToolSizes[storedTool] = entry.value.toDouble().clamp(
+                minInkSizeFor(storedTool),
+                maxInkSizeFor(storedTool),
+              );
         }
       }
       if (_hasInkSize(tool)) penSize = inkSizeFor(tool);

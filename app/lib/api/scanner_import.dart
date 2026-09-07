@@ -1,6 +1,7 @@
 library;
 
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import '../model/models.dart';
 import '../state/app_state.dart';
@@ -38,6 +39,7 @@ Future<Block> importPhoneScan(
       ? PageData(app.blocks, app.pageProps)
       : app.readPageOf(notebookId, pageId);
   final hash = app.importBlob(notebookId, bytes, mime);
+  final dimensions = await _imageDimensions(bytes);
 
   var y = AppState.contentTop;
   for (final block in data.blocks) {
@@ -46,12 +48,21 @@ Future<Block> importPhoneScan(
   }
   final width =
       (data.props.pageWidth - AppState.pageLeftMargin * 2).clamp(280.0, 760.0);
+  final height =
+      dimensions == null ? null : width * dimensions.$2 / dimensions.$1;
   final scan = Block(
     type: BlockType.image,
     x: AppState.pageLeftMargin,
-    y: y + 24,
+    y: y + 36,
     w: width,
-    content: {'blob': 'sha256:$hash', 'mime': mime, 'source': 'phone-scan'},
+    h: height,
+    content: {
+      'blob': 'sha256:$hash',
+      'mime': mime,
+      'source': 'phone-scan',
+      if (dimensions != null) 'naturalW': dimensions.$1,
+      if (dimensions != null) 'naturalH': dimensions.$2,
+    },
   );
 
   if (onScreen) {
@@ -66,4 +77,21 @@ Future<Block> importPhoneScan(
     );
   }
   return scan;
+}
+
+Future<(double, double)?> _imageDimensions(Uint8List bytes) async {
+  ui.Codec? codec;
+  ui.FrameInfo? frame;
+  try {
+    codec = await ui.instantiateImageCodec(bytes);
+    frame = await codec.getNextFrame();
+    return (frame.image.width.toDouble(), frame.image.height.toDouble());
+  } catch (_) {
+    // A valid MIME type with unusual metadata is still worth importing. Its
+    // widget will determine a display height when it decodes normally.
+    return null;
+  } finally {
+    frame?.image.dispose();
+    codec?.dispose();
+  }
 }

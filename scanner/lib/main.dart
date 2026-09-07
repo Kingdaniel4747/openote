@@ -42,6 +42,8 @@ class PairingData {
 
   Uri get uploadUri =>
       Uri(scheme: 'http', host: host, port: port, path: '/v1/scan');
+  Uri get completeUri =>
+      Uri(scheme: 'http', host: host, port: port, path: '/v1/complete');
 
   static PairingData? tryParse(String value) {
     final uri = Uri.tryParse(value);
@@ -87,6 +89,14 @@ class _ScannerHomeState extends State<ScannerHome> {
   int _total = 0;
   String? _message;
 
+  @override
+  void initState() {
+    super.initState();
+    // Opening the companion app means scanning. Avoid a redundant landing
+    // page and put the camera on screen immediately.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _pair());
+  }
+
   Future<void> _pair() async {
     final pairing = await Navigator.push<PairingData>(
       context,
@@ -99,6 +109,7 @@ class _ScannerHomeState extends State<ScannerHome> {
       _sent = 0;
       _total = 0;
     });
+    await _scan();
   }
 
   Future<void> _scan() async {
@@ -150,6 +161,19 @@ class _ScannerHomeState extends State<ScannerHome> {
           );
         }
         if (mounted) setState(() => _sent = index + 1);
+      }
+      final completion = await http
+          .post(
+            pairing.completeUri,
+            headers: {
+              HttpHeaders.authorizationHeader: 'Bearer ${pairing.token}',
+            },
+          )
+          .timeout(const Duration(seconds: 30));
+      if (completion.statusCode != HttpStatus.ok) {
+        throw HttpException(
+          'Openote could not finish the import (${completion.statusCode}).',
+        );
       }
       if (mounted) {
         setState(
