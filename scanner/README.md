@@ -17,8 +17,14 @@ Both devices must be on the same Wi-Fi network. The Windows firewall may ask
 whether Openote can receive connections; allow private networks. Closing the
 pairing dialog immediately stops the receiver and invalidates its random key.
 
+At startup the scanner first performs a short update check. If a newer scanner
+APK exists in the latest GitHub release, it offers to download it and opens the
+normal Android installation confirmation. If no update is available (or the
+phone is offline), the QR camera opens immediately.
+
 ## GitHub build
 
-Every normal GitHub release contains both the Windows installer and the
-versioned `openote-scanner-<version>.apk`. The `Android Scanner APK` workflow
-remains available as a manual APK-only development build.
+The Release workflow builds Windows and Android independently and in parallel.
+A short third job then publishes one GitHub release containing both the Windows
+installer and the versioned `openote-scanner-<version>.apk`. The `Android
+Scanner APK` workflow remains available as a manual APK-only development build.

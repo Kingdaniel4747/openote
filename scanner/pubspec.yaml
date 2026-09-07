@@ -33,6 +33,8 @@ dependencies:
   google_mlkit_document_scanner: ^0.6.1
   http: ^1.5.0
   mobile_scanner: ^7.4.0
+  ota_update: ^7.1.0
+  package_info_plus: ^10.2.1
 
 dev_dependencies:
   flutter_test:

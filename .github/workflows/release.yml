@@ -1,7 +1,7 @@
 name: Openote Release
 
-# A push creates one release containing the Windows installer and Android
-# scanner APK. Checks and tests remain separate from packaging.
+# Two parallel platform builds and one final GitHub Release.
+# Tests stay in their own optional workflow and never delay these packages.
 on:
   push:
     branches: ["**"]
@@ -15,15 +15,25 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Build Windows installer and Android scanner
+  windows:
+    name: Build Windows installer
     runs-on: windows-latest
-
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Check out the source
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      - name: Choose release version
+        id: version
+        shell: pwsh
+        run: |
+          . "$env:GITHUB_WORKSPACE\packaging\windows\release-version.ps1"
+          $baseline = (Select-String -LiteralPath "$env:GITHUB_WORKSPACE\app\pubspec.yaml" -Pattern '^version:\s*([^+\s]+)' | Select-Object -First 1).Matches.Groups[1].Value
+          $version = Get-NextOpenoteVersion -Baseline $baseline -Tags @(git tag --list 'v*')
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -34,46 +44,71 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Choose the next version
-        id: version
-        shell: pwsh
-        run: |
-          . "$env:GITHUB_WORKSPACE\packaging\windows\release-version.ps1"
-          $baseline = (Select-String -LiteralPath "$env:GITHUB_WORKSPACE\app\pubspec.yaml" -Pattern '^version:\s*([^+\s]+)' | Select-Object -First 1).Matches.Groups[1].Value
-          $tags = @(git tag --list 'v*')
-          $version = Get-NextOpenoteVersion -Baseline $baseline -Tags $tags
-          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          "tag=v$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-
       - name: Get Flutter packages
         working-directory: app
         run: flutter pub get
 
       - name: Build the Windows app
         working-directory: app
-        # `String.fromEnvironment` reads Dart defines, not Windows environment
-        # variables. Passing this explicitly makes the installed app report its
-        # real release version to the in-app updater instead of always 0.8.0.
         run: flutter build windows --release --build-name=${{ steps.version.outputs.version }} --dart-define=OPENOTE_VERSION=${{ steps.version.outputs.version }} --dart-define=OPENOTE_REPOSITORY=Kingdaniel4747/openote
 
       - name: Install the installer builder
         shell: pwsh
-        run: |
-          choco install innosetup --no-progress --yes
+        run: choco install innosetup --no-progress --yes
 
       - name: Build the Windows installer
         shell: pwsh
         run: |
           & "$env:GITHUB_WORKSPACE\packaging\windows\build-installer.ps1" -Version '${{ steps.version.outputs.version }}'
 
-      - name: Set up Java for Android
+      - name: Pass installer to release job
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-windows
+          path: openote-${{ steps.version.outputs.version }}-windows-x64-setup.exe
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  android:
+    name: Build Android scanner APK
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Check out the source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Choose release version
+        id: version
+        shell: pwsh
+        run: |
+          . (Join-Path $env:GITHUB_WORKSPACE 'packaging/windows/release-version.ps1')
+          $pubspec = Join-Path $env:GITHUB_WORKSPACE 'app/pubspec.yaml'
+          $baseline = (Select-String -LiteralPath $pubspec -Pattern '^version:\s*([^+\s]+)' | Select-Object -First 1).Matches.Groups[1].Value
+          $version = Get-NextOpenoteVersion -Baseline $baseline -Tags @(git tag --list 'v*')
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Set up Java
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
+          cache: gradle
+          cache-dependency-path: scanner/android/**/*.gradle*
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.8
+          cache: true
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools platforms;android-36 build-tools;36.0.0
 
       - name: Restore scanner signing key
         uses: actions/cache@v5
@@ -82,50 +117,65 @@ jobs:
           key: openote-scanner-signing-v1
 
       - name: Create scanner signing key when needed
-        shell: pwsh
+        shell: bash
         run: |
-          $key = Join-Path $HOME '.android\debug.keystore'
-          if (-not (Test-Path -LiteralPath $key)) {
-            New-Item -ItemType Directory -Force -Path (Split-Path $key) | Out-Null
-            & keytool -genkeypair -v -keystore $key -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname 'CN=Openote Scanner,OU=Openote,O=Openote,L=Local,C=DE'
-          }
-
-      - name: Install Android 36 platform
-        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
-
-      - name: Restore scanner package cache
-        uses: actions/cache@v5
-        with:
-          path: ${{ github.workspace }}\.pub-cache
-          key: ${{ runner.os }}-scanner-pub-${{ hashFiles('scanner/pubspec.lock') }}
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            mkdir -p "$HOME/.android"
+            keytool -genkeypair -v \
+              -keystore "$HOME/.android/debug.keystore" \
+              -storepass android -alias androiddebugkey -keypass android \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Openote Scanner,OU=Openote,O=Openote,L=Local,C=DE"
+          fi
 
       - name: Get scanner packages
         working-directory: scanner
-        env:
-          # Keep plugin source and Gradle output on the same Windows drive.
-          # Kotlin's relocatable incremental cache cannot cross C: and D:.
-          PUB_CACHE: ${{ github.workspace }}\.pub-cache
         run: flutter pub get
 
-      - name: Build Android scanner APK
+      - name: Build scanner APK
         working-directory: scanner
-        env:
-          PUB_CACHE: ${{ github.workspace }}\.pub-cache
-          # A release build does not benefit from incremental compilation on a
-          # fresh runner. Disabling it also avoids plugin cache path failures.
-          GRADLE_OPTS: -Dkotlin.incremental=false -Dkotlin.compiler.execution.strategy=in-process
         run: flutter build apk --release --build-name=${{ steps.version.outputs.version }} --build-number=${{ github.run_number }}
 
-      - name: Name the scanner APK
-        shell: pwsh
-        run: Copy-Item -LiteralPath 'scanner\build\app\outputs\flutter-apk\app-release.apk' -Destination 'openote-scanner-${{ steps.version.outputs.version }}.apk'
+      - name: Name scanner APK
+        run: cp scanner/build/app/outputs/flutter-apk/app-release.apk openote-scanner-${{ steps.version.outputs.version }}.apk
 
-      - name: Publish the GitHub release
+      - name: Pass APK to release job
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-android
+          path: openote-scanner-${{ steps.version.outputs.version }}.apk
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  publish:
+    name: Publish GitHub Release
+    needs: [windows, android]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the source
+        uses: actions/checkout@v6
+
+      - name: Collect Windows and Android packages
+        uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: release-files
+          merge-multiple: true
+
+      - name: Verify both packages
+        shell: bash
+        run: |
+          test "${{ needs.windows.outputs.version }}" = "${{ needs.android.outputs.version }}"
+          test -f "release-files/openote-${{ needs.windows.outputs.version }}-windows-x64-setup.exe"
+          test -f "release-files/openote-scanner-${{ needs.windows.outputs.version }}.apk"
+
+      - name: Publish one release with both packages
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: Openote v${{ steps.version.outputs.version }}
+          tag_name: v${{ needs.windows.outputs.version }}
+          name: Openote v${{ needs.windows.outputs.version }}
           generate_release_notes: true
           files: |
-            openote-${{ steps.version.outputs.version }}-windows-x64-setup.exe
-            openote-scanner-${{ steps.version.outputs.version }}.apk
+            release-files/openote-${{ needs.windows.outputs.version }}-windows-x64-setup.exe
+            release-files/openote-scanner-${{ needs.windows.outputs.version }}.apk

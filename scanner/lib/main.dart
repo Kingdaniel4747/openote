@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:google_mlkit_document_scanner/google_mlkit_document_scanner.dart';
 import 'package:http/http.dart' as http;
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:ota_update/ota_update.dart';
+
+import 'update_service.dart';
 
 void main() => runApp(const OpenoteScannerApp());
 
@@ -84,7 +87,10 @@ class ScannerHome extends StatefulWidget {
 
 class _ScannerHomeState extends State<ScannerHome> {
   PairingData? _pairing;
+  bool _starting = true;
   bool _busy = false;
+  bool _updating = false;
+  double? _updateProgress;
   int _sent = 0;
   int _total = 0;
   String? _message;
@@ -92,9 +98,81 @@ class _ScannerHomeState extends State<ScannerHome> {
   @override
   void initState() {
     super.initState();
-    // Opening the companion app means scanning. Avoid a redundant landing
-    // page and put the camera on screen immediately.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _pair());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _start());
+  }
+
+  Future<void> _start() async {
+    final update = await checkForScannerUpdate();
+    if (!mounted) return;
+    if (update != null && await _confirmUpdate(update)) {
+      await _installUpdate(update);
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _starting = false);
+    await _pair();
+  }
+
+  Future<bool> _confirmUpdate(ScannerUpdate update) async =>
+      await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: const Text('Scanner update available'),
+          content: Text(
+            'Version ${update.version} is ready. Update before scanning?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Not now'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Update'),
+            ),
+          ],
+        ),
+      ) ??
+      false;
+
+  Future<void> _installUpdate(ScannerUpdate update) async {
+    setState(() {
+      _starting = false;
+      _updating = true;
+      _updateProgress = null;
+      _message = 'Downloading version ${update.version}…';
+    });
+    try {
+      await for (final event in OtaUpdate().execute(
+        update.downloadUrl,
+        destinationFilename: update.filename,
+      )) {
+        if (!mounted) return;
+        final status = event.status.toString().split('.').last;
+        if (status == 'DOWNLOADING') {
+          final percent = double.tryParse(event.value ?? '');
+          setState(() {
+            _updateProgress = percent == null ? null : percent / 100;
+            _message = percent == null
+                ? 'Downloading update…'
+                : 'Downloading update… ${percent.round()}%';
+          });
+        } else if (status == 'INSTALLING') {
+          setState(() {
+            _updateProgress = 1;
+            _message = 'Confirm the installation in Android.';
+          });
+          break;
+        } else if (status.endsWith('ERROR')) {
+          throw StateError(event.value ?? status);
+        }
+      }
+    } catch (error) {
+      if (mounted) setState(() => _message = 'Update failed: $error');
+    } finally {
+      if (mounted) setState(() => _updating = false);
+    }
   }
 
   Future<void> _pair() async {
@@ -199,6 +277,9 @@ class _ScannerHomeState extends State<ScannerHome> {
 
   @override
   Widget build(BuildContext context) {
+    if (_starting) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
     final pairing = _pairing;
     return Scaffold(
       appBar: AppBar(title: const Text('Openote Scanner')),
@@ -239,7 +320,7 @@ class _ScannerHomeState extends State<ScannerHome> {
                   const SizedBox(height: 28),
                   if (pairing == null)
                     FilledButton.icon(
-                      onPressed: _pair,
+                      onPressed: _updating ? null : _pair,
                       icon: const Icon(Icons.qr_code_scanner),
                       label: const Text('Scan pairing code'),
                     )
@@ -260,7 +341,10 @@ class _ScannerHomeState extends State<ScannerHome> {
                       child: const Text('Disconnect'),
                     ),
                   ],
-                  if (_busy) ...[
+                  if (_updating) ...[
+                    const SizedBox(height: 20),
+                    LinearProgressIndicator(value: _updateProgress),
+                  ] else if (_busy) ...[
                     const SizedBox(height: 20),
                     LinearProgressIndicator(
                       value: _total == 0 ? null : _sent / _total,
