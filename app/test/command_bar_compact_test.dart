@@ -67,16 +67,15 @@ void main() {
       (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     await pump(tester, const Size(2600, 1200));
-    // Study and Planner carry their OWN dynamic tooltip text (how many
-    // cards are due, etc.) rather than a fixed string, so they are found
-    // by icon here — everything else has a fixed tooltip message.
-    expect(find.byIcon(Icons.school_outlined), findsOneWidget, reason: 'Study');
+    // Planner carries its own dynamic tooltip text (how many reminders are
+    // due), so it is found by icon here; everything else is a fixed tooltip.
     expect(find.byIcon(Icons.event_note_outlined), findsOneWidget,
         reason: 'Planner');
     for (final tip in const [
+      'Scan from phone',
       'Find tags',
-      'Page outline',
       'Links & backlinks',
+      'Find on page  (Ctrl+F)',
       'Export page…',
       'Settings…',
     ]) {

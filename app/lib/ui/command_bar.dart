@@ -24,6 +24,7 @@ import 'insert_catalog.dart';
 import 'object_face.dart';
 import 'object_row.dart';
 import 'settings_dialog.dart';
+import 'scanner_pairing_dialog.dart';
 import 'update_dialog.dart';
 import '../theme/tokens.dart';
 import 'onote_dialog.dart';
@@ -106,6 +107,18 @@ class _CommandBarState extends State<CommandBar> {
             alignment: MainAxisAlignment.end,
             fillAvailable: true,
             controls: [
+              ToolbarControl(
+                width: 40,
+                icon: Icons.document_scanner_outlined,
+                label: 'Scan from phone',
+                onPressed: () => showScannerPairingDialog(context, app),
+                inline: IconButton(
+                  icon: const Icon(Icons.document_scanner_outlined, size: 18),
+                  tooltip: 'Scan from phone',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => showScannerPairingDialog(context, app),
+                ),
+              ),
               // Update-through-app: the "little update button" of
               // PLANNING.md. Exists only when launch found a newer
               // release, and leads with the version so the tooltip
@@ -300,6 +313,12 @@ class _CommandBarState extends State<CommandBar> {
                       child: AppText('Openote')),
                 ),
               )),
+              IconButton(
+                icon: const Icon(Icons.document_scanner_outlined, size: 18),
+                tooltip: 'Scan from phone',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => showScannerPairingDialog(context, app),
+              ),
               IconButton(
                 icon: const Icon(Icons.settings_outlined, size: 18),
                 tooltip: tr(context, 'Settings…'),
