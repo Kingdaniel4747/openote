@@ -144,6 +144,32 @@ void main() {
           reason: 'the drop must land as SOMETHING the user can see');
     });
 
+    test('a dropped JPEG remains its own movable image object', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final note = app.addBlock(Block(
+        type: BlockType.text,
+        x: 100,
+        y: 100,
+        w: 320,
+        h: 120,
+        content: {'text': 'Keep this text separate.'},
+      ));
+      final photo = File('${tmp.path}/photo.jpeg')
+        ..writeAsBytesSync(List<int>.filled(64, 7));
+
+      final before = app.blocks.length;
+      final added = await dropFilesOntoCanvas(
+          app, [photo.path], const Offset(160, 140));
+
+      expect(added, 1);
+      expect(app.blocks.length, before + 1);
+      final image = app.blocks.last;
+      expect(image.type, BlockType.image);
+      expect(image.content['blob'], isA<String>());
+      expect(note.content['text'], 'Keep this text separate.',
+          reason: 'the upload must not become a markdown line in the note');
+    });
+
     test('insertCsvTable reports what the caps cut', () {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final big = List.generate(kCsvMaxRows + 8, (i) => '$i,x').join('\n');

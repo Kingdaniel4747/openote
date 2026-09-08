@@ -88,6 +88,7 @@ class _BlockViewState extends State<BlockView> {
   Offset? _holdMoveLastGlobal;
   bool _holdMovesObject = false;
   bool _holdObjectMoved = false;
+  int? _fastTouchPointer;
 
   /// Whether the in-progress body drag is allowed to move the block. Editable
   /// blocks say no unless Alt is held — see [_bodyDragStart].
@@ -237,6 +238,9 @@ class _BlockViewState extends State<BlockView> {
     app.claimedPointers.add(e.pointer);
     _pressGlobal = e.position;
     _pressKind = e.kind;
+    _fastTouchPointer = _fastHoldMovable && e.kind == PointerDeviceKind.touch
+        ? e.pointer
+        : null;
     _pressOnChrome = _isChromeAt(e.position);
     _selectBase = null;
     _textDragging = false;
@@ -244,6 +248,17 @@ class _BlockViewState extends State<BlockView> {
 
   void _pointerMove(PointerMoveEvent e) {
     final from = _pressGlobal;
+    // A touch beginning on an object must still scroll the page naturally.
+    // Its down remains claimed for a short tap, then a pre-hold swipe is
+    // explicitly handed to PageCanvas. Only a completed hold can move this
+    // object.
+    if (_fastTouchPointer == e.pointer &&
+        !_holdMovesObject &&
+        from != null &&
+        (e.position - from).distance > kTouchSlop) {
+      app.relinquishedTouchPointers.add(e.pointer);
+      _fastTouchPointer = null;
+    }
     if (from == null || !_editableType || _locked || _holdMovesObject) return;
     // A drag that began on the bar or a handle is a move or a resize. It must
     // never open the editor: the box keeps whatever edit state it already had.
@@ -274,6 +289,7 @@ class _BlockViewState extends State<BlockView> {
   void _pointerUp(PointerEvent e) {
     _selectBase = null;
     _textDragging = false;
+    if (_fastTouchPointer == e.pointer) _fastTouchPointer = null;
     // _pressGlobal is left for _tap, which fires after the pointer is up.
   }
 
@@ -407,7 +423,7 @@ class _BlockViewState extends State<BlockView> {
         LongPressGestureRecognizer:
             GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
           () => LongPressGestureRecognizer(
-            duration: const Duration(milliseconds: 250),
+            duration: const Duration(milliseconds: 300),
             supportedDevices: const {
               PointerDeviceKind.touch,
               PointerDeviceKind.mouse,
@@ -718,9 +734,11 @@ class _BlockViewState extends State<BlockView> {
         // A locked block (an imported PDF slide) is an annotation surface: it
         // must not move when the pen misses, or the whole point of writing on
         // it is lost.
-        onPanStart: editing || _locked ? null : _bodyDragStart,
-        onPanUpdate: editing || _locked ? null : _bodyDrag,
-        onPanEnd: editing || _locked ? null : _bodyDragEnd,
+        onPanStart: editing || _locked || _fastHoldMovable
+            ? null
+            : _bodyDragStart,
+        onPanUpdate: editing || _locked || _fastHoldMovable ? null : _bodyDrag,
+        onPanEnd: editing || _locked || _fastHoldMovable ? null : _bodyDragEnd,
         child: Container(
           width: displayW,
           height: b.h,
@@ -778,7 +796,7 @@ class _BlockViewState extends State<BlockView> {
       // mode (and requests Windows' tablet keyboard), other objects select.
       // Requiring a second tap left tablet-mode users unable to type.
       onTap: editing || _locked ? null : _tap,
-      onPanStart: editing || _locked || !selected
+      onPanStart: editing || _locked || _fastHoldMovable || !selected
           ? null
           : (d) {
               if (app.touchCanvasGesture) return;
@@ -786,7 +804,7 @@ class _BlockViewState extends State<BlockView> {
               app.setDragging(true);
               _touchMoveLast = d.localPosition;
             },
-      onPanUpdate: editing || _locked || !selected
+      onPanUpdate: editing || _locked || _fastHoldMovable || !selected
           ? null
           : (d) {
               if (app.touchCanvasGesture) return;
@@ -797,17 +815,19 @@ class _BlockViewState extends State<BlockView> {
               app.moveSelectedBy(delta.dx / widget.controller.scale,
                   delta.dy / widget.controller.scale);
             },
-      onPanEnd: (_) {
-        if (app.touchCanvasGesture) {
-          _touchMoveLast = null;
-          app.setDragging(false);
-          return;
-        }
-        if (_touchMoveLast == null) return;
-        _touchMoveLast = null;
-        app.settleSelected();
-        app.setDragging(false);
-      },
+      onPanEnd: editing || _locked || _fastHoldMovable
+          ? null
+          : (_) {
+              if (app.touchCanvasGesture) {
+                _touchMoveLast = null;
+                app.setDragging(false);
+                return;
+              }
+              if (_touchMoveLast == null) return;
+              _touchMoveLast = null;
+              app.settleSelected();
+              app.setDragging(false);
+            },
       onLongPressStart: _fastHoldMovable || editing || _locked
           ? null
           : (d) {

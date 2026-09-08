@@ -278,9 +278,7 @@ Future<PasteResult> pasteOntoCanvas(AppState app, Offset at,
     if (bytes == null || bytes.isEmpty) continue;
     // Into the text box under the cursor when there is one — a screenshot
     // pasted onto a note belongs IN the note, not floating over it.
-    if (insertImageIntoTextAt(app, bytes, _mimeOf(fmt), at, dark: dark) == null) {
-      insertImageBytes(app, bytes, _mimeOf(fmt), at);
-    }
+    insertImageBytes(app, bytes, _mimeOf(fmt), at);
     return PasteResult.image;
   }
 
@@ -294,9 +292,7 @@ Future<PasteResult> pasteOntoCanvas(AppState app, Offset at,
         final name = path.split(Platform.pathSeparator).last;
         if (!_looksLikeImage(name)) {
           insertFileBytes(app, bytes, name, at);
-        } else if (insertImageIntoTextAt(app, bytes, mimeForExtension(name), at,
-                dark: dark) ==
-            null) {
+        } else {
           insertImageBytes(app, bytes, mimeForExtension(name), at);
         }
         return PasteResult.files;
@@ -448,10 +444,8 @@ Future<int> dropFilesOntoCanvas(
     } else if (!_looksLikeImage(name)) {
       landed = insertFileBytes(app, bytes, name, where) != null;
     } else {
-      landed = insertImageIntoTextAt(app, bytes, mimeForExtension(name), where,
-              dark: dark) !=
-              null ||
-          insertImageBytes(app, bytes, mimeForExtension(name), where) != null;
+      landed = insertImageBytes(app, bytes, mimeForExtension(name), where) !=
+          null;
     }
     if (landed) {
       offset += 24;

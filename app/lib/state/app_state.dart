@@ -4246,6 +4246,12 @@ class AppState extends ChangeNotifier
   /// handler ignores them (see BlockView / PageCanvas).
   final Set<int> claimedPointers = {};
 
+  /// A touch that began on an object can be handed back to the page before a
+  /// hold has picked that object up. The initial claim keeps a short tap from
+  /// also becoming a canvas tap; this one-shot marker lets a normal swipe
+  /// still scroll the page.
+  final Set<int> relinquishedTouchPointers = {};
+
   // Canvas settings
   Tool tool = Tool.select;
   bool writingMode = false;

@@ -1078,7 +1078,7 @@ class _AppShellState extends State<AppShell> {
   }
 
   /// Ctrl+V while the caret is in a text box, when the clipboard holds an
-  /// image: splice an in-flow reference at the caret.
+  /// image: add the picture as its own selected canvas object.
   ///
   /// Deliberately fire-and-forget and never blocking: the keystroke is passed
   /// through to Flutter's own paste regardless, so a clipboard with both an
@@ -1095,10 +1095,12 @@ class _AppShellState extends State<AppShell> {
     // is exactly where a throwing `writeBlob` — full disk, read-only folder —
     // used to disappear without a word. The status bar now says so, and no
     // reference to unstored bytes is spliced into the text.
-    final hash = app.tryAddBlob(bytes.bytes, bytes.mime);
-    if (hash == null) return;
-    app.insertTextAtActiveCursor('\n![](sha256:$hash)\n');
-    ae.block.content['autoWidth'] = false;
+    insertImageBytes(
+      app,
+      bytes.bytes,
+      bytes.mime,
+      Offset(ae.block.x + ae.block.w / 2, ae.block.y + 40),
+    );
   }
 
   /// Ctrl+V on the canvas: system clipboard media if there is any, else our

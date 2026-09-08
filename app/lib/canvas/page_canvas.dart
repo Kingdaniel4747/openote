@@ -224,6 +224,7 @@ class _PageCanvasState extends State<PageCanvas> {
     _inertia?.cancel();
     _shapeHold?.cancel();
     app.touchCanvasGesture = false;
+    app.relinquishedTouchPointers.clear();
     _windowsPen.removeListener(_windowsPenChanged);
     _windowsPen.dispose();
     _wetTick.dispose();
@@ -1171,7 +1172,16 @@ class _PageCanvasState extends State<PageCanvas> {
       return;
     }
     if (_touches.containsKey(e.pointer)) {
-      final blockOwnsPointer = _blockOwnedTouches.contains(e.pointer);
+      var blockOwnsPointer = _blockOwnedTouches.contains(e.pointer);
+      // The object owns the initial down so a short tap cannot also create or
+      // clear a text box. A pre-hold swipe is handed back here and becomes an
+      // ordinary one-finger page pan.
+      if (blockOwnsPointer &&
+          app.relinquishedTouchPointers.remove(e.pointer)) {
+        _blockOwnedTouches.remove(e.pointer);
+        blockOwnsPointer = false;
+        _mode = _DragMode.pending;
+      }
       // Keep a claimed first finger passive until a second contact arrives.
       // Once there are two, both feeds belong to one CanvasController pinch.
       if (_multiTouchSeen || !blockOwnsPointer) _touchMove(e);
@@ -1226,6 +1236,7 @@ class _PageCanvasState extends State<PageCanvas> {
     final wasTouch = _touches.containsKey(e.pointer);
     if (wasTouch) _touchUp(e);
     _blockOwnedTouches.remove(e.pointer);
+    app.relinquishedTouchPointers.remove(e.pointer);
     if (_touches.isEmpty) app.touchCanvasGesture = false;
     final mode = _mode;
     _mode = _DragMode.none;
@@ -1823,6 +1834,7 @@ class _PageCanvasState extends State<PageCanvas> {
               _mode = _DragMode.none;
               _touches.clear();
               _blockOwnedTouches.clear();
+              app.relinquishedTouchPointers.clear();
               _pinchStartDist = null;
               _pinchStartFocal = null;
               _pinchStartScale = null;

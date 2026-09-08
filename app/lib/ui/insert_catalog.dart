@@ -464,21 +464,11 @@ Future<void> insertPickedImage(
     'webp' => 'image/webp',
     _ => 'image/png',
   };
-  // Caret first. If a text box has focus the picture belongs IN it, in the
   // flow of the writing — the same thing paste and drag-and-drop already do.
-  if (insertImageAtCaret(app, bytes, mime) != null) return;
-
-  // `tryAddBlob`: a full disk or read-only folder throws out of `writeBlob`
-  // synchronously, and a block referencing unstored bytes must not be made.
-  final hash = app.tryAddBlob(bytes, mime);
-  if (hash == null) return;
-  final b = app.addBlock(Block(
-      type: BlockType.image,
-      x: at.dx,
-      y: at.dy,
-      w: 320,
-      content: {'blob': 'sha256:$hash', 'mime': mime}));
-  app.select(b.id);
+  // A picked file is always a canvas object, even while a text box happens
+  // to have a caret. It is immediately selected and has its own bounds,
+  // resize handles and hold-to-move interaction.
+  insertImageBytes(app, bytes, mime, at);
 }
 
 Future<void> insertPickedFile(
