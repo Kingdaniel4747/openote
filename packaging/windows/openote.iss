@@ -22,7 +22,7 @@
 
 #define AppName "Openote"
 #define AppPublisher "Openote"
-#define AppUrl "https://github.com/icmric/openote"
+#define AppUrl "https://github.com/Kingdaniel4747/openote"
 #define AppExe "openote.exe"
 ; The ProgID is the registry name for "a thing Openote opens". Versioned-looking
 ; on purpose (this is the convention Windows expects) and, like AppId, never

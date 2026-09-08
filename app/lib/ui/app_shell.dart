@@ -1747,7 +1747,7 @@ String _coreBuildLine() {
   final id = OnoteCore.instance?.buildId;
   if (id == null) {
     return 'This library predates the build stamp — it is an OLD core. '
-        'Rebuild it (flutter build, or sync-core.bat on Windows) before '
+        'Rebuild it with flutter build before '
         'trusting any importer or repair behaviour.';
   }
   final t = id.built.toLocal();

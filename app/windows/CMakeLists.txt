@@ -148,7 +148,7 @@ install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
 # Bundle the Rust core next to openote.exe. Declared LAST on purpose: install
 # rules run in declaration order, so this executes after Flutter's own bundle
 # steps above (which refresh the runner directory on every build — the
-# ordering sync-core.bat had to enforce by hand). On Windows
+# ordering the former manual script had to enforce). On Windows
 # INSTALL_BUNDLE_LIB_DIR is the exe directory itself. OPTIONAL lets a
 # cargo-less build (see the guard above) install cleanly without the DLL.
 install(FILES "${ONOTE_CORE_LIB}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"

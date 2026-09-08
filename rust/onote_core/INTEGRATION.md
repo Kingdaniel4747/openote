@@ -118,9 +118,9 @@ before Xcode's own code-signing step, so it should need no re-sign at all. The
 manual route and the workflow copy it in *after* signing, which is why they
 must.
 
-`sync-core.bat` remains useful only as the fast path for Rust-only iteration
-(`sync-core.bat rust`); its build-then-copy choreography is otherwise
-superseded by the CMake wiring.
+The former `sync-core.bat` helper was removed because the CMake wiring now
+builds and bundles the core for every Windows build. For Rust-only iteration,
+run `cargo build --release` from this crate directly.
 
 ## What the app uses it for today
 

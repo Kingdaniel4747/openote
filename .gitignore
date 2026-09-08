@@ -31,3 +31,8 @@ node_modules/
 /appimagetool
 /installer-stage-*/
 /packaging/windows/openote-*-setup.exe
+
+# Locally generated Android release credentials. This file is deliberately
+# ignored so its Base64 keystore and passwords can never be committed.
+/ANDROID_SECRETS_PRIVATE.txt
+/openote-release.jks

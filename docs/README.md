@@ -55,7 +55,7 @@ Framework ([0001](adr/ADR-0001-application-framework.md)) · CRDT ([0002](adr/AD
 
 - [Roadmap](../ROADMAP.md) — phased plan from MVP to collaboration.
 - [Planning documents](planning/README.md) — one per release-sized piece of work, kept after shipping: what was reported, what was measured, which options were weighed, and what it cost. The index separates **open** plans from shipped reasoning and from the one plan that was **rejected**. Currently v0.2 → v0.16, plus the ranked standing backlog in [v0.4-and-beyond](planning/v0.4-and-beyond.md).
-- [Releasing](RELEASING.md) — how a commit on `master` becomes a download: the three commands, the four manual steps (publishing the draft, the two Cloudflare secrets, pointing the domain, and the signing decision), what each platform artifact is, why the site is a Worker rather than static hosting, and what to do when a job fails.
+- [Releasing](RELEASING.md) — how a checked commit and explicit version tag become the Windows installer and Android Scanner APK, including signing, draft review, local builds, and failure handling.
 - [Contributing](../CONTRIBUTING.md) — how to get involved.
 - [README](../README.md) — project overview.
 

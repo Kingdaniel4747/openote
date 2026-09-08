@@ -1,46 +1,33 @@
 # Windows-first fork
 
-## Hochladen und neue Version installieren
+## Build- und Release-Ablauf
 
-1. In GitHub Desktop dieses Repository öffnen und alle Änderungen auswählen,
-   einschließlich der neuen Test- und Versionsskripte.
-2. Als Zusammenfassung z. B. `Fix school pen input and automate Windows releases`
-   eintragen. **Commit to master** (bzw. den aktuellen Branch), dann **Push origin**.
-3. Auf GitHub **Actions → Release** öffnen. Jeder Branch-Push baut ausschließlich
-   Windows x64 und führt Dart-/Rust-Tests und die Lizenzprüfung aus.
-4. Nach dem grünen Lauf auf der Repository-Seite **Releases** öffnen. Dort die
-   `openote-<Version>-windows-x64-setup.exe` herunterladen. Kein Artefakt-ZIP nötig.
-   Unter **Actions → Artifacts → windows-x64** liegt zusätzlich die gleiche EXE im ZIP.
-5. Notizbücher vor dem ersten Test sichern, Openote schließen und die EXE installieren.
-   Visual Studio ist auf dem Laptop nicht nötig; Laufzeit- und Video-DLLs sind enthalten.
+1. Änderungen committen und pushen. **Continuous integration** prüft bei jedem
+   Push und Pull Request Desktop-App, Scanner und Rust-Kern. Sie veröffentlicht
+   keine Dateien.
+2. Erst nach einem grünen CI-Lauf einen Release-Tag erzeugen und pushen, zum
+   Beispiel `git tag v0.8.33` und `git push origin v0.8.33`.
+3. Der Workflow **Release packages** baut Windows-Installer und Scanner-APK
+   parallel, prüft beide Dateien und erstellt einen GitHub-Release als Entwurf.
+4. Unter **GitHub → Releases** den Entwurf öffnen, beide Dateien auf plausible
+   Größe prüfen und erst dann veröffentlichen.
+5. Vor der Installation Openote schließen. Der Windows-Installer enthält die
+   nötigen Laufzeit- und Video-DLLs; ein lokales Visual Studio ist nicht nötig.
 
-Alternativ: **Actions → Release → Run workflow**, `platform: windows`, Version leer lassen.
-Nicht zusätzlich **Windows checks and installer** starten: Release verwendet ihn bereits.
-Der Einzelworkflow baut nur ein Test-Artefakt und veröffentlicht keinen Release.
+Alternativ kann **Actions → Release packages → Run workflow** mit einer expliziten
+Version `X.Y.Z` einen Entwurf für den ausgewählten Commit erstellen. Diese Version
+darf nicht bereits als Tag oder Release existieren.
 
-## Automatische Versionsnummern
+## Versions- und Signaturregeln
 
-- Ein **Push**, nicht jeder lokale Speichervorgang, startet einen Release-Lauf.
-  Mehrere Commits in einem Push ergeben einen Release des letzten Commits.
-- Die höchste Version aus den vorhandenen `vX.Y.Z`-Tags und der Pubspec-Basis
-  wird um eine Patch-Version erhöht, z. B. `0.8.0 → 0.8.1 → 0.8.2`.
-- Windows-Läufe werden über alle Branches hinweg nacheinander abgearbeitet
-  (bis zu 100 wartende Läufe). Ein neuer Push bricht den laufenden Build nicht ab.
-- Nur nach erfolgreichen Tests, Build und Paketierung wird ein neuer Release
-  veröffentlicht. Bei einem Fehler den roten Schritt in Actions prüfen.
-- Ein erneuter Lauf desselben bereits veröffentlichten Commits überschreibt nichts
-  und veröffentlicht keine zweite Version desselben Stands.
-- Die EXE-Dateieigenschaften, Installer und App-Update-Anzeige bekommen dieselbe
-  berechnete Version. Die Quelldateien benötigen dafür keinen Bot-Commit.
-  `app/pubspec.yaml` bleibt die Basis für lokale und Linux-Builds.
-- Der Tag verweist auf den gebauten Commit; GitHub bietet dazu automatisch
-  **Source code (zip/tar.gz)** an.
-- Der Windows-Build bekommt den Namen seines GitHub-Repositories als
-  `OPENOTE_REPOSITORY` mit. Der In-App-Updater sucht deshalb in deinem Fork,
-  nicht im Originalprojekt. Die erste neue Version bitte über die EXE installieren.
-- Der Workflow benötigt `contents: write`. Falls GitHub das durch eine übergeordnete
-  Richtlinie blockiert, muss diese Berechtigung für Actions erlaubt werden.
-  Ein persönlicher Zugriffstoken ist nicht nötig.
+- Eine Release-Version ist immer `X.Y.Z`; der Git-Tag lautet `vX.Y.Z`.
+- Die Version wird unverändert in EXE, Installer, APK und Updater übernommen.
+- Der Workflow braucht `contents: write`, um den Release-Entwurf zu erstellen.
+- Die Android-APK wird ausschließlich mit dem dauerhaften Release-Keystore
+  signiert. Vor dem ersten Release müssen die vier `ANDROID_*`-Secrets aus
+  [`scanner/README.md`](../scanner/README.md) in GitHub Actions hinterlegt sein.
+  Ohne diese Secrets bricht der APK-Build absichtlich ab, statt ein nicht
+  aktualisierbares Debug-APK zu veröffentlichen.
 
 ## Bedienung und Änderungen
 
@@ -148,9 +135,9 @@ Eingaben und prüfen auch gerenderte Pixel; sie ersetzen keinen Samsung-Hardware
 
 ## Linux und Apple
 
-**Actions → Release → Run workflow → platform: linux** baut nur Linux
-(.deb, .rpm, .tar.gz), ohne Windows-Release. Linux-Ziel, Rust-Kern und Paketskripte
-bleiben erhalten. Die Fenster-/native Stiftbrücke ist Windows-spezifisch.
+Linux-Ziel, Rust-Kern und Paketskripte bleiben erhalten, sind aber aktuell nicht
+Teil des GitHub-Release-Workflows. Die Fenster-/native Stiftbrücke ist
+Windows-spezifisch.
 Das Apple-Buildziel ist weiterhin entfernt; historische Dokumentation und
 Apple-Code in Drittbibliotheken bleiben unangetastet.
 

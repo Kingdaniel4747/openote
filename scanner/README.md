@@ -24,13 +24,29 @@ phone is offline), the QR camera opens immediately.
 
 ## GitHub build
 
-The Release workflow builds Windows and Android independently and in parallel.
-A short third job then publishes one GitHub release containing both the Windows
-installer and the versioned `openote-scanner-<version>.apk`.
+The Release workflow runs only for a `vX.Y.Z` tag (or a manual version). It builds
+Windows and Android independently, validates both files, then creates one **draft**
+GitHub release. Inspect and publish that draft in GitHub Releases.
 
-Android updates must keep the same signing certificate. The workflow therefore
-keeps one Linux signing key under the fixed cache name
-`openote-scanner-signing-linux-v2`. Do not rename that cache key: the earlier
-OS-neutral name was first occupied by a Windows cache, which made every Linux
-run create a different certificate and Android rejected each release as a
-conflicting package.
+Android updates must keep the same signing certificate forever. Before the first
+release, create one keystore and add these repository secrets in GitHub Actions:
+
+- `ANDROID_KEYSTORE_BASE64` â€” Base64 content of the `.jks` file.
+- `ANDROID_KEYSTORE_PASSWORD`
+- `ANDROID_KEY_ALIAS`
+- `ANDROID_KEY_PASSWORD`
+
+The workflow writes these values only on the ephemeral build runner. Never commit
+`key.properties` or a `.jks` file. A release fails intentionally when a secret is
+missing; silently falling back to a debug key would break all future APK updates.
+
+On Windows, create the keystore once with Java's `keytool`, keep an encrypted
+offline backup, and store the printed passwords separately:
+
+```powershell
+keytool -genkeypair -v -keystore openote-release.jks -alias openote -keyalg RSA -keysize 4096 -validity 10000
+[Convert]::ToBase64String([System.IO.File]::ReadAllBytes(".\openote-release.jks"))
+```
+
+Use the Base64 output for `ANDROID_KEYSTORE_BASE64`, `openote` for
+`ANDROID_KEY_ALIAS`, and the two passwords for the remaining secrets.

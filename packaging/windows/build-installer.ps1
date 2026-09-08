@@ -4,15 +4,18 @@ $taskRepo = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
 $taskRelease = Join-Path $taskRepo 'app\build\windows\x64\runner\Release'
 $taskStage = Join-Path $taskRepo "installer-stage-$Version"
 
-foreach ($name in @('openote.exe', 'flutter_windows.dll', 'sqlite3.dll', 'libmpv-2.dll')) {
+foreach ($name in @('openote.exe', 'flutter_windows.dll', 'sqlite3.dll', 'libmpv-2.dll', 'onote_core.dll')) {
     if (-not (Test-Path -LiteralPath (Join-Path $taskRelease $name))) {
         throw "Incomplete Windows build: $name is missing"
     }
 }
-# A fresh staging folder cannot accidentally package an old DLL from a prior run.
+# Recreate the version-specific stage so a repeated local build cannot package
+# files left behind by an earlier build of the same version.
+if (Test-Path -LiteralPath $taskStage) {
+    Remove-Item -LiteralPath $taskStage -Recurse -Force
+}
 New-Item -ItemType Directory -Path $taskStage | Out-Null
 Get-ChildItem -LiteralPath $taskRelease -Force | Copy-Item -Destination $taskStage -Recurse
-Copy-Item -LiteralPath (Join-Path $taskRepo 'rust\onote_core\target\release\onote_core.dll') -Destination $taskStage -Force
 Copy-Item -LiteralPath (Join-Path $taskRepo 'LICENSE') -Destination $taskStage
 
 # App-local redistributables: the laptop needs neither Visual Studio nor a

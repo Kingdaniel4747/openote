@@ -18,9 +18,9 @@ optional at build time on Windows and Linux — see below.
 ## Building and running
 
 For a Windows installer without a local compiler, see [the fork build guide](../docs/WINDOWS-FORK.md).
-Branch pushes automatically publish a numbered Windows release with a setup EXE.
-The workflow injects its version and repository into the app's update checker;
-local builds keep the baseline version in `pubspec.yaml`.
+Pushes run checks; only an explicit `vX.Y.Z` release tag builds the installer and
+Scanner APK. The workflow injects its version and repository into the app's update
+checker; local builds keep the baseline version in `pubspec.yaml`.
 
 Prereqs for local builds: Flutter 3.44.8 with desktop support for your OS. Rust
 (`cargo`) is needed only to build the native core — the app runs without it.
@@ -51,9 +51,6 @@ library next to the executable, which is what closed the stale-DLL trap that
 burned several sessions (fixes appearing to do nothing because an old library
 was still being loaded). If `cargo` is not on `PATH` the hook prints a warning
 and skips it, and the app runs on the Dart engine.
-
-`sync-core.bat` in the repo root remains for Windows, and still works: it builds
-Rust, then Flutter, then copies the DLL, in that order.
 
 Two things that have each produced a "my fix didn't work" false alarm:
 

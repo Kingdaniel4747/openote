@@ -11,10 +11,11 @@
 </div>
 
 This Windows-first fork adds live pen-button handling, permanent window controls,
-touch context menus and handwriting above page objects. Every branch push builds
-and publishes a higher-version Windows installer after checks pass; Linux is manual.
-See [build and test instructions](docs/WINDOWS-FORK.md). The Apple target is removed;
-historical upstream design notes and third-party licences remain unchanged.
+touch context menus and handwriting above page objects. Every push is checked by
+continuous integration; a Windows installer and Android Scanner APK are built only
+for an explicit release tag. See [build and release instructions](docs/WINDOWS-FORK.md).
+The Apple target is removed; historical upstream design notes and third-party
+licences remain unchanged.
 
 ---
 
@@ -33,14 +34,15 @@ historical upstream design notes and third-party licences remain unchanged.
 
 ## Install
 
-For this fork, open this repository's **Actions → Release**, select a successful
-run, and download **windows-x64**. Extract the GitHub artifact ZIP and run the
-setup EXE inside. The original project's releases do not include these changes.
+Download published packages from this fork's GitHub **Releases** page. A release
+is first created as a draft so the EXE and APK can be checked before publishing.
+The original project's releases do not include these changes.
 
 | | Download | Then |
 |---|---|---|
 | **Windows** | `openote-*-windows-x64-setup.exe` | Run it. Per-user install; C++ runtime and video libraries are included. |
-| **Linux** | `openote-*-linux-amd64.deb` (Ubuntu/Debian/Mint) or `openote-*-linux-x86_64.rpm` (Fedora/RHEL/openSUSE) | Double-click it, or install from a terminal. Openote then appears in your applications menu. *(Neither fits? The `.tar.gz` extracts anywhere and runs with `./openote`.)* |
+| **Android Scanner** | `openote-scanner-*.apk` | Install the APK once; later updates come from the Scanner app when its signature matches. |
+| **Linux** | Source build | Linux packaging remains in the repository but is not part of the current release workflow. |
 
 Your notes are written to your own machine in an open, documented format. There
 is no account, and nothing is uploaded anywhere.
