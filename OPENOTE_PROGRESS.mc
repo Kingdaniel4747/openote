@@ -234,7 +234,7 @@ Qualität und ein flüssiges Schreibgefühl.
 - Windows-Installer und Android-APK werden in getrennten parallelen Jobs
   gebaut.
 - Ein dritter Job prüft beide Dateien und erstellt den GitHub-Release zunächst
-  als Entwurf; erst nach Sichtprüfung wird er veröffentlicht.
+  als öffentlichen GitHub-Release.
 - Der Windows-Release enthält einen echten Setup-Installer und keine unnötige
   portable ZIP-Datei.
 - Der schnelle Release-Build kompiliert und paketiert direkt; die funktionale
@@ -395,7 +395,7 @@ Android-App nicht möglich.
   bauen. Keinen Debug-Keystore und keinen Actions-Cache als Release-Signatur
   verwenden.
 - Windows-Installer und Android-APK getrennt und parallel bauen.
-- Ein Push erzeugt automatisch einen neuen Release-Entwurf. Die globale
+- Ein Push erzeugt automatisch einen neuen öffentlichen Release. Die globale
   Workflow-Warteschlange verhindert doppelte Versionsnummern bei mehreren
   schnellen Pushes.
 - Keine macOS-Arbeit hinzufügen, solange der Nutzer dies nicht ausdrücklich
@@ -437,8 +437,8 @@ waren noch vorhanden.
 1. Aktuellen Stand über GitHub Desktop hochladen.
 2. Dauerhaften Android-Release-Keystore erzeugen und die vier `ANDROID_*`
    Secrets aus `scanner/README.md` in GitHub hinterlegen.
-3. Änderungen pushen; den automatisch erzeugten Release-Entwurf auf EXE und
-   APK prüfen und erst danach veröffentlichen.
+3. Änderungen pushen; den automatisch veröffentlichten Release auf EXE und
+   APK prüfen.
 4. Scanner bei abweichender alter Signatur einmal deinstallieren, die neue APK
    installieren und danach einen zweiten Release für den In-App-Updater testen.
 5. Auf dem Galaxy Book einen kurzen Regressionstest durchführen:
@@ -518,8 +518,7 @@ waren noch vorhanden.
   APK; die vorhandenen Tests sind ausschließlich manuell nutzbar.
 - Auf weiteren ausdrücklichen Nutzerwunsch startet jetzt jeder Push automatisch
   den EXE-/APK-Release-Workflow. Die Versionsnummer wird seriell als nächster
-  Patch aus bestehenden Tags berechnet; ein Entwurf wird weiterhin erst nach
-  Sichtprüfung manuell veröffentlicht.
+  Patch aus bestehenden Tags berechnet und sofort öffentlich veröffentlicht.
 - Gelöscht wurden zusätzlich nur lokal erzeugte und bereits ignorierte Flutter-
   Build-/Cache-Dateien sowie IntelliJ-Metadaten unter `app/` und `scanner/`.
 - Für die einmalige GitHub-Secrets-Einrichtung liegt die kurze Anleitung mit

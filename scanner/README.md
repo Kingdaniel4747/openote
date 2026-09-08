@@ -25,8 +25,8 @@ phone is offline), the QR camera opens immediately.
 ## GitHub build
 
 Every pushed change starts the Release workflow. It builds Windows and Android
-independently, calculates the next patch version, then creates one **draft**
-GitHub release. Inspect and publish that draft in GitHub Releases.
+independently, calculates the next patch version, then publishes one GitHub
+release containing both files.
 
 Android updates must keep the same signing certificate forever. Before the first
 release, create one keystore and add these repository secrets in GitHub Actions:

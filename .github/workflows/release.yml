@@ -1,6 +1,6 @@
 name: Release packages
 
-# Every pushed change creates a numbered release draft. The jobs are globally
+# Every pushed change creates a numbered public release. The jobs are globally
 # serialized so two near-simultaneous pushes cannot choose the same version.
 on:
   push:
@@ -192,7 +192,7 @@ jobs:
           retention-days: 7
 
   publish:
-    name: Create draft GitHub release
+    name: Publish GitHub release
     needs: [version, windows, android]
     runs-on: ubuntu-latest
     steps:
@@ -209,13 +209,13 @@ jobs:
           test -s "release-files/openote-${{ needs.version.outputs.value }}-windows-x64-setup.exe"
           test -s "release-files/openote-scanner-${{ needs.version.outputs.value }}.apk"
 
-      - name: Create the draft release
+      - name: Publish the release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.version.outputs.value }}
           target_commitish: ${{ github.sha }}
           name: Openote v${{ needs.version.outputs.value }}
-          draft: true
+          draft: false
           generate_release_notes: true
           files: |
             release-files/openote-${{ needs.version.outputs.value }}-windows-x64-setup.exe

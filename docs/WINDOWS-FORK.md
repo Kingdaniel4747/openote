@@ -6,14 +6,14 @@
    lokal ausgeführt werden, starten aber nicht automatisch in GitHub Actions.
 2. Der Workflow **Release packages** startet automatisch und baut
    Windows-Installer und Scanner-APK
-   parallel, prüft beide Dateien und erstellt einen GitHub-Release als Entwurf.
-4. Unter **GitHub → Releases** den Entwurf öffnen, beide Dateien auf plausible
-   Größe prüfen und erst dann veröffentlichen.
+   parallel, prüft beide Dateien und veröffentlicht einen GitHub-Release.
+3. Unter **GitHub → Releases** den neuen Release öffnen und beide Dateien auf
+   plausible Größe prüfen.
 5. Vor der Installation Openote schließen. Der Windows-Installer enthält die
    nötigen Laufzeit- und Video-DLLs; ein lokales Visual Studio ist nicht nötig.
 
 Alternativ kann **Actions → Release packages → Run workflow** mit einer expliziten
-Version `X.Y.Z` einen Entwurf für den ausgewählten Commit erstellen. Diese Version
+Version `X.Y.Z` einen Release für den ausgewählten Commit erstellen. Diese Version
 darf nicht bereits als Tag oder Release existieren.
 
 ## Versions- und Signaturregeln
@@ -21,7 +21,7 @@ darf nicht bereits als Tag oder Release existieren.
 - Eine Release-Version ist immer `X.Y.Z`; die nächste Patch-Version wird aus
   dem höchsten vorhandenen Git-Release-Tag berechnet.
 - Die Version wird unverändert in EXE, Installer, APK und Updater übernommen.
-- Der Workflow braucht `contents: write`, um den Release-Entwurf zu erstellen.
+- Der Workflow braucht `contents: write`, um den Release zu veröffentlichen.
 - Die Android-APK wird ausschließlich mit dem dauerhaften Release-Keystore
   signiert. Vor dem ersten Release müssen die vier `ANDROID_*`-Secrets aus
   [`scanner/README.md`](../scanner/README.md) in GitHub Actions hinterlegt sein.

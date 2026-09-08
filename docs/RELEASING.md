@@ -8,9 +8,9 @@ Openote ships two packages from one GitHub release:
 | Android Scanner | `openote-scanner-X.Y.Z.apk` |
 
 Jeder Push startet `Release packages`. Der Workflow berechnet aus der höchsten
-vorhandenen Version die nächste Patch-Version, baut beide Pakete und erstellt
-einen Release-Entwurf. Ein manueller Start kann optional eine konkrete `X.Y.Z`-
-Version vorgeben.
+vorhandenen Version die nächste Patch-Version, baut beide Pakete und
+veröffentlicht einen GitHub-Release. Ein manueller Start kann optional eine
+konkrete `X.Y.Z`-Version vorgeben.
 
 ## One-time Android signing setup
 
@@ -44,8 +44,8 @@ encrypted offline backup of the keystore.
 1. Änderungen committen und in den gewünschten Branch pushen.
 2. Wait for `Release packages`. Windows installer and APK build in parallel;
    the final job checks that both non-empty files exist.
-3. Open the resulting draft in GitHub **Releases**. Confirm the version, notes,
-   EXE, and APK, then publish it.
+3. Open the published release in GitHub **Releases** and confirm the version,
+   notes, EXE, and APK.
 
 For a rebuild of a selected branch commit, start **Actions → Release packages →
 Run workflow** and optionally enter an unused `X.Y.Z` version.

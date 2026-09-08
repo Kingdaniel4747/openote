@@ -60,13 +60,13 @@ void main() {
     expect(gradle, isNot(contains('signingConfigs.getByName("debug")')));
   });
 
-  test('the draft release verifies and attaches both packages', () {
+  test('the public release verifies and attaches both packages', () {
     final steps = workflow('release.yml')['jobs']['publish']['steps'] as List;
     final verify = steps.singleWhere((s) => s['name'] == 'Verify packages');
     expect(verify['run'], contains('windows-x64-setup.exe'));
     expect(verify['run'], contains('openote-scanner-'));
-    final publish = steps.singleWhere((s) => s['name'] == 'Create the draft release');
-    expect(publish['with']['draft'], true);
+    final publish = steps.singleWhere((s) => s['name'] == 'Publish the release');
+    expect(publish['with']['draft'], false);
     expect(publish['with']['target_commitish'], r'${{ github.sha }}');
   });
 

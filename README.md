@@ -12,8 +12,8 @@
 
 This Windows-first fork adds live pen-button handling, permanent window controls,
 touch context menus and handwriting above page objects. Every pushed change
-automatically builds a Windows installer and Android Scanner APK as a GitHub
-release draft. See [build and release instructions](docs/WINDOWS-FORK.md).
+automatically builds a Windows installer and Android Scanner APK as a public
+GitHub release. See [build and release instructions](docs/WINDOWS-FORK.md).
 The Apple target is removed; historical upstream design notes and third-party
 licences remain unchanged.
 
@@ -34,9 +34,9 @@ licences remain unchanged.
 
 ## Install
 
-Download published packages from this fork's GitHub **Releases** page. A release
-is first created as a draft so the EXE and APK can be checked before publishing.
-The original project's releases do not include these changes.
+Download published packages from this fork's GitHub **Releases** page. Every push
+builds and publishes the EXE and APK automatically. The original project's
+releases do not include these changes.
 
 | | Download | Then |
 |---|---|---|
