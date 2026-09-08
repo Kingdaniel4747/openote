@@ -493,6 +493,25 @@ void main() {
       expect(app.canvas.offset, canvasOffset);
       expect(app.canvas.scale, canvasScale);
       expect(t.getSize(body).width, greaterThan(rulerWidth));
+
+      // Windows can additionally dispatch a precision-touchpad pan/zoom
+      // stream while a direct ruler gesture is active. It is a duplicate input
+      // family, not an instruction to move the page.
+      final heldRulerFinger = await t.startGesture(rulerCenter,
+          pointer: 41, kind: PointerDeviceKind.touch);
+      final trackpad = TestPointer(42, PointerDeviceKind.trackpad);
+      await t.sendEventToBinding(
+          trackpad.panZoomStart(rulerCenter + const Offset(0, 120)));
+      await t.sendEventToBinding(trackpad.panZoomUpdate(
+          rulerCenter + const Offset(0, 120),
+          pan: const Offset(0, 90),
+          scale: 1.5));
+      await t.sendEventToBinding(trackpad.panZoomEnd());
+      await t.pump();
+      await heldRulerFinger.up();
+
+      expect(app.canvas.offset, canvasOffset);
+      expect(app.canvas.scale, canvasScale);
       expect(t.takeException(), isNull);
       await t.pumpWidget(const SizedBox());
     });

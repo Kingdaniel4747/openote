@@ -1380,6 +1380,11 @@ class _PageCanvasState extends State<PageCanvas> {
   void _onScroll(PointerSignalEvent e) {
     if (e is! PointerScrollEvent) return;
     GestureBinding.instance.pointerSignalResolver.register(e, (_) {
+      // Some Windows touch/precision-touchpad drivers emit a scroll signal
+      // alongside the raw contacts used to stretch the ruler. It must be
+      // consumed here: otherwise the ruler changes size correctly while this
+      // independent event scrolls the page behind it.
+      if (_rulerPointers.isNotEmpty) return;
       final ctrl = HardwareKeyboard.instance.isControlPressed ||
           HardwareKeyboard.instance.isMetaPressed;
       final shift = HardwareKeyboard.instance.isShiftPressed;
@@ -1950,12 +1955,17 @@ class _PageCanvasState extends State<PageCanvas> {
       onPointerPanZoomStart: (e) {
         _pzLastScale = 1.0;
         _panZoomClaimedBy = app.claimedPointers.contains(e.pointer) ||
+                _rulerPointers.isNotEmpty ||
                 (app.rulerVisible && _screenHitsRuler(e.localPosition))
             ? e.pointer
             : null;
       },
       onPointerPanZoomUpdate: (e) {
-        if (_panZoomClaimedBy == e.pointer) return;
+        // Do not let a second event family from the same physical gesture
+        // move the page while the ruler owns one or more contacts.
+        if (_panZoomClaimedBy == e.pointer || _rulerPointers.isNotEmpty) {
+          return;
+        }
         controller.transformAt(
             e.localPosition, e.scale / _pzLastScale, e.panDelta);
         _pzLastScale = e.scale;
