@@ -38,7 +38,7 @@ void main() {
     final packer = File('${root.path}/packaging/windows/build-installer.ps1')
         .readAsStringSync();
     expect(packer, contains("'onote_core.dll'"));
-    expect(packer, contains('Remove-Item -LiteralPath $taskStage'));
+    expect(packer, contains(r'Remove-Item -LiteralPath $taskStage'));
   });
 
   test('the Android package requires protected signing secrets', () {

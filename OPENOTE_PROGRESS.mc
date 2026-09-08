@@ -501,6 +501,9 @@ waren noch vorhanden.
   Eingaben. Der Desktop-CI-Job läuft daher auf `windows-latest`; Scanner und
   Rust bleiben auf Linux. Die Workflow- und Paketgrößen-Tests wurden an den
   neuen tag-basierten EXE-/APK-Release-Ablauf angepasst.
+- Ein Analysefehler im aktualisierten Workflow-Test (`$taskStage` wurde als
+  Dart-Interpolation statt als PowerShell-Text gelesen) wurde anschließend
+  mit einer Raw-String-Erwartung korrigiert.
 - Gelöscht wurden zusätzlich nur lokal erzeugte und bereits ignorierte Flutter-
   Build-/Cache-Dateien sowie IntelliJ-Metadaten unter `app/` und `scanner/`.
 - Für die einmalige GitHub-Secrets-Einrichtung liegt die kurze Anleitung mit
