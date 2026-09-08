@@ -228,8 +228,9 @@ Qualität und ein flüssiges Schreibgefühl.
 - Der Release-Workflow liegt in `.github/workflows/release.yml`.
 - Auf Nutzerwunsch gibt es keinen automatischen Test-Workflow mehr. Die
   Testdateien bleiben für lokale, manuelle Prüfungen im Projekt.
-- Ein Release wird nur durch einen Tag `vX.Y.Z` oder einen manuellen Workflow
-  mit einer expliziten Version gestartet.
+- Jeder Push startet den Release-Workflow automatisch. Er berechnet die nächste
+  Patch-Version aus Pubspec-Basis und vorhandenen Git-Tags; ein manueller Lauf
+  kann optional eine explizite Version verwenden.
 - Windows-Installer und Android-APK werden in getrennten parallelen Jobs
   gebaut.
 - Ein dritter Job prüft beide Dateien und erstellt den GitHub-Release zunächst
@@ -394,8 +395,9 @@ Android-App nicht möglich.
   bauen. Keinen Debug-Keystore und keinen Actions-Cache als Release-Signatur
   verwenden.
 - Windows-Installer und Android-APK getrennt und parallel bauen.
-- Pushes und Pull Requests nur über CI prüfen; Pakete ausschließlich für einen
-  expliziten Release-Tag oder manuellen Release-Entwurf bauen.
+- Ein Push erzeugt automatisch einen neuen Release-Entwurf. Die globale
+  Workflow-Warteschlange verhindert doppelte Versionsnummern bei mehreren
+  schnellen Pushes.
 - Keine macOS-Arbeit hinzufügen, solange der Nutzer dies nicht ausdrücklich
   wieder verlangt.
 - Keine Emojis in Code, Workflow-Texten oder technischen UI-Beschriftungen.
@@ -435,7 +437,7 @@ waren noch vorhanden.
 1. Aktuellen Stand über GitHub Desktop hochladen.
 2. Dauerhaften Android-Release-Keystore erzeugen und die vier `ANDROID_*`
    Secrets aus `scanner/README.md` in GitHub hinterlegen.
-3. Einen neuen Tag `vX.Y.Z` pushen; den erzeugten Release-Entwurf auf EXE und
+3. Änderungen pushen; den automatisch erzeugten Release-Entwurf auf EXE und
    APK prüfen und erst danach veröffentlichen.
 4. Scanner bei abweichender alter Signatur einmal deinstallieren, die neue APK
    installieren und danach einen zweiten Release für den In-App-Updater testen.
@@ -514,6 +516,10 @@ waren noch vorhanden.
   CI-Workflow wieder entfernt, einschließlich aller Scanner- und Rust-Tests im
   Release-Lauf. Nur der explizite Release-Tag baut und paketiert jetzt EXE und
   APK; die vorhandenen Tests sind ausschließlich manuell nutzbar.
+- Auf weiteren ausdrücklichen Nutzerwunsch startet jetzt jeder Push automatisch
+  den EXE-/APK-Release-Workflow. Die Versionsnummer wird seriell als nächster
+  Patch aus bestehenden Tags berechnet; ein Entwurf wird weiterhin erst nach
+  Sichtprüfung manuell veröffentlicht.
 - Gelöscht wurden zusätzlich nur lokal erzeugte und bereits ignorierte Flutter-
   Build-/Cache-Dateien sowie IntelliJ-Metadaten unter `app/` und `scanner/`.
 - Für die einmalige GitHub-Secrets-Einrichtung liegt die kurze Anleitung mit

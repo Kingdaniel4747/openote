@@ -9,15 +9,14 @@ void main() {
       loadYaml(File('${root.path}/.github/workflows/$name').readAsStringSync())
           as Map;
 
-  test('releases are explicit versioned events with Windows and Android', () {
+  test('every pushed change creates a versioned Windows and Android release', () {
     final release = workflow('release.yml');
     final triggers = release['on'] as Map;
     final jobs = release['jobs'] as Map;
 
     expect(triggers.keys, unorderedEquals(['push', 'workflow_dispatch']));
-    expect(triggers['push']['tags'], ['v*']);
-    expect(triggers['push']['branches'], isNull,
-        reason: 'an ordinary push must never publish a release');
+    expect(triggers['push']['branches'], ['**']);
+    expect(triggers['push']['tags'], isNull);
     expect(jobs.keys, unorderedEquals(['version', 'windows', 'android', 'publish']));
     expect(jobs['windows']['needs'], 'version');
     expect(jobs['android']['needs'], 'version');
@@ -25,6 +24,7 @@ void main() {
     expect(jobs['android']['runs-on'], 'ubuntu-latest');
     expect(jobs['publish']['needs'], unorderedEquals(['version', 'windows', 'android']));
     expect(release['permissions']['contents'], 'write');
+    expect(release['concurrency']['group'], 'openote-release');
     expect(release['concurrency']['cancel-in-progress'], false);
   });
 

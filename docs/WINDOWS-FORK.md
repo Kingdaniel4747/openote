@@ -4,9 +4,8 @@
 
 1. Änderungen committen und pushen. Die vorhandenen Tests können bei Bedarf
    lokal ausgeführt werden, starten aber nicht automatisch in GitHub Actions.
-2. Einen Release-Tag erzeugen und pushen, zum Beispiel `git tag v0.8.33` und
-   `git push origin v0.8.33`.
-3. Der Workflow **Release packages** baut Windows-Installer und Scanner-APK
+2. Der Workflow **Release packages** startet automatisch und baut
+   Windows-Installer und Scanner-APK
    parallel, prüft beide Dateien und erstellt einen GitHub-Release als Entwurf.
 4. Unter **GitHub → Releases** den Entwurf öffnen, beide Dateien auf plausible
    Größe prüfen und erst dann veröffentlichen.
@@ -19,7 +18,8 @@ darf nicht bereits als Tag oder Release existieren.
 
 ## Versions- und Signaturregeln
 
-- Eine Release-Version ist immer `X.Y.Z`; der Git-Tag lautet `vX.Y.Z`.
+- Eine Release-Version ist immer `X.Y.Z`; die nächste Patch-Version wird aus
+  dem höchsten vorhandenen Git-Release-Tag berechnet.
 - Die Version wird unverändert in EXE, Installer, APK und Updater übernommen.
 - Der Workflow braucht `contents: write`, um den Release-Entwurf zu erstellen.
 - Die Android-APK wird ausschließlich mit dem dauerhaften Release-Keystore

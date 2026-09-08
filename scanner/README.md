@@ -24,8 +24,8 @@ phone is offline), the QR camera opens immediately.
 
 ## GitHub build
 
-The Release workflow runs only for a `vX.Y.Z` tag (or a manual version). It builds
-Windows and Android independently, validates both files, then creates one **draft**
+Every pushed change starts the Release workflow. It builds Windows and Android
+independently, calculates the next patch version, then creates one **draft**
 GitHub release. Inspect and publish that draft in GitHub Releases.
 
 Android updates must keep the same signing certificate forever. Before the first

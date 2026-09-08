@@ -1,23 +1,22 @@
 name: Release packages
 
-# A release is an explicit, versioned event. Ordinary commits never create an
-# installer, APK, tag, or GitHub release.
+# Every pushed change creates a numbered release draft. The jobs are globally
+# serialized so two near-simultaneous pushes cannot choose the same version.
 on:
   push:
-    tags:
-      - "v*"
+    branches: ["**"]
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version in X.Y.Z form (creates a draft release)"
-        required: true
+        description: "Optional X.Y.Z override; leave empty to use the next patch version"
+        required: false
         type: string
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: openote-release
   cancel-in-progress: false
 
 jobs:
@@ -27,15 +26,45 @@ jobs:
     outputs:
       value: ${{ steps.release-version.outputs.value }}
     steps:
-      - name: Read and validate the version
+      - name: Check out tags for version calculation
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Choose and validate the version
         id: release-version
         shell: bash
         env:
-          REQUESTED_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || inputs.version }}
+          REQUESTED_VERSION: ${{ inputs.version }}
         run: |
           version="${REQUESTED_VERSION#v}"
+          if [[ -z "$version" ]]; then
+            baseline="$(sed -nE 's/^version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' app/pubspec.yaml | head -n 1)"
+            if [[ ! "$baseline" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "app/pubspec.yaml has no valid X.Y.Z baseline version" >&2
+              exit 1
+            fi
+            highest="$(printf '%s\n' "$baseline"; git tag -l 'v*' | sed -nE 's/^v([0-9]+\.[0-9]+\.[0-9]+)$/\1/p')"
+            version="$(printf '%s\n' "$highest" | sort -V | tail -n 1)"
+            IFS='.' read -r major minor patch <<< "$version"
+            if (( patch >= 65535 )); then
+              patch=0
+              ((minor++))
+            else
+              ((patch++))
+            fi
+            if (( minor > 65535 )); then
+              minor=0
+              ((major++))
+            fi
+            if (( major > 65535 )); then
+              echo "Windows version range exhausted" >&2
+              exit 1
+            fi
+            version="$major.$minor.$patch"
+          fi
           if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Release version must be X.Y.Z (or tag vX.Y.Z); got: $REQUESTED_VERSION" >&2
+            echo "Release version must be X.Y.Z; got: $REQUESTED_VERSION" >&2
             exit 1
           fi
           echo "value=$version" >> "$GITHUB_OUTPUT"
