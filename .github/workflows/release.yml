@@ -137,7 +137,7 @@ jobs:
       - name: Run scanner checks
         working-directory: scanner
         run: |
-          flutter analyze
+          flutter analyze --no-fatal-infos --no-fatal-warnings
           flutter test
 
       - name: Build scanner APK

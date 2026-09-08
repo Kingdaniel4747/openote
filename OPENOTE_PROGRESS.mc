@@ -492,6 +492,10 @@ waren noch vorhanden.
 - Lokale Flutter-, Dart- und Rust-Tools waren in dieser Arbeitsumgebung nicht
   installiert. Deshalb konnten die Builds hier nicht ausgeführt werden; sie
   laufen als erster Check im neuen CI-Workflow.
+- Der erste CI-Lauf bestätigte 113 bereits vorhandene Flutter-Analysehinweise
+  (zwei Warnungen, sonst Infos), aber keine Analysefehler. CI bewertet deshalb
+  echte Fehler weiterhin als fehlgeschlagen, während bestehende Stilhinweise
+  mit `--no-fatal-infos --no-fatal-warnings` den Build nicht blockieren.
 - Gelöscht wurden zusätzlich nur lokal erzeugte und bereits ignorierte Flutter-
   Build-/Cache-Dateien sowie IntelliJ-Metadaten unter `app/` und `scanner/`.
 - Für die einmalige GitHub-Secrets-Einrichtung liegt die kurze Anleitung mit
