@@ -9,97 +9,88 @@ void main() {
       loadYaml(File('${root.path}/.github/workflows/$name').readAsStringSync())
           as Map;
 
-  test('only Windows is automatic; Linux requires an explicit manual choice',
-      () {
+  test('releases are explicit versioned events with Windows and Android', () {
     final release = workflow('release.yml');
+    final triggers = release['on'] as Map;
     final jobs = release['jobs'] as Map;
-    expect(jobs.keys, unorderedEquals(['windows', 'linux']));
-    expect((release['on'] as Map).keys,
-        unorderedEquals(['push', 'workflow_dispatch']));
-    expect(jobs['windows']['uses'], './.github/workflows/ci.yml');
-    expect(jobs['windows']['with']['publish'], true);
-    expect(release['on']['push']['tags'], isNull);
-    expect(release['concurrency']['cancel-in-progress'], false);
-    expect(release['concurrency']['queue'], 'max');
-    expect(release['concurrency']['group'], isNot(contains('github.ref')));
-    expect(jobs['linux']['if'],
-        "github.event_name == 'workflow_dispatch' && inputs.platform == 'linux'");
-    final choice = release['on']['workflow_dispatch']['inputs']['platform'];
-    expect(choice['default'], 'windows');
-    expect(choice['options'], ['windows', 'linux']);
-    expect(jobs['linux']['needs'], isNull,
-        reason: 'Linux is independent of Windows');
-  });
 
-  test('reusable Windows build publishes quickly without waiting for tests', () {
-    final ci = workflow('ci.yml');
-    expect((ci['on'] as Map).keys,
-        unorderedEquals(['workflow_call', 'workflow_dispatch']));
-    final jobs = ci['jobs'] as Map;
-    expect(jobs.keys, ['windows']);
+    expect(triggers.keys, unorderedEquals(['push', 'workflow_dispatch']));
+    expect(triggers['push']['tags'], ['v*']);
+    expect(triggers['push']['branches'], isNull,
+        reason: 'an ordinary push must never publish a release');
+    expect(jobs.keys, unorderedEquals(['version', 'windows', 'android', 'publish']));
+    expect(jobs['windows']['needs'], 'version');
+    expect(jobs['android']['needs'], 'version');
     expect(jobs['windows']['runs-on'], 'windows-latest');
-    final steps = jobs['windows']['steps'] as List;
-    expect(
-        steps.any((s) => s['run'] == 'flutter test --reporter github'), false);
-    expect(steps.any((s) => s['run'] == 'cargo test --all-targets'), false);
-    expect(steps.any((s) => s['run'] == 'cargo deny check licenses'), false);
-    expect(steps.any((s) => s['run'] == 'flutter analyze --no-fatal-infos'),
-        false);
-    final upload =
-        steps.singleWhere((s) => s['uses'] == 'actions/upload-artifact@v4');
-    expect(upload['with']['path'], 'openote-*-windows-x64-setup.exe');
-    expect(ci['permissions']['contents'], 'write');
-    expect(workflow('release.yml')['permissions']['contents'], 'write');
-    final publish = steps
-        .singleWhere((s) => s['name'] == 'Publish versioned Windows release');
-    expect(publish['if'], 'inputs.publish');
-    expect(publish['run'], contains('gh release create'));
-    expect(publish['run'], contains(r'--target $env:GITHUB_SHA'));
-    expect(publish['run'], isNot(contains('--clobber')));
-    expect(steps.indexOf(publish), greaterThan(steps.indexOf(upload)));
-    final build = steps.singleWhere((s) => s['name'] == 'Build Windows');
-    expect(build['run'], contains(r'--build-name=$env:VERSION'));
-    expect(
-        build['run'], contains(r'--dart-define=OPENOTE_VERSION=$env:VERSION'));
-    expect(build['run'], contains('--dart-define=OPENOTE_REPOSITORY='));
+    expect(jobs['android']['runs-on'], 'ubuntu-latest');
+    expect(jobs['publish']['needs'], unorderedEquals(['version', 'windows', 'android']));
+    expect(release['permissions']['contents'], 'write');
+    expect(release['concurrency']['cancel-in-progress'], false);
   });
 
-  test('full checks run separately and never block the installer', () {
-    final tests = workflow('tests.yml');
-    expect((tests['on'] as Map).keys,
-        unorderedEquals(['push', 'workflow_dispatch']));
-    expect(tests['permissions']['contents'], 'read');
-    expect(tests['concurrency']['cancel-in-progress'], true);
-    final steps = tests['jobs']['tests']['steps'] as List;
-    expect(
-        steps.any((s) => s['run'] == 'flutter test --reporter github'), true);
-    expect(steps.any((s) => s['run'] == 'cargo test --all-targets'), true);
-    expect(steps.any((s) => s['run'] == 'cargo deny check licenses'), true);
-    expect(steps.any((s) => s['run'] == 'flutter analyze --no-fatal-infos'),
-        true);
-    expect(steps.any((s) => s['run'] == 'flutter build windows --debug'),
-        true);
+  test('the Windows package has the injected app version and native core', () {
+    final steps = workflow('release.yml')['jobs']['windows']['steps'] as List;
+    final build = steps.singleWhere((s) => s['name'] == 'Build the Windows app');
+    expect(build['run'], contains('--build-name='));
+    expect(build['run'], contains('--dart-define=OPENOTE_VERSION='));
+    expect(build['run'], contains('OPENOTE_REPOSITORY=Kingdaniel4747/openote'));
+
+    final packer = File('${root.path}/packaging/windows/build-installer.ps1')
+        .readAsStringSync();
+    expect(packer, contains("'onote_core.dll'"));
+    expect(packer, contains('Remove-Item -LiteralPath $taskStage'));
   });
 
-  test('Windows package cache avoids the hidden AppData path', () {
-    final steps = workflow('ci.yml')['jobs']['windows']['steps'] as List;
-    final flutter =
-        steps.singleWhere((s) => s['uses'] == 'subosito/flutter-action@v2');
-    expect(flutter['with']['pub-cache-path'],
-        r'${{ runner.temp }}/openote-pub-cache');
+  test('the Android package requires protected signing secrets', () {
+    final steps = workflow('release.yml')['jobs']['android']['steps'] as List;
+    final signing = steps.singleWhere(
+        (s) => s['name'] == 'Configure the protected Android signing key');
+    final env = signing['env'] as Map;
+    expect(env.keys, containsAll([
+      'KEYSTORE_BASE64',
+      'KEYSTORE_PASSWORD',
+      'KEY_ALIAS',
+      'KEY_PASSWORD',
+    ]));
+    expect(signing['run'], contains('Missing Android signing secrets'));
+
+    final gradle = File('${root.path}/scanner/android/app/build.gradle.kts')
+        .readAsStringSync();
+    expect(gradle, contains('openoteRelease'));
+    expect(gradle, isNot(contains('signingConfigs.getByName("debug")')));
+  });
+
+  test('the draft release verifies and attaches both packages', () {
+    final steps = workflow('release.yml')['jobs']['publish']['steps'] as List;
+    final verify = steps.singleWhere((s) => s['name'] == 'Verify packages');
+    expect(verify['run'], contains('windows-x64-setup.exe'));
+    expect(verify['run'], contains('openote-scanner-'));
+    final publish = steps.singleWhere((s) => s['name'] == 'Create the draft release');
+    expect(publish['with']['draft'], true);
+    expect(publish['with']['target_commitish'], r'${{ github.sha }}');
+  });
+
+  test('continuous integration is separate and uses a Windows desktop runner',
+      () {
+    final ci = workflow('ci.yml');
+    final triggers = ci['on'] as Map;
+    final jobs = ci['jobs'] as Map;
+    expect(triggers.keys, unorderedEquals(['push', 'pull_request']));
+    expect(ci['permissions']['contents'], 'read');
+    expect(ci['concurrency']['cancel-in-progress'], true);
+    expect(jobs.keys, unorderedEquals(['desktop', 'scanner', 'rust']));
+    expect(jobs['desktop']['runs-on'], 'windows-latest');
+    expect(jobs['scanner']['runs-on'], 'ubuntu-latest');
+    expect(jobs['rust']['runs-on'], 'ubuntu-latest');
   });
 
   test('Windows writing services use standard C++20 coroutines', () {
     final runner = File('windows/runner/CMakeLists.txt').readAsStringSync();
     expect(
-        runner,
-        contains(
-            r'target_compile_features(${BINARY_NAME} PRIVATE cxx_std_20)'));
+        runner, contains(r'target_compile_features(${BINARY_NAME} PRIVATE cxx_std_20)'));
     expect(runner, isNot(contains('/await')));
-    expect(
-        runner,
-        isNot(
-            contains('_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS')));
+    expect(runner,
+        isNot(contains('_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS')));
     final writing =
         File('windows/runner/writing_services.cpp').readAsStringSync();
     final standardHeader = writing.indexOf('#include <coroutine>');

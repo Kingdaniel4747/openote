@@ -116,24 +116,21 @@ void main() {
       expect(File('${root.path}/tool/shake_icons.dart').existsSync(), isTrue);
     });
 
-    test('CI runs all three trimming steps', () {
-      final ci = File('${root.parent.path}/.github/workflows/ci.yml');
-      expect(ci.existsSync(), isTrue, reason: 'expected ${ci.path}');
-      final text = ci.readAsStringSync();
+    test('the Windows package build runs all three trimming steps', () {
+      final release = File('${root.parent.path}/.github/workflows/release.yml');
+      expect(release.existsSync(), isTrue, reason: 'expected ${release.path}');
+      final text = release.readAsStringSync();
       expect(text, contains('pdfrx:remove_wasm_modules'));
       expect(text, contains('tool/strip_web_assets.dart'));
       expect(text, contains('tool/shake_icons.dart'));
     });
 
-    test('every release build runs them too', () {
-      // Windows lives in the reusable CI job; Linux remains manual in Release.
-      for (final file in ['ci.yml', 'release.yml']) {
-        final text = File('${root.parent.path}/.github/workflows/$file')
-            .readAsStringSync();
-        expect('pdfrx:remove_wasm_modules'.allMatches(text).length, 1);
-        expect('tool/strip_web_assets.dart'.allMatches(text).length, 1);
-        expect('tool/shake_icons.dart'.allMatches(text).length, 1);
-      }
+    test('each trimming step runs exactly once per Windows package', () {
+      final text = File('${root.parent.path}/.github/workflows/release.yml')
+          .readAsStringSync();
+      expect('pdfrx:remove_wasm_modules'.allMatches(text).length, 1);
+      expect('tool/strip_web_assets.dart'.allMatches(text).length, 1);
+      expect('tool/shake_icons.dart'.allMatches(text).length, 1);
     });
   });
 }

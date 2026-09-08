@@ -496,6 +496,11 @@ waren noch vorhanden.
   (zwei Warnungen, sonst Infos), aber keine Analysefehler. CI bewertet deshalb
   echte Fehler weiterhin als fehlgeschlagen, während bestehende Stilhinweise
   mit `--no-fatal-infos --no-fatal-warnings` den Build nicht blockieren.
+- Der nachfolgende Testlauf auf Linux war für die Windows-App nicht geeignet:
+  mehrere Tests prüfen bewusst Windows-Fensterrahmen, Stift-/Hover-Verhalten und
+  Eingaben. Der Desktop-CI-Job läuft daher auf `windows-latest`; Scanner und
+  Rust bleiben auf Linux. Die Workflow- und Paketgrößen-Tests wurden an den
+  neuen tag-basierten EXE-/APK-Release-Ablauf angepasst.
 - Gelöscht wurden zusätzlich nur lokal erzeugte und bereits ignorierte Flutter-
   Build-/Cache-Dateien sowie IntelliJ-Metadaten unter `app/` und `scanner/`.
 - Für die einmalige GitHub-Secrets-Einrichtung liegt die kurze Anleitung mit

@@ -15,7 +15,9 @@ concurrency:
 jobs:
   desktop:
     name: Check desktop app
-    runs-on: ubuntu-latest
+    # The app is Windows-first; its window-frame, pen, and input tests exercise
+    # Windows-only behavior and are not meaningful on a Linux runner.
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
       - uses: subosito/flutter-action@v2

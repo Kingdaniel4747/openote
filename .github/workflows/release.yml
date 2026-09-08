@@ -61,9 +61,21 @@ jobs:
         working-directory: app
         run: flutter pub get
 
+      - name: Trim unused package assets
+        working-directory: app
+        shell: pwsh
+        run: |
+          dart run pdfrx:remove_wasm_modules
+          dart run tool/strip_web_assets.dart
+
       - name: Build the Windows app
         working-directory: app
         run: flutter build windows --release --build-name=${{ needs.version.outputs.value }} --dart-define=OPENOTE_VERSION=${{ needs.version.outputs.value }} --dart-define=OPENOTE_REPOSITORY=Kingdaniel4747/openote
+
+      - name: Trim Material icon font
+        working-directory: app
+        shell: pwsh
+        run: dart run tool/shake_icons.dart windows
 
       - name: Install the installer builder
         shell: pwsh
