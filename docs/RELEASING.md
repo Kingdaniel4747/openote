@@ -7,10 +7,9 @@ Openote ships two packages from one GitHub release:
 | Windows desktop app | `openote-X.Y.Z-windows-x64-setup.exe` |
 | Android Scanner | `openote-scanner-X.Y.Z.apk` |
 
-Pushes and pull requests run the `Continuous integration` workflow only. It
-analyzes and tests the desktop app, scanner, and Rust core but never publishes
-anything. `Release packages` runs only for a `vX.Y.Z` tag or when started
-manually with a version.
+Normale Pushes starten keinen automatischen Test- oder Paketlauf.
+`Release packages` läuft nur für einen `vX.Y.Z`-Tag oder bei manuellem Start
+mit einer Version.
 
 ## One-time Android signing setup
 
@@ -41,18 +40,17 @@ encrypted offline backup of the keystore.
 
 ## Normal release
 
-1. Wait for a green `Continuous integration` run on the commit to ship.
-2. Choose the next unused version, for example `0.8.33`.
-3. Create and push the matching tag:
+1. Choose the next unused version, for example `0.8.33`.
+2. Create and push the matching tag:
 
    ```powershell
    git tag v0.8.33
    git push origin v0.8.33
    ```
 
-4. Wait for `Release packages`. Windows installer and APK build in parallel;
+3. Wait for `Release packages`. Windows installer and APK build in parallel;
    the final job checks that both non-empty files exist.
-5. Open the resulting draft in GitHub **Releases**. Confirm the version, notes,
+4. Open the resulting draft in GitHub **Releases**. Confirm the version, notes,
    EXE, and APK, then publish it.
 
 For a rebuild of a selected branch commit, start **Actions → Release packages →

@@ -70,20 +70,6 @@ void main() {
     expect(publish['with']['target_commitish'], r'${{ github.sha }}');
   });
 
-  test('continuous integration is separate and uses a Windows desktop runner',
-      () {
-    final ci = workflow('ci.yml');
-    final triggers = ci['on'] as Map;
-    final jobs = ci['jobs'] as Map;
-    expect(triggers.keys, unorderedEquals(['push', 'pull_request']));
-    expect(ci['permissions']['contents'], 'read');
-    expect(ci['concurrency']['cancel-in-progress'], true);
-    expect(jobs.keys, unorderedEquals(['desktop', 'scanner', 'rust']));
-    expect(jobs['desktop']['runs-on'], 'windows-latest');
-    expect(jobs['scanner']['runs-on'], 'ubuntu-latest');
-    expect(jobs['rust']['runs-on'], 'ubuntu-latest');
-  });
-
   test('Windows writing services use standard C++20 coroutines', () {
     final runner = File('windows/runner/CMakeLists.txt').readAsStringSync();
     expect(

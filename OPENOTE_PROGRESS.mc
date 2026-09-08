@@ -226,9 +226,8 @@ Qualität und ein flüssiges Schreibgefühl.
 - Der Windows-Updater prüft das Repository `Kingdaniel4747/openote`.
 - Ein neues Update wird nur angeboten, wenn eine neuere Version existiert.
 - Der Release-Workflow liegt in `.github/workflows/release.yml`.
-- Der eigenständige Workflow `.github/workflows/ci.yml` prüft bei jedem Push
-  und Pull Request Desktop-App, Scanner und Rust-Kern, ohne Release-Dateien zu
-  erzeugen.
+- Auf Nutzerwunsch gibt es keinen automatischen Test-Workflow mehr. Die
+  Testdateien bleiben für lokale, manuelle Prüfungen im Projekt.
 - Ein Release wird nur durch einen Tag `vX.Y.Z` oder einen manuellen Workflow
   mit einer expliziten Version gestartet.
 - Windows-Installer und Android-APK werden in getrennten parallelen Jobs
@@ -237,7 +236,8 @@ Qualität und ein flüssiges Schreibgefühl.
   als Entwurf; erst nach Sichtprüfung wird er veröffentlicht.
 - Der Windows-Release enthält einen echten Setup-Installer und keine unnötige
   portable ZIP-Datei.
-- Funktionstests sind vom schnellen Release-Build getrennt.
+- Der schnelle Release-Build kompiliert und paketiert direkt; die funktionale
+  Prüfung erfolgt manuell durch den Nutzer.
 - Der frühere getrennte Workflow `scanner-apk.yml` wurde gelöscht, weil der
   Release-Workflow die APK bereits baut.
 
@@ -432,7 +432,7 @@ waren noch vorhanden.
 
 ## 9. Empfohlene nächste Reihenfolge
 
-1. Aktuellen Stand über GitHub Desktop hochladen und den grünen CI-Lauf prüfen.
+1. Aktuellen Stand über GitHub Desktop hochladen.
 2. Dauerhaften Android-Release-Keystore erzeugen und die vier `ANDROID_*`
    Secrets aus `scanner/README.md` in GitHub hinterlegen.
 3. Einen neuen Tag `vX.Y.Z` pushen; den erzeugten Release-Entwurf auf EXE und
@@ -504,6 +504,16 @@ waren noch vorhanden.
 - Ein Analysefehler im aktualisierten Workflow-Test (`$taskStage` wurde als
   Dart-Interpolation statt als PowerShell-Text gelesen) wurde anschließend
   mit einer Raw-String-Erwartung korrigiert.
+- Die automatische Desktop-CI führt wegen der großen, historisch gewachsenen
+  und teilweise plattformspezifischen Widget-Gesamtsuite nur noch einen kurzen
+  Release-Kern aus: Workflow-/Paketgrößen-Prüfungen, Modellrundlauf,
+  Sync-Schattenzustand und mathematischen Compiler. Das hält Pushes und
+  Releases schnell; die übrige Suite bleibt für gezielte Wartungsarbeiten im
+  Projekt erhalten.
+- Auf anschließenden ausdrücklichen Nutzerwunsch wurde der automatische
+  CI-Workflow wieder entfernt, einschließlich aller Scanner- und Rust-Tests im
+  Release-Lauf. Nur der explizite Release-Tag baut und paketiert jetzt EXE und
+  APK; die vorhandenen Tests sind ausschließlich manuell nutzbar.
 - Gelöscht wurden zusätzlich nur lokal erzeugte und bereits ignorierte Flutter-
   Build-/Cache-Dateien sowie IntelliJ-Metadaten unter `app/` und `scanner/`.
 - Für die einmalige GitHub-Secrets-Einrichtung liegt die kurze Anleitung mit

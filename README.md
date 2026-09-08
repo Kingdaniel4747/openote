@@ -11,9 +11,9 @@
 </div>
 
 This Windows-first fork adds live pen-button handling, permanent window controls,
-touch context menus and handwriting above page objects. Every push is checked by
-continuous integration; a Windows installer and Android Scanner APK are built only
-for an explicit release tag. See [build and release instructions](docs/WINDOWS-FORK.md).
+touch context menus and handwriting above page objects. A Windows installer and
+Android Scanner APK are built only for an explicit release tag. See [build and
+release instructions](docs/WINDOWS-FORK.md).
 The Apple target is removed; historical upstream design notes and third-party
 licences remain unchanged.
 

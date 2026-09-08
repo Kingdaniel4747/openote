@@ -2,11 +2,10 @@
 
 ## Build- und Release-Ablauf
 
-1. Änderungen committen und pushen. **Continuous integration** prüft bei jedem
-   Push und Pull Request Desktop-App, Scanner und Rust-Kern. Sie veröffentlicht
-   keine Dateien.
-2. Erst nach einem grünen CI-Lauf einen Release-Tag erzeugen und pushen, zum
-   Beispiel `git tag v0.8.33` und `git push origin v0.8.33`.
+1. Änderungen committen und pushen. Die vorhandenen Tests können bei Bedarf
+   lokal ausgeführt werden, starten aber nicht automatisch in GitHub Actions.
+2. Einen Release-Tag erzeugen und pushen, zum Beispiel `git tag v0.8.33` und
+   `git push origin v0.8.33`.
 3. Der Workflow **Release packages** baut Windows-Installer und Scanner-APK
    parallel, prüft beide Dateien und erstellt einen GitHub-Release als Entwurf.
 4. Unter **GitHub → Releases** den Entwurf öffnen, beide Dateien auf plausible

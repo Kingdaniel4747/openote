@@ -1,7 +1,7 @@
 name: Release packages
 
-# A release is an explicit, versioned event. Ordinary commits are checked by
-# ci.yml; they must never create an installer, APK, tag, or GitHub release.
+# A release is an explicit, versioned event. Ordinary commits never create an
+# installer, APK, tag, or GitHub release.
 on:
   push:
     tags:
@@ -145,12 +145,6 @@ jobs:
       - name: Get scanner packages
         working-directory: scanner
         run: flutter pub get
-
-      - name: Run scanner checks
-        working-directory: scanner
-        run: |
-          flutter analyze --no-fatal-infos --no-fatal-warnings
-          flutter test
 
       - name: Build scanner APK
         working-directory: scanner
