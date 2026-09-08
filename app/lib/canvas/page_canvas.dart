@@ -118,6 +118,7 @@ class _PageCanvasState extends State<PageCanvas> {
   bool _pinchFramePending = false;
   double _pzLastScale = 1.0;
   Timer? _inertia;
+  Timer? _edgeBounce;
   Offset _touchVelocity = Offset.zero;
   DateTime? _lastTouchMove;
   bool _multiTouchSeen = false;
@@ -222,6 +223,7 @@ class _PageCanvasState extends State<PageCanvas> {
   @override
   void dispose() {
     _inertia?.cancel();
+    _edgeBounce?.cancel();
     _shapeHold?.cancel();
     app.touchCanvasGesture = false;
     app.relinquishedTouchPointers.clear();
@@ -234,10 +236,14 @@ class _PageCanvasState extends State<PageCanvas> {
   @override
   void initState() {
     super.initState();
+    // The controller belongs to AppState, while this widget is recreated per
+    // page. A new note must not inherit a previous note's virtual runway.
+    controller.resetPageBounds();
     _windowsPen.addListener(_windowsPenChanged);
     _windowsPen.attach();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      controller.pageSize = app.pageSize();
+      controller.setPageBounds(app.pageSize(),
+          growsTrailingEdges: !app.pageProps.pdfOnly && !app.pageProps.isPaged);
       // Restore this page's remembered view if the user actually adjusted it
       // (§7a.5); otherwise fit the page width so content placed off to the
       // right — e.g. imported images at their OneNote offsets — is visible on
@@ -864,6 +870,7 @@ class _PageCanvasState extends State<PageCanvas> {
 
   void _touchDown(PointerDownEvent e) {
     _inertia?.cancel();
+    _edgeBounce?.cancel();
     if (_beginRulerPointer(e)) return;
     _touches[e.pointer] = e.localPosition;
     _lastScreen = e.localPosition;
@@ -1066,6 +1073,7 @@ class _PageCanvasState extends State<PageCanvas> {
       if (!_multiTouchSeen) {
         _startInertia();
       }
+      if (_multiTouchSeen) _startEdgeBounce();
       _multiTouchSeen = false;
       app.touchCanvasGesture = false;
     }
@@ -1073,7 +1081,10 @@ class _PageCanvasState extends State<PageCanvas> {
 
   void _startInertia() {
     var velocity = _touchVelocity;
-    if (velocity.distance < 70) return;
+    if (velocity.distance < 70) {
+      _startEdgeBounce();
+      return;
+    }
     _inertia?.cancel();
     var previous = DateTime.now();
     _inertia = Timer.periodic(const Duration(milliseconds: 16), (timer) {
@@ -1082,7 +1093,21 @@ class _PageCanvasState extends State<PageCanvas> {
       previous = now;
       controller.panBy(velocity * dt);
       velocity *= math.pow(0.055, dt).toDouble();
-      if (velocity.distance < 8) timer.cancel();
+      if (velocity.distance < 8) {
+        timer.cancel();
+        _startEdgeBounce();
+      }
+    });
+  }
+
+  /// Finish a resisted top/left pull with a short native-style bounce. This is
+  /// intentionally independent of the content extent: only finite paper is
+  /// clamped at its trailing edge, while the open canvas already expanded
+  /// ahead of the camera during the gesture.
+  void _startEdgeBounce() {
+    _edgeBounce?.cancel();
+    _edgeBounce = Timer.periodic(const Duration(milliseconds: 16), (timer) {
+      if (controller.springTowardsPage()) timer.cancel();
     });
   }
 
@@ -1408,7 +1433,9 @@ class _PageCanvasState extends State<PageCanvas> {
       } else {
         controller.panBy(-e.scrollDelta);
       }
-      setState(() {});
+      // CanvasController notifies the transform-only AnimatedBuilder. Calling
+      // setState here also rebuilt every visible PDF/image for each wheel
+      // notch, causing the scrollbar and document previews to flicker.
     });
   }
 
@@ -1434,13 +1461,19 @@ class _PageCanvasState extends State<PageCanvas> {
             math.max(AppState.defaultPageHeight,
                 ext.bottom + AppState.pageGrowMargin),
           );
-    controller.pageSize = pageSize;
+    controller.setPageBounds(pageSize,
+        growsTrailingEdges: !app.pageProps.pdfOnly && !app.pageProps.isPaged);
 
     Widget canvas = LayoutBuilder(builder: (context, constraints) {
       controller.viewport = Size(constraints.maxWidth, constraints.maxHeight);
       return AnimatedBuilder(
         animation: controller,
         builder: (context, _) {
+          // The virtual open canvas can grow during a pan without an AppState
+          // rebuild. Read its live size here so the surface and hit-test stack
+          // grow in that same frame rather than snapping back to the last
+          // content-only extent.
+          final livePageSize = controller.pageSize ?? pageSize;
           // Visible page-space rect (padded) for culling (CANVAS-9). Computed
           // INSIDE the AnimatedBuilder: the transform changes without a full
           // rebuild (viewport assignment above, per-page view restore, pans), and
@@ -1494,7 +1527,7 @@ class _PageCanvasState extends State<PageCanvas> {
                     child: CustomPaint(
                       painter: _PagePainter(
                         controller: controller,
-                        pageSize: pageSize,
+                        pageSize: livePageSize,
                         background: app.pageProps.background,
                         gridSize: app.gridSize,
                         dark: dark,
@@ -1520,8 +1553,8 @@ class _PageCanvasState extends State<PageCanvas> {
                     child: Transform(
                       transform: controller.matrix,
                       child: SizedBox(
-                        width: pageSize.width,
-                        height: pageSize.height,
+                        width: livePageSize.width,
+                        height: livePageSize.height,
                         child: Stack(
                           clipBehavior:
                               app.pageProps.pdfOnly ? Clip.hardEdge : Clip.none,
@@ -1538,7 +1571,7 @@ class _PageCanvasState extends State<PageCanvas> {
                                   child: PageTitleView(
                                     key: ValueKey('title-${app.pageId}'),
                                     app: app,
-                                    width: pageSize.width -
+                                    width: livePageSize.width -
                                         AppState.pageLeftMargin * 2,
                                   ),
                                 ),
@@ -1570,11 +1603,13 @@ class _PageCanvasState extends State<PageCanvas> {
                                     ? byLift
                                     : a.z.compareTo(b.z);
                               })))
-                              BlockView(
+                              RepaintBoundary(
                                 key: ValueKey('${b.id}#${app.docRevision}'),
-                                block: b,
-                                app: app,
-                                controller: controller,
+                                child: BlockView(
+                                  block: b,
+                                  app: app,
+                                  controller: controller,
+                                ),
                               ),
                             Positioned.fill(
                                 child: HandwritingSpellLayer(app: app)),
@@ -2165,24 +2200,42 @@ class _PagePainter extends CustomPainter {
       ..strokeWidth = 1;
     switch (background) {
       case 'grid':
-        final ox = controller.offset.dx % step;
-        for (var x = ox; x <= right; x += step) {
-          canvas.drawLine(Offset(x, originY), Offset(x, bottom), paint);
-        }
-        for (var y = originY; y <= bottom; y += step) {
-          canvas.drawLine(Offset(0, y), Offset(right, y), paint);
+        {
+          final ox = controller.offset.dx % step;
+          final lines = Path();
+          for (var x = ox; x <= right; x += step) {
+            lines.moveTo(x, originY);
+            lines.lineTo(x, bottom);
+          }
+          for (var y = originY; y <= bottom; y += step) {
+            lines.moveTo(0, y);
+            lines.lineTo(right, y);
+          }
+          canvas.drawPath(lines, paint);
         }
       case 'ruled':
-        for (var y = originY; y <= bottom; y += step) {
-          canvas.drawLine(Offset(0, y), Offset(right, y), paint);
+        {
+          final lines = Path();
+          for (var y = originY; y <= bottom; y += step) {
+            lines.moveTo(0, y);
+            lines.lineTo(right, y);
+          }
+          canvas.drawPath(lines, paint);
         }
       case 'dotted':
-        final dot = Paint()..color = paint.color;
-        final ox = controller.offset.dx % step;
-        for (var x = ox; x <= right; x += step) {
-          for (var y = originY; y <= bottom; y += step) {
-            canvas.drawCircle(Offset(x, y), 1.2, dot);
+        {
+          final dot = Paint()
+            ..color = paint.color
+            ..strokeWidth = 2.4
+            ..strokeCap = StrokeCap.round;
+          final ox = controller.offset.dx % step;
+          final points = <Offset>[];
+          for (var x = ox; x <= right; x += step) {
+            for (var y = originY; y <= bottom; y += step) {
+              points.add(Offset(x, y));
+            }
           }
+          canvas.drawPoints(PointMode.points, points, dot);
         }
     }
   }

@@ -1,8 +1,13 @@
+import 'dart:math' as math;
+
 import 'package:flutter/widgets.dart';
 
 /// First-party pan/zoom (Tech Eval §7.3: own transform, no InteractiveViewer).
-/// Maps between screen space and page space. The page origin stays in the
-/// upper-left corner, so the canvas cannot drift into an empty margin.
+/// Maps between screen space and page space.
+///
+/// The open canvas has a firm origin at the top/left and an elastic edge there,
+/// while its right/bottom extent grows ahead of the camera. PDF and paged
+/// documents can opt out and keep their real paper bounds.
 class CanvasController extends ChangeNotifier {
   double scale = 1.0;
   Offset offset = Offset.zero; // page-space origin's screen position
@@ -18,8 +23,7 @@ class CanvasController extends ChangeNotifier {
   Offset pageToScreen(Offset page) => page * scale + offset;
 
   void panBy(Offset delta) {
-    offset += delta;
-    clampToPage();
+    offset = _bounded(offset + delta, allowLeadingOverscroll: true);
     notifyListeners();
   }
 
@@ -36,7 +40,7 @@ class CanvasController extends ChangeNotifier {
     final pageFocal = screenToPage(screenFocal);
     scale = newScale;
     offset = screenFocal - pageFocal * scale + panDelta;
-    if (clamp) clampToPage();
+    if (clamp) offset = _bounded(offset, allowLeadingOverscroll: true);
     notifyListeners();
   }
 
@@ -52,7 +56,7 @@ class CanvasController extends ChangeNotifier {
     final newScale = (scale * factor).clamp(minScale, maxScale);
     scale = newScale;
     offset = currentFocal - pageFocal * newScale;
-    clampToPage();
+    offset = _bounded(offset, allowLeadingOverscroll: true);
     notifyListeners();
   }
 
@@ -71,16 +75,11 @@ class CanvasController extends ChangeNotifier {
   }) {
     final pageFocal = (startFocal - startOffset) / startScale;
     scale = (startScale * scaleFactor).clamp(minScale, maxScale);
-    final proposed = currentFocal - pageFocal * scale;
-    // An edge that was visible when the gesture began remains attached to the
-    // viewport. Once the user has panned into a larger page and that edge is
-    // off-screen, the content under the fingers is the anchor instead.
-    const edgeEpsilon = .5;
-    offset = Offset(
-      startOffset.dx >= -edgeEpsilon ? 0 : proposed.dx,
-      startOffset.dy >= -edgeEpsilon ? 0 : proposed.dy,
-    );
-    clampToPage();
+    // Do not pin a pinch that starts at the origin. Doing so breaks the normal
+    // focal-point invariant and is the source of the touch zoom "jump". The
+    // leading edge is still gently resisted by [_bounded].
+    offset = _bounded(currentFocal - pageFocal * scale,
+        allowLeadingOverscroll: true);
     notifyListeners();
   }
 
@@ -101,24 +100,40 @@ class CanvasController extends ChangeNotifier {
   /// Last known viewport size (set by the canvas widget each layout).
   Size viewport = Size.zero;
 
-  /// Current page-surface size in page coords (set by the canvas each build);
-  /// used to clamp panning so the page can't be lost (CANVAS-1 v0.3).
-  Size? pageSize;
+  /// Current page-surface size in page coordinates.
+  ///
+  /// Keep the setter for small controller tests and export callers. PageCanvas
+  /// uses [setPageBounds], which importantly never shrinks an open canvas
+  /// after the user has travelled beyond its current content.
+  Size? _pageSize;
+  Size? get pageSize => _pageSize;
+  set pageSize(Size? value) => _pageSize = value;
+
+  bool _growsTrailingEdges = false;
+
+  /// Supply the content-derived minimum size. An open canvas retains any
+  /// larger virtual extent already reached by the camera; a PDF/paged document
+  /// replaces it with its finite paper bounds.
+  void setPageBounds(Size minimum, {required bool growsTrailingEdges}) {
+    _growsTrailingEdges = growsTrailingEdges;
+    final current = _pageSize;
+    _pageSize = !growsTrailingEdges || current == null
+        ? minimum
+        : Size(math.max(minimum.width, current.width),
+            math.max(minimum.height, current.height));
+  }
+
+  /// A PageCanvas state is keyed by page id. Clear its previous page's virtual
+  /// runway before the next state supplies its own content minimum.
+  void resetPageBounds() {
+    _pageSize = null;
+    _growsTrailingEdges = false;
+  }
 
   /// Keep the page origin at upper-left. A small, zoomed-out page also stays
   /// there rather than floating inside the viewport.
   void clampToPage() {
-    final ps = pageSize;
-    if (ps == null || viewport == Size.zero) return;
-    double axis(double o, double vp, double contentPx) {
-      if (contentPx <= vp) return 0.0;
-      return o.clamp(vp - contentPx, 0.0);
-    }
-
-    offset = Offset(
-      axis(offset.dx, viewport.width, ps.width * scale),
-      axis(offset.dy, viewport.height, ps.height * scale),
-    );
+    offset = _bounded(offset, allowLeadingOverscroll: false);
   }
 
   /// Apply the page boundary once after a gesture has finished, rather than
@@ -126,6 +141,64 @@ class CanvasController extends ChangeNotifier {
   void settleToPage() {
     clampToPage();
     notifyListeners();
+  }
+
+  /// Move the short distance remaining in the elastic leading edge. Returning
+  /// true tells PageCanvas that its 60fps bounce can stop.
+  bool springTowardsPage({double amount = .42}) {
+    final target = _bounded(offset, allowLeadingOverscroll: false);
+    if ((target - offset).distance < .25) {
+      offset = target;
+      notifyListeners();
+      return true;
+    }
+    offset = Offset.lerp(offset, target, amount)!;
+    notifyListeners();
+    return false;
+  }
+
+  /// Bound an offset while preserving a small, deliberately hard-to-pull
+  /// leading overscroll. At the exact top-left corner a diagonal pull is
+  /// ignored, matching native scroll surfaces rather than exposing a loose
+  /// diagonal gap.
+  Offset _bounded(Offset candidate, {required bool allowLeadingOverscroll}) {
+    final ps = _pageSize;
+    if (ps == null || viewport == Size.zero) return candidate;
+
+    if (_growsTrailingEdges) _growFor(candidate);
+    final live = _pageSize!;
+    double axis(double value, double vp, double contentPx) {
+      final trailing = math.min(0.0, vp - contentPx);
+      if (value < trailing) return trailing;
+      if (value <= 0) return value;
+      if (!allowLeadingOverscroll) return 0.0;
+      // About 56 screen pixels is the asymptote. It feels attached to the
+      // edge, yet supplies the small native-looking pull/bounce affordance.
+      return 56 * (1 - math.exp(-value / 56));
+    }
+
+    var result = Offset(
+      axis(candidate.dx, viewport.width, live.width * scale),
+      axis(candidate.dy, viewport.height, live.height * scale),
+    );
+    final fromCorner = offset.dx >= -.1 && offset.dy >= -.1;
+    final pullsIntoCorner = candidate.dx > 0 && candidate.dy > 0;
+    if (fromCorner && pullsIntoCorner) result = Offset.zero;
+    return result;
+  }
+
+  void _growFor(Offset candidate) {
+    final current = _pageSize!;
+    // Leave a screen-sized runway after the viewport. This expansion happens
+    // before the trailing clamp, so zoom never makes a previously reachable
+    // writing area disappear behind the last PDF/image.
+    const runwayPx = 480.0;
+    final needWidth = (viewport.width - candidate.dx + runwayPx) / scale;
+    final needHeight = (viewport.height - candidate.dy + runwayPx) / scale;
+    if (needWidth > current.width || needHeight > current.height) {
+      _pageSize = Size(math.max(current.width, needWidth),
+          math.max(current.height, needHeight));
+    }
   }
 
   /// Initial view: page anchored top-left, filling the window (the page is at

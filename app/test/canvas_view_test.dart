@@ -77,7 +77,8 @@ void main() {
     expect(c.pageToScreen(pageUnderStartFocal), startFocal);
   });
 
-  test('visible top and left page edges stay pinned during touch pinch', () {
+  test('touch pinch at the origin keeps the content under the fingers stable',
+      () {
     final c = CanvasController()
       ..viewport = const Size(900, 700)
       ..pageSize = const Size(2400, 1800);
@@ -91,7 +92,47 @@ void main() {
     );
 
     expect(c.scale, 1.6);
-    expect(c.offset, Offset.zero,
-        reason: 'visible page edges are the anchor, not the finger focal');
+    expect(c.offset, const Offset(-300, -210));
+    expect(c.pageToScreen(const Offset(500, 350)),
+        const Offset(500, 350));
+  });
+
+  test('open canvas grows before its trailing boundary is reached', () {
+    final c = CanvasController()
+      ..viewport = const Size(900, 700)
+      ..setPageBounds(const Size(1200, 1400), growsTrailingEdges: true);
+
+    c.panBy(const Offset(-6000, -7000));
+
+    expect(c.offset.dx, lessThan(-5000));
+    expect(c.offset.dy, lessThan(-6000));
+    expect(c.pageSize!.width, greaterThan(6500));
+    expect(c.pageSize!.height, greaterThan(7500));
+  });
+
+  test('finite paper still stops at its real trailing edge', () {
+    final c = CanvasController()
+      ..viewport = const Size(900, 700)
+      ..setPageBounds(const Size(1200, 1400), growsTrailingEdges: false);
+
+    c.panBy(const Offset(-6000, -7000));
+
+    expect(c.offset, const Offset(-300, -700));
+    expect(c.pageSize, const Size(1200, 1400));
+  });
+
+  test('the fixed origin resists a one-edge pull then settles back', () {
+    final c = CanvasController()
+      ..viewport = const Size(900, 700)
+      ..setPageBounds(const Size(1200, 1400), growsTrailingEdges: true);
+
+    c.panBy(const Offset(400, 0));
+    expect(c.offset.dx, greaterThan(0));
+    expect(c.offset.dx, lessThan(56));
+
+    for (var i = 0; i < 20; i++) {
+      if (c.springTowardsPage()) break;
+    }
+    expect(c.offset.dx, 0);
   });
 }

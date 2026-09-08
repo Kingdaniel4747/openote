@@ -56,6 +56,9 @@ class _AppShellState extends State<AppShell> {
   Offset _writingToolbarOffset = Offset.zero;
   _WritingToolbarDock _writingToolbarDock = _WritingToolbarDock.floating;
   bool _writingToolbarPlaced = false;
+  Offset? _writingToolbarDragStart;
+  Offset? _writingToolbarDragOrigin;
+  bool _writingToolbarDragging = false;
 
   /// Whether the Ctrl+/ shortcut reference is up. Tracked here because the
   /// global handler runs even under a dialog: Ctrl+/ must toggle rather than
@@ -1203,10 +1206,16 @@ class _AppShellState extends State<AppShell> {
                       760.0, math.max(220.0, constraints.maxWidth - 32));
                   final vertical =
                       _writingToolbarDock != _WritingToolbarDock.floating;
-                  final toolbarWidth = vertical ? 104.0 : horizontalWidth;
+                  // A docked bar keeps the same 48px controls as its normal
+                  // horizontal form. The old 104px rail made every icon look
+                  // smaller inside a visibly thicker frame.
+                  final toolbarWidth = vertical ? 72.0 : horizontalWidth;
                   final toolbarHeight = vertical
                       ? math.min(760.0, constraints.maxHeight - 16)
                       : 48.0;
+                  const edgeZone = 42.0;
+                  const cornerZone = 88.0;
+                  const undockDistance = 44.0;
                   if (!_writingToolbarPlaced) {
                     _writingToolbarOffset = Offset(
                       (constraints.maxWidth - horizontalWidth) / 2,
@@ -1231,28 +1240,87 @@ class _AppShellState extends State<AppShell> {
                         .clamp(8.0, double.infinity),
                   );
 
+                  bool isCorner(double y) =>
+                      y <= cornerZone ||
+                      y + 48 >= constraints.maxHeight - cornerZone;
+
+                  _WritingToolbarDock? dockAt(Offset position) {
+                    // Corners are explicitly a floating state. This avoids a
+                    // bar unexpectedly changing shape while it is being used
+                    // as a small palette at a corner.
+                    if (isCorner(position.dy)) return null;
+                    if (position.dx <= edgeZone) {
+                      return _WritingToolbarDock.left;
+                    }
+                    if (position.dx + horizontalWidth >=
+                        constraints.maxWidth - edgeZone) {
+                      return _WritingToolbarDock.right;
+                    }
+                    return null;
+                  }
+
+                  void beginToolbarMove(DragStartDetails details) {
+                    setState(() {
+                      _writingToolbarDragging = true;
+                      _writingToolbarDragStart = details.globalPosition;
+                      _writingToolbarDragOrigin = _writingToolbarOffset;
+                    });
+                  }
+
                   void moveToolbar(DragUpdateDetails details) {
                     setState(() {
+                      final start = _writingToolbarDragStart;
+                      final origin = _writingToolbarDragOrigin;
+                      final total = start == null
+                          ? details.delta
+                          : details.globalPosition - start;
                       if (vertical) {
-                        _writingToolbarOffset = Offset(
-                          _writingToolbarDock == _WritingToolbarDock.right
-                              ? constraints.maxWidth - horizontalWidth - 8
-                              : 8,
-                          top,
-                        );
+                        final inward = _writingToolbarDock ==
+                                _WritingToolbarDock.right
+                            ? -total.dx
+                            : total.dx;
+                        final movedTop = (origin?.dy ?? top) + total.dy;
+                        // A docked bar remains docked while it is simply slid
+                        // up/down. It only unfolds after a deliberate movement
+                        // away from the side, or after travelling well into a
+                        // corner â€” hysteresis prevents accidental flipping.
+                        final reachesCorner =
+                            total.dy.abs() >= undockDistance && isCorner(movedTop);
+                        if (inward < undockDistance && !reachesCorner) {
+                          _writingToolbarOffset = Offset(
+                            _writingToolbarOffset.dx,
+                            movedTop.clamp(
+                              8.0,
+                              (constraints.maxHeight - toolbarHeight)
+                                  .clamp(8.0, double.infinity),
+                            ),
+                          );
+                          return;
+                        }
+                        final floatingLeft = _writingToolbarDock ==
+                                _WritingToolbarDock.right
+                            ? constraints.maxWidth - horizontalWidth - 8
+                            : 8.0;
+                        _writingToolbarOffset =
+                            Offset(floatingLeft + total.dx, movedTop);
                         _writingToolbarDock = _WritingToolbarDock.floating;
+                      } else {
+                        _writingToolbarOffset += details.delta;
                       }
-                      _writingToolbarOffset += details.delta;
+                      final dock = dockAt(_writingToolbarOffset);
+                      if (dock != null) _writingToolbarDock = dock;
                     });
                   }
 
                   void finishToolbarMove() {
                     setState(() {
-                      if (_writingToolbarOffset.dx <= 18) {
-                        _writingToolbarDock = _WritingToolbarDock.left;
-                      } else if (_writingToolbarOffset.dx + horizontalWidth >=
-                          constraints.maxWidth - 18) {
-                        _writingToolbarDock = _WritingToolbarDock.right;
+                      _writingToolbarDragging = false;
+                      _writingToolbarDragStart = null;
+                      _writingToolbarDragOrigin = null;
+                      if (_writingToolbarDock == _WritingToolbarDock.floating) {
+                        _writingToolbarDock =
+                            dockAt(_writingToolbarOffset) ??
+                                _WritingToolbarDock.floating;
                       }
                     });
                   }
@@ -1260,15 +1328,21 @@ class _AppShellState extends State<AppShell> {
                   return SafeArea(
                     child: Stack(fit: StackFit.expand, children: [
                       Positioned.fill(child: writingSurface),
-                      Positioned(
+                      AnimatedPositioned(
                         left: left,
                         top: top,
+                        duration: _writingToolbarDragging
+                            ? Duration.zero
+                            : const Duration(milliseconds: 170),
+                        curve: Curves.easeOutCubic,
                         child: Material(
                           key: const ValueKey('writing-toolbar'),
                           elevation: 10,
                           clipBehavior: Clip.antiAlias,
                           borderRadius: BorderRadius.circular(12),
-                          child: SizedBox(
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 170),
+                            curve: Curves.easeOutCubic,
                             width: toolbarWidth,
                             height: toolbarHeight,
                             child: Flex(
@@ -1279,8 +1353,10 @@ class _AppShellState extends State<AppShell> {
                                     key: const ValueKey(
                                         'writing-toolbar-drag-handle'),
                                     behavior: HitTestBehavior.opaque,
+                                    onPanStart: beginToolbarMove,
                                     onPanUpdate: moveToolbar,
                                     onPanEnd: (_) => finishToolbarMove(),
+                                    onPanCancel: finishToolbarMove,
                                     child: Padding(
                                       padding: vertical
                                           ? const EdgeInsets.symmetric(
@@ -1319,6 +1395,9 @@ class _AppShellState extends State<AppShell> {
         }
         _writingToolbarPlaced = false;
         _writingToolbarDock = _WritingToolbarDock.floating;
+        _writingToolbarDragStart = null;
+        _writingToolbarDragOrigin = null;
+        _writingToolbarDragging = false;
         return MediaQuery.removeViewInsets(
           context: context,
           removeBottom: true,
