@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' show PointMode;
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/foundation.dart' show listEquals;
