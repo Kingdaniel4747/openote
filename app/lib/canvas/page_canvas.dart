@@ -115,6 +115,7 @@ class _PageCanvasState extends State<PageCanvas> {
   Offset? _pinchStartFocal;
   double? _pinchStartScale;
   Offset? _pinchStartOffset;
+  bool _pinchFramePending = false;
   double _pzLastScale = 1.0;
   Timer? _inertia;
   Offset _touchVelocity = Offset.zero;
@@ -891,15 +892,35 @@ class _PageCanvasState extends State<PageCanvas> {
     if (!app.rulerVisible || !supported) {
       return false;
     }
-    // The first contact must land on the ruler. Once it owns a gesture, every
-    // additional contact belongs to that SAME gesture. Re-hit-testing the
-    // second finger against the narrow, already moving/rotating ruler let a
-    // near-edge contact fall through to the canvas pinch recognizer, so the
-    // ruler and page zoomed at the same time.
+    // The contact that STARTS a ruler gesture must land on the ruler. Once it
+    // owns a gesture, every additional contact belongs to that SAME gesture.
+    // Re-hit-testing the next finger against the narrow, already
+    // moving/rotating ruler let a near-edge contact fall through to the canvas
+    // pinch recognizer, so the ruler and page zoomed at the same time.
     if (_rulerPointers.isEmpty && !_screenHitsRuler(e.localPosition)) {
       return false;
     }
     _inertia?.cancel();
+    // Gesture delivery is ordered by contact arrival, not by intent. If a
+    // finger is already resting on the page and the next one lands on the
+    // ruler, transfer the existing canvas contacts to the ruler too. Without
+    // this hand-off one pointer resized the ruler while the other still drove
+    // the page pinch, so the backdrop zoomed behind the ruler.
+    if (_rulerPointers.isEmpty && _touches.isNotEmpty) {
+      for (final pointer in _touches.keys) {
+        app.claimedPointers.remove(pointer);
+        _blockOwnedTouches.remove(pointer);
+      }
+      _rulerPointers.addAll(_touches);
+      _touches.clear();
+      _pinchStartDist = null;
+      _pinchStartFocal = null;
+      _pinchStartScale = null;
+      _pinchStartOffset = null;
+      _multiTouchSeen = false;
+      _mode = _DragMode.none;
+      app.setDragging(false);
+    }
     app.claimedPointers.remove(e.pointer);
     _touches.remove(e.pointer);
     _blockOwnedTouches.remove(e.pointer);
@@ -968,18 +989,11 @@ class _PageCanvasState extends State<PageCanvas> {
         _pinchStartFocal != null &&
         _pinchStartScale != null &&
         _pinchStartOffset != null) {
-      final pts = _touches.values.toList();
-      final d = (pts[0] - pts[1]).distance;
-      final focal = (pts[0] + pts[1]) / 2;
-      if (_pinchStartDist! > 0 && d > 0) {
-        controller.transformGestureFrom(
-          startScale: _pinchStartScale!,
-          startOffset: _pinchStartOffset!,
-          startFocal: _pinchStartFocal!,
-          currentFocal: focal,
-          scaleFactor: d / _pinchStartDist!,
-        );
-      }
+      // A touchscreen sends one event per contact. Applying the transform for
+      // each one briefly combines a new position with the other finger's old
+      // position, which is visible as a page twitch. Keep the latest position
+      // for both contacts and paint one coherent transform per display frame.
+      _schedulePinchTransform();
     } else if (_touches.length == 1 && !_multiTouchSeen) {
       final delta = e.localPosition - _lastScreen;
       controller.panBy(delta);
@@ -998,7 +1012,44 @@ class _PageCanvasState extends State<PageCanvas> {
     _lastTouchMove = now;
   }
 
+  void _schedulePinchTransform() {
+    if (_pinchFramePending) return;
+    _pinchFramePending = true;
+    // A raw pointer event does not itself guarantee a build frame. Request one
+    // so the coalesced transform is shown even while nothing else animates.
+    WidgetsBinding.instance.scheduleFrame();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pinchFramePending = false;
+      if (!mounted) return;
+      _applyPinchTransform();
+    });
+  }
+
+  void _applyPinchTransform() {
+    if (_touches.length < 2 ||
+        _pinchStartDist == null ||
+        _pinchStartFocal == null ||
+        _pinchStartScale == null ||
+        _pinchStartOffset == null) {
+      return;
+    }
+    final pts = _touches.values.toList(growable: false);
+    final d = (pts[0] - pts[1]).distance;
+    if (_pinchStartDist! <= 0 || d <= 0) return;
+    controller.transformGestureFrom(
+      startScale: _pinchStartScale!,
+      startOffset: _pinchStartOffset!,
+      startFocal: _pinchStartFocal!,
+      currentFocal: (pts[0] + pts[1]) / 2,
+      scaleFactor: d / _pinchStartDist!,
+    );
+  }
+
   void _touchUp(PointerEvent e) {
+    // The final move and lift can arrive in the same frame. Commit the latest
+    // two-contact sample before dropping one contact, otherwise a very quick
+    // pinch loses its final zoom step.
+    _applyPinchTransform();
     _touches.remove(e.pointer);
     if (_touches.length < 2) {
       _pinchStartDist = null;

@@ -454,5 +454,47 @@ void main() {
       expect(t.takeException(), isNull);
       await t.pumpWidget(const SizedBox());
     });
+
+    testWidgets(
+        'a ruler takes over an already resting page finger without zooming the page',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      app.setTool(Tool.select);
+      app.setRulerVisible(true);
+      await t.pumpWidget(MaterialApp(
+          home: Scaffold(
+              body: ListenableBuilder(
+                  listenable: app,
+                  builder: (_, __) => PageCanvas(state: app)))));
+      await t.pump();
+      await t.pump();
+
+      final body = find.byKey(const ValueKey('ruler-body'));
+      final rulerCenter = t.getCenter(body);
+      final canvasOffset = app.canvas.offset;
+      final canvasScale = app.canvas.scale;
+      final rulerWidth = t.getSize(body).width;
+
+      // The page contact arrived first. Touching the ruler with the second
+      // finger must transfer that contact to the ruler instead of forming a
+      // canvas pinch with it.
+      final pageFinger = await t.startGesture(
+          rulerCenter + const Offset(0, 120),
+          pointer: 31,
+          kind: PointerDeviceKind.touch);
+      final rulerFinger = await t.startGesture(rulerCenter,
+          pointer: 32, kind: PointerDeviceKind.touch);
+      await pageFinger.moveBy(const Offset(0, 60));
+      await t.pump();
+      await rulerFinger.up();
+      await pageFinger.up();
+      await t.pump();
+
+      expect(app.canvas.offset, canvasOffset);
+      expect(app.canvas.scale, canvasScale);
+      expect(t.getSize(body).width, greaterThan(rulerWidth));
+      expect(t.takeException(), isNull);
+      await t.pumpWidget(const SizedBox());
+    });
   });
 }
