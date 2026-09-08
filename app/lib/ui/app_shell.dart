@@ -1207,9 +1207,10 @@ class _AppShellState extends State<AppShell> {
                   final vertical =
                       _writingToolbarDock != _WritingToolbarDock.floating;
                   // A docked bar keeps the same 48px controls as its normal
-                  // horizontal form. The old 104px rail made every icon look
-                  // smaller inside a visibly thicker frame.
-                  final toolbarWidth = vertical ? 72.0 : horizontalWidth;
+                  // horizontal form. Just a four-pixel breathing room remains
+                  // on either side: no wide, visually empty rail around thin
+                  // icons.
+                  final toolbarWidth = vertical ? 56.0 : horizontalWidth;
                   final toolbarHeight = vertical
                       ? math.min(760.0, constraints.maxHeight - 16)
                       : 48.0;

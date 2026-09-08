@@ -7,6 +7,7 @@ import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 import '../model/models.dart';
@@ -254,6 +255,29 @@ class _PageCanvasState extends State<PageCanvas> {
       if (mem != null && !(mem[0] == 1.0 && mem[1] == 0.0 && mem[2] == 0.0)) {
         controller.jumpTo(mem[0], Offset(mem[1], mem[2]));
         controller.clampToPage();
+        // A previous version could remember a camera position well beyond a
+        // page's actual objects (especially after its virtual edge changed).
+        // Restoring that literal offset leaves only the grey desk visible and
+        // makes a perfectly healthy old page look empty. Keep valid per-page
+        // positions, but recover to the normal top/width view when the entire
+        // viewport misses the title and every known object.
+        final visible = Rect.fromPoints(
+          controller.screenToPage(Offset.zero),
+          controller.screenToPage(
+              Offset(controller.viewport.width, controller.viewport.height)),
+        );
+        final content = app.contentExtent();
+        final knownPage = Rect.fromLTWH(
+          0,
+          0,
+          math.max(app.pageProps.pageWidth,
+              content.right + AppState.pageGrowMargin),
+          math.max(AppState.defaultPageHeight,
+              content.bottom + AppState.pageGrowMargin),
+        );
+        if (!visible.overlaps(knownPage)) {
+          controller.fitWidth(content.right);
+        }
       } else {
         controller.fitWidth(app.contentExtent().right);
       }
@@ -1024,10 +1048,11 @@ class _PageCanvasState extends State<PageCanvas> {
   void _schedulePinchTransform() {
     if (_pinchFramePending) return;
     _pinchFramePending = true;
-    // A raw pointer event does not itself guarantee a build frame. Request one
-    // so the coalesced transform is shown even while nothing else animates.
+    // Apply at the START of the next frame. The former post-frame callback
+    // painted one frame behind the fingers, which reads as a repeated zoom
+    // twitch on high-refresh touch screens.
     WidgetsBinding.instance.scheduleFrame();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    SchedulerBinding.instance.scheduleFrameCallback((_) {
       _pinchFramePending = false;
       if (!mounted) return;
       _applyPinchTransform();
@@ -1071,10 +1096,14 @@ class _PageCanvasState extends State<PageCanvas> {
       // Pinch bounds are already handled for every motion sample. Do not
       // perform a second correction on lift: that used to move the page
       // after the fingers had stopped and looked like a sudden jump.
-      if (!_multiTouchSeen) {
+      if (controller.hasLeadingOverscroll) {
+        _startEdgeBounce();
+      } else if (!_multiTouchSeen) {
         _startInertia();
       }
-      if (_multiTouchSeen) _startEdgeBounce();
+      if (_multiTouchSeen && !controller.hasLeadingOverscroll) {
+        _startEdgeBounce();
+      }
       _multiTouchSeen = false;
       app.touchCanvasGesture = false;
     }
@@ -2019,7 +2048,14 @@ class _PageCanvasState extends State<PageCanvas> {
         _pzLastScale = e.scale;
       },
       onPointerPanZoomEnd: (e) {
-        if (_panZoomClaimedBy == e.pointer) _panZoomClaimedBy = null;
+        if (_panZoomClaimedBy == e.pointer) {
+          _panZoomClaimedBy = null;
+        } else {
+          // Precision touchpads deliver pinch/pan through this event family,
+          // not through the raw touch handler above. Give them the same quick
+          // leading-edge rebound when the gesture ends.
+          _startEdgeBounce();
+        }
       },
       child: MouseRegion(
         cursor: _windowsPen.enabled &&

@@ -111,6 +111,11 @@ class CanvasController extends ChangeNotifier {
 
   bool _growsTrailingEdges = false;
 
+  /// Whether the camera is currently in the small elastic top/left pull zone.
+  /// PageCanvas uses this to bounce immediately instead of letting a fling
+  /// keep pushing against an edge after the finger has lifted.
+  bool get hasLeadingOverscroll => offset.dx > .1 || offset.dy > .1;
+
   /// Supply the content-derived minimum size. An open canvas retains any
   /// larger virtual extent already reached by the camera; a PDF/paged document
   /// replaces it with its finite paper bounds.
@@ -183,7 +188,19 @@ class CanvasController extends ChangeNotifier {
     );
     final fromCorner = offset.dx >= -.1 && offset.dy >= -.1;
     final pullsIntoCorner = candidate.dx > 0 && candidate.dy > 0;
-    if (fromCorner && pullsIntoCorner) result = Offset.zero;
+    if (fromCorner && pullsIntoCorner) {
+      // A genuinely diagonal pull from the exact corner stays fixed. A normal
+      // vertical/horizontal pull always contains a few pixels of sideways
+      // sensor noise, though; do not let that noise erase the elastic bounce.
+      final ratio = candidate.dx / candidate.dy;
+      if (ratio >= .6 && ratio <= 1 / .6) {
+        result = Offset.zero;
+      } else if (candidate.dx < candidate.dy) {
+        result = Offset(0, result.dy);
+      } else {
+        result = Offset(result.dx, 0);
+      }
+    }
     return result;
   }
 
