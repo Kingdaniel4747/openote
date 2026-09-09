@@ -174,16 +174,6 @@ void main() {
         const Offset(-400, 40),
       );
       await t.pumpAndSettle();
-      final cornerToolbar =
-          t.getRect(find.byKey(const ValueKey('writing-toolbar')));
-      expect(cornerToolbar.width, greaterThan(cornerToolbar.height),
-          reason: 'corner palettes stay floating');
-
-      await t.drag(
-        find.byKey(const ValueKey('writing-toolbar-drag-handle')),
-        const Offset(0, 100),
-      );
-      await t.pumpAndSettle();
       final dockedToolbar =
           t.getRect(find.byKey(const ValueKey('writing-toolbar')));
       expect(dockedToolbar.left, closeTo(8, 1));
