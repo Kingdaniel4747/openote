@@ -4531,6 +4531,27 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
+  /// Place a pinned colour immediately before another pinned colour. Used by
+  /// the long-press drag target; keeping this mutation in state makes the
+  /// order durable across restarts just like a normal move button.
+  void placeToolbarInkColorBefore(String value, String before, Tool brush) {
+    if (value == before) return;
+    final colors = toolbarInkColorsFor(brush);
+    final from = colors.indexOf(value);
+    final target = colors.indexOf(before);
+    if (from < 0 || target < 0) return;
+    final colour = colors.removeAt(from);
+    final insertion = colors.indexOf(before);
+    colors.insert(insertion < 0 ? colors.length : insertion, colour);
+    _repo.setSetting(
+      brush == Tool.highlighter
+          ? 'highlighterToolbarColors'
+          : 'penToolbarColors',
+      colors,
+    );
+    notifyListeners();
+  }
+
   /// One-shot canvas colour sampler. The canvas consumes the next pen or mouse
   /// release and writes that exact visible colour into the active ink tool.
   bool inkEyedropperActive = false;

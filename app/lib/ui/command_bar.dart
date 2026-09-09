@@ -882,61 +882,69 @@ class _CommandBarState extends State<CommandBar> {
     return base + (item.extras.isEmpty ? 0 : 22) + 2;
   }
 
-  Widget _insertRow(BuildContext context) => CompactingToolbar(
-    controls: [
-      for (final item in kInsertRibbon)
+  Widget _insertRow(BuildContext context) => SizedBox(
+    width: double.infinity,
+    child: CompactingToolbar(
+      fillAvailable: true,
+      moreAtTrailingEdge: true,
+      controls: [
+        // These two are deliberately first: they are physical input routes,
+        // not an occasional insert variant, so they remain visible on a
+        // laptop-width ribbon before lower-frequency catalogue commands fold.
         ToolbarControl(
-          width: _insertItemWidth(item),
-          icon: item.icon,
-          label: item.label,
-          inline: _InsertButton(app: app, item: item),
-          onPressed: () => item.run(context, app, insertAnchor(app, item)),
-          submenu: item.extras.isEmpty
-              ? null
-              : [
-                  // The split button's own MAIN half, first — folding
-                  // must not cost the item the one action it already
-                  // had before it grew a dropdown arrow.
-                  ToolbarSubmenuItem(
-                    icon: item.icon,
-                    label: item.label,
-                    onPressed: () =>
-                        item.run(context, app, insertAnchor(app, item)),
-                  ),
-                  for (final extra in item.extras)
-                    ToolbarSubmenuItem(
-                      icon: extra.icon,
-                      label: extra.label,
-                      onPressed: () =>
-                          extra.run(context, app, insertAnchor(app, extra)),
-                    ),
-                ],
-        ),
-      ToolbarControl(
-        width: 40,
-        icon: Icons.screenshot_monitor_outlined,
-        label: 'Screen clip',
-        inline: IconButton(
-          icon: const Icon(Icons.screenshot_monitor_outlined, size: 18),
-          tooltip: tr(context, 'Screen clip'),
-          visualDensity: VisualDensity.compact,
+          width: 40,
+          icon: Icons.screenshot_monitor_outlined,
+          label: 'Screen clip',
+          inline: IconButton(
+            icon: const Icon(Icons.screenshot_monitor_outlined, size: 18),
+            tooltip: tr(context, 'Screen clip'),
+            visualDensity: VisualDensity.compact,
+            onPressed: () => _insertScreenRegion(context),
+          ),
           onPressed: () => _insertScreenRegion(context),
         ),
-        onPressed: () => _insertScreenRegion(context),
-      ),
-      ToolbarControl(
-        width: 40,
-        icon: Icons.document_scanner_outlined,
-        label: 'Scan from phone',
-        inline: IconButton(
-          icon: const Icon(Icons.document_scanner_outlined, size: 18),
-          tooltip: tr(context, 'Scan from phone'),
-          visualDensity: VisualDensity.compact,
+        ToolbarControl(
+          width: 40,
+          icon: Icons.document_scanner_outlined,
+          label: 'Scan from phone',
+          inline: IconButton(
+            icon: const Icon(Icons.document_scanner_outlined, size: 18),
+            tooltip: tr(context, 'Scan from phone'),
+            visualDensity: VisualDensity.compact,
+            onPressed: () => showScannerPairingDialog(context, app),
+          ),
           onPressed: () => showScannerPairingDialog(context, app),
         ),
-        onPressed: () => showScannerPairingDialog(context, app),
-      ),
-    ],
+        for (final item in kInsertRibbon)
+          ToolbarControl(
+            width: _insertItemWidth(item),
+            icon: item.icon,
+            label: item.label,
+            inline: _InsertButton(app: app, item: item),
+            onPressed: () => item.run(context, app, insertAnchor(app, item)),
+            submenu: item.extras.isEmpty
+                ? null
+                : [
+                    // The split button's own MAIN half, first — folding
+                    // must not cost the item the one action it already
+                    // had before it grew a dropdown arrow.
+                    ToolbarSubmenuItem(
+                      icon: item.icon,
+                      label: item.label,
+                      onPressed: () =>
+                          item.run(context, app, insertAnchor(app, item)),
+                    ),
+                    for (final extra in item.extras)
+                      ToolbarSubmenuItem(
+                        icon: extra.icon,
+                        label: extra.label,
+                        onPressed: () =>
+                            extra.run(context, app, insertAnchor(app, extra)),
+                      ),
+                  ],
+          ),
+      ],
+    ),
   );
 
   Future<void> _showToolbarColourMenu(
@@ -970,6 +978,40 @@ class _CommandBarState extends State<CommandBar> {
         app.removeToolbarInkColor(hex, brush);
     }
   }
+
+  /// The pinned-colour target is deliberately a little larger than the dot.
+  /// Apart from making it easier to right-click with a pen, the generous hit
+  /// target keeps a dragged dot from being dropped in the tiny gap between two
+  /// colours instead of on the colour it should precede.
+  Widget _toolbarColourDot(
+    Color color, {
+    required bool active,
+    required bool target,
+    required ColorScheme scheme,
+  }) => AnimatedContainer(
+    duration: const Duration(milliseconds: 120),
+    curve: Curves.easeOut,
+    width: 24,
+    height: 24,
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      color: target ? scheme.primary.withValues(alpha: .12) : null,
+    ),
+    child: AnimatedContainer(
+      duration: const Duration(milliseconds: 120),
+      width: target ? 20 : 18,
+      height: target ? 20 : 18,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: target || active ? scheme.primary : Colors.transparent,
+          width: target ? 2.5 : 2,
+        ),
+      ),
+    ),
+  );
 
   Widget _drawRow(BuildContext context, {bool vertical = false}) {
     final scheme = Theme.of(context).colorScheme;
@@ -1129,8 +1171,8 @@ class _CommandBarState extends State<CommandBar> {
                       decoration: BoxDecoration(
                         color: c,
                         shape: BoxShape.circle,
-                          border: Border.all(
-                            width: 2,
+                        border: Border.all(
+                          width: 2,
                           color: activeCustomColour == null && activeColour == i
                               ? scheme.primary
                               : i == 0
@@ -1170,79 +1212,122 @@ class _CommandBarState extends State<CommandBar> {
                 padding: vertical
                     ? const EdgeInsets.symmetric(vertical: 2)
                     : const EdgeInsets.symmetric(horizontal: 2),
-                child: GestureDetector(
-                  onTap: () => useCustomColour(hex),
-                  onSecondaryTapDown: (details) => _showToolbarColourMenu(
-                    context,
-                    details.globalPosition,
-                    colourTool,
-                    hex,
-                  ),
-                  onLongPressStart: (details) => _showToolbarColourMenu(
-                    context,
-                    details.globalPosition,
-                    colourTool,
-                    hex,
-                  ),
-                  child: Container(
-                    width: 18,
-                    height: 18,
-                    decoration: BoxDecoration(
-                      color: custom,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        width: 2,
-                        color:
+                child: DragTarget<String>(
+                  onWillAccept: (dragged) => dragged != null && dragged != hex,
+                  onAccept: (dragged) =>
+                      app.placeToolbarInkColorBefore(dragged, hex, colourTool),
+                  builder: (context, candidate, _) => LongPressDraggable<String>(
+                    data: hex,
+                    feedback: Material(
+                      color: Colors.transparent,
+                      child: Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          color: custom,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: scheme.primary, width: 2),
+                          boxShadow: const [
+                            BoxShadow(color: Colors.black26, blurRadius: 4),
+                          ],
+                        ),
+                      ),
+                    ),
+                    childWhenDragging: Opacity(
+                      opacity: .3,
+                      child: _toolbarColourDot(
+                        custom,
+                        active:
                             activeCustomColour ==
-                                hex.replaceFirst('#', '').substring(0, 6)
-                            ? scheme.primary
-                            : Colors.transparent,
+                            hex.replaceFirst('#', '').substring(0, 6),
+                        target: false,
+                        scheme: scheme,
+                      ),
+                    ),
+                    child: Tooltip(
+                      message:
+                          'Use colour • right-click to remove • hold and drag to reorder',
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => useCustomColour(hex),
+                        onSecondaryTapDown: (details) => _showToolbarColourMenu(
+                          context,
+                          details.globalPosition,
+                          colourTool,
+                          hex,
+                        ),
+                        child: _toolbarColourDot(
+                          custom,
+                          active:
+                              activeCustomColour ==
+                              hex.replaceFirst('#', '').substring(0, 6),
+                          target: candidate.isNotEmpty,
+                          scheme: scheme,
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-          gap(12),
-          InkWell(
-            key: const ValueKey('pen-active-colour'),
-            borderRadius: BorderRadius.circular(99),
-            onTap: pickCustomColour,
-            child: Container(
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                color: activeCustomColour == null
-                    ? colors[activeColour % colors.length]
-                    : onoteColorFromHex(activeCustomColour),
-                shape: BoxShape.circle,
-                border: Border.all(color: scheme.primary, width: 2),
-              ),
+          // A quiet capsule separates "choose/mix/sample" from the fixed
+          // swatches. It deliberately has no corners and keeps the pipette
+          // immediately beside the mixer, where those two tools read as one.
+          gap(20),
+          Container(
+            padding: const EdgeInsets.all(2),
+            decoration: BoxDecoration(
+              color: scheme.primary.withValues(alpha: .055),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: scheme.outline.withValues(alpha: .22)),
             ),
-          ),
-          gap(6),
-          IconButton(
-            key: const ValueKey('pen-eyedropper'),
-            tooltip: app.inkEyedropperActive
-                ? 'Cancel colour sampler'
-                : 'Pick a colour from the page',
-            visualDensity: VisualDensity.compact,
-            isSelected: app.inkEyedropperActive,
-            style: IconButton.styleFrom(
-              backgroundColor: app.inkEyedropperActive
-                  ? scheme.primary.withValues(alpha: .18)
-                  : null,
-              foregroundColor: app.inkEyedropperActive ? scheme.primary : null,
+            child: Flex(
+              direction: vertical ? Axis.vertical : Axis.horizontal,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                InkWell(
+                  key: const ValueKey('pen-active-colour'),
+                  borderRadius: BorderRadius.circular(99),
+                  onTap: pickCustomColour,
+                  child: Container(
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      color: activeCustomColour == null
+                          ? colors[activeColour % colors.length]
+                          : onoteColorFromHex(activeCustomColour),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: scheme.primary, width: 2),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  key: const ValueKey('pen-eyedropper'),
+                  tooltip: app.inkEyedropperActive
+                      ? 'Cancel colour sampler'
+                      : 'Pick a colour from the page',
+                  visualDensity: VisualDensity.compact,
+                  isSelected: app.inkEyedropperActive,
+                  style: IconButton.styleFrom(
+                    backgroundColor: app.inkEyedropperActive
+                        ? scheme.primary.withValues(alpha: .18)
+                        : null,
+                    foregroundColor: app.inkEyedropperActive
+                        ? scheme.primary
+                        : null,
+                  ),
+                  icon: const Icon(Icons.colorize_outlined, size: 19),
+                  onPressed: () =>
+                      app.setInkEyedropperActive(!app.inkEyedropperActive),
+                ),
+                IconButton(
+                  key: const ValueKey('pen-colour-picker'),
+                  tooltip: tr(context, 'Mix a custom colour'),
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.palette_outlined, size: 19),
+                  onPressed: pickCustomColour,
+                ),
+              ],
             ),
-            icon: const Icon(Icons.colorize_outlined, size: 19),
-            onPressed: () =>
-                app.setInkEyedropperActive(!app.inkEyedropperActive),
-          ),
-          IconButton(
-            key: const ValueKey('pen-colour-picker'),
-            tooltip: tr(context, 'Mix a custom colour'),
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.palette_outlined, size: 19),
-            onPressed: pickCustomColour,
           ),
           gap(6),
           sizeSlider(key: const ValueKey('ink-size')),

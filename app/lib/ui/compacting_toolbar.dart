@@ -29,6 +29,7 @@ class CompactingToolbar extends StatelessWidget {
     required this.controls,
     this.alignment = MainAxisAlignment.start,
     this.fillAvailable = false,
+    this.moreAtTrailingEdge = false,
   });
 
   final List<ToolbarControl> controls;
@@ -47,6 +48,11 @@ class CompactingToolbar extends StatelessWidget {
   /// content needs, so a sibling can claim the rest, leaves it false.
   final bool fillAvailable;
 
+  /// Keep the overflow trigger at the far end of a full-width ribbon. This is
+  /// useful for Insert: the last visible command stays in reading order while
+  /// More remains immediately below the app controls at the window edge.
+  final bool moreAtTrailingEdge;
+
   /// The width of the "More" button itself, in the same units as each
   /// [ToolbarControl.width] — reserved whenever folding is even possible,
   /// so the decision of whether everything fits never has to be redone
@@ -56,55 +62,63 @@ class CompactingToolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (controls.isEmpty) return const SizedBox.shrink();
-    return LayoutBuilder(builder: (context, constraints) {
-      final maxWidth = constraints.maxWidth;
-      final totalWidth = controls.fold<double>(0, (sum, c) => sum + c.width);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.maxWidth;
+        final totalWidth = controls.fold<double>(0, (sum, c) => sum + c.width);
 
-      Widget fill(Widget row, double used) {
-        // A window narrower than the content needs is not a real case this
-        // app's chrome will ever hit, but this must not throw a hard
-        // overflow assertion even so — it renders at its natural size
-        // rather than being forced into a width with nothing left to give.
-        if (maxWidth.isFinite && used > maxWidth) {
-          return OverflowBox(
+        Widget fill(Widget row, double used) {
+          // A window narrower than the content needs is not a real case this
+          // app's chrome will ever hit, but this must not throw a hard
+          // overflow assertion even so — it renders at its natural size
+          // rather than being forced into a width with nothing left to give.
+          if (maxWidth.isFinite && used > maxWidth) {
+            return OverflowBox(
               alignment: Alignment.centerLeft,
               minWidth: 0,
               maxWidth: double.infinity,
-              child: row);
+              child: row,
+            );
+          }
+          if (fillAvailable && maxWidth.isFinite) {
+            return SizedBox(width: maxWidth, child: row);
+          }
+          return row;
         }
-        if (fillAvailable && maxWidth.isFinite) {
-          return SizedBox(width: maxWidth, child: row);
-        }
-        return row;
-      }
 
-      if (!maxWidth.isFinite || totalWidth <= maxWidth) {
-        final row = Row(
+        if (!maxWidth.isFinite || totalWidth <= maxWidth) {
+          final row = Row(
             mainAxisAlignment: alignment,
             mainAxisSize: MainAxisSize.min,
-            children: [for (final c in controls) c.inline]);
-        return fill(row, totalWidth);
-      }
+            children: [for (final c in controls) c.inline],
+          );
+          return fill(row, totalWidth);
+        }
 
-      var used = moreButtonWidth;
-      var shown = 0;
-      for (final c in controls) {
-        final next = used + c.width;
-        if (next > maxWidth) break;
-        used = next;
-        shown++;
-      }
-      final visible = controls.take(shown);
-      final overflow = controls.skip(shown);
-      final row = Row(
+        var used = moreButtonWidth;
+        var shown = 0;
+        for (final c in controls) {
+          final next = used + c.width;
+          if (next > maxWidth) break;
+          used = next;
+          shown++;
+        }
+        final visible = controls.take(shown);
+        final overflow = controls.skip(shown);
+        final row = Row(
           mainAxisAlignment: alignment,
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize: fillAvailable && moreAtTrailingEdge
+              ? MainAxisSize.max
+              : MainAxisSize.min,
           children: [
             for (final c in visible) c.inline,
+            if (fillAvailable && moreAtTrailingEdge) const Spacer(),
             _MoreMenu(overflow: overflow.toList()),
-          ]);
-      return fill(row, used);
-    });
+          ],
+        );
+        return fill(row, used);
+      },
+    );
   }
 }
 
@@ -147,8 +161,11 @@ class ToolbarControl {
 }
 
 class ToolbarSubmenuItem {
-  const ToolbarSubmenuItem(
-      {required this.icon, required this.label, required this.onPressed});
+  const ToolbarSubmenuItem({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
   final IconData icon;
   final String label;
   final VoidCallback onPressed;
@@ -187,7 +204,9 @@ class _MoreMenu extends StatelessWidget {
           else
             MenuItemButton(
               leadingIcon: Icon(c.icon, size: 18),
-              trailingIcon: c.selected ? const Icon(Icons.check, size: 16) : null,
+              trailingIcon: c.selected
+                  ? const Icon(Icons.check, size: 16)
+                  : null,
               onPressed: c.onPressed,
               child: AppText(c.label),
             ),

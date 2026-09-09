@@ -193,7 +193,6 @@ class _NotebookManagerState extends State<_NotebookManager> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final notebooks = app.notebooks;
-    final trashed = app.trashedNotebooks;
     return AlertDialog(
       title: Row(
         children: [
@@ -226,13 +225,6 @@ class _NotebookManagerState extends State<_NotebookManager> {
                 childAspectRatio: .72,
                 children: [for (final nb in notebooks) _coverCard(nb, scheme)],
               ),
-              if (trashed.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                _sectionLabel(
-                  'In the recycle bin · deleted after ${app.recycleRetentionDays} days',
-                ),
-                for (final nb in trashed) _trashRow(nb),
-              ],
               if (_importOpen) ...[
                 const SizedBox(height: 6),
                 _sectionLabel('Import into a new notebook'),
@@ -306,14 +298,25 @@ class _NotebookManagerState extends State<_NotebookManager> {
                 for (final nb in notebooks)
                   PopupMenuItem(value: nb.id, child: Text(nb.title)),
               ],
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                child: Row(
-                  children: [
-                    Icon(Icons.backup_outlined, size: 18),
-                    SizedBox(width: 7),
-                    AppText('Backup'),
-                  ],
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: scheme.primary,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.backup_outlined,
+                        size: 18,
+                        color: Colors.white,
+                      ),
+                      SizedBox(width: 7),
+                      AppText('Backup', style: TextStyle(color: Colors.white)),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -608,26 +611,43 @@ class _NotebookManagerState extends State<_NotebookManager> {
                           value: 'duplicate',
                           child: Text('Duplicate'),
                         ),
-                        const PopupMenuDivider(),
-                        for (final color in _coverTokens.whereType<String>())
-                          PopupMenuItem(
-                            value: 'color:$color',
-                            child: Center(
-                              child: Container(
-                                width: 24,
-                                height: 24,
-                                decoration: BoxDecoration(
-                                  color: _coverColor(color, nb.id),
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.black26),
-                                ),
-                              ),
-                            ),
-                          ),
-                        const PopupMenuDivider(),
                         const PopupMenuItem(
                           value: 'delete',
                           child: Text('Move to recycle bin'),
+                        ),
+                        const PopupMenuDivider(),
+                        PopupMenuItem(
+                          value: '__palette',
+                          height: 108,
+                          child: SizedBox(
+                            width: 168,
+                            child: GridView.count(
+                              crossAxisCount: 4,
+                              mainAxisSpacing: 8,
+                              crossAxisSpacing: 8,
+                              physics: const NeverScrollableScrollPhysics(),
+                              children: [
+                                for (final color
+                                    in _coverTokens.whereType<String>())
+                                  InkWell(
+                                    borderRadius: BorderRadius.circular(99),
+                                    onTap: () {
+                                      Navigator.pop(context);
+                                      app.setNotebookColor(nb.id, color);
+                                    },
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: _coverColor(color, nb.id),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: Colors.black26,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -884,63 +904,6 @@ class _NotebookManagerState extends State<_NotebookManager> {
     );
   }
 
-  Widget _trashRow(NotebookRef nb) {
-    final days = _daysLeft(nb.deletedAt ?? 0, app.recycleRetentionDays);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 1),
-      child: Row(
-        children: [
-          const SizedBox(width: 10),
-          Icon(
-            Icons.delete_outline,
-            size: 16,
-            color: context.surfaces.textSecondary,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  nb.title,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: OnoteColors.graphite500,
-                  ),
-                ),
-                Text(
-                  days,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: context.surfaces.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          TextButton(
-            onPressed: () async {
-              await app.restoreNotebook(nb.id);
-              if (mounted) setState(() => _highlightId = nb.id);
-            },
-            child: const AppText('Restore'),
-          ),
-          _act(Icons.delete_forever, 'Delete permanently', () async {
-            final ok = await _confirmPurge(
-              context,
-              nb,
-              caveat: app.purgeCaveat(nb.id),
-            );
-            if (!ok || !mounted) return;
-            await app.purgeNotebook(nb.id);
-            if (mounted) setState(() {});
-          }, danger: true),
-        ],
-      ),
-    );
-  }
-
   Widget _act(
     IconData icon,
     String tip,
@@ -953,17 +916,6 @@ class _NotebookManagerState extends State<_NotebookManager> {
     tooltip: tip,
     onPressed: onTap,
   );
-}
-
-String _daysLeft(int deletedAt, int retentionDays) {
-  final remaining =
-      deletedAt +
-      Duration(days: retentionDays).inMilliseconds -
-      DateTime.now().millisecondsSinceEpoch;
-  final days = (remaining / const Duration(days: 1).inMilliseconds).ceil();
-  return days <= 0
-      ? 'Deletes soon'
-      : 'Deletes in $days day${days == 1 ? '' : 's'}';
 }
 
 Future<bool> _confirmPurge(
