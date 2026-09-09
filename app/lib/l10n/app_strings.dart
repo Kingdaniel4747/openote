@@ -2,18 +2,20 @@ import 'package:flutter/material.dart';
 
 String tr(BuildContext context, String text) =>
     Localizations.localeOf(context).languageCode == 'de'
-        ? (german[text] ?? text)
-        : text;
+    ? (german[text] ?? text)
+    : text;
 
 /// Only application labels use this widget. Notebook titles/content stay Text.
 class AppText extends StatelessWidget {
-  const AppText(this.text,
-      {super.key,
-      this.style,
-      this.textAlign,
-      this.maxLines,
-      this.overflow,
-      this.softWrap});
+  const AppText(
+    this.text, {
+    super.key,
+    this.style,
+    this.textAlign,
+    this.maxLines,
+    this.overflow,
+    this.softWrap,
+  });
   final String text;
   final TextStyle? style;
   final TextAlign? textAlign;
@@ -21,12 +23,14 @@ class AppText extends StatelessWidget {
   final TextOverflow? overflow;
   final bool? softWrap;
   @override
-  Widget build(BuildContext context) => Text(tr(context, text),
-      style: style,
-      textAlign: textAlign,
-      maxLines: maxLines,
-      overflow: overflow,
-      softWrap: softWrap);
+  Widget build(BuildContext context) => Text(
+    tr(context, text),
+    style: style,
+    textAlign: textAlign,
+    maxLines: maxLines,
+    overflow: overflow,
+    softWrap: softWrap,
+  );
 }
 
 const german = <String, String>{
@@ -75,6 +79,16 @@ const german = <String, String>{
   'Links & backlinks': 'Links und Rückverweise',
   'Export page…': 'Seite exportieren…',
   'More': 'Mehr',
+  'Screen clip': 'Bildschirmausschnitt',
+  'Scan from phone': 'Vom Handy scannen',
+  'Add to toolbar': 'Zur Leiste hinzufügen',
+  'Move left': 'Nach links verschieben',
+  'Move right': 'Nach rechts verschieben',
+  'Remove from toolbar': 'Aus Leiste entfernen',
+  'Ignore': 'Ignorieren',
+  'No spelling suggestion': 'Kein Rechtschreibvorschlag',
+  'Pen colour': 'Stiftfarbe',
+  'Highlighter colour': 'Textmarkerfarbe',
   'Equation': 'Gleichung',
   'Select / move  (V)': 'Auswählen / verschieben  (V)',
   'Text  (T)': 'Text  (T)',

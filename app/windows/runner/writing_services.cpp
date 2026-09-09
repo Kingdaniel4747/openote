@@ -14,6 +14,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -35,6 +36,26 @@ winrt::com_ptr<ISpellChecker> Checker(const std::string& lang) {
   winrt::check_hresult(factory->CreateSpellChecker(
       winrt::to_hstring(lang).c_str(), checker.put()));
   return checker;
+}
+L Suggestions(ISpellChecker* checker, const std::string& text) {
+  winrt::com_ptr<IEnumString> values;
+  if (FAILED(checker->Suggest(winrt::to_hstring(text).c_str(), values.put()))) {
+    return {};
+  }
+  L result;
+  for (;;) {
+    LPOLESTR raw = nullptr;
+    ULONG fetched = 0;
+    const auto hr = values->Next(1, &raw, &fetched);
+    if (FAILED(hr) || fetched == 0 || raw == nullptr) {
+      if (raw != nullptr) CoTaskMemFree(raw);
+      break;
+    }
+    result.emplace_back(V(winrt::to_string(std::wstring_view(raw))));
+    CoTaskMemFree(raw);
+    if (hr == S_FALSE || result.size() >= 5) break;
+  }
+  return result;
 }
 L Check(ISpellChecker* checker, const std::string& text) {
   winrt::com_ptr<IEnumSpellingError> errors;
@@ -111,11 +132,14 @@ V Run(const M& args) {
     const auto candidates = word.GetTextCandidates();
     if (candidates.Size() == 0) continue;
     const auto text = winrt::to_string(candidates.GetAt(0));
-    if (Check(checker.get(), text).empty()) continue;
+    const auto errors = Check(checker.get(), text);
+    if (errors.empty()) continue;
     const auto rect = word.BoundingRect();
-    result.emplace_back(M{{V("text"), V(text)}, {V("x"), V(static_cast<double>(rect.X))},
+    M mark{{V("text"), V(text)}, {V("x"), V(static_cast<double>(rect.X))},
       {V("y"), V(static_cast<double>(rect.Y))}, {V("w"), V(static_cast<double>(rect.Width))},
-      {V("h"), V(static_cast<double>(rect.Height))}});
+      {V("h"), V(static_cast<double>(rect.Height))},
+      {V("suggestions"), V(Suggestions(checker.get(), text))}};
+    result.emplace_back(std::move(mark));
   }
   return V(result);
 }

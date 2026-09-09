@@ -12,6 +12,7 @@ import '../theme/onote_theme.dart';
 import 'sync_dot.dart';
 import '../theme/tokens.dart';
 import 'onote_dialog.dart';
+import 'sync_dialog.dart';
 
 /// The notebook manager (style guide §7b) — the one place notebooks are managed.
 ///
@@ -23,8 +24,11 @@ import 'onote_dialog.dart';
 /// place, delete with an inline confirm, restore from the trash — the list never
 /// disappears, and you can do several things in a row. The dropdown keeps only
 /// what it is genuinely good at: switching fast.
-Future<void> showNotebookManager(BuildContext context, AppState app,
-    {String? focusId}) async {
+Future<void> showNotebookManager(
+  BuildContext context,
+  AppState app, {
+  String? focusId,
+}) async {
   await app.purgeExpiredTrash();
   if (!context.mounted) return;
   await showOnoteDialog<void>(
@@ -61,8 +65,10 @@ class _NotebookManagerState extends State<_NotebookManager> {
 
   void _startRename(NotebookRef nb) {
     _renameCtl.text = nb.title;
-    _renameCtl.selection =
-        TextSelection(baseOffset: 0, extentOffset: _renameCtl.text.length);
+    _renameCtl.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: _renameCtl.text.length,
+    );
     setState(() {
       _renamingId = nb.id;
       _confirmDeleteId = null;
@@ -88,6 +94,28 @@ class _NotebookManagerState extends State<_NotebookManager> {
     if (!ok) {
       _toast("That's your only notebook — create another one first.");
     }
+  }
+
+  Future<void> _confirmDeleteCard(NotebookRef nb) async {
+    final confirmed = await showOnoteDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const AppText('Move to recycle bin?'),
+        content: Text('“${nb.title}” can be restored from the recycle bin.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const AppText('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: OnoteColors.danger),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const AppText('Move to recycle bin'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) _delete(nb);
   }
 
   Future<void> _duplicate(NotebookRef nb) async {
@@ -120,17 +148,21 @@ class _NotebookManagerState extends State<_NotebookManager> {
     final location = await getSaveLocation(
       suggestedName: '${notebook?.title ?? 'Openote'} Backup $stamp.zip',
       acceptedTypeGroups: const [
-        XTypeGroup(label: 'Openote backup', extensions: ['zip'])
+        XTypeGroup(label: 'Openote backup', extensions: ['zip']),
       ],
     );
     if (location == null || !mounted) return;
     setState(() => _busyId = only ?? '__all__');
     try {
-      final result =
-          await app.createWorkspaceBackup(location.path, onlyNotebookId: only);
+      final result = await app.createWorkspaceBackup(
+        location.path,
+        onlyNotebookId: only,
+      );
       if (mounted) {
-        _toast('Backup saved: ${result.notebooks} notebook'
-            '${result.notebooks == 1 ? '' : 's'}.');
+        _toast(
+          'Backup saved: ${result.notebooks} notebook'
+          '${result.notebooks == 1 ? '' : 's'}.',
+        );
       }
     } catch (e) {
       if (mounted) _toast('Backup failed: $e');
@@ -140,9 +172,11 @@ class _NotebookManagerState extends State<_NotebookManager> {
   }
 
   Future<void> _restoreBackup() async {
-    final file = await openFile(acceptedTypeGroups: const [
-      XTypeGroup(label: 'Openote backup', extensions: ['zip'])
-    ]);
+    final file = await openFile(
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'Openote backup', extensions: ['zip']),
+      ],
+    );
     if (file == null || !mounted) return;
     setState(() => _busyId = '__restore__');
     try {
@@ -161,15 +195,21 @@ class _NotebookManagerState extends State<_NotebookManager> {
     final notebooks = app.notebooks;
     final trashed = app.trashedNotebooks;
     return AlertDialog(
-      title: Row(children: [
-        Icon(Icons.menu_book_outlined, size: 18, color: scheme.primary),
-        const SizedBox(width: 9),
-        const AppText('Notebooks'),
-        const Spacer(),
-        Text('${notebooks.length} open',
-            style:
-                TextStyle(fontSize: 12, color: context.surfaces.textSecondary)),
-      ]),
+      title: Row(
+        children: [
+          Icon(Icons.menu_book_outlined, size: 18, color: scheme.primary),
+          const SizedBox(width: 9),
+          const AppText('Notebooks'),
+          const Spacer(),
+          Text(
+            '${notebooks.length} open',
+            style: TextStyle(
+              fontSize: 12,
+              color: context.surfaces.textSecondary,
+            ),
+          ),
+        ],
+      ),
       contentPadding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
       content: SizedBox(
         width: 980,
@@ -184,14 +224,13 @@ class _NotebookManagerState extends State<_NotebookManager> {
                 mainAxisSpacing: 18,
                 crossAxisSpacing: 18,
                 childAspectRatio: .72,
-                children: [
-                  for (final nb in notebooks) _coverCard(nb, scheme),
-                ],
+                children: [for (final nb in notebooks) _coverCard(nb, scheme)],
               ),
               if (trashed.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 _sectionLabel(
-                    'In the recycle bin · deleted after ${app.recycleRetentionDays} days'),
+                  'In the recycle bin · deleted after ${app.recycleRetentionDays} days',
+                ),
                 for (final nb in trashed) _trashRow(nb),
               ],
               if (_importOpen) ...[
@@ -216,70 +255,85 @@ class _NotebookManagerState extends State<_NotebookManager> {
       // OverflowBar — a `Spacer` there throws ("applying parent data"), since
       // Spacer needs a Flex parent.
       actions: [
-        Row(children: [
-          TextButton.icon(
-            icon: const Icon(Icons.add, size: 18),
-            label: const AppText('New'),
-            onPressed: () async {
-              // Through the shared prompt, which owns the field's controller in
-              // the dialog's own State. This used to build the field and
-              // dispose its controller in a `finally` right after the await —
-              // 150 ms before the route's exit transition had finished
-              // unmounting the field. That is what crashed the app on Enter;
-              // see [promptForText].
-              final title = await promptForText(context,
+        Row(
+          children: [
+            TextButton.icon(
+              icon: const Icon(Icons.add, size: 18),
+              label: const AppText('New'),
+              onPressed: () async {
+                // Through the shared prompt, which owns the field's controller in
+                // the dialog's own State. This used to build the field and
+                // dispose its controller in a `finally` right after the await —
+                // 150 ms before the route's exit transition had finished
+                // unmounting the field. That is what crashed the app on Enter;
+                // see [promptForText].
+                final title = await promptForText(
+                  context,
                   title: 'New notebook',
                   okLabel: 'Create',
-                  hintText: 'Notebook name');
-              if (title == null || !mounted) return;
-              await app.createNotebook(title);
-              if (mounted) setState(() {});
-            },
-          ),
-          // Import expands INLINE rather than opening a popup menu: a popup here
-          // would be the second kind of menu this panel exists to remove.
-          TextButton.icon(
-            icon: Icon(
-                _importOpen ? Icons.expand_less : Icons.download_outlined,
-                size: 18),
-            label: const AppText('Import'),
-            onPressed: () => setState(() => _importOpen = !_importOpen),
-          ),
-          PopupMenuButton<String>(
-            tooltip: 'Create a portable ZIP backup',
-            onSelected: _createBackup,
-            itemBuilder: (_) => [
-              const PopupMenuItem(
-                value: '__all__',
-                child: Row(children: [
-                  Icon(Icons.inventory_2_outlined, size: 18),
-                  SizedBox(width: 8),
-                  Text('Back up all notebooks'),
-                ]),
-              ),
-              const PopupMenuDivider(),
-              for (final nb in notebooks)
-                PopupMenuItem(value: nb.id, child: Text(nb.title)),
-            ],
-            child: const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              child: Row(children: [
-                Icon(Icons.backup_outlined, size: 18),
-                SizedBox(width: 7),
-                AppText('Backup'),
-              ]),
+                  hintText: 'Notebook name',
+                );
+                if (title == null || !mounted) return;
+                await app.createNotebook(title);
+                if (mounted) setState(() {});
+              },
             ),
-          ),
-          TextButton.icon(
-            icon: const Icon(Icons.restore, size: 18),
-            label: const AppText('Restore'),
-            onPressed: _busyId == null ? _restoreBackup : null,
-          ),
-          const Spacer(),
-          TextButton(
+            // Import expands INLINE rather than opening a popup menu: a popup here
+            // would be the second kind of menu this panel exists to remove.
+            TextButton.icon(
+              icon: Icon(
+                _importOpen ? Icons.expand_less : Icons.download_outlined,
+                size: 18,
+              ),
+              label: const AppText('Import'),
+              onPressed: () => setState(() => _importOpen = !_importOpen),
+            ),
+            PopupMenuButton<String>(
+              tooltip: 'Create a portable ZIP backup',
+              onSelected: _createBackup,
+              itemBuilder: (_) => [
+                const PopupMenuItem(
+                  value: '__all__',
+                  child: Row(
+                    children: [
+                      Icon(Icons.inventory_2_outlined, size: 18),
+                      SizedBox(width: 8),
+                      Text('Back up all notebooks'),
+                    ],
+                  ),
+                ),
+                const PopupMenuDivider(),
+                for (final nb in notebooks)
+                  PopupMenuItem(value: nb.id, child: Text(nb.title)),
+              ],
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                child: Row(
+                  children: [
+                    Icon(Icons.backup_outlined, size: 18),
+                    SizedBox(width: 7),
+                    AppText('Backup'),
+                  ],
+                ),
+              ),
+            ),
+            TextButton.icon(
+              icon: const Icon(Icons.restore, size: 18),
+              label: const AppText('Restore'),
+              onPressed: _busyId == null ? _restoreBackup : null,
+            ),
+            TextButton.icon(
+              icon: const Icon(Icons.sync, size: 18),
+              label: const AppText('Sync'),
+              onPressed: () => showSyncDialog(context, app),
+            ),
+            const Spacer(),
+            TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const AppText('Done')),
-        ]),
+              child: const AppText('Done'),
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -297,35 +351,50 @@ class _NotebookManagerState extends State<_NotebookManager> {
   /// A `ScaffoldMessengerState` and the ROOT navigator's context both outlive
   /// this route, so neither can go stale under an import that takes a minute.
   Widget _importRow() {
-    Widget choice(IconData icon, String label,
-            Future<void> Function(ScaffoldMessengerState, BuildContext) run) =>
-        Padding(
-          padding: const EdgeInsets.only(right: 6, top: 6),
-          child: OutlinedButton.icon(
-            icon: Icon(icon, size: 16),
-            label: AppText(label, style: const TextStyle(fontSize: 13)),
-            onPressed: () async {
-              final messenger = ScaffoldMessenger.of(context);
-              final rootContext =
-                  Navigator.of(context, rootNavigator: true).context;
-              setState(() => _importOpen = false);
-              // Close the panel first: the imports that still show a modal put
-              // it over the shell, not over a list the user has finished with.
-              Navigator.pop(context);
-              await run(messenger, rootContext);
-            },
-          ),
-        );
+    Widget choice(
+      IconData icon,
+      String label,
+      Future<void> Function(ScaffoldMessengerState, BuildContext) run,
+    ) => Padding(
+      padding: const EdgeInsets.only(right: 6, top: 6),
+      child: OutlinedButton.icon(
+        icon: Icon(icon, size: 16),
+        label: AppText(label, style: const TextStyle(fontSize: 13)),
+        onPressed: () async {
+          final messenger = ScaffoldMessenger.of(context);
+          final rootContext = Navigator.of(
+            context,
+            rootNavigator: true,
+          ).context;
+          setState(() => _importOpen = false);
+          // Close the panel first: the imports that still show a modal put
+          // it over the shell, not over a list the user has finished with.
+          Navigator.pop(context);
+          await run(messenger, rootContext);
+        },
+      ),
+    );
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
-      child: Wrap(children: [
-        choice(Icons.library_books_outlined, 'OneNote notebook (.onepkg)',
-            (m, _) => importOneNotePackageWithFeedback(m, app)),
-        choice(Icons.upload_file_outlined, 'OneNote section (.one)',
-            (m, c) => importOneNoteSectionWithFeedback(c, app, messenger: m)),
-        choice(Icons.drive_folder_upload_outlined, 'Markdown folder',
-            (m, _) => importMarkdownWithFeedback(m, app)),
-      ]),
+      child: Wrap(
+        children: [
+          choice(
+            Icons.library_books_outlined,
+            'OneNote notebook (.onepkg)',
+            (m, _) => importOneNotePackageWithFeedback(m, app),
+          ),
+          choice(
+            Icons.upload_file_outlined,
+            'OneNote section (.one)',
+            (m, c) => importOneNoteSectionWithFeedback(c, app, messenger: m),
+          ),
+          choice(
+            Icons.drive_folder_upload_outlined,
+            'Markdown folder',
+            (m, _) => importMarkdownWithFeedback(m, app),
+          ),
+        ],
+      ),
     );
   }
 
@@ -365,50 +434,58 @@ class _NotebookManagerState extends State<_NotebookManager> {
                 'Keep the largest — an import interrupted part way through is '
                 'the smaller one. Deleted copies go to the recycle bin.',
                 style: TextStyle(
-                    fontSize: 11,
-                    height: 1.35,
-                    color: context.surfaces.textSecondary),
+                  fontSize: 11,
+                  height: 1.35,
+                  color: context.surfaces.textSecondary,
+                ),
               ),
               const SizedBox(height: 4),
               for (final m in g.members)
                 Padding(
                   padding: const EdgeInsets.only(left: 8, bottom: 2),
-                  child: Row(children: [
-                    Icon(
+                  child: Row(
+                    children: [
+                      Icon(
                         m == g.members.first
                             ? Icons.star_outline
                             : Icons.content_copy_outlined,
                         size: 14,
-                        color: context.surfaces.textSecondary),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
+                        color: context.surfaces.textSecondary,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
                           '${m.title} · ${_bytes(m.bytes)}'
                           '${m == g.members.first ? '  (largest — keep)' : ''}'
                           '${m.isOpen ? '  (open)' : ''}',
                           style: const TextStyle(fontSize: 11),
-                          overflow: TextOverflow.ellipsis),
-                    ),
-                    if (m != g.members.first && !m.isOpen)
-                      TextButton(
-                        style: TextButton.styleFrom(
-                            visualDensity: VisualDensity.compact,
-                            padding: const EdgeInsets.symmetric(horizontal: 8)),
-                        onPressed: _busyId == m.id
-                            ? null
-                            : () async {
-                                setState(() => _busyId = m.id);
-                                await app.deleteNotebook(m.id);
-                                if (!mounted) return;
-                                setState(() {
-                                  _busyId = null;
-                                  _dupes.remove(g);
-                                });
-                              },
-                        child: const AppText('Delete',
-                            style: TextStyle(fontSize: 11)),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                  ]),
+                      if (m != g.members.first && !m.isOpen)
+                        TextButton(
+                          style: TextButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                          ),
+                          onPressed: _busyId == m.id
+                              ? null
+                              : () async {
+                                  setState(() => _busyId = m.id);
+                                  await app.deleteNotebook(m.id);
+                                  if (!mounted) return;
+                                  setState(() {
+                                    _busyId = null;
+                                    _dupes.remove(g);
+                                  });
+                                },
+                          child: const AppText(
+                            'Delete',
+                            style: TextStyle(fontSize: 11),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
             ],
           ),
@@ -424,14 +501,17 @@ class _NotebookManagerState extends State<_NotebookManager> {
   }
 
   Widget _sectionLabel(String text) => Padding(
-        padding: const EdgeInsets.fromLTRB(6, 8, 6, 4),
-        child: Text(text.toUpperCase(),
-            style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                letterSpacing: .6,
-                color: context.surfaces.textSecondary)),
-      );
+    padding: const EdgeInsets.fromLTRB(6, 8, 6, 4),
+    child: Text(
+      text.toUpperCase(),
+      style: TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        letterSpacing: .6,
+        color: context.surfaces.textSecondary,
+      ),
+    ),
+  );
 
   Widget _coverCard(NotebookRef nb, ColorScheme scheme) {
     final current = nb.id == app.notebookId;
@@ -444,89 +524,138 @@ class _NotebookManagerState extends State<_NotebookManager> {
         Navigator.pop(context);
         await app.selectNotebook(nb.id);
       },
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Expanded(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: cover,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: cover,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
                   color: current
                       ? scheme.primary
                       : Colors.black.withValues(alpha: .15),
-                  width: current ? 2 : 1),
-              boxShadow: [
-                BoxShadow(
+                  width: current ? 2 : 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
                     color: Colors.black.withValues(alpha: .16),
                     blurRadius: 5,
-                    offset: const Offset(1, 3)),
-              ],
+                    offset: const Offset(1, 3),
+                  ),
+                ],
+              ),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 11,
+                          color: Colors.black.withValues(alpha: .18),
+                        ),
+                        const Spacer(),
+                        Container(
+                          width: 7,
+                          color: Colors.white.withValues(alpha: .22),
+                        ),
+                        Container(
+                          width: 4,
+                          color: Colors.white.withValues(alpha: .52),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Center(
+                    child: Icon(
+                      Icons.menu_book_outlined,
+                      size: 44,
+                      color: Colors.white.withValues(alpha: .9),
+                    ),
+                  ),
+                  Positioned(
+                    top: 2,
+                    right: 0,
+                    child: PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert, color: Colors.white),
+                      tooltip: 'Notebook options',
+                      onSelected: (value) async {
+                        if (value == 'rename') {
+                          final title = await promptForText(
+                            context,
+                            title: 'Rename notebook',
+                            okLabel: 'Save',
+                            hintText: nb.title,
+                          );
+                          if (title != null)
+                            await app.renameNotebook(nb.id, title);
+                        }
+                        if (value == 'duplicate') _duplicate(nb);
+                        if (value == 'delete') {
+                          await _confirmDeleteCard(nb);
+                        }
+                        if (value.startsWith('color:')) {
+                          app.setNotebookColor(nb.id, value.substring(6));
+                        }
+                      },
+                      itemBuilder: (_) => [
+                        const PopupMenuItem(
+                          value: 'rename',
+                          child: Text('Rename'),
+                        ),
+                        const PopupMenuItem(
+                          value: 'duplicate',
+                          child: Text('Duplicate'),
+                        ),
+                        const PopupMenuDivider(),
+                        for (final color in _coverTokens.whereType<String>())
+                          PopupMenuItem(
+                            value: 'color:$color',
+                            child: Center(
+                              child: Container(
+                                width: 24,
+                                height: 24,
+                                decoration: BoxDecoration(
+                                  color: _coverColor(color, nb.id),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.black26),
+                                ),
+                              ),
+                            ),
+                          ),
+                        const PopupMenuDivider(),
+                        const PopupMenuItem(
+                          value: 'delete',
+                          child: Text('Move to recycle bin'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-            child: Stack(children: [
-              Positioned.fill(
-                child: Row(children: [
-                  Container(
-                      width: 11, color: Colors.black.withValues(alpha: .18)),
-                  const Spacer(),
-                  Container(
-                      width: 7, color: Colors.white.withValues(alpha: .22)),
-                  Container(
-                      width: 4, color: Colors.white.withValues(alpha: .52)),
-                ]),
-              ),
-              Center(
-                  child: Icon(Icons.menu_book_outlined,
-                      size: 44, color: Colors.white.withValues(alpha: .9))),
-              Positioned(
-                top: 2,
-                right: 0,
-                child: PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_vert, color: Colors.white),
-                  tooltip: 'Notebook options',
-                  onSelected: (value) async {
-                    if (value == 'rename') {
-                      final title = await promptForText(context,
-                          title: 'Rename notebook',
-                          okLabel: 'Save',
-                          hintText: nb.title);
-                      if (title != null) await app.renameNotebook(nb.id, title);
-                    }
-                    if (value == 'duplicate') _duplicate(nb);
-                    if (value == 'delete') {
-                      setState(() => _confirmDeleteId = nb.id);
-                    }
-                    if (value.startsWith('color:')) {
-                      app.setNotebookColor(nb.id, value.substring(6));
-                    }
-                  },
-                  itemBuilder: (_) => [
-                    const PopupMenuItem(value: 'rename', child: Text('Rename')),
-                    const PopupMenuItem(
-                        value: 'duplicate', child: Text('Duplicate')),
-                    const PopupMenuDivider(),
-                    for (final color in _coverTokens.whereType<String>())
-                      PopupMenuItem(value: 'color:$color', child: Text(color)),
-                    const PopupMenuDivider(),
-                    const PopupMenuItem(
-                        value: 'delete', child: Text('Move to recycle bin')),
-                  ],
-                ),
-              ),
-            ]),
           ),
-        ),
-        const SizedBox(height: 7),
-        Text(nb.title,
+          const SizedBox(height: 7),
+          Text(
+            nb.title,
             textAlign: TextAlign.center,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-                fontWeight: current ? FontWeight.w700 : FontWeight.w600,
-                color: current ? scheme.primary : null)),
-        Text('${counts.sections} sections · ${counts.pages} pages',
+              fontWeight: current ? FontWeight.w700 : FontWeight.w600,
+              color: current ? scheme.primary : null,
+            ),
+          ),
+          Text(
+            '${counts.sections} sections · ${counts.pages} pages',
             textAlign: TextAlign.center,
-            style:
-                TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
-      ]),
+            style: TextStyle(
+              fontSize: 11,
+              color: context.surfaces.textSecondary,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -554,14 +683,15 @@ class _NotebookManagerState extends State<_NotebookManager> {
           color: current
               ? scheme.primary.withValues(alpha: .07)
               : highlight
-                  ? scheme.secondary.withValues(alpha: .10)
-                  : null,
+              ? scheme.secondary.withValues(alpha: .10)
+              : null,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-              color: current
-                  ? scheme.primary.withValues(alpha: .35)
-                  : scheme.outline,
-              width: current ? 1.2 : .6),
+            color: current
+                ? scheme.primary.withValues(alpha: .35)
+                : scheme.outline,
+            width: current ? 1.2 : .6,
+          ),
         ),
         padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
         child: Column(
@@ -575,12 +705,16 @@ class _NotebookManagerState extends State<_NotebookManager> {
                   decoration: BoxDecoration(
                     color: cover,
                     borderRadius: BorderRadius.circular(6),
-                    border:
-                        Border.all(color: Colors.black.withValues(alpha: .12)),
+                    border: Border.all(
+                      color: Colors.black.withValues(alpha: .12),
+                    ),
                   ),
                   child: Center(
-                    child: Icon(Icons.menu_book_outlined,
-                        size: 26, color: Colors.white.withValues(alpha: .92)),
+                    child: Icon(
+                      Icons.menu_book_outlined,
+                      size: 26,
+                      color: Colors.white.withValues(alpha: .92),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -595,28 +729,35 @@ class _NotebookManagerState extends State<_NotebookManager> {
                           autofocus: true,
                           style: const TextStyle(fontSize: 13),
                           decoration: const InputDecoration(
-                              isDense: true, border: OutlineInputBorder()),
+                            isDense: true,
+                            border: OutlineInputBorder(),
+                          ),
                           onSubmitted: (_) => _commitRename(nb),
                           onTapOutside: (_) => _commitRename(nb),
                         )
                       : Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(nb.title,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: current
-                                        ? FontWeight.w600
-                                        : FontWeight.w400,
-                                    color: current ? scheme.primary : null)),
                             Text(
-                                '${counts.sections} section${counts.sections == 1 ? '' : 's'} · '
-                                '${counts.pages} page${counts.pages == 1 ? '' : 's'}'
-                                '${current ? ' · open' : ''}',
-                                style: TextStyle(
-                                    fontSize: 12,
-                                    color: context.surfaces.textSecondary)),
+                              nb.title,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: current
+                                    ? FontWeight.w600
+                                    : FontWeight.w400,
+                                color: current ? scheme.primary : null,
+                              ),
+                            ),
+                            Text(
+                              '${counts.sections} section${counts.sections == 1 ? '' : 's'} · '
+                              '${counts.pages} page${counts.pages == 1 ? '' : 's'}'
+                              '${current ? ' · open' : ''}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: context.surfaces.textSecondary,
+                              ),
+                            ),
                           ],
                         ),
                 ),
@@ -624,9 +765,10 @@ class _NotebookManagerState extends State<_NotebookManager> {
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 10),
                     child: SizedBox(
-                        width: 15,
-                        height: 15,
-                        child: CircularProgressIndicator(strokeWidth: 2)),
+                      width: 15,
+                      height: 15,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
                   )
                 else if (!renaming && !confirming) ...[
                   PopupMenuButton<String?>(
@@ -636,18 +778,17 @@ class _NotebookManagerState extends State<_NotebookManager> {
                       for (final value in _coverTokens)
                         PopupMenuItem(
                           value: value,
-                          child: Row(children: [
-                            Container(
-                              width: 16,
-                              height: 16,
+                          child: Center(
+                            child: Container(
+                              width: 24,
+                              height: 24,
                               decoration: BoxDecoration(
                                 color: _coverColor(value, nb.id),
                                 shape: BoxShape.circle,
+                                border: Border.all(color: Colors.black26),
                               ),
                             ),
-                            const SizedBox(width: 8),
-                            Text(value == null ? 'Automatic' : value),
-                          ]),
+                          ),
                         ),
                     ],
                     icon: const Icon(Icons.palette_outlined, size: 17),
@@ -658,16 +799,20 @@ class _NotebookManagerState extends State<_NotebookManager> {
                       await app.selectNotebook(nb.id);
                     }),
                   _act(Icons.edit_outlined, 'Rename', () => _startRename(nb)),
-                  _act(Icons.copy_all_outlined, 'Duplicate',
-                      () => _duplicate(nb)),
                   _act(
-                      Icons.delete_outline,
-                      'Move to recycle bin',
-                      () => setState(() {
-                            _confirmDeleteId = nb.id;
-                            _renamingId = null;
-                          }),
-                      danger: true),
+                    Icons.copy_all_outlined,
+                    'Duplicate',
+                    () => _duplicate(nb),
+                  ),
+                  _act(
+                    Icons.delete_outline,
+                    'Move to recycle bin',
+                    () => setState(() {
+                      _confirmDeleteId = nb.id;
+                      _renamingId = null;
+                    }),
+                    danger: true,
+                  ),
                 ],
               ],
             ),
@@ -676,24 +821,29 @@ class _NotebookManagerState extends State<_NotebookManager> {
             if (confirming)
               Padding(
                 padding: const EdgeInsets.only(top: 8, left: 28),
-                child: Row(children: [
-                  const Expanded(
-                    child: Text(
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
                         'Move to the recycle bin? You can restore it from here.',
-                        style: TextStyle(fontSize: 13)),
-                  ),
-                  TextButton(
+                        style: TextStyle(fontSize: 13),
+                      ),
+                    ),
+                    TextButton(
                       onPressed: () => setState(() => _confirmDeleteId = null),
-                      child: const AppText('Cancel')),
-                  const SizedBox(width: 4),
-                  FilledButton(
-                    style: FilledButton.styleFrom(
+                      child: const AppText('Cancel'),
+                    ),
+                    const SizedBox(width: 4),
+                    FilledButton(
+                      style: FilledButton.styleFrom(
                         backgroundColor: OnoteColors.danger,
-                        visualDensity: VisualDensity.compact),
-                    onPressed: () => _delete(nb),
-                    child: const AppText('Delete'),
-                  ),
-                ]),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed: () => _delete(nb),
+                      child: const AppText('Delete'),
+                    ),
+                  ],
+                ),
               ),
           ],
         ),
@@ -729,64 +879,85 @@ class _NotebookManagerState extends State<_NotebookManager> {
       'Slate': Color(0xFF4C5563),
     };
     if (token != null) return colors[token] ?? colors['Blue']!;
-    return colors.values
-        .elementAt(id.codeUnits.fold<int>(0, (a, b) => a + b) % colors.length);
+    return colors.values.elementAt(
+      id.codeUnits.fold<int>(0, (a, b) => a + b) % colors.length,
+    );
   }
 
   Widget _trashRow(NotebookRef nb) {
     final days = _daysLeft(nb.deletedAt ?? 0, app.recycleRetentionDays);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 1),
-      child: Row(children: [
-        const SizedBox(width: 10),
-        Icon(Icons.delete_outline,
-            size: 16, color: context.surfaces.textSecondary),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(nb.title,
+      child: Row(
+        children: [
+          const SizedBox(width: 10),
+          Icon(
+            Icons.delete_outline,
+            size: 16,
+            color: context.surfaces.textSecondary,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  nb.title,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                      fontSize: 13, color: OnoteColors.graphite500)),
-              Text(days,
+                    fontSize: 13,
+                    color: OnoteColors.graphite500,
+                  ),
+                ),
+                Text(
+                  days,
                   style: TextStyle(
-                      fontSize: 11, color: context.surfaces.textSecondary)),
-            ],
+                    fontSize: 11,
+                    color: context.surfaces.textSecondary,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-        TextButton(
-          onPressed: () async {
-            await app.restoreNotebook(nb.id);
-            if (mounted) setState(() => _highlightId = nb.id);
-          },
-          child: const AppText('Restore'),
-        ),
-        _act(Icons.delete_forever, 'Delete permanently', () async {
-          final ok =
-              await _confirmPurge(context, nb, caveat: app.purgeCaveat(nb.id));
-          if (!ok || !mounted) return;
-          await app.purgeNotebook(nb.id);
-          if (mounted) setState(() {});
-        }, danger: true),
-      ]),
+          TextButton(
+            onPressed: () async {
+              await app.restoreNotebook(nb.id);
+              if (mounted) setState(() => _highlightId = nb.id);
+            },
+            child: const AppText('Restore'),
+          ),
+          _act(Icons.delete_forever, 'Delete permanently', () async {
+            final ok = await _confirmPurge(
+              context,
+              nb,
+              caveat: app.purgeCaveat(nb.id),
+            );
+            if (!ok || !mounted) return;
+            await app.purgeNotebook(nb.id);
+            if (mounted) setState(() {});
+          }, danger: true),
+        ],
+      ),
     );
   }
 
-  Widget _act(IconData icon, String tip, VoidCallback onTap,
-          {bool danger = false}) =>
-      IconButton(
-        icon: Icon(icon, size: 16),
-        color: danger ? OnoteColors.danger : null,
-        visualDensity: VisualDensity.compact,
-        tooltip: tip,
-        onPressed: onTap,
-      );
+  Widget _act(
+    IconData icon,
+    String tip,
+    VoidCallback onTap, {
+    bool danger = false,
+  }) => IconButton(
+    icon: Icon(icon, size: 16),
+    color: danger ? OnoteColors.danger : null,
+    visualDensity: VisualDensity.compact,
+    tooltip: tip,
+    onPressed: onTap,
+  );
 }
 
 String _daysLeft(int deletedAt, int retentionDays) {
-  final remaining = deletedAt +
+  final remaining =
+      deletedAt +
       Duration(days: retentionDays).inMilliseconds -
       DateTime.now().millisecondsSinceEpoch;
   final days = (remaining / const Duration(days: 1).inMilliseconds).ceil();
@@ -795,18 +966,24 @@ String _daysLeft(int deletedAt, int retentionDays) {
       : 'Deletes in $days day${days == 1 ? '' : 's'}';
 }
 
-Future<bool> _confirmPurge(BuildContext context, NotebookRef nb,
-    {String? caveat}) async {
+Future<bool> _confirmPurge(
+  BuildContext context,
+  NotebookRef nb, {
+  String? caveat,
+}) async {
   final ok = await showOnoteDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
       title: const AppText('Delete permanently?'),
-      content: Text('“${nb.title}” and all its pages will be removed for good. '
-          "This can't be undone.${caveat == null ? '' : '\n\n$caveat'}"),
+      content: Text(
+        '“${nb.title}” and all its pages will be removed for good. '
+        "This can't be undone.${caveat == null ? '' : '\n\n$caveat'}",
+      ),
       actions: [
         TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const AppText('Cancel')),
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const AppText('Cancel'),
+        ),
         FilledButton(
           style: FilledButton.styleFrom(backgroundColor: OnoteColors.danger),
           onPressed: () => Navigator.pop(ctx, true),
@@ -834,21 +1011,30 @@ Future<bool> _confirmPurge(BuildContext context, NotebookRef nb,
 /// nothing. `ScaffoldMessengerState` lives above the navigator, so it is still
 /// good long after whichever dialog started the import has gone.
 Future<void> importOneNotePackageWithFeedback(
-    ScaffoldMessengerState messenger, AppState app,
-    {Future<XFile?> Function()? pickFile}) async {
-  final file = await (pickFile?.call() ??
-      openFile(acceptedTypeGroups: const [
-        XTypeGroup(label: 'OneNote notebook package', extensions: ['onepkg'])
-      ]));
+  ScaffoldMessengerState messenger,
+  AppState app, {
+  Future<XFile?> Function()? pickFile,
+}) async {
+  final file =
+      await (pickFile?.call() ??
+          openFile(
+            acceptedTypeGroups: const [
+              XTypeGroup(
+                label: 'OneNote notebook package',
+                extensions: ['onepkg'],
+              ),
+            ],
+          ));
   if (file == null) return;
   try {
     final job = ImportJob.start(app, p.basename(file.name), file.path);
     _say(
-        messenger,
-        job == null
-            ? 'An import is already running — one at a time.'
-            : 'Importing in the background — keep working, the card in the '
-                "corner will say when it's done.");
+      messenger,
+      job == null
+          ? 'An import is already running — one at a time.'
+          : 'Importing in the background — keep working, the card in the '
+                "corner will say when it's done.",
+    );
   } on OneNoteUnavailable {
     _say(messenger, _coreMissing, seconds: 8);
   } catch (e) {
@@ -864,19 +1050,22 @@ Future<void> importOneNotePackageWithFeedback(
 /// progress dialog silently does not appear. [messenger] carries the result
 /// even if that context has gone by the time the import finishes.
 Future<void> importOneNoteSectionWithFeedback(
-    BuildContext context, AppState app,
-    {ScaffoldMessengerState? messenger}) async {
+  BuildContext context,
+  AppState app, {
+  ScaffoldMessengerState? messenger,
+}) async {
   final m = messenger ?? ScaffoldMessenger.of(context);
   try {
     final count = await importOneNoteFile(app, progressContext: context);
     if (count == null) return;
     _say(
-        m,
-        count == 0
-            ? "Couldn't read any content from that .one file."
-            : 'Imported '
+      m,
+      count == 0
+          ? "Couldn't read any content from that .one file."
+          : 'Imported '
                 '${importArrivalNote(count, lastImportedImages, lastImportedStrokes, lastImportedTags)}'
-                ' from OneNote.${_strokeNote()}');
+                ' from OneNote.${_strokeNote()}',
+    );
   } on OneNoteUnavailable {
     _say(m, _coreMissing, seconds: 8);
   }
@@ -884,7 +1073,9 @@ Future<void> importOneNoteSectionWithFeedback(
 
 /// Import a folder of Markdown (Obsidian-style) as a new section.
 Future<void> importMarkdownWithFeedback(
-    ScaffoldMessengerState messenger, AppState app) async {
+  ScaffoldMessengerState messenger,
+  AppState app,
+) async {
   // **It says what it is doing while it does it.** A vault of a few hundred
   // notes is seconds of work, and there was nothing on screen for any of it.
   final progress = ValueNotifier<String>('Reading the folder…');
@@ -892,7 +1083,8 @@ Future<void> importMarkdownWithFeedback(
   try {
     count = await importMarkdownFolder(
       app,
-      onProgress: (done) => progress.value = 'Imported $done '
+      onProgress: (done) => progress.value =
+          'Imported $done '
           'page${done == 1 ? '' : 's'}…',
     );
   } catch (e) {
@@ -903,16 +1095,21 @@ Future<void> importMarkdownWithFeedback(
   progress.dispose();
   if (count == null) return;
   _say(
-      messenger,
-      count == 0
-          ? 'No Markdown files found in that folder.'
-          : 'Imported $count page${count == 1 ? '' : 's'}.');
+    messenger,
+    count == 0
+        ? 'No Markdown files found in that folder.'
+        : 'Imported $count page${count == 1 ? '' : 's'}.',
+  );
 }
 
 /// Show a snackbar through a messenger that cannot go stale.
 void _say(ScaffoldMessengerState m, String msg, {int seconds = 4}) =>
     m.showSnackBar(
-        SnackBar(content: Text(msg), duration: Duration(seconds: seconds)));
+      SnackBar(
+        content: Text(msg),
+        duration: Duration(seconds: seconds),
+      ),
+    );
 
 const _coreMissing =
     'OneNote import needs the Rust core — build onote_core.dll '
@@ -925,8 +1122,8 @@ const _coreMissing =
 String _strokeNote() => lastDroppedStrokes == 0
     ? ''
     : ' $lastDroppedStrokes ink stroke'
-        '${lastDroppedStrokes == 1 ? '' : 's'} could not be decoded and '
-        '${lastDroppedStrokes == 1 ? 'was' : 'were'} left out.';
+          '${lastDroppedStrokes == 1 ? '' : 's'} could not be decoded and '
+          '${lastDroppedStrokes == 1 ? 'was' : 'were'} left out.';
 
 /// "Repair" — heal every page of the open notebook at once.
 ///
@@ -944,19 +1141,22 @@ Future<void> _repairWithProgress(BuildContext context, AppState app) async {
       context: context,
       barrierDismissible: false,
       builder: (_) => AlertDialog(
-        content: Row(children: [
-          const SizedBox(
+        content: Row(
+          children: [
+            const SizedBox(
               width: 22,
               height: 22,
-              child: CircularProgressIndicator(strokeWidth: 2.6)),
-          const SizedBox(width: 16),
-          Expanded(
-            child: ValueListenableBuilder<String>(
-              valueListenable: progress,
-              builder: (_, t, __) => Text(t),
+              child: CircularProgressIndicator(strokeWidth: 2.6),
             ),
-          ),
-        ]),
+            const SizedBox(width: 16),
+            Expanded(
+              child: ValueListenableBuilder<String>(
+                valueListenable: progress,
+                builder: (_, t, __) => Text(t),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -970,20 +1170,25 @@ Future<void> _repairWithProgress(BuildContext context, AppState app) async {
       open = false;
     }
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      duration: const Duration(seconds: 5),
-      content: Text(r.pages == 0
-          ? 'Nothing to repair — every page is already up to date.'
-          : 'Repaired ${r.blocks} box${r.blocks == 1 ? '' : 'es'} '
-              'across ${r.pages} page${r.pages == 1 ? '' : 's'}.'),
-    ));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 5),
+        content: Text(
+          r.pages == 0
+              ? 'Nothing to repair — every page is already up to date.'
+              : 'Repaired ${r.blocks} box${r.blocks == 1 ? '' : 'es'} '
+                    'across ${r.pages} page${r.pages == 1 ? '' : 's'}.',
+        ),
+      ),
+    );
   } catch (e) {
     if (open && context.mounted) {
       Navigator.of(context, rootNavigator: true).pop();
     }
     if (context.mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Repair failed: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Repair failed: $e')));
     }
   } finally {
     progress.dispose();

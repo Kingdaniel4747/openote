@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
@@ -14,6 +13,11 @@ class CanvasController extends ChangeNotifier {
   static const minScale = 0.15;
   static const maxScale = 8.0;
   Timer? _leadingBounce;
+
+  /// Whether the page is currently pulled past its natural top/left origin.
+  /// Kept here rather than inferred by a gesture recognizer so touch, mouse
+  /// and precision-touchpad releases all settle the exact same state.
+  bool get hasLeadingOverscroll => offset.dx > .01 || offset.dy > .01;
 
   Matrix4 get matrix => Matrix4.identity()
     ..translate(offset.dx, offset.dy)
@@ -31,10 +35,16 @@ class CanvasController extends ChangeNotifier {
         // the more each additional pixel resists. This remains screen-space,
         // so it feels identical at every zoom level.
         final pulled = math.max(0.0, current);
-        return current + movement * .35 / (1 + pulled / 84);
+        // Start soft enough to communicate an edge, then grow distinctly
+        // heavier. The old .35 multiplier made touch feel like it had simply
+        // hit a slow wall; this keeps the pull visible before the spring.
+        return current + movement * .62 / (1 + pulled / 92);
       }
-      offset = Offset(resisted(offset.dx, delta.dx),
-          resisted(offset.dy, delta.dy));
+
+      offset = Offset(
+        resisted(offset.dx, delta.dx),
+        resisted(offset.dy, delta.dy),
+      );
     } else {
       offset += delta;
     }
@@ -50,8 +60,12 @@ class CanvasController extends ChangeNotifier {
 
   /// Apply one pan/zoom frame and repaint once. Trackpads used to notify after
   /// zoom and again after pan, rebuilding a populated page twice per event.
-  void transformAt(Offset screenFocal, double factor, Offset panDelta,
-      {bool clamp = true}) {
+  void transformAt(
+    Offset screenFocal,
+    double factor,
+    Offset panDelta, {
+    bool clamp = true,
+  }) {
     final newScale = (scale * factor).clamp(minScale, maxScale);
     final pageFocal = screenToPage(screenFocal);
     scale = newScale;
@@ -137,12 +151,13 @@ class CanvasController extends ChangeNotifier {
     _minimumPageSize = minimum;
     _growsTrailingEdges = growsTrailingEdges;
     final current = _pageSize;
-    _pageSize = !growsTrailingEdges ||
-            current == null ||
-            scale <= minScale + .001
+    _pageSize =
+        !growsTrailingEdges || current == null || scale <= minScale + .001
         ? minimum
-        : Size(math.max(minimum.width, current.width),
-            math.max(minimum.height, current.height));
+        : Size(
+            math.max(minimum.width, current.width),
+            math.max(minimum.height, current.height),
+          );
   }
 
   void resetPageBounds() {
@@ -158,7 +173,7 @@ class CanvasController extends ChangeNotifier {
     if (ps == null || viewport == Size.zero) return;
     if (_growsTrailingEdges) _growTrailingRunway(offset);
     double axis(double o, double vp, double contentPx) {
-      if (allowLeadingOverscroll && o > 0) return o.clamp(0.0, 96.0);
+      if (allowLeadingOverscroll && o > 0) return o.clamp(0.0, 132.0);
       if (contentPx <= vp) return 0.0;
       return o.clamp(vp - contentPx, 0.0);
     }
@@ -178,8 +193,10 @@ class CanvasController extends ChangeNotifier {
     final neededWidth = (viewport.width - candidate.dx + runwayPx) / scale;
     final neededHeight = (viewport.height - candidate.dy + runwayPx) / scale;
     if (neededWidth > current.width || neededHeight > current.height) {
-      _pageSize = Size(math.max(current.width, neededWidth),
-          math.max(current.height, neededHeight));
+      _pageSize = Size(
+        math.max(current.width, neededWidth),
+        math.max(current.height, neededHeight),
+      );
     }
   }
 
@@ -208,15 +225,25 @@ class CanvasController extends ChangeNotifier {
     _leadingBounce?.cancel();
     final began = DateTime.now();
     _leadingBounce = Timer.periodic(const Duration(milliseconds: 16), (timer) {
-      final t = (DateTime.now().difference(began).inMilliseconds / 260)
-          .clamp(0.0, 1.0);
-      final factor = math.pow(1 - t, 2).toDouble() * math.cos(t * math.pi * 2.5);
-      offset = Offset(start.dx > 0 ? start.dx * factor : start.dx,
-          start.dy > 0 ? start.dy * factor : start.dy);
+      final t = (DateTime.now().difference(began).inMilliseconds / 300).clamp(
+        0.0,
+        1.0,
+      );
+      // One clear, contained overshoot sells the elastic edge without letting
+      // the page visibly oscillate under a pen or a pinch gesture.
+      final factor =
+          math.pow(1 - t, 1.35).toDouble() * math.cos(t * math.pi * 2.25);
+      offset = Offset(
+        start.dx > 0 ? start.dx * factor : start.dx,
+        start.dy > 0 ? start.dy * factor : start.dy,
+      );
       if (t >= 1) {
-        offset = Offset(start.dx > 0 ? 0 : offset.dx,
-            start.dy > 0 ? 0 : offset.dy);
+        offset = Offset(
+          start.dx > 0 ? 0 : offset.dx,
+          start.dy > 0 ? 0 : offset.dy,
+        );
         timer.cancel();
+        if (identical(_leadingBounce, timer)) _leadingBounce = null;
       }
       notifyListeners();
     });

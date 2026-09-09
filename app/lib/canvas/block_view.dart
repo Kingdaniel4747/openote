@@ -26,7 +26,7 @@ import 'portal_view.dart';
 /// Selection chrome + move/resize for one block; dispatches content by type.
 /// Interaction (F-4 fix): single tap on text/code/math enters editing
 /// directly (OneNote behavior); drag moves (all selected move together);
-/// shift-click adds to the selection.
+/// Ctrl/Shift-click adds to the selection.
 class BlockView extends StatefulWidget {
   const BlockView({
     super.key,
@@ -146,10 +146,17 @@ class _BlockViewState extends State<BlockView> {
         app.tool == Tool.shape ||
         app.tool == Tool.highlighter ||
         app.tool == Tool.eraser ||
-        app.tool == Tool.lasso) return;
-    final shift = HardwareKeyboard.instance.isShiftPressed;
-    if (shift) {
-      app.select(b.id, additive: true);
+        app.tool == Tool.lasso)
+      return;
+    final additive =
+        HardwareKeyboard.instance.isShiftPressed ||
+        HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isMetaPressed;
+    if (additive) {
+      // Selection is additive on Ctrl/Shift click. Keeping an already chosen
+      // object selected is intentional: a second click still belongs to the
+      // object (open/edit), rather than unexpectedly removing it from a group.
+      if (!selected) app.select(b.id, additive: true);
     } else if (_editableType) {
       // Where the click landed, so the caret goes there instead of jumping to
       // the end of the block. Only types whose editors CONSUME the token may
@@ -233,7 +240,11 @@ class _BlockViewState extends State<BlockView> {
         !_locked &&
         !selected &&
         (e.buttons & kPrimaryButton) != 0) {
-      app.select(b.id);
+      final additive =
+          HardwareKeyboard.instance.isShiftPressed ||
+          HardwareKeyboard.instance.isControlPressed ||
+          HardwareKeyboard.instance.isMetaPressed;
+      app.select(b.id, additive: additive);
     }
     app.claimedPointers.add(e.pointer);
     _pressGlobal = e.position;
@@ -360,11 +371,11 @@ class _BlockViewState extends State<BlockView> {
     _bodyDragMoves = _locked
         ? false
         : (!_editableType &&
-                b.type != BlockType.embed &&
-                b.type != BlockType.board &&
-                b.type != BlockType.graph &&
-                b.type != BlockType.substitute) ||
-            HardwareKeyboard.instance.isAltPressed;
+                  b.type != BlockType.embed &&
+                  b.type != BlockType.board &&
+                  b.type != BlockType.graph &&
+                  b.type != BlockType.substitute) ||
+              HardwareKeyboard.instance.isAltPressed;
     if (_bodyDragMoves) _dragStart(d);
   }
 
@@ -422,20 +433,20 @@ class _BlockViewState extends State<BlockView> {
       gestures: <Type, GestureRecognizerFactory>{
         LongPressGestureRecognizer:
             GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
-          () => LongPressGestureRecognizer(
-            duration: const Duration(milliseconds: 300),
-            supportedDevices: const {
-              PointerDeviceKind.touch,
-              PointerDeviceKind.mouse,
-            },
-          ),
-          (recognizer) {
-            recognizer
-              ..onLongPressStart = _objectHoldStart
-              ..onLongPressMoveUpdate = _objectHoldMove
-              ..onLongPressEnd = _objectHoldEnd;
-          },
-        ),
+              () => LongPressGestureRecognizer(
+                duration: const Duration(milliseconds: 300),
+                supportedDevices: const {
+                  PointerDeviceKind.touch,
+                  PointerDeviceKind.mouse,
+                },
+              ),
+              (recognizer) {
+                recognizer
+                  ..onLongPressStart = _objectHoldStart
+                  ..onLongPressMoveUpdate = _objectHoldMove
+                  ..onLongPressEnd = _objectHoldEnd;
+              },
+            ),
       },
       child: child,
     );
@@ -511,8 +522,11 @@ class _BlockViewState extends State<BlockView> {
   /// Stroke coordinates are page-absolute (Ink Spec §3), so they are scaled
   /// about the block's own origin, which is what keeps the drawing where the
   /// user put it relative to the box.
-  void _resizeBy(DragUpdateDetails d,
-      {required bool width, required bool height}) {
+  void _resizeBy(
+    DragUpdateDetails d, {
+    required bool width,
+    required bool height,
+  }) {
     if (!_resizeUndoPushed) {
       app.pushUndo();
       _resizeUndoPushed = true;
@@ -539,7 +553,8 @@ class _BlockViewState extends State<BlockView> {
       // natural without distorting the source.
       final naturalW = (b.content['naturalW'] as num?)?.toDouble();
       final naturalH = (b.content['naturalH'] as num?)?.toDouble();
-      final sourceH = oldH ??
+      final sourceH =
+          oldH ??
           (naturalW != null && naturalW > 0 && naturalH != null && naturalH > 0
               ? oldW * naturalH / naturalW
               : oldW * 1.414);
@@ -547,15 +562,17 @@ class _BlockViewState extends State<BlockView> {
       final byHeight = (sourceH + d.delta.dy / scale) / sourceH;
       final requestedFactor = width && height
           ? (byWidth - 1).abs() >= (byHeight - 1).abs()
-              ? byWidth
-              : byHeight
+                ? byWidth
+                : byHeight
           : width
-              ? byWidth
-              : byHeight;
+          ? byWidth
+          : byHeight;
       final factor = requestedFactor.clamp(.1, 8.0);
       // Clamp the scale once; independent width/height clamps distort images.
-      final bounded =
-          factor.clamp((80 / oldW).clamp(0.0, double.infinity), 4000 / oldW);
+      final bounded = factor.clamp(
+        (80 / oldW).clamp(0.0, double.infinity),
+        4000 / oldW,
+      );
       b.w = oldW * bounded;
       b.h = sourceH * bounded;
       app.updateBlock(b);
@@ -672,10 +689,12 @@ class _BlockViewState extends State<BlockView> {
       BlockType.graph => GraphBlockView(block: b, app: app),
       BlockType.substitute => SubstituteBlockView(block: b, app: app),
       _ => Padding(
-          padding: const EdgeInsets.all(8),
-          child: Text('Unsupported block: ${b.type.name}',
-              style: const TextStyle(color: OnoteColors.graphite400)),
+        padding: const EdgeInsets.all(8),
+        child: Text(
+          'Unsupported block: ${b.type.name}',
+          style: const TextStyle(color: OnoteColors.graphite400),
         ),
+      ),
     };
     // Expose content to assistive tech (PLAT-5).
     final labelled = Semantics(
@@ -687,7 +706,8 @@ class _BlockViewState extends State<BlockView> {
 
     // While an ink tool is active, blocks are inert — the pen draws OVER
     // them instead of dragging/editing them (fixes ink-over-block dragging).
-    final inkToolActive = app.tool == Tool.pen ||
+    final inkToolActive =
+        app.tool == Tool.pen ||
         app.tool == Tool.ballpoint ||
         app.tool == Tool.shape ||
         app.tool == Tool.highlighter ||
@@ -753,7 +773,8 @@ class _BlockViewState extends State<BlockView> {
                   // one end of the link is chosen, which is what
                   // `graphLinkHighlight` answers. Derived on every build, never
                   // stored: this must not dirty the page or survive the click.
-                  color: app.graphLinkHighlight(b)?.withValues(alpha: 0.14) ??
+                  color:
+                      app.graphLinkHighlight(b)?.withValues(alpha: 0.14) ??
                       onoteColorFromHex(b.content['bg'] as String?) ??
                       // **Hover does not fill.** The owner: *"Hovering over a box
                       // makes its background solid, this makes aligning with other
@@ -771,12 +792,10 @@ class _BlockViewState extends State<BlockView> {
                     color: editing
                         ? primaryColor.withValues(alpha: .55)
                         : selected
-                            ? primaryColor
-                            : _hover
-                                ? (dark
-                                    ? OnoteColors.night300
-                                    : OnoteColors.paper300)
-                                : Colors.transparent,
+                        ? primaryColor
+                        : _hover
+                        ? (dark ? OnoteColors.night300 : OnoteColors.paper300)
+                        : Colors.transparent,
                   ),
                 )
               // OneNote-style: no visible box at all until the first
@@ -812,8 +831,10 @@ class _BlockViewState extends State<BlockView> {
               if (last == null) return;
               final delta = d.localPosition - last;
               _touchMoveLast = d.localPosition;
-              app.moveSelectedBy(delta.dx / widget.controller.scale,
-                  delta.dy / widget.controller.scale);
+              app.moveSelectedBy(
+                delta.dx / widget.controller.scale,
+                delta.dy / widget.controller.scale,
+              );
             },
       onPanEnd: editing || _locked || _fastHoldMovable
           ? null
@@ -848,8 +869,10 @@ class _BlockViewState extends State<BlockView> {
               if (last == null) return;
               final delta = d.localPosition - last;
               _touchMoveLast = d.localPosition;
-              app.moveSelectedBy(delta.dx / widget.controller.scale,
-                  delta.dy / widget.controller.scale);
+              app.moveSelectedBy(
+                delta.dx / widget.controller.scale,
+                delta.dy / widget.controller.scale,
+              );
             },
       onLongPressEnd: (details) {
         if (_fastHoldMovable) return;
@@ -888,7 +911,11 @@ class _BlockViewState extends State<BlockView> {
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(
-                    _kChromePad, _kBarH, _kChromePad, _kChromePad),
+                  _kChromePad,
+                  _kBarH,
+                  _kChromePad,
+                  _kChromePad,
+                ),
                 child: _MeasureSize(
                   onChange: (size) {
                     app.renderSizes[b.id] = size;

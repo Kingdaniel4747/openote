@@ -113,197 +113,196 @@ class _CommandBarState extends State<CommandBar> {
       codec?.dispose();
     }
     if (!context.mounted) return;
-    final at = app.canvas.screenToPage(Offset(app.canvas.viewport.width / 2,
-        app.canvas.viewport.height / 2));
+    final at = app.canvas.screenToPage(
+      Offset(app.canvas.viewport.width / 2, app.canvas.viewport.height / 2),
+    );
     final width = naturalWidth == null
         ? 480.0
         : naturalWidth.clamp(160.0, 720.0).toDouble();
     final height = naturalHeight != null && naturalWidth != null
         ? width * naturalHeight / naturalWidth
         : null;
-    insertImageBytes(app, bytes, 'image/png', at,
-        width: width,
-        height: height,
-        naturalWidth: naturalWidth,
-        naturalHeight: naturalHeight);
+    insertImageBytes(
+      app,
+      bytes,
+      'image/png',
+      at,
+      width: width,
+      height: height,
+      naturalWidth: naturalWidth,
+      naturalHeight: naturalHeight,
+    );
   }
 
   List<Widget> _utilityControls(BuildContext context, ColorScheme scheme) => [
-        // The trailing cluster COMPACTS rather than scrolling.
-        //
-        // Reported: "it doesnt handle resizing well (menus should
-        // either compact as required or become sliding, again i
-        // belive the former is cleaner)." A `Row` that overflows is
-        // CLIPPED, and clipped pixels do not hit-test — so on a
-        // narrow window (laptop + navigator open) the rightmost
-        // buttons used to stop responding, and the horizontal-scroll
-        // fix that followed traded that for "responds, but you can't
-        // see it without scrolling first." `CompactingToolbar` folds
-        // whatever does not fit into one "More" menu instead —
-        // `alignment: end` keeps it flush against the window edge,
-        // the one thing the scrolling version got right.
-        Expanded(
-          child: CompactingToolbar(
-            alignment: MainAxisAlignment.end,
-            fillAvailable: true,
-            controls: [
-              ToolbarControl(
-                width: 40,
-                icon: Icons.document_scanner_outlined,
-                label: 'Scan from phone',
-                onPressed: () => showScannerPairingDialog(context, app),
-                inline: IconButton(
-                  icon: const Icon(Icons.document_scanner_outlined, size: 18),
-                  tooltip: 'Scan from phone',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () => showScannerPairingDialog(context, app),
+    // The trailing cluster COMPACTS rather than scrolling.
+    //
+    // Reported: "it doesnt handle resizing well (menus should
+    // either compact as required or become sliding, again i
+    // belive the former is cleaner)." A `Row` that overflows is
+    // CLIPPED, and clipped pixels do not hit-test — so on a
+    // narrow window (laptop + navigator open) the rightmost
+    // buttons used to stop responding, and the horizontal-scroll
+    // fix that followed traded that for "responds, but you can't
+    // see it without scrolling first." `CompactingToolbar` folds
+    // whatever does not fit into one "More" menu instead —
+    // `alignment: end` keeps it flush against the window edge,
+    // the one thing the scrolling version got right.
+    Expanded(
+      child: CompactingToolbar(
+        alignment: MainAxisAlignment.end,
+        fillAvailable: true,
+        controls: [
+          // Update-through-app: the "little update button" of
+          // PLANNING.md. Exists only when launch found a newer
+          // release, and leads with the version so the tooltip
+          // answers "to what?" before the click.
+          if (app.updateAvailable != null)
+            ToolbarControl(
+              width: 40,
+              icon: Icons.system_update_alt,
+              label: 'Update to ${app.updateAvailable!.version}…',
+              onPressed: () => showUpdateDialog(context, app),
+              inline: IconButton(
+                icon: Icon(
+                  Icons.system_update_alt,
+                  size: 18,
+                  color: scheme.primary,
                 ),
+                tooltip: 'Update to ${app.updateAvailable!.version}…',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => showUpdateDialog(context, app),
               ),
-              // Update-through-app: the "little update button" of
-              // PLANNING.md. Exists only when launch found a newer
-              // release, and leads with the version so the tooltip
-              // answers "to what?" before the click.
-              if (app.updateAvailable != null)
-                ToolbarControl(
-                  width: 40,
-                  icon: Icons.system_update_alt,
-                  label: 'Update to ${app.updateAvailable!.version}…',
-                  onPressed: () => showUpdateDialog(context, app),
-                  inline: IconButton(
-                    icon: Icon(Icons.system_update_alt,
-                        size: 18, color: scheme.primary),
-                    tooltip: 'Update to ${app.updateAvailable!.version}…',
-                    visualDensity: VisualDensity.compact,
-                    onPressed: () => showUpdateDialog(context, app),
-                  ),
-                ),
-              // Planner and quick homework capture stay beside the app-wide
-              // controls, so a due task is reachable from every page.
-              ToolbarControl(
-                width: 40,
-                icon: Icons.event_note_outlined,
-                label: 'Homework & reminders',
-                selected: app.showPlannerPanel,
-                onPressed: app.togglePlannerPanel,
-                inline: _PlannerButton(app: app),
+            ),
+          // Planner and quick homework capture stay beside the app-wide
+          // controls, so a due task is reachable from every page.
+          ToolbarControl(
+            width: 40,
+            icon: Icons.event_note_outlined,
+            label: 'Homework & reminders',
+            selected: app.showPlannerPanel,
+            onPressed: app.togglePlannerPanel,
+            inline: _PlannerButton(app: app),
+          ),
+          ToolbarControl(
+            width: 40,
+            icon: Icons.add_task_outlined,
+            label: 'Add homework',
+            onPressed: () => _addQuickHomework(context, app),
+            inline: IconButton(
+              icon: const Icon(Icons.add_task_outlined, size: 18),
+              tooltip: 'Add homework for this page',
+              visualDensity: VisualDensity.compact,
+              onPressed: () => _addQuickHomework(context, app),
+            ),
+          ),
+          ToolbarControl(
+            width: 40,
+            icon: Icons.account_tree_outlined,
+            label: 'Links & backlinks',
+            selected: app.showLinksPanel,
+            onPressed: app.toggleLinksPanel,
+            inline: IconButton(
+              icon: const Icon(Icons.account_tree_outlined, size: 18),
+              tooltip: tr(context, 'Links & backlinks'),
+              isSelected: app.showLinksPanel,
+              visualDensity: VisualDensity.compact,
+              onPressed: app.toggleLinksPanel,
+            ),
+          ),
+          ToolbarControl(
+            width: 40,
+            icon: Icons.search,
+            label: 'Find on page',
+            selected: app.findOpen,
+            onPressed: app.toggleFind,
+            inline: IconButton(
+              icon: const Icon(Icons.search, size: 18),
+              tooltip: tr(context, 'Find on page  (Ctrl+F)'),
+              isSelected: app.findOpen,
+              visualDensity: VisualDensity.compact,
+              onPressed: app.toggleFind,
+            ),
+          ),
+          ToolbarControl(
+            width: 40,
+            icon: Icons.ios_share_outlined,
+            label: 'Export',
+            inline: MenuAnchor(
+              builder: (context, controller, _) => IconButton(
+                icon: const Icon(Icons.ios_share_outlined, size: 18),
+                tooltip: tr(context, 'Export page…'),
+                visualDensity: VisualDensity.compact,
+                onPressed: () =>
+                    controller.isOpen ? controller.close() : controller.open(),
               ),
-              ToolbarControl(
-                width: 40,
-                icon: Icons.add_task_outlined,
-                label: 'Add homework',
-                onPressed: () => _addQuickHomework(context, app),
-                inline: IconButton(
-                  icon: const Icon(Icons.add_task_outlined, size: 18),
-                  tooltip: 'Add homework for this page',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () => _addQuickHomework(context, app),
-                ),
+              menuChildren: _exportMenuItems(context),
+            ),
+            submenu: [
+              ToolbarSubmenuItem(
+                icon: Icons.description_outlined,
+                label: 'Markdown (.md)',
+                onPressed: () => _export(context, exportPageMarkdown),
               ),
-              ToolbarControl(
-                width: 40,
-                icon: Icons.account_tree_outlined,
-                label: 'Links & backlinks',
-                selected: app.showLinksPanel,
-                onPressed: app.toggleLinksPanel,
-                inline: IconButton(
-                  icon: const Icon(Icons.account_tree_outlined, size: 18),
-                  tooltip: tr(context, 'Links & backlinks'),
-                  isSelected: app.showLinksPanel,
-                  visualDensity: VisualDensity.compact,
-                  onPressed: app.toggleLinksPanel,
-                ),
+              // Vector by default: the shared/printed artefact
+              // should be searchable, selectable and small. The
+              // raster capture stays available for the rare page
+              // whose look matters more than its text.
+              ToolbarSubmenuItem(
+                icon: Icons.picture_as_pdf_outlined,
+                label: 'PDF (.pdf)',
+                onPressed: () => _export(context, exportPagePdfVector),
               ),
-              ToolbarControl(
-                width: 40,
-                icon: Icons.search,
-                label: 'Find on page',
-                selected: app.findOpen,
-                onPressed: app.toggleFind,
-                inline: IconButton(
-                  icon: const Icon(Icons.search, size: 18),
-                  tooltip: tr(context, 'Find on page  (Ctrl+F)'),
-                  isSelected: app.findOpen,
-                  visualDensity: VisualDensity.compact,
-                  onPressed: app.toggleFind,
-                ),
+              ToolbarSubmenuItem(
+                icon: Icons.print_outlined,
+                label: 'Print…',
+                onPressed: () => printCurrentPage(app),
               ),
-              ToolbarControl(
-                width: 40,
-                icon: Icons.ios_share_outlined,
-                label: 'Export',
-                inline: MenuAnchor(
-                  builder: (context, controller, _) => IconButton(
-                    icon: const Icon(Icons.ios_share_outlined, size: 18),
-                    tooltip: tr(context, 'Export page…'),
-                    visualDensity: VisualDensity.compact,
-                    onPressed: () => controller.isOpen
-                        ? controller.close()
-                        : controller.open(),
+              ToolbarSubmenuItem(
+                icon: Icons.image_outlined,
+                label: 'PDF — picture of the page',
+                onPressed: () => _export(context, exportPagePdf),
+              ),
+              ToolbarSubmenuItem(
+                icon: Icons.hub_outlined,
+                label: 'For Obsidian Canvas (.canvas)',
+                onPressed: () => _export(context, exportPageJsonCanvas),
+              ),
+              ToolbarSubmenuItem(
+                icon: Icons.gesture,
+                label: 'Just the drawing (.inkml)',
+                onPressed: () => _export(context, exportPageInkML),
+              ),
+              // Say what lands on disk. "Materialize" is this
+              // codebase's own architecture vocabulary
+              // (`sync/materializer.dart`) and appears in no
+              // other user-visible string in the app.
+              ToolbarSubmenuItem(
+                icon: Icons.folder_zip_outlined,
+                label: 'Save the whole notebook as folders and files…',
+                onPressed: () => _exportWithProgress(
+                  context,
+                  'Saving the notebook…',
+                  (report) => materializeNotebook(
+                    app,
+                    onProgress: (done, total) =>
+                        report('Page $done of $total…'),
                   ),
-                  menuChildren: _exportMenuItems(context),
                 ),
-                submenu: [
-                  ToolbarSubmenuItem(
-                    icon: Icons.description_outlined,
-                    label: 'Markdown (.md)',
-                    onPressed: () => _export(context, exportPageMarkdown),
-                  ),
-                  // Vector by default: the shared/printed artefact
-                  // should be searchable, selectable and small. The
-                  // raster capture stays available for the rare page
-                  // whose look matters more than its text.
-                  ToolbarSubmenuItem(
-                    icon: Icons.picture_as_pdf_outlined,
-                    label: 'PDF (.pdf)',
-                    onPressed: () => _export(context, exportPagePdfVector),
-                  ),
-                  ToolbarSubmenuItem(
-                    icon: Icons.print_outlined,
-                    label: 'Print…',
-                    onPressed: () => printCurrentPage(app),
-                  ),
-                  ToolbarSubmenuItem(
-                    icon: Icons.image_outlined,
-                    label: 'PDF — picture of the page',
-                    onPressed: () => _export(context, exportPagePdf),
-                  ),
-                  ToolbarSubmenuItem(
-                    icon: Icons.hub_outlined,
-                    label: 'For Obsidian Canvas (.canvas)',
-                    onPressed: () => _export(context, exportPageJsonCanvas),
-                  ),
-                  ToolbarSubmenuItem(
-                    icon: Icons.gesture,
-                    label: 'Just the drawing (.inkml)',
-                    onPressed: () => _export(context, exportPageInkML),
-                  ),
-                  // Say what lands on disk. "Materialize" is this
-                  // codebase's own architecture vocabulary
-                  // (`sync/materializer.dart`) and appears in no
-                  // other user-visible string in the app.
-                  ToolbarSubmenuItem(
-                    icon: Icons.folder_zip_outlined,
-                    label: 'Save the whole notebook as folders and files…',
-                    onPressed: () => _exportWithProgress(
-                        context,
-                        'Saving the notebook…',
-                        (report) => materializeNotebook(app,
-                            onProgress: (done, total) =>
-                                report('Page $done of $total…'))),
-                  ),
-                ],
               ),
             ],
           ),
-        ),
-        IconButton(
-          icon: const Icon(Icons.settings_outlined, size: 18),
-          tooltip: tr(context, 'Settings…'),
-          visualDensity: VisualDensity.compact,
-          onPressed: () => showSettingsDialog(context, app),
-        ),
-        const WindowsCaptionButtons(),
-      ];
+        ],
+      ),
+    ),
+    IconButton(
+      icon: const Icon(Icons.settings_outlined, size: 18),
+      tooltip: tr(context, 'Settings…'),
+      visualDensity: VisualDensity.compact,
+      onPressed: () => showSettingsDialog(context, app),
+    ),
+    const WindowsCaptionButtons(),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -312,8 +311,9 @@ class _CommandBarState extends State<CommandBar> {
       return Material(
         color: scheme.surface,
         child: SingleChildScrollView(
-          scrollDirection:
-              widget.verticalDrawOnly ? Axis.vertical : Axis.horizontal,
+          scrollDirection: widget.verticalDrawOnly
+              ? Axis.vertical
+              : Axis.horizontal,
           child: _drawRow(context, vertical: widget.verticalDrawOnly),
         ),
       );
@@ -323,25 +323,22 @@ class _CommandBarState extends State<CommandBar> {
       return Material(
         color: scheme.surface,
         child: SizedBox(
-            height: 36,
-            child: Row(children: [
+          height: 36,
+          child: Row(
+            children: [
               Expanded(
-                  child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onPanStart: (_) => window?.beginDrag(),
-                onDoubleTap: window?.maximize,
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 12),
-                  child: Align(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onPanStart: (_) => window?.beginDrag(),
+                  onDoubleTap: window?.maximize,
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 12),
+                    child: Align(
                       alignment: Alignment.centerLeft,
-                      child: AppText('Openote')),
+                      child: AppText('Openote'),
+                    ),
+                  ),
                 ),
-              )),
-              IconButton(
-                icon: const Icon(Icons.document_scanner_outlined, size: 18),
-                tooltip: 'Scan from phone',
-                visualDensity: VisualDensity.compact,
-                onPressed: () => showScannerPairingDialog(context, app),
               ),
               IconButton(
                 icon: const Icon(Icons.settings_outlined, size: 18),
@@ -350,14 +347,17 @@ class _CommandBarState extends State<CommandBar> {
                 onPressed: () => showSettingsDialog(context, app),
               ),
               const WindowsCaptionButtons(),
-            ])),
+            ],
+          ),
+        ),
       );
     }
     return Container(
       decoration: BoxDecoration(
         color: scheme.surface,
-        border:
-            Border(bottom: BorderSide(color: Theme.of(context).dividerColor)),
+        border: Border(
+          bottom: BorderSide(color: Theme.of(context).dividerColor),
+        ),
       ),
       child: Column(
         children: [
@@ -428,8 +428,9 @@ class _CommandBarState extends State<CommandBar> {
                 opacity: anim,
                 child: SlideTransition(
                   position: Tween<Offset>(
-                          begin: const Offset(0, 0.15), end: Offset.zero)
-                      .animate(anim),
+                    begin: const Offset(0, 0.15),
+                    end: Offset.zero,
+                  ).animate(anim),
                   child: child,
                 ),
               ),
@@ -455,7 +456,9 @@ class _CommandBarState extends State<CommandBar> {
               // 965) before it compacted instead.
               child: _tab == 1
                   ? KeyedSubtree(
-                      key: const ValueKey(1), child: _insertRow(context))
+                      key: const ValueKey(1),
+                      child: _insertRow(context),
+                    )
                   : KeyedSubtree(
                       key: ValueKey(_tab),
                       child: ScrollConfiguration(
@@ -465,10 +468,11 @@ class _CommandBarState extends State<CommandBar> {
                           child: _tab == 2
                               ? _drawRow(context)
                               : _tab == 3
-                                  ? PageFace(app: app)
-                                  : _homeRow(context),
+                              ? PageFace(app: app)
+                              : _homeRow(context),
                         ),
-                      )),
+                      ),
+                    ),
             ),
           ),
         ],
@@ -499,25 +503,30 @@ class _CommandBarState extends State<CommandBar> {
     final messenger = ScaffoldMessenger.maybeOf(context);
     final progress = ValueNotifier<String>(opening);
     var open = true;
-    unawaited(showOnoteDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        content: Row(children: [
-          const SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(strokeWidth: 2.6)),
-          const SizedBox(width: 16),
-          Expanded(
-            child: ValueListenableBuilder<String>(
-              valueListenable: progress,
-              builder: (_, text, __) => Text(text),
-            ),
+    unawaited(
+      showOnoteDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AlertDialog(
+          content: Row(
+            children: [
+              const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2.6),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: ValueListenableBuilder<String>(
+                  valueListenable: progress,
+                  builder: (_, text, __) => Text(text),
+                ),
+              ),
+            ],
           ),
-        ]),
-      ),
-    ).then((_) => open = false));
+        ),
+      ).then((_) => open = false),
+    );
     String? path;
     Object? failed;
     try {
@@ -531,10 +540,12 @@ class _CommandBarState extends State<CommandBar> {
     }
     progress.dispose();
     if (failed != null) {
-      messenger?.showSnackBar(SnackBar(
-        content: Text("That couldn't be saved: $failed"),
-        duration: const Duration(seconds: 6),
-      ));
+      messenger?.showSnackBar(
+        SnackBar(
+          content: Text("That couldn't be saved: $failed"),
+          duration: const Duration(seconds: 6),
+        ),
+      );
       return;
     }
     if (path != null) {
@@ -547,71 +558,77 @@ class _CommandBarState extends State<CommandBar> {
   /// (shown once Export itself has to fold into the command bar's own
   /// "More" menu) can share one definition rather than drifting apart.
   List<Widget> _exportMenuItems(BuildContext context) => [
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.description_outlined, size: 18),
-          onPressed: () => _export(context, exportPageMarkdown),
-          child: const AppText('Markdown (.md)'),
+    MenuItemButton(
+      leadingIcon: const Icon(Icons.description_outlined, size: 18),
+      onPressed: () => _export(context, exportPageMarkdown),
+      child: const AppText('Markdown (.md)'),
+    ),
+    // Vector by default: the shared/printed artefact should be
+    // searchable, selectable and small. The raster capture stays
+    // available for the rare page whose look matters more than its text.
+    MenuItemButton(
+      leadingIcon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+      onPressed: () => _export(context, exportPagePdfVector),
+      child: const AppText('PDF (.pdf)'),
+    ),
+    MenuItemButton(
+      leadingIcon: const Icon(Icons.print_outlined, size: 18),
+      shortcut: const SingleActivator(LogicalKeyboardKey.keyP, control: true),
+      onPressed: () => printCurrentPage(app),
+      child: const AppText('Print…'),
+    ),
+    MenuItemButton(
+      leadingIcon: const Icon(Icons.image_outlined, size: 18),
+      onPressed: () => _export(context, exportPagePdf),
+      child: const AppText('PDF — picture of the page'),
+    ),
+    MenuItemButton(
+      leadingIcon: const Icon(Icons.hub_outlined, size: 18),
+      onPressed: () => _export(context, exportPageJsonCanvas),
+      child: const AppText('For Obsidian Canvas (.canvas)'),
+    ),
+    MenuItemButton(
+      leadingIcon: const Icon(Icons.gesture, size: 18),
+      onPressed: () => _export(context, exportPageInkML),
+      child: const AppText('Just the drawing (.inkml)'),
+    ),
+    const Divider(height: 6),
+    MenuItemButton(
+      leadingIcon: const Icon(Icons.folder_zip_outlined, size: 18),
+      onPressed: () => _exportWithProgress(
+        context,
+        'Saving the notebook…',
+        (report) => materializeNotebook(
+          app,
+          onProgress: (done, total) => report('Page $done of $total…'),
         ),
-        // Vector by default: the shared/printed artefact should be
-        // searchable, selectable and small. The raster capture stays
-        // available for the rare page whose look matters more than its text.
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
-          onPressed: () => _export(context, exportPagePdfVector),
-          child: const AppText('PDF (.pdf)'),
-        ),
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.print_outlined, size: 18),
-          shortcut:
-              const SingleActivator(LogicalKeyboardKey.keyP, control: true),
-          onPressed: () => printCurrentPage(app),
-          child: const AppText('Print…'),
-        ),
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.image_outlined, size: 18),
-          onPressed: () => _export(context, exportPagePdf),
-          child: const AppText('PDF — picture of the page'),
-        ),
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.hub_outlined, size: 18),
-          onPressed: () => _export(context, exportPageJsonCanvas),
-          child: const AppText('For Obsidian Canvas (.canvas)'),
-        ),
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.gesture, size: 18),
-          onPressed: () => _export(context, exportPageInkML),
-          child: const AppText('Just the drawing (.inkml)'),
-        ),
-        const Divider(height: 6),
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.folder_zip_outlined, size: 18),
-          onPressed: () => _exportWithProgress(
-              context,
-              'Saving the notebook…',
-              (report) => materializeNotebook(app,
-                  onProgress: (done, total) =>
-                      report('Page $done of $total…'))),
-          // Say what lands on disk. "Materialize" is this codebase's own
-          // architecture vocabulary (`sync/materializer.dart`) and appears
-          // in no other user-visible string in the app.
-          child: const AppText('Save the whole notebook as folders and files…'),
-        ),
-      ];
+      ),
+      // Say what lands on disk. "Materialize" is this codebase's own
+      // architecture vocabulary (`sync/materializer.dart`) and appears
+      // in no other user-visible string in the app.
+      child: const AppText('Save the whole notebook as folders and files…'),
+    ),
+  ];
 
   Future<void> _export(
-      BuildContext context, Future<String?> Function(AppState) fn) async {
+    BuildContext context,
+    Future<String?> Function(AppState) fn,
+  ) async {
     final messenger = ScaffoldMessenger.maybeOf(context);
     try {
       final path = await fn(app);
       if (path != null) {
-        messenger
-            ?.showSnackBar(SnackBar(content: AppText('Exported to $path')));
+        messenger?.showSnackBar(
+          SnackBar(content: AppText('Exported to $path')),
+        );
       }
     } catch (e) {
-      messenger?.showSnackBar(SnackBar(
-        content: Text("That couldn't be saved: $e"),
-        duration: const Duration(seconds: 6),
-      ));
+      messenger?.showSnackBar(
+        SnackBar(
+          content: Text("That couldn't be saved: $e"),
+          duration: const Duration(seconds: 6),
+        ),
+      );
     }
   }
 
@@ -637,118 +654,172 @@ class _CommandBarState extends State<CommandBar> {
     final curColor = app.lastColor.length == 8
         ? Color(((lcv & 0xFF) << 24) | (lcv >> 8))
         : Color(0xFF000000 | lcv);
-    return Row(children: [
-      IconButton(
-        icon: const Icon(Icons.undo, size: 18),
-        tooltip: tr(context, 'Undo  (Ctrl+Z)'),
-        visualDensity: VisualDensity.compact,
-        onPressed: app.canUndo ? app.undo : null,
-      ),
-      IconButton(
-        icon: const Icon(Icons.redo, size: 18),
-        tooltip: tr(context, 'Redo  (Ctrl+Y)'),
-        visualDensity: VisualDensity.compact,
-        onPressed: app.canRedo ? app.redo : null,
-      ),
-      const _Div(),
-      // **The row never changes shape.** An earlier revision collapsed the
-      // formatting commands to three group heads when nothing was focused, on
-      // the reasoning that a wall of greyed glyphs reads as broken. That traded
-      // one problem for a worse one: clicking into a text box made ~15 buttons
-      // appear and shoved everything to their right across the toolbar, so the
-      // control you were reaching for moved out from under the pointer at the
-      // exact moment you started using the app. Layout that moves while you aim
-      // at it is a harder failure than layout that looks quiet.
-      //
-      // So: "disabled ≠ hidden" (§7a.2) applies without exception here. Every
-      // command holds its position always; the ones that need a caret are
-      // greyed, and the hint at the end of the row — which only ever appears
-      // AFTER the last control, so it displaces nothing — says why.
-      fmt(Icons.format_bold, 'Bold  (Ctrl+B)', () => app.wrapSelection('**'),
-          MdInline.bold),
-      fmt(Icons.format_italic, 'Italic  (Ctrl+I)', () => app.wrapSelection('*'),
-          MdInline.italic),
-      fmt(Icons.format_underlined, 'Underline  (Ctrl+U)',
-          () => app.wrapSelection('++'), MdInline.underline),
-      fmt(Icons.strikethrough_s, 'Strikethrough', () => app.wrapSelection('~~'),
-          MdInline.strike),
-      fmt(Icons.code, 'Inline code', () => app.wrapSelection('`'),
-          MdInline.code),
-      fmt(Icons.border_color, 'Highlight', () => app.wrapSelection('=='),
-          MdInline.highlight),
-      const _Div(),
-      fmt(Icons.title, 'Heading 1', () => app.toggleLinePrefix('# ')),
-      _TextBtn('H2', canFormat, () => app.toggleLinePrefix('## ')),
-      _TextBtn('H3', canFormat, () => app.toggleLinePrefix('### ')),
-      const _Div(),
-      fmt(Icons.format_list_bulleted, 'Bullet list',
-          () => app.toggleList(ListKind.bullet)),
-      fmt(Icons.format_list_numbered, 'Numbered list',
-          () => app.toggleList(ListKind.numbered)),
-      fmt(Icons.check_box_outlined, 'Checkbox',
-          () => app.toggleList(ListKind.checkbox)),
-      fmt(Icons.format_quote, 'Quote', () => app.toggleLinePrefix('> ')),
-      const _Div(),
-      _MakeCardButton(app: app),
-      const _Div(),
-      // Text colour — split button (§7a.2): main area applies the current
-      // colour; the arrow opens the full picker (palette/wheel/RGBA).
-      Tooltip(
-        message: 'Apply text colour',
-        child: InkWell(
-          borderRadius: BorderRadius.circular(6),
-          onTap: canFormat ? () => app.applyTextColor(app.lastColor) : null,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.format_color_text,
-                  size: 18,
-                  color: canFormat ? null : context.surfaces.textSecondary),
-              Container(
-                  width: 18,
-                  height: 3,
-                  margin: const EdgeInsets.only(top: 1),
-                  color: canFormat ? curColor : context.surfaces.textSecondary),
-            ]),
+    return Row(
+      children: [
+        IconButton(
+          icon: const Icon(Icons.undo, size: 18),
+          tooltip: tr(context, 'Undo  (Ctrl+Z)'),
+          visualDensity: VisualDensity.compact,
+          onPressed: app.canUndo ? app.undo : null,
+        ),
+        IconButton(
+          icon: const Icon(Icons.redo, size: 18),
+          tooltip: tr(context, 'Redo  (Ctrl+Y)'),
+          visualDensity: VisualDensity.compact,
+          onPressed: app.canRedo ? app.redo : null,
+        ),
+        const _Div(),
+        // **The row never changes shape.** An earlier revision collapsed the
+        // formatting commands to three group heads when nothing was focused, on
+        // the reasoning that a wall of greyed glyphs reads as broken. That traded
+        // one problem for a worse one: clicking into a text box made ~15 buttons
+        // appear and shoved everything to their right across the toolbar, so the
+        // control you were reaching for moved out from under the pointer at the
+        // exact moment you started using the app. Layout that moves while you aim
+        // at it is a harder failure than layout that looks quiet.
+        //
+        // So: "disabled ≠ hidden" (§7a.2) applies without exception here. Every
+        // command holds its position always; the ones that need a caret are
+        // greyed, and the hint at the end of the row — which only ever appears
+        // AFTER the last control, so it displaces nothing — says why.
+        fmt(
+          Icons.format_bold,
+          'Bold  (Ctrl+B)',
+          () => app.wrapSelection('**'),
+          MdInline.bold,
+        ),
+        fmt(
+          Icons.format_italic,
+          'Italic  (Ctrl+I)',
+          () => app.wrapSelection('*'),
+          MdInline.italic,
+        ),
+        fmt(
+          Icons.format_underlined,
+          'Underline  (Ctrl+U)',
+          () => app.wrapSelection('++'),
+          MdInline.underline,
+        ),
+        fmt(
+          Icons.strikethrough_s,
+          'Strikethrough',
+          () => app.wrapSelection('~~'),
+          MdInline.strike,
+        ),
+        fmt(
+          Icons.code,
+          'Inline code',
+          () => app.wrapSelection('`'),
+          MdInline.code,
+        ),
+        fmt(
+          Icons.border_color,
+          'Highlight',
+          () => app.wrapSelection('=='),
+          MdInline.highlight,
+        ),
+        const _Div(),
+        fmt(Icons.title, 'Heading 1', () => app.toggleLinePrefix('# ')),
+        _TextBtn('H2', canFormat, () => app.toggleLinePrefix('## ')),
+        _TextBtn('H3', canFormat, () => app.toggleLinePrefix('### ')),
+        const _Div(),
+        fmt(
+          Icons.format_list_bulleted,
+          'Bullet list',
+          () => app.toggleList(ListKind.bullet),
+        ),
+        fmt(
+          Icons.format_list_numbered,
+          'Numbered list',
+          () => app.toggleList(ListKind.numbered),
+        ),
+        fmt(
+          Icons.check_box_outlined,
+          'Checkbox',
+          () => app.toggleList(ListKind.checkbox),
+        ),
+        fmt(Icons.format_quote, 'Quote', () => app.toggleLinePrefix('> ')),
+        const _Div(),
+        _MakeCardButton(app: app),
+        const _Div(),
+        // Text colour — split button (§7a.2): main area applies the current
+        // colour; the arrow opens the full picker (palette/wheel/RGBA).
+        Tooltip(
+          message: 'Apply text colour',
+          child: InkWell(
+            borderRadius: BorderRadius.circular(6),
+            onTap: canFormat ? () => app.applyTextColor(app.lastColor) : null,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.format_color_text,
+                    size: 18,
+                    color: canFormat ? null : context.surfaces.textSecondary,
+                  ),
+                  Container(
+                    width: 18,
+                    height: 3,
+                    margin: const EdgeInsets.only(top: 1),
+                    color: canFormat
+                        ? curColor
+                        : context.surfaces.textSecondary,
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
-      ),
-      InkWell(
-        borderRadius: BorderRadius.circular(4),
-        onTap: canFormat
-            ? () async {
-                final hex = await showOnoteColorPicker(context, app,
-                    initial: app.lastColor);
-                if (hex != null) app.applyTextColor(hex);
-              }
-            : null,
-        child: Icon(Icons.arrow_drop_down,
-            size: 18, color: canFormat ? null : context.surfaces.textSecondary),
-      ),
-      // Font — opens the searchable system-font picker.
-      IconButton(
-        icon: const Icon(Icons.font_download_outlined, size: 18),
-        tooltip: tr(context, 'Text font…'),
-        visualDensity: VisualDensity.compact,
-        onPressed: canFormat
-            ? () async {
-                final f = await showFontPicker(context,
-                    current:
-                        app.activeEditor?.block.content['font'] as String?);
-                if (f != null) app.setActiveBlockFont(f);
-              }
-            : null,
-      ),
-      // Font size (TEXT-1). Points, because that's how people think about type
-      // and how OneNote/Word present it; stored as 120-dpi px.
-      _FontSizeField(app: app, enabled: canFormat),
-      if (!canFormat) ...[
-        const SizedBox(width: 10),
-        AppText('Click into a text box to format',
-            style:
-                TextStyle(fontSize: 11, color: context.surfaces.textSecondary)),
+        InkWell(
+          borderRadius: BorderRadius.circular(4),
+          onTap: canFormat
+              ? () async {
+                  final hex = await showOnoteColorPicker(
+                    context,
+                    app,
+                    initial: app.lastColor,
+                  );
+                  if (hex != null) app.applyTextColor(hex);
+                }
+              : null,
+          child: Icon(
+            Icons.arrow_drop_down,
+            size: 18,
+            color: canFormat ? null : context.surfaces.textSecondary,
+          ),
+        ),
+        // Font — opens the searchable system-font picker.
+        IconButton(
+          icon: const Icon(Icons.font_download_outlined, size: 18),
+          tooltip: tr(context, 'Text font…'),
+          visualDensity: VisualDensity.compact,
+          onPressed: canFormat
+              ? () async {
+                  final f = await showFontPicker(
+                    context,
+                    current: app.activeEditor?.block.content['font'] as String?,
+                  );
+                  if (f != null) app.setActiveBlockFont(f);
+                }
+              : null,
+        ),
+        // Font size (TEXT-1). Points, because that's how people think about type
+        // and how OneNote/Word present it; stored as 120-dpi px.
+        _FontSizeField(app: app, enabled: canFormat),
+        if (!canFormat) ...[
+          const SizedBox(width: 10),
+          AppText(
+            'Click into a text box to format',
+            style: TextStyle(
+              fontSize: 11,
+              color: context.surfaces.textSecondary,
+            ),
+          ),
+        ],
       ],
-    ]);
+    );
   }
 
   // ── INSERT ────────────────────────────────────────────────────────────
@@ -812,66 +883,113 @@ class _CommandBarState extends State<CommandBar> {
   }
 
   Widget _insertRow(BuildContext context) => CompactingToolbar(
-        controls: [
-          for (final item in kInsertRibbon)
-            ToolbarControl(
-              width: _insertItemWidth(item),
-              icon: item.icon,
-              label: item.label,
-              inline: _InsertButton(app: app, item: item),
-              onPressed: () => item.run(context, app, insertAnchor(app, item)),
-              submenu: item.extras.isEmpty
-                  ? null
-                  : [
-                      // The split button's own MAIN half, first — folding
-                      // must not cost the item the one action it already
-                      // had before it grew a dropdown arrow.
-                      ToolbarSubmenuItem(
-                        icon: item.icon,
-                        label: item.label,
-                        onPressed: () =>
-                            item.run(context, app, insertAnchor(app, item)),
-                      ),
-                      for (final extra in item.extras)
-                        ToolbarSubmenuItem(
-                          icon: extra.icon,
-                          label: extra.label,
-                          onPressed: () =>
-                              extra.run(context, app, insertAnchor(app, extra)),
-                        ),
-                    ],
-            ),
-          ToolbarControl(
-            width: 160,
-            icon: Icons.screenshot_monitor_outlined,
-            label: 'Bildschirmausschnitt',
-            inline: IconButton(
-              icon: const Icon(Icons.screenshot_monitor_outlined, size: 18),
-              tooltip: 'Bildschirmausschnitt',
-              visualDensity: VisualDensity.compact,
-              onPressed: () => _insertScreenRegion(context),
-            ),
-            onPressed: () => _insertScreenRegion(context),
-          ),
-        ],
-      );
+    controls: [
+      for (final item in kInsertRibbon)
+        ToolbarControl(
+          width: _insertItemWidth(item),
+          icon: item.icon,
+          label: item.label,
+          inline: _InsertButton(app: app, item: item),
+          onPressed: () => item.run(context, app, insertAnchor(app, item)),
+          submenu: item.extras.isEmpty
+              ? null
+              : [
+                  // The split button's own MAIN half, first — folding
+                  // must not cost the item the one action it already
+                  // had before it grew a dropdown arrow.
+                  ToolbarSubmenuItem(
+                    icon: item.icon,
+                    label: item.label,
+                    onPressed: () =>
+                        item.run(context, app, insertAnchor(app, item)),
+                  ),
+                  for (final extra in item.extras)
+                    ToolbarSubmenuItem(
+                      icon: extra.icon,
+                      label: extra.label,
+                      onPressed: () =>
+                          extra.run(context, app, insertAnchor(app, extra)),
+                    ),
+                ],
+        ),
+      ToolbarControl(
+        width: 40,
+        icon: Icons.screenshot_monitor_outlined,
+        label: 'Screen clip',
+        inline: IconButton(
+          icon: const Icon(Icons.screenshot_monitor_outlined, size: 18),
+          tooltip: tr(context, 'Screen clip'),
+          visualDensity: VisualDensity.compact,
+          onPressed: () => _insertScreenRegion(context),
+        ),
+        onPressed: () => _insertScreenRegion(context),
+      ),
+      ToolbarControl(
+        width: 40,
+        icon: Icons.document_scanner_outlined,
+        label: 'Scan from phone',
+        inline: IconButton(
+          icon: const Icon(Icons.document_scanner_outlined, size: 18),
+          tooltip: tr(context, 'Scan from phone'),
+          visualDensity: VisualDensity.compact,
+          onPressed: () => showScannerPairingDialog(context, app),
+        ),
+        onPressed: () => showScannerPairingDialog(context, app),
+      ),
+    ],
+  );
+
+  Future<void> _showToolbarColourMenu(
+    BuildContext context,
+    Offset globalPosition,
+    Tool brush,
+    String hex,
+  ) async {
+    final action = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        globalPosition.dx,
+        globalPosition.dy,
+        0,
+        0,
+      ),
+      items: const [
+        PopupMenuItem(value: 'before', child: AppText('Move left')),
+        PopupMenuItem(value: 'after', child: AppText('Move right')),
+        PopupMenuDivider(),
+        PopupMenuItem(value: 'remove', child: AppText('Remove from toolbar')),
+      ],
+    );
+    if (!mounted || action == null) return;
+    switch (action) {
+      case 'before':
+        app.moveToolbarInkColor(hex, brush, -1);
+      case 'after':
+        app.moveToolbarInkColor(hex, brush, 1);
+      case 'remove':
+        app.removeToolbarInkColor(hex, brush);
+    }
+  }
+
   Widget _drawRow(BuildContext context, {bool vertical = false}) {
     final scheme = Theme.of(context).colorScheme;
     Widget toolButton(Tool t, IconData icon, String tip) => IconButton(
-          icon: Icon(icon, size: 18),
-          tooltip: tr(context, tip),
-          isSelected: app.tool == t,
-          visualDensity: VisualDensity.compact,
-          style: IconButton.styleFrom(
-            backgroundColor:
-                app.tool == t ? scheme.primary.withValues(alpha: .14) : null,
-            foregroundColor: app.tool == t ? scheme.primary : null,
-          ),
-          onPressed: () => app.setTool(t),
-        );
+      icon: Icon(icon, size: 18),
+      tooltip: tr(context, tip),
+      isSelected: app.tool == t,
+      visualDensity: VisualDensity.compact,
+      style: IconButton.styleFrom(
+        backgroundColor: app.tool == t
+            ? scheme.primary.withValues(alpha: .14)
+            : null,
+        foregroundColor: app.tool == t ? scheme.primary : null,
+      ),
+      onPressed: () => app.setTool(t),
+    );
     // The swatches also appear with ink selected, so a lassoed diagram can be
     // recoloured without first re-picking the pen.
-    final inkActive = app.tool == Tool.pen ||
+    final inkActive =
+        app.tool == Tool.pen ||
         app.tool == Tool.ballpoint ||
         app.tool == Tool.highlighter ||
         app.tool == Tool.shape ||
@@ -880,14 +998,13 @@ class _CommandBarState extends State<CommandBar> {
       dark: Theme.of(context).brightness == Brightness.dark,
       highlighter: app.tool == Tool.highlighter,
     );
-    final colourTool =
-        app.tool == Tool.highlighter ? Tool.highlighter : Tool.pen;
+    final colourTool = app.tool == Tool.highlighter
+        ? Tool.highlighter
+        : Tool.pen;
     final activeColour = app.inkColorFor(colourTool);
     final activeCustomColour = app.customInkColorFor(colourTool);
-    Widget gap([double size = 4]) => SizedBox(
-          width: vertical ? 0 : size,
-          height: vertical ? size : 0,
-        );
+    Widget gap([double size = 4]) =>
+        SizedBox(width: vertical ? 0 : size, height: vertical ? size : 0);
     Widget sizeSlider({required Key key}) {
       final slider = Slider(
         key: key,
@@ -907,74 +1024,177 @@ class _CommandBarState extends State<CommandBar> {
           : SizedBox(width: 118, child: slider);
     }
 
+    void useCustomColour(String value) {
+      final opaque = value.replaceFirst('#', '').substring(0, 6).toUpperCase();
+      app.setCustomInkColor(opaque);
+      if (app.hasInkSelection) app.recolorSelectedInk('#$opaque');
+    }
+
+    Future<void> pickCustomColour() async {
+      final preset = colors[activeColour % colors.length];
+      final initial =
+          activeCustomColour ??
+          (preset.toARGB32() & 0xFFFFFF)
+              .toRadixString(16)
+              .padLeft(6, '0')
+              .toUpperCase();
+      final picked = await showOnoteColorPicker(
+        context,
+        app,
+        initial: initial,
+        title: app.tool == Tool.highlighter
+            ? tr(context, 'Highlighter colour')
+            : tr(context, 'Pen colour'),
+        onChanged: useCustomColour,
+        onAddToToolbar: (hex) => app.addToolbarInkColor(hex, colourTool),
+      );
+      if (picked != null) useCustomColour(picked);
+    }
+
     return Flex(
-        direction: vertical ? Axis.vertical : Axis.horizontal,
-        children: [
-          toolButton(Tool.select, Icons.near_me_outlined, 'Select / move  (V)'),
-          toolButton(Tool.text, Icons.text_fields, 'Text  (T)'),
-          toolButton(Tool.pen, Icons.brush_outlined, 'Pen  (P)'),
-          toolButton(Tool.ballpoint, Icons.edit, 'Ballpoint — constant width'),
-          toolButton(Tool.highlighter, Icons.border_color_outlined,
-              'Highlighter  (H)'),
-          toolButton(
-              Tool.eraser, Icons.cleaning_services_outlined, 'Eraser  (E)'),
-          toolButton(Tool.lasso, Icons.gesture_outlined, 'Lasso-select ink'),
-          IconButton(
-            icon: const Icon(Icons.category_outlined, size: 18),
-            tooltip: 'Shape recognition — draw with the pen and hold',
-            isSelected: app.shapeRecognition,
-            style: IconButton.styleFrom(
-                backgroundColor: app.shapeRecognition
-                    ? scheme.primary.withValues(alpha: .18)
-                    : null,
-                foregroundColor: app.shapeRecognition ? scheme.primary : null),
-            visualDensity: VisualDensity.compact,
-            onPressed: () => app.setShapeRecognition(!app.shapeRecognition),
+      direction: vertical ? Axis.vertical : Axis.horizontal,
+      children: [
+        toolButton(Tool.select, Icons.near_me_outlined, 'Select / move  (V)'),
+        toolButton(Tool.text, Icons.text_fields, 'Text  (T)'),
+        toolButton(Tool.pen, Icons.brush_outlined, 'Pen  (P)'),
+        toolButton(Tool.ballpoint, Icons.edit, 'Ballpoint — constant width'),
+        toolButton(
+          Tool.highlighter,
+          Icons.border_color_outlined,
+          'Highlighter  (H)',
+        ),
+        toolButton(
+          Tool.eraser,
+          Icons.cleaning_services_outlined,
+          'Eraser  (E)',
+        ),
+        toolButton(Tool.lasso, Icons.gesture_outlined, 'Lasso-select ink'),
+        IconButton(
+          icon: const Icon(Icons.category_outlined, size: 18),
+          tooltip: 'Shape recognition — draw with the pen and hold',
+          isSelected: app.shapeRecognition,
+          style: IconButton.styleFrom(
+            backgroundColor: app.shapeRecognition
+                ? scheme.primary.withValues(alpha: .18)
+                : null,
+            foregroundColor: app.shapeRecognition ? scheme.primary : null,
           ),
-          IconButton(
-            icon: const Icon(Icons.straighten_outlined, size: 18),
-            tooltip: 'Ruler — drag the grip, pinch to resize or rotate',
-            isSelected: app.rulerVisible,
-            style: IconButton.styleFrom(
-                backgroundColor: app.rulerVisible
-                    ? scheme.primary.withValues(alpha: .18)
-                    : null,
-                foregroundColor: app.rulerVisible ? scheme.primary : null),
-            visualDensity: VisualDensity.compact,
-            onPressed: () => app.setRulerVisible(!app.rulerVisible),
+          visualDensity: VisualDensity.compact,
+          onPressed: () => app.setShapeRecognition(!app.shapeRecognition),
+        ),
+        IconButton(
+          icon: const Icon(Icons.straighten_outlined, size: 18),
+          tooltip: 'Ruler — drag the grip, pinch to resize or rotate',
+          isSelected: app.rulerVisible,
+          style: IconButton.styleFrom(
+            backgroundColor: app.rulerVisible
+                ? scheme.primary.withValues(alpha: .18)
+                : null,
+            foregroundColor: app.rulerVisible ? scheme.primary : null,
           ),
-          _Div(vertical: vertical),
-          if (inkActive) ...[
-            for (final (i, c) in colors.indexed)
+          visualDensity: VisualDensity.compact,
+          onPressed: () => app.setRulerVisible(!app.rulerVisible),
+        ),
+        _Div(vertical: vertical),
+        if (inkActive) ...[
+          for (final (i, c) in colors.indexed)
+            Padding(
+              padding: vertical
+                  ? const EdgeInsets.symmetric(vertical: 2)
+                  : const EdgeInsets.symmetric(horizontal: 2),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(99),
+                onTap: () {
+                  app.setInkColor(i);
+                  // With ink selected (typically just lassoed), a colour click
+                  // recolours it rather than only arming the next stroke —
+                  // recolouring after the fact is most of why you lasso a
+                  // diagram (INK-7).
+                  if (app.hasInkSelection) {
+                    app.recolorSelectedInk(
+                      '#'
+                      '${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}',
+                    );
+                  } else {
+                    app.refresh();
+                  }
+                },
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      key: ValueKey('pen-swatch-$i'),
+                      width: 18,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        color: c,
+                        shape: BoxShape.circle,
+                          border: Border.all(
+                            width: 2,
+                          color: activeCustomColour == null && activeColour == i
+                              ? scheme.primary
+                              : i == 0
+                              ? scheme.outline
+                              : Colors.transparent,
+                        ),
+                      ),
+                    ),
+                    if (i == 0)
+                      Positioned(
+                        right: -3,
+                        bottom: -3,
+                        child: Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: scheme.surface,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: scheme.outline, width: 1),
+                          ),
+                          child: Icon(
+                            Icons.auto_awesome,
+                            size: 5,
+                            color: scheme.onSurface,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          // Pinned colours are explicitly added from the picker. Recent
+          // colours never appear here merely because they were sampled.
+          for (final hex in app.toolbarInkColorsFor(colourTool))
+            if (onoteColorFromHex(hex) case final custom?)
               Padding(
                 padding: vertical
                     ? const EdgeInsets.symmetric(vertical: 2)
                     : const EdgeInsets.symmetric(horizontal: 2),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(99),
-                  onTap: () {
-                    app.setInkColor(i);
-                    // With ink selected (typically just lassoed), a colour click
-                    // recolours it rather than only arming the next stroke —
-                    // recolouring after the fact is most of why you lasso a
-                    // diagram (INK-7).
-                    if (app.hasInkSelection) {
-                      app.recolorSelectedInk('#'
-                          '${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}');
-                    } else {
-                      app.refresh();
-                    }
-                  },
+                child: GestureDetector(
+                  onTap: () => useCustomColour(hex),
+                  onSecondaryTapDown: (details) => _showToolbarColourMenu(
+                    context,
+                    details.globalPosition,
+                    colourTool,
+                    hex,
+                  ),
+                  onLongPressStart: (details) => _showToolbarColourMenu(
+                    context,
+                    details.globalPosition,
+                    colourTool,
+                    hex,
+                  ),
                   child: Container(
-                    key: ValueKey('pen-swatch-$i'),
                     width: 18,
                     height: 18,
                     decoration: BoxDecoration(
-                      color: c,
+                      color: custom,
                       shape: BoxShape.circle,
                       border: Border.all(
                         width: 2,
-                        color: activeCustomColour == null && activeColour == i
+                        color:
+                            activeCustomColour ==
+                                hex.replaceFirst('#', '').substring(0, 6)
                             ? scheme.primary
                             : Colors.transparent,
                       ),
@@ -982,151 +1202,117 @@ class _CommandBarState extends State<CommandBar> {
                   ),
                 ),
               ),
-            for (final hex in app.customColors.take(4))
-              if (onoteColorFromHex(hex) case final custom?)
-                Padding(
-                  padding: vertical
-                      ? const EdgeInsets.symmetric(vertical: 2)
-                      : const EdgeInsets.symmetric(horizontal: 2),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(99),
-                    onTap: () {
-                      final opaque = hex.replaceFirst('#', '').substring(0, 6);
-                      app.setCustomInkColor(opaque);
-                      if (app.hasInkSelection) {
-                        app.recolorSelectedInk('#$opaque');
-                      }
-                    },
-                    child: Container(
-                      width: 18,
-                      height: 18,
-                      decoration: BoxDecoration(
-                        color: custom,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          width: 2,
-                          color: activeCustomColour ==
-                                  hex.replaceFirst('#', '').substring(0, 6)
-                              ? scheme.primary
-                              : Colors.transparent,
+          gap(12),
+          InkWell(
+            key: const ValueKey('pen-active-colour'),
+            borderRadius: BorderRadius.circular(99),
+            onTap: pickCustomColour,
+            child: Container(
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                color: activeCustomColour == null
+                    ? colors[activeColour % colors.length]
+                    : onoteColorFromHex(activeCustomColour),
+                shape: BoxShape.circle,
+                border: Border.all(color: scheme.primary, width: 2),
+              ),
+            ),
+          ),
+          gap(6),
+          IconButton(
+            key: const ValueKey('pen-eyedropper'),
+            tooltip: app.inkEyedropperActive
+                ? 'Cancel colour sampler'
+                : 'Pick a colour from the page',
+            visualDensity: VisualDensity.compact,
+            isSelected: app.inkEyedropperActive,
+            style: IconButton.styleFrom(
+              backgroundColor: app.inkEyedropperActive
+                  ? scheme.primary.withValues(alpha: .18)
+                  : null,
+              foregroundColor: app.inkEyedropperActive ? scheme.primary : null,
+            ),
+            icon: const Icon(Icons.colorize_outlined, size: 19),
+            onPressed: () =>
+                app.setInkEyedropperActive(!app.inkEyedropperActive),
+          ),
+          IconButton(
+            key: const ValueKey('pen-colour-picker'),
+            tooltip: tr(context, 'Mix a custom colour'),
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.palette_outlined, size: 19),
+            onPressed: pickCustomColour,
+          ),
+          gap(6),
+          sizeSlider(key: const ValueKey('ink-size')),
+          SizedBox(
+            width: vertical ? 48 : 43,
+            child: Center(
+              child: AppText(
+                '${app.penSize.toStringAsFixed(1)} px',
+                style: const TextStyle(fontSize: 10),
+              ),
+            ),
+          ),
+        ] else if (app.tool == Tool.eraser) ...[
+          SizedBox(
+            width: vertical ? 48 : 118,
+            height: vertical ? 118 : null,
+            child: RotatedBox(
+              quarterTurns: vertical ? 3 : 0,
+              child: Slider(
+                key: const ValueKey('eraser-size'),
+                value: app.eraserSize,
+                min: 4,
+                max: 80,
+                divisions: 38,
+                label: '${app.eraserSize.round()} px',
+                onChanged: app.setEraserSize,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: AppText(
+              '${app.eraserSize.round()} px',
+              style: const TextStyle(fontSize: 11),
+            ),
+          ),
+          SizedBox(
+            width: vertical ? 48 : null,
+            height: vertical ? 114 : 28,
+            child: RotatedBox(
+              quarterTurns: vertical ? 3 : 0,
+              child: SizedBox(
+                width: vertical ? 114 : null,
+                child: SegmentedButton<EraserMode>(
+                  segments: [
+                    for (final m in EraserMode.values)
+                      ButtonSegment(
+                        value: m,
+                        label: AppText(
+                          m.label,
+                          style: const TextStyle(fontSize: 10),
                         ),
                       ),
-                    ),
-                  ),
-                ),
-            IconButton(
-              key: const ValueKey('pen-eyedropper'),
-              tooltip: app.inkEyedropperActive
-                  ? 'Cancel colour sampler'
-                  : 'Pick a colour from the page',
-              visualDensity: VisualDensity.compact,
-              isSelected: app.inkEyedropperActive,
-              style: IconButton.styleFrom(
-                backgroundColor: app.inkEyedropperActive
-                    ? scheme.primary.withValues(alpha: .18)
-                    : null,
-                foregroundColor:
-                    app.inkEyedropperActive ? scheme.primary : null,
-              ),
-              icon: const Icon(Icons.colorize_outlined, size: 19),
-              onPressed: () =>
-                  app.setInkEyedropperActive(!app.inkEyedropperActive),
-            ),
-            IconButton(
-              key: const ValueKey('pen-colour-picker'),
-              tooltip: tr(context, 'Mix a custom colour'),
-              visualDensity: VisualDensity.compact,
-              icon: activeCustomColour == null
-                  ? const Icon(Icons.palette_outlined, size: 19)
-                  : Container(
-                      width: 18,
-                      height: 18,
-                      decoration: BoxDecoration(
-                        color: onoteColorFromHex(activeCustomColour),
-                        shape: BoxShape.circle,
-                        border: Border.all(color: scheme.primary, width: 2),
-                      ),
-                    ),
-              onPressed: () async {
-                final preset = colors[activeColour % colors.length];
-                final initial = activeCustomColour ??
-                    (preset.toARGB32() & 0xFFFFFF)
-                        .toRadixString(16)
-                        .padLeft(6, '0')
-                        .toUpperCase();
-                void useColour(String value) {
-                  final opaque = value.replaceFirst('#', '').substring(0, 6);
-                  app.setCustomInkColor(opaque);
-                  if (app.hasInkSelection) app.recolorSelectedInk('#$opaque');
-                }
-
-                final picked = await showOnoteColorPicker(context, app,
-                    initial: initial,
-                    title: 'Pen colour',
-                    onChanged: useColour);
-                if (picked == null) return;
-                useColour(picked);
-              },
-            ),
-            gap(6),
-            sizeSlider(key: const ValueKey('ink-size')),
-            SizedBox(
-              width: vertical ? 48 : 43,
-              child: Center(
-                child: AppText('${app.penSize.toStringAsFixed(1)} px',
-                    style: const TextStyle(fontSize: 10)),
-              ),
-            ),
-          ] else if (app.tool == Tool.eraser) ...[
-            SizedBox(
-                width: vertical ? 48 : 118,
-                height: vertical ? 118 : null,
-                child: RotatedBox(
-                  quarterTurns: vertical ? 3 : 0,
-                  child: Slider(
-                    key: const ValueKey('eraser-size'),
-                    value: app.eraserSize,
-                    min: 4,
-                    max: 80,
-                    divisions: 38,
-                    label: '${app.eraserSize.round()} px',
-                    onChanged: app.setEraserSize,
-                  ),
-                )),
-            Padding(
-              padding: const EdgeInsets.only(right: 10),
-              child: AppText('${app.eraserSize.round()} px',
-                  style: const TextStyle(fontSize: 11)),
-            ),
-            SizedBox(
-              width: vertical ? 48 : null,
-              height: vertical ? 114 : 28,
-              child: RotatedBox(
-                quarterTurns: vertical ? 3 : 0,
-                child: SizedBox(
-                  width: vertical ? 114 : null,
-                  child: SegmentedButton<EraserMode>(
-                    segments: [
-                      for (final m in EraserMode.values)
-                        ButtonSegment(
-                            value: m,
-                            label: AppText(m.label,
-                                style: const TextStyle(fontSize: 10))),
-                    ],
-                    selected: {app.eraserMode},
-                    onSelectionChanged: (s) => app.setEraserMode(s.first),
-                    showSelectedIcon: false,
-                    style: const ButtonStyle(
-                        visualDensity: VisualDensity.compact,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                  ],
+                  selected: {app.eraserMode},
+                  onSelectionChanged: (s) => app.setEraserMode(s.first),
+                  showSelectedIcon: false,
+                  style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                 ),
               ),
             ),
-          ],
-          gap(12),
-          gap(),
-        ]);
+          ),
+        ],
+        gap(12),
+        gap(),
+      ],
+    );
   }
 }
 
@@ -1143,10 +1329,8 @@ class _TextBtn extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => CommandTextButton(
-        label: label,
-        onPressed: enabled ? onTap : null,
-      );
+  Widget build(BuildContext context) =>
+      CommandTextButton(label: label, onPressed: enabled ? onTap : null);
 }
 
 class _Div extends StatelessWidget {
@@ -1154,13 +1338,13 @@ class _Div extends StatelessWidget {
   final bool vertical;
   @override
   Widget build(BuildContext context) => Container(
-        width: vertical ? 22 : 1,
-        height: vertical ? 1 : 22,
-        margin: vertical
-            ? const EdgeInsets.symmetric(vertical: 8)
-            : const EdgeInsets.symmetric(horizontal: 8),
-        color: Theme.of(context).dividerColor,
-      );
+    width: vertical ? 22 : 1,
+    height: vertical ? 1 : 22,
+    margin: vertical
+        ? const EdgeInsets.symmetric(vertical: 8)
+        : const EdgeInsets.symmetric(horizontal: 8),
+    color: Theme.of(context).dividerColor,
+  );
 }
 
 /// Font-size control for the text block being edited (TEXT-1).
@@ -1186,7 +1370,7 @@ class _FontSizeField extends StatelessWidget {
     24,
     28,
     36,
-    48
+    48,
   ];
 
   @override
@@ -1214,19 +1398,28 @@ class _FontSizeField extends StatelessWidget {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(6),
               border: Border.all(
-                  color: enabled
-                      ? Theme.of(context).colorScheme.outline
-                      : Colors.transparent),
+                color: enabled
+                    ? Theme.of(context).colorScheme.outline
+                    : Colors.transparent,
+              ),
             ),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              AppText(label,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AppText(
+                  label,
                   style: TextStyle(
-                      fontSize: 12,
-                      color: enabled ? null : context.surfaces.textSecondary)),
-              Icon(Icons.arrow_drop_down,
+                    fontSize: 12,
+                    color: enabled ? null : context.surfaces.textSecondary,
+                  ),
+                ),
+                Icon(
+                  Icons.arrow_drop_down,
                   size: 16,
-                  color: enabled ? null : context.surfaces.textSecondary),
-            ]),
+                  color: enabled ? null : context.surfaces.textSecondary,
+                ),
+              ],
+            ),
           ),
         ),
         menuChildren: [
@@ -1260,7 +1453,8 @@ class _MakeCardButton extends StatelessWidget {
   void _say(BuildContext context, String? msg) {
     if (msg == null || !context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg), duration: const Duration(seconds: 3)));
+      SnackBar(content: Text(msg), duration: const Duration(seconds: 3)),
+    );
   }
 
   @override
@@ -1302,18 +1496,28 @@ class _MakeCardButton extends StatelessWidget {
       ),
       menuChildren: [
         MenuItemButton(
-          leadingIcon: Icon(TagKind.question.icon,
-              size: 16, color: TagKind.question.color),
-          shortcut:
-              const SingleActivator(LogicalKeyboardKey.digit3, control: true),
+          leadingIcon: Icon(
+            TagKind.question.icon,
+            size: 16,
+            color: TagKind.question.color,
+          ),
+          shortcut: const SingleActivator(
+            LogicalKeyboardKey.digit3,
+            control: true,
+          ),
           onPressed: () => app.toggleTagOnSelection(TagKind.question),
           child: const AppText('Question card'),
         ),
         MenuItemButton(
-          leadingIcon: Icon(TagKind.definition.icon,
-              size: 16, color: TagKind.definition.color),
-          shortcut:
-              const SingleActivator(LogicalKeyboardKey.digit5, control: true),
+          leadingIcon: Icon(
+            TagKind.definition.icon,
+            size: 16,
+            color: TagKind.definition.color,
+          ),
+          shortcut: const SingleActivator(
+            LogicalKeyboardKey.digit5,
+            control: true,
+          ),
           onPressed: () => app.toggleTagOnSelection(TagKind.definition),
           child: const AppText('Definition card'),
         ),
@@ -1351,58 +1555,67 @@ class _PlannerButton extends StatelessWidget {
     final now = DateTime.now();
     final homework = app.planner
         .agenda(now: now)
-        .where((item) =>
-            !item.done &&
-            (item.kind == DatedKind.task || item.kind == DatedKind.reminder))
+        .where(
+          (item) =>
+              !item.done &&
+              (item.kind == DatedKind.task || item.kind == DatedKind.reminder),
+        )
         .toList(growable: false);
     final count = homework.length;
-    final overdue = homework.any((item) => item.when.isBefore(DateTime(
-          now.year,
-          now.month,
-          now.day,
-        )));
+    final overdue = homework.any(
+      (item) => item.when.isBefore(DateTime(now.year, now.month, now.day)),
+    );
     return Tooltip(
       message: count == 0
           ? 'No homework or reminders waiting'
           : overdue
-              ? '$count homework item${count == 1 ? '' : 's'} — some overdue'
-              : '$count homework item${count == 1 ? '' : 's'} waiting',
-      child: Stack(clipBehavior: Clip.none, children: [
-        IconButton(
-          icon: const Icon(Icons.event_note_outlined, size: 18),
-          isSelected: app.showPlannerPanel,
-          visualDensity: VisualDensity.compact,
-          onPressed: app.togglePlannerPanel,
-        ),
-        if (count > 0)
-          Positioned(
-            right: 2,
-            top: 2,
-            child: IgnorePointer(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                decoration: BoxDecoration(
-                  // Red only for something already late; a waiting reminder is
-                  // brass, and an ordinary "3 today" is the primary accent.
-                  // Colour never carries this alone (style guide §3.5) — the
-                  // tooltip says which it is.
-                  color: overdue
-                      ? OnoteColors.danger
-                      : Theme.of(context).colorScheme.primary,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: AppText('$count',
+          ? '$count homework item${count == 1 ? '' : 's'} — some overdue'
+          : '$count homework item${count == 1 ? '' : 's'} waiting',
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.event_note_outlined, size: 18),
+            isSelected: app.showPlannerPanel,
+            visualDensity: VisualDensity.compact,
+            onPressed: app.togglePlannerPanel,
+          ),
+          if (count > 0)
+            Positioned(
+              right: 2,
+              top: 2,
+              child: IgnorePointer(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 1,
+                  ),
+                  decoration: BoxDecoration(
+                    // Red only for something already late; a waiting reminder is
+                    // brass, and an ordinary "3 today" is the primary accent.
+                    // Colour never carries this alone (style guide §3.5) — the
+                    // tooltip says which it is.
+                    color: overdue
+                        ? OnoteColors.danger
+                        : Theme.of(context).colorScheme.primary,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: AppText(
+                    '$count',
                     style: TextStyle(
-                        fontSize: 11,
-                        height: 1.2,
-                        fontWeight: FontWeight.w700,
-                        color: overdue
-                            ? Colors.white
-                            : Theme.of(context).colorScheme.onPrimary)),
+                      fontSize: 11,
+                      height: 1.2,
+                      fontWeight: FontWeight.w700,
+                      color: overdue
+                          ? Colors.white
+                          : Theme.of(context).colorScheme.onPrimary,
+                    ),
+                  ),
+                ),
               ),
             ),
-          ),
-      ]),
+        ],
+      ),
     );
   }
 }
@@ -1413,9 +1626,9 @@ class _PlannerButton extends StatelessWidget {
 Future<void> _addQuickHomework(BuildContext context, AppState app) async {
   final result =
       await showOnoteDialog<({String subject, String task, DateTime due})>(
-    context: context,
-    builder: (_) => const _QuickHomeworkDialog(),
-  );
+        context: context,
+        builder: (_) => const _QuickHomeworkDialog(),
+      );
   if (result == null || !context.mounted) return;
   final title = result.subject.trim().isEmpty
       ? result.task.trim()
@@ -1430,7 +1643,8 @@ Future<void> _addQuickHomework(BuildContext context, AppState app) async {
   );
   if (!context.mounted) return;
   ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Homework added and linked to this page.')));
+    const SnackBar(content: Text('Homework added and linked to this page.')),
+  );
 }
 
 class _QuickHomeworkDialog extends StatefulWidget {
@@ -1468,63 +1682,82 @@ class _QuickHomeworkDialogState extends State<_QuickHomeworkDialog> {
       helpText: 'Homework due date',
     );
     if (chosen == null || !mounted) return;
-    setState(() => _due = DateTime(
-        chosen.year, chosen.month, chosen.day, _due.hour, _due.minute));
+    setState(
+      () => _due = DateTime(
+        chosen.year,
+        chosen.month,
+        chosen.day,
+        _due.hour,
+        _due.minute,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        title: const Text('Add homework'),
-        content: SizedBox(
-          width: 380,
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            TextField(
-              controller: _subject,
-              autofocus: true,
-              decoration: const InputDecoration(
-                  labelText: 'Subject', hintText: 'For example: Chemistry'),
+    title: const Text('Add homework'),
+    content: SizedBox(
+      width: 380,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _subject,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'Subject',
+              hintText: 'For example: Chemistry',
             ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _task,
-              maxLines: 2,
-              onSubmitted: (_) => _submit(),
-              decoration: const InputDecoration(
-                  labelText: 'Homework', hintText: 'What needs to be done?'),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _task,
+            maxLines: 2,
+            onSubmitted: (_) => _submit(),
+            decoration: const InputDecoration(
+              labelText: 'Homework',
+              hintText: 'What needs to be done?',
             ),
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: OutlinedButton.icon(
-                onPressed: _pickDay,
-                icon: const Icon(Icons.event_outlined, size: 18),
-                label: Text(
-                    MaterialLocalizations.of(context).formatMediumDate(_due)),
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: _pickDay,
+              icon: const Icon(Icons.event_outlined, size: 18),
+              label: Text(
+                MaterialLocalizations.of(context).formatMediumDate(_due),
               ),
             ),
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Padding(
-                padding: EdgeInsets.only(top: 6),
-                child: Text('Linked to the page currently open.',
-                    style: TextStyle(fontSize: 12)),
+          ),
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Text(
+                'Linked to the page currently open.',
+                style: TextStyle(fontSize: 12),
               ),
             ),
-          ]),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel')),
-          FilledButton(onPressed: _submit, child: const Text('Add')),
+          ),
         ],
-      );
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(onPressed: _submit, child: const Text('Add')),
+    ],
+  );
 
   void _submit() {
     final task = _task.text.trim();
     if (task.isEmpty) return;
-    Navigator.of(context)
-        .pop((subject: _subject.text.trim(), task: task, due: _due));
+    Navigator.of(
+      context,
+    ).pop((subject: _subject.text.trim(), task: task, due: _due));
   }
 }
 
@@ -1568,11 +1801,7 @@ class _InsertButton extends StatelessWidget {
     return Tooltip(
       message: _tip,
       child: item.showLabel
-          ? CommandButton(
-              icon: item.icon,
-              label: item.label,
-              onPressed: press,
-            )
+          ? CommandButton(icon: item.icon, label: item.label, onPressed: press)
           : IconButton(
               icon: Icon(item.icon, size: OnoteIcon.sm),
               visualDensity: VisualDensity.compact,
@@ -1590,10 +1819,7 @@ class _InsertButton extends StatelessWidget {
     // difference between existing and not.
     const gap = EdgeInsets.only(right: 2);
     if (item.extras.isEmpty) {
-      return Padding(
-        padding: gap,
-        child: _main(context),
-      );
+      return Padding(padding: gap, child: _main(context));
     }
     return Padding(
       padding: gap,
@@ -1637,11 +1863,11 @@ class _ToolbarScroll extends MaterialScrollBehavior {
 
   @override
   Set<PointerDeviceKind> get dragDevices => const {
-        PointerDeviceKind.touch,
-        PointerDeviceKind.mouse,
-        PointerDeviceKind.trackpad,
-        PointerDeviceKind.stylus,
-      };
+    PointerDeviceKind.touch,
+    PointerDeviceKind.mouse,
+    PointerDeviceKind.trackpad,
+    PointerDeviceKind.stylus,
+  };
 }
 
 /// **What the object row is about**, shown where the contextual tab used to
@@ -1667,28 +1893,38 @@ class _SubjectBadge extends StatelessWidget {
     return ExcludeFocus(
       child: Padding(
         padding: const EdgeInsets.only(left: 6),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Container(width: 1, height: 18, color: context.surfaces.border),
-          const SizedBox(width: 6),
-          Tooltip(
-            message: 'Esc when you are done',
-            child: Container(
-              height: 22,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(OnoteRadius.full),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(width: 1, height: 18, color: context.surfaces.border),
+            const SizedBox(width: 6),
+            Tooltip(
+              message: 'Esc when you are done',
+              child: Container(
+                height: 22,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(OnoteRadius.full),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(icon, size: 14, color: accent),
+                    const SizedBox(width: 4),
+                    AppText(
+                      label,
+                      style: OnoteType.caption.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: accent,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(icon, size: 14, color: accent),
-                const SizedBox(width: 4),
-                AppText(label,
-                    style: OnoteType.caption
-                        .copyWith(fontWeight: FontWeight.w600, color: accent)),
-              ]),
             ),
-          ),
-        ]),
+          ],
+        ),
       ),
     );
   }
