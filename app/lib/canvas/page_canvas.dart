@@ -2094,7 +2094,7 @@ class _PagePainter extends CustomPainter {
     required this.dark,
     this.sheet,
     this.sheets = 1,
-  });
+  }) : super(repaint: controller);
   final CanvasController controller;
   final Size pageSize;
   final String background;
@@ -2193,9 +2193,7 @@ class _PagePainter extends CustomPainter {
       old.dark != dark ||
       old.sheet != sheet ||
       old.sheets != sheets ||
-      old.pageSize != pageSize ||
-      old.controller.scale != controller.scale ||
-      old.controller.offset != controller.offset;
+      old.pageSize != pageSize;
 }
 
 /// Faint alignment grid shown only while a block is being dragged.
