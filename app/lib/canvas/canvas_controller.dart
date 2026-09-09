@@ -71,15 +71,10 @@ class CanvasController extends ChangeNotifier {
   }) {
     final pageFocal = (startFocal - startOffset) / startScale;
     scale = (startScale * scaleFactor).clamp(minScale, maxScale);
-    final proposed = currentFocal - pageFocal * scale;
-    // An edge that was visible when the gesture began remains attached to the
-    // viewport. Once the user has panned into a larger page and that edge is
-    // off-screen, the content under the fingers is the anchor instead.
-    const edgeEpsilon = .5;
-    offset = Offset(
-      startOffset.dx >= -edgeEpsilon ? 0 : proposed.dx,
-      startOffset.dy >= -edgeEpsilon ? 0 : proposed.dy,
-    );
+    // Keep the page point below the fingers fixed, including when the gesture
+    // starts at the top-left origin. Pinning that origin to zero made every
+    // zoom-in visibly jump away from the fingers.
+    offset = currentFocal - pageFocal * scale;
     clampToPage();
     notifyListeners();
   }

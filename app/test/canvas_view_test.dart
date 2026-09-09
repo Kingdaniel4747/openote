@@ -77,21 +77,25 @@ void main() {
     expect(c.pageToScreen(pageUnderStartFocal), startFocal);
   });
 
-  test('visible top and left page edges stay pinned during touch pinch', () {
+  test('touch pinch at the origin keeps the content under the fingers stable',
+      () {
     final c = CanvasController()
       ..viewport = const Size(900, 700)
       ..pageSize = const Size(2400, 1800);
 
+    const focal = Offset(500, 350);
+    final pageUnderFingers = c.screenToPage(focal);
+
     c.transformGestureFrom(
       startScale: 1,
       startOffset: Offset.zero,
-      startFocal: const Offset(500, 350),
-      currentFocal: const Offset(500, 350),
+      startFocal: focal,
+      currentFocal: focal,
       scaleFactor: 1.6,
     );
 
     expect(c.scale, 1.6);
-    expect(c.offset, Offset.zero,
-        reason: 'visible page edges are the anchor, not the finger focal');
+    expect(c.offset, const Offset(-300, -210));
+    expect(c.pageToScreen(pageUnderFingers), focal);
   });
 }
