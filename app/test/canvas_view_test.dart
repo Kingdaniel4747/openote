@@ -100,4 +100,27 @@ void main() {
     expect(c.offset, const Offset(-300, -210));
     expect(c.pageToScreen(pageUnderFingers), focal);
   });
+
+  test('open canvas grows a trailing runway but resets at overview zoom', () {
+    final c = CanvasController()
+      ..viewport = const Size(900, 700)
+      ..setPageBounds(const Size(1200, 1400), growsTrailingEdges: true);
+
+    c.panBy(const Offset(-6000, -7000));
+    expect(c.pageSize!.width, greaterThan(6500));
+    expect(c.pageSize!.height, greaterThan(7500));
+
+    c.setZoom(CanvasController.minScale);
+    expect(c.pageSize, const Size(1200, 1400));
+  });
+
+  test('paper keeps its actual trailing edge', () {
+    final c = CanvasController()
+      ..viewport = const Size(900, 700)
+      ..setPageBounds(const Size(1200, 1400), growsTrailingEdges: false);
+
+    c.panBy(const Offset(-6000, -7000));
+    expect(c.offset, const Offset(-300, -700));
+    expect(c.pageSize, const Size(1200, 1400));
+  });
 }

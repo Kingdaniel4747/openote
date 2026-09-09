@@ -933,6 +933,24 @@ class _CommandBarState extends State<CommandBar> {
                 ),
               ),
             IconButton(
+              key: const ValueKey('pen-eyedropper'),
+              tooltip: app.inkEyedropperActive
+                  ? 'Cancel colour sampler'
+                  : 'Pick a colour from the page',
+              visualDensity: VisualDensity.compact,
+              isSelected: app.inkEyedropperActive,
+              style: IconButton.styleFrom(
+                backgroundColor: app.inkEyedropperActive
+                    ? scheme.primary.withValues(alpha: .18)
+                    : null,
+                foregroundColor:
+                    app.inkEyedropperActive ? scheme.primary : null,
+              ),
+              icon: const Icon(Icons.colorize_outlined, size: 19),
+              onPressed: () =>
+                  app.setInkEyedropperActive(!app.inkEyedropperActive),
+            ),
+            IconButton(
               key: const ValueKey('pen-colour-picker'),
               tooltip: tr(context, 'Mix a custom colour'),
               visualDensity: VisualDensity.compact,

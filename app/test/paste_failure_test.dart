@@ -138,4 +138,28 @@ void main() {
     // and this fails — the chip would cry wolf for the rest of the session.
     expect(app.saveError, isNull);
   });
+
+  test('an inserted image keeps the supplied dimensions', () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (_, app, _, _) = await fixture();
+
+    final b = insertImageBytes(
+      app,
+      png,
+      'image/png',
+      const Offset(300, 250),
+      width: 480,
+      height: 320,
+      naturalWidth: 1200,
+      naturalHeight: 800,
+    );
+
+    expect(b, isNotNull);
+    expect(b!.x, 60);
+    expect(b.y, 90);
+    expect(b.w, 480);
+    expect(b.h, 320);
+    expect(b.content['naturalW'], 1200);
+    expect(b.content['naturalH'], 800);
+  });
 }

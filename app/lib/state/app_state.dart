@@ -4303,6 +4303,17 @@ class AppState extends ChangeNotifier
   /// toolbar swatches (including the theme-aware automatic first swatch).
   String? penCustomColor;
   String? highlighterCustomColor;
+
+  /// One-shot canvas colour sampler. The canvas consumes the next pen or mouse
+  /// release and writes that exact visible colour into the active ink tool.
+  bool inkEyedropperActive = false;
+
+  void setInkEyedropperActive(bool active) {
+    if (inkEyedropperActive == active) return;
+    inkEyedropperActive = active;
+    notifyListeners();
+  }
+
   double penSize = 2.5;
 
   /// The pen, ballpoint and highlighter deliberately remember different
@@ -8908,6 +8919,9 @@ class AppState extends ChangeNotifier
       notifyListeners();
       return;
     }
+    // Sampling belongs to the ink tool that armed it. Changing tools makes
+    // the one-shot action unambiguous instead of leaving the canvas blocked.
+    inkEyedropperActive = false;
     if (_hasInkSize(tool)) _inkToolSizes[tool] = penSize;
     tool = t;
     if (_hasInkSize(t)) penSize = inkSizeFor(t);

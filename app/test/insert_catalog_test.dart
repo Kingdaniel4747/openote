@@ -110,7 +110,8 @@ void main() {
         expect(i.label.length, lessThan(14), reason: i.id);
       }
       // The renames, explicitly.
-      expect(kInsertItems.firstWhere((i) => i.id == 'image').label, 'Picture');
+      expect(
+          kInsertItems.firstWhere((i) => i.id == 'image').label, 'Pictures');
       expect(kInsertItems.firstWhere((i) => i.id == 'board').label, 'Board');
       expect(kInsertItems.firstWhere((i) => i.id == 'video').label, 'Video');
     });

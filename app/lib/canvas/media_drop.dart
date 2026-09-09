@@ -52,15 +52,24 @@ bool _looksLikeImage(String name) =>
 /// block referencing bytes nothing holds would render as a broken picture
 /// that LOOKS like the paste worked.
 Block? insertImageBytes(AppState app, Uint8List bytes, String mime, Offset at,
-    {double width = 320}) {
+    {double width = 320,
+    double? height,
+    double? naturalWidth,
+    double? naturalHeight}) {
   final hash = app.tryAddBlob(bytes, mime);
   if (hash == null) return null;
   final b = app.addBlock(Block(
     type: BlockType.image,
     x: at.dx - width / 2,
-    y: at.dy - width * 0.375,
+    y: at.dy - (height ?? width * 0.75) / 2,
     w: width,
-    content: {'blob': 'sha256:$hash', 'mime': mime},
+    h: height,
+    content: {
+      'blob': 'sha256:$hash',
+      'mime': mime,
+      if (naturalWidth != null) 'naturalW': naturalWidth,
+      if (naturalHeight != null) 'naturalH': naturalHeight,
+    },
   ));
   app.select(b.id);
   return b;

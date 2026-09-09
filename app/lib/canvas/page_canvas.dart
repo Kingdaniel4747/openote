@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' show ImageByteFormat;
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/foundation.dart' show listEquals;
@@ -93,6 +94,8 @@ class _PageCanvasState extends State<PageCanvas> {
   /// listens via `repaint:`). A setState per pointer move rebuilt every
   /// visible block at stylus rate — the "inking feels sluggish" report.
   final ValueNotifier<int> _wetTick = ValueNotifier(0);
+  final GlobalKey _eyedropperCaptureKey = GlobalKey();
+  int? _eyedropperPointer;
   bool _eraseUndoPushed = false;
   bool _moveUndoPushed = false;
 
@@ -153,6 +156,44 @@ class _PageCanvasState extends State<PageCanvas> {
 
   AppState get app => widget.state;
   CanvasController get controller => app.canvas;
+
+  void _eyedropperDown(PointerDownEvent event) {
+    _eyedropperPointer = event.pointer;
+  }
+
+  Future<void> _eyedropperUp(PointerUpEvent event) async {
+    if (_eyedropperPointer != event.pointer) return;
+    _eyedropperPointer = null;
+    final render = _eyedropperCaptureKey.currentContext?.findRenderObject();
+    if (render is! RenderRepaintBoundary || !mounted) return;
+    try {
+      final pixelRatio = MediaQuery.devicePixelRatioOf(context);
+      final image = await render.toImage(pixelRatio: pixelRatio);
+      final bytes = await image.toByteData(format: ImageByteFormat.rawRgba);
+      final imageWidth = image.width;
+      final imageHeight = image.height;
+      image.dispose();
+      if (bytes == null || !mounted) return;
+      final x = (event.localPosition.dx * pixelRatio)
+          .floor()
+          .clamp(0, imageWidth - 1)
+          .toInt();
+      final y = (event.localPosition.dy * pixelRatio)
+          .floor()
+          .clamp(0, imageHeight - 1)
+          .toInt();
+      final i = (y * imageWidth + x) * 4;
+      final data = bytes.buffer.asUint8List();
+      final hex = '${data[i].toRadixString(16).padLeft(2, '0')}'
+              '${data[i + 1].toRadixString(16).padLeft(2, '0')}'
+              '${data[i + 2].toRadixString(16).padLeft(2, '0')}'
+          .toUpperCase();
+      app.setCustomInkColor(hex);
+      app.setInkEyedropperActive(false);
+    } catch (_) {
+      if (mounted) app.setInkEyedropperActive(false);
+    }
+  }
 
   bool get _inkTool =>
       app.tool == Tool.pen ||
@@ -235,10 +276,14 @@ class _PageCanvasState extends State<PageCanvas> {
   @override
   void initState() {
     super.initState();
+    // A controller outlives the keyed page widget. Do not carry the previous
+    // page's virtual runway into the next note.
+    controller.resetPageBounds();
     _windowsPen.addListener(_windowsPenChanged);
     _windowsPen.attach();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      controller.pageSize = app.pageSize();
+      controller.setPageBounds(app.pageSize(),
+          growsTrailingEdges: !app.pageProps.pdfOnly && !app.pageProps.isPaged);
       // Restore this page's remembered view if the user actually adjusted it
       // (§7a.5); otherwise fit the page width so content placed off to the
       // right — e.g. imported images at their OneNote offsets — is visible on
@@ -1436,13 +1481,15 @@ class _PageCanvasState extends State<PageCanvas> {
             math.max(AppState.defaultPageHeight,
                 ext.bottom + AppState.pageGrowMargin),
           );
-    controller.pageSize = pageSize;
+    controller.setPageBounds(pageSize,
+        growsTrailingEdges: !app.pageProps.pdfOnly && !app.pageProps.isPaged);
 
     Widget canvas = LayoutBuilder(builder: (context, constraints) {
       controller.viewport = Size(constraints.maxWidth, constraints.maxHeight);
       return AnimatedBuilder(
         animation: controller,
         builder: (context, _) {
+          final livePageSize = controller.pageSize ?? pageSize;
           // Visible page-space rect (padded) for culling (CANVAS-9). Computed
           // INSIDE the AnimatedBuilder: the transform changes without a full
           // rebuild (viewport assignment above, per-page view restore, pans), and
@@ -1496,7 +1543,7 @@ class _PageCanvasState extends State<PageCanvas> {
                     child: CustomPaint(
                       painter: _PagePainter(
                         controller: controller,
-                        pageSize: pageSize,
+                        pageSize: livePageSize,
                         background: app.pageProps.background,
                         gridSize: app.gridSize,
                         dark: dark,
@@ -1522,8 +1569,8 @@ class _PageCanvasState extends State<PageCanvas> {
                     child: Transform(
                       transform: controller.matrix,
                       child: SizedBox(
-                        width: pageSize.width,
-                        height: pageSize.height,
+                        width: livePageSize.width,
+                        height: livePageSize.height,
                         child: Stack(
                           clipBehavior:
                               app.pageProps.pdfOnly ? Clip.hardEdge : Clip.none,
@@ -1540,7 +1587,7 @@ class _PageCanvasState extends State<PageCanvas> {
                                   child: PageTitleView(
                                     key: ValueKey('title-${app.pageId}'),
                                     app: app,
-                                    width: pageSize.width -
+                                    width: livePageSize.width -
                                         AppState.pageLeftMargin * 2,
                                   ),
                                 ),
@@ -1849,6 +1896,28 @@ class _PageCanvasState extends State<PageCanvas> {
           ));
     }
 
+    // Capture the completed page composition for the eyedropper before the
+    // input-only wrappers below. Absorb ordinary canvas gestures while the
+    // sampler is armed; the selected colour is committed on release.
+    canvas = RepaintBoundary(key: _eyedropperCaptureKey, child: canvas);
+    if (app.inkEyedropperActive) {
+      canvas = MouseRegion(
+        cursor: SystemMouseCursors.precise,
+        child: Listener(
+          behavior: HitTestBehavior.opaque,
+          onPointerDown: _eyedropperDown,
+          onPointerUp: _eyedropperUp,
+          onPointerCancel: (event) {
+            if (_eyedropperPointer == event.pointer) {
+              _eyedropperPointer = null;
+              app.setInkEyedropperActive(false);
+            }
+          },
+          child: AbsorbPointer(child: canvas),
+        ),
+      );
+    }
+
     // Drag-and-drop (MEDIA-1): files dropped anywhere on the page land where
     // they were dropped. Wraps the whole canvas so the drop target matches
     // what the user sees, and highlights only while a drag is over it.
@@ -1980,8 +2049,16 @@ class _PageCanvasState extends State<PageCanvas> {
         if (_panZoomClaimedBy == e.pointer || _rulerPointers.isNotEmpty) {
           return;
         }
-        controller.transformAt(
-            e.localPosition, e.scale / _pzLastScale, e.panDelta);
+        final scaleFactor = e.scale / _pzLastScale;
+        if (e.scale != _pzLastScale) {
+          // A precision-touchpad event can carry a small pan delta alongside
+          // a pinch. Applying it after the zoom moves the content away from
+          // the cursor, so keep a zoom anchored exactly at [localPosition].
+          controller.transformAt(e.localPosition, scaleFactor, Offset.zero);
+        } else if (e.localPanDelta != Offset.zero) {
+          // Two-finger scrolling without a scale change is still a pan.
+          controller.panBy(e.localPanDelta);
+        }
         _pzLastScale = e.scale;
       },
       onPointerPanZoomEnd: (e) {

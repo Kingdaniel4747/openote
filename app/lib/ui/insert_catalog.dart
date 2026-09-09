@@ -46,6 +46,7 @@ library;
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
@@ -332,8 +333,7 @@ final List<InsertGroup> kInsertGroups = [
     InsertItem(
       id: 'image',
       icon: Icons.image_outlined,
-      // "Picture", not "Image": one is a word a student uses.
-      label: 'Picture',
+      label: 'Pictures',
       opensPicker: true,
       size: const Size(320, 240),
       run: insertPickedImage,
@@ -451,24 +451,57 @@ Future<XFile?> _pick(BuildContext context,
 
 Future<void> insertPickedImage(
     BuildContext context, AppState app, Offset at) async {
-  final file = await _pick(context, groups: const [
-    XTypeGroup(
-        label: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'])
-  ]);
-  if (file == null) return;
-  final Uint8List bytes = await file.readAsBytes();
-  final ext = file.name.split('.').last.toLowerCase();
-  final mime = switch (ext) {
-    'jpg' || 'jpeg' => 'image/jpeg',
-    'gif' => 'image/gif',
-    'webp' => 'image/webp',
-    _ => 'image/png',
-  };
-  // flow of the writing — the same thing paste and drag-and-drop already do.
-  // A picked file is always a canvas object, even while a text box happens
-  // to have a caret. It is immediately selected and has its own bounds,
-  // resize handles and hold-to-move interaction.
-  insertImageBytes(app, bytes, mime, at);
+  List<XFile> files;
+  try {
+    files = await openFiles(acceptedTypeGroups: const [
+      XTypeGroup(label: 'Images', extensions: [
+        'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'
+      ])
+    ]);
+  } catch (e) {
+    _say(context, "Couldn't open the image picker: $e");
+    return;
+  }
+  if (files.isEmpty) return;
+  var nextTop = at.dy;
+  for (final file in files) {
+    Uint8List bytes;
+    try {
+      bytes = await file.readAsBytes();
+    } catch (_) {
+      // A removed or unreadable file must not cancel the rest of the batch.
+      continue;
+    }
+    ui.Image? decoded;
+    try {
+      decoded = await ui.decodeImageFromList(bytes);
+    } catch (_) {
+      // Insert a normal placeholder for a format the current platform cannot
+      // decode now; this must not cancel the rest of a multi-selection.
+    }
+    final ext = file.name.split('.').last.toLowerCase();
+    final mime = switch (ext) {
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'gif' => 'image/gif',
+      'webp' => 'image/webp',
+      _ => 'image/png',
+    };
+    const width = 480.0;
+    final naturalWidth = decoded?.width.toDouble();
+    final naturalHeight = decoded?.height.toDouble();
+    final height = naturalWidth != null &&
+            naturalHeight != null &&
+            naturalWidth > 0
+        ? width * naturalHeight / naturalWidth
+        : width * .75;
+    insertImageBytes(app, bytes, mime, Offset(at.dx, nextTop + height / 2),
+        width: width,
+        height: height,
+        naturalWidth: naturalWidth,
+        naturalHeight: naturalHeight);
+    decoded?.dispose();
+    nextTop += height + 24;
+  }
 }
 
 Future<void> insertPickedFile(

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/widgets.dart';
 
 /// First-party pan/zoom (Tech Eval §7.3: own transform, no InteractiveViewer).
@@ -19,6 +21,7 @@ class CanvasController extends ChangeNotifier {
 
   void panBy(Offset delta) {
     offset += delta;
+    _resetRunwayAtMinimumZoom();
     clampToPage();
     notifyListeners();
   }
@@ -36,6 +39,7 @@ class CanvasController extends ChangeNotifier {
     final pageFocal = screenToPage(screenFocal);
     scale = newScale;
     offset = screenFocal - pageFocal * scale + panDelta;
+    _resetRunwayAtMinimumZoom();
     if (clamp) clampToPage();
     notifyListeners();
   }
@@ -52,6 +56,7 @@ class CanvasController extends ChangeNotifier {
     final newScale = (scale * factor).clamp(minScale, maxScale);
     scale = newScale;
     offset = currentFocal - pageFocal * newScale;
+    _resetRunwayAtMinimumZoom();
     clampToPage();
     notifyListeners();
   }
@@ -75,6 +80,7 @@ class CanvasController extends ChangeNotifier {
     // starts at the top-left origin. Pinning that origin to zero made every
     // zoom-in visibly jump away from the fingers.
     offset = currentFocal - pageFocal * scale;
+    _resetRunwayAtMinimumZoom();
     clampToPage();
     notifyListeners();
   }
@@ -96,15 +102,44 @@ class CanvasController extends ChangeNotifier {
   /// Last known viewport size (set by the canvas widget each layout).
   Size viewport = Size.zero;
 
-  /// Current page-surface size in page coords (set by the canvas each build);
-  /// used to clamp panning so the page can't be lost (CANVAS-1 v0.3).
-  Size? pageSize;
+  /// Current page-surface size in page coords. An ordinary canvas can keep a
+  /// larger virtual runway the user has travelled into; paper/PDF pages keep
+  /// their real finite bounds.
+  Size? _pageSize;
+  Size? _minimumPageSize;
+  bool _growsTrailingEdges = false;
+
+  Size? get pageSize => _pageSize;
+  set pageSize(Size? value) {
+    _pageSize = value;
+    _minimumPageSize = value;
+    _growsTrailingEdges = false;
+  }
+
+  void setPageBounds(Size minimum, {required bool growsTrailingEdges}) {
+    _minimumPageSize = minimum;
+    _growsTrailingEdges = growsTrailingEdges;
+    final current = _pageSize;
+    _pageSize = !growsTrailingEdges ||
+            current == null ||
+            scale <= minScale + .001
+        ? minimum
+        : Size(math.max(minimum.width, current.width),
+            math.max(minimum.height, current.height));
+  }
+
+  void resetPageBounds() {
+    _pageSize = null;
+    _minimumPageSize = null;
+    _growsTrailingEdges = false;
+  }
 
   /// Keep the page origin at upper-left. A small, zoomed-out page also stays
   /// there rather than floating inside the viewport.
   void clampToPage() {
     final ps = pageSize;
     if (ps == null || viewport == Size.zero) return;
+    if (_growsTrailingEdges) _growTrailingRunway(offset);
     double axis(double o, double vp, double contentPx) {
       if (contentPx <= vp) return 0.0;
       return o.clamp(vp - contentPx, 0.0);
@@ -114,6 +149,29 @@ class CanvasController extends ChangeNotifier {
       axis(offset.dx, viewport.width, ps.width * scale),
       axis(offset.dy, viewport.height, ps.height * scale),
     );
+  }
+
+  void _growTrailingRunway(Offset candidate) {
+    final current = _pageSize;
+    if (current == null || scale <= minScale + .001) return;
+    // Keep roughly one screen beyond the camera, so writing at the former
+    // right/bottom edge never feels like hitting a wall.
+    const runwayPx = 640.0;
+    final neededWidth = (viewport.width - candidate.dx + runwayPx) / scale;
+    final neededHeight = (viewport.height - candidate.dy + runwayPx) / scale;
+    if (neededWidth > current.width || neededHeight > current.height) {
+      _pageSize = Size(math.max(current.width, neededWidth),
+          math.max(current.height, neededHeight));
+    }
+  }
+
+  void _resetRunwayAtMinimumZoom() {
+    // At the fully zoomed-out overview an unlimited surface must have an end.
+    // The runway returns to actual content; zooming in and travelling onward
+    // creates it again naturally.
+    if (_growsTrailingEdges && scale <= minScale + .001) {
+      _pageSize = _minimumPageSize;
+    }
   }
 
   /// Apply the page boundary once after a gesture has finished, rather than
