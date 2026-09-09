@@ -69,12 +69,14 @@ void main() {
       startScale: startScale,
       startOffset: startOffset,
       startFocal: startFocal,
-      currentFocal: const Offset(420, 310),
+      currentFocal: const Offset(447, 337),
       scaleFactor: 1.4,
     );
 
     expect(c.scale, closeTo(1.4, 0.0001));
-    expect(c.pageToScreen(pageUnderStartFocal), startFocal);
+    expect(c.pageToScreen(pageUnderStartFocal), const Offset(447, 337),
+        reason: 'the page point between the starting fingers follows their '
+            'current midpoint');
   });
 
   test('touch pinch at the origin keeps the content under the fingers stable',

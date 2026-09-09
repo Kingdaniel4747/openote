@@ -6,6 +6,7 @@ import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 import '../model/models.dart';
@@ -1016,10 +1017,11 @@ class _PageCanvasState extends State<PageCanvas> {
   void _schedulePinchTransform() {
     if (_pinchFramePending) return;
     _pinchFramePending = true;
-    // A raw pointer event does not itself guarantee a build frame. Request one
-    // so the coalesced transform is shown even while nothing else animates.
+    // A raw pointer event does not itself guarantee a build frame. Apply the
+    // coalesced transform at the START of that frame: post-frame application
+    // painted one stale frame between the fingers and the page.
     WidgetsBinding.instance.scheduleFrame();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    SchedulerBinding.instance.scheduleFrameCallback((_) {
       _pinchFramePending = false;
       if (!mounted) return;
       _applyPinchTransform();
