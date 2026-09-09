@@ -48,6 +48,8 @@ bool FlutterWindow::OnCreate() {
   pen_buttons_ = std::make_unique<PenButtons>(
       flutter_controller_->view()->GetNativeWindow(),
       flutter_controller_->engine()->messenger());
+  screen_capture_ = std::make_unique<ScreenCapture>(
+      GetHandle(), flutter_controller_->engine()->messenger());
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
@@ -65,6 +67,7 @@ void FlutterWindow::OnDestroy() {
   writing_services_.reset();
   window_controls_.reset();
   pen_buttons_.reset();
+  screen_capture_.reset();
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' show ImageByteFormat;
+import 'dart:ui' as ui;
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/foundation.dart' show listEquals;
@@ -97,6 +98,9 @@ class _PageCanvasState extends State<PageCanvas> {
   final ValueNotifier<int> _wetTick = ValueNotifier(0);
   final GlobalKey _eyedropperCaptureKey = GlobalKey();
   int? _eyedropperPointer;
+  Offset? _eyedropperPosition;
+  Color? _eyedropperPreview;
+  bool _eyedropperSampling = false;
   bool _eraseUndoPushed = false;
   bool _moveUndoPushed = false;
 
@@ -137,6 +141,7 @@ class _PageCanvasState extends State<PageCanvas> {
   double _rulerStartLength = 360;
   double _rulerStartSpan = 1;
   double _rulerStartTouchAngle = 0;
+  double? _rulerSnapAngle;
 
   /// A block may own a single touch for direct object movement. We still
   /// record that contact here, passively, so a second finger can always turn
@@ -160,40 +165,80 @@ class _PageCanvasState extends State<PageCanvas> {
 
   void _eyedropperDown(PointerDownEvent event) {
     _eyedropperPointer = event.pointer;
+    _eyedropperPosition = event.localPosition;
+    _eyedropperPreview = null;
+    setState(() {});
   }
 
-  Future<void> _eyedropperUp(PointerUpEvent event) async {
+  void _eyedropperMove(PointerMoveEvent event) {
     if (_eyedropperPointer != event.pointer) return;
-    _eyedropperPointer = null;
+    _eyedropperPosition = event.localPosition;
+    if (!_eyedropperSampling) unawaited(_previewEyedropperColor());
+    setState(() {});
+  }
+
+  Future<Color?> _colorAtEyedropperPosition(Offset position) async {
     final render = _eyedropperCaptureKey.currentContext?.findRenderObject();
-    if (render is! RenderRepaintBoundary || !mounted) return;
+    if (render is! RenderRepaintBoundary || !mounted) return null;
+    ui.Image? image;
     try {
       final pixelRatio = MediaQuery.devicePixelRatioOf(context);
-      final image = await render.toImage(pixelRatio: pixelRatio);
+      image = await render.toImage(pixelRatio: pixelRatio);
       final bytes = await image.toByteData(format: ImageByteFormat.rawRgba);
       final imageWidth = image.width;
       final imageHeight = image.height;
-      image.dispose();
-      if (bytes == null || !mounted) return;
-      final x = (event.localPosition.dx * pixelRatio)
+      if (bytes == null || !mounted) return null;
+      final x = (position.dx * pixelRatio)
           .floor()
           .clamp(0, imageWidth - 1)
           .toInt();
-      final y = (event.localPosition.dy * pixelRatio)
+      final y = (position.dy * pixelRatio)
           .floor()
           .clamp(0, imageHeight - 1)
           .toInt();
       final i = (y * imageWidth + x) * 4;
       final data = bytes.buffer.asUint8List();
-      final hex = '${data[i].toRadixString(16).padLeft(2, '0')}'
-              '${data[i + 1].toRadixString(16).padLeft(2, '0')}'
-              '${data[i + 2].toRadixString(16).padLeft(2, '0')}'
+      return Color.fromARGB(data[i + 3], data[i], data[i + 1], data[i + 2]);
+    } catch (_) {
+      return null;
+    } finally {
+      image?.dispose();
+    }
+  }
+
+  Future<void> _previewEyedropperColor() async {
+    final position = _eyedropperPosition;
+    if (position == null) return;
+    _eyedropperSampling = true;
+    final color = await _colorAtEyedropperPosition(position);
+    _eyedropperSampling = false;
+    if (!mounted || !app.inkEyedropperActive) return;
+    // A newer move can arrive while the boundary is being read. Do not paint
+    // its older colour below the current crosshair.
+    if (_eyedropperPosition == position && color != null) {
+      setState(() => _eyedropperPreview = color);
+    }
+  }
+
+  Future<void> _eyedropperUp(PointerUpEvent event) async {
+    if (_eyedropperPointer != event.pointer) return;
+    _eyedropperPointer = null;
+    _eyedropperPosition = event.localPosition;
+    final color = await _colorAtEyedropperPosition(event.localPosition);
+    if (!mounted) return;
+    if (color != null) {
+      final hex = '${(color.r * 255).round().toRadixString(16).padLeft(2, '0')}'
+              '${(color.g * 255).round().toRadixString(16).padLeft(2, '0')}'
+              '${(color.b * 255).round().toRadixString(16).padLeft(2, '0')}'
           .toUpperCase();
       app.setCustomInkColor(hex);
-      app.setInkEyedropperActive(false);
-    } catch (_) {
-      if (mounted) app.setInkEyedropperActive(false);
+      app.rememberCustomColor(hex);
     }
+    app.setInkEyedropperActive(false);
+    setState(() {
+      _eyedropperPosition = null;
+      _eyedropperPreview = null;
+    });
   }
 
   bool get _inkTool =>
@@ -556,6 +601,12 @@ class _PageCanvasState extends State<PageCanvas> {
                       (p.dx - center.dx) * s + (p.dy - center.dy) * c) *
                   factor,
       ];
+    }
+    // Filled-looking gaps in recognised rectangles/triangles came from a
+    // sparse final segment after resizing. Every closed recognised outline is
+    // explicitly closed before it is sampled into the rendered stroke.
+    if (_shapeKind != 'line' && outline.isNotEmpty && outline.last != outline.first) {
+      outline = [...outline, outline.first];
     }
     final points = sampleOutline(outline, 2);
     w.x
@@ -1010,12 +1061,32 @@ class _PageCanvasState extends State<PageCanvas> {
       length = (_rulerStartLength * vector.distance / _rulerStartSpan)
           .clamp(180.0, 900.0);
     }
+    angle = _snapRulerAngle(angle);
     setState(() {
       _rulerCenter = _rulerStartCenter + (focal - _rulerStartFocal);
       _rulerAngle = angle;
       _rulerLength = length;
     });
     return true;
+  }
+
+  double _snapRulerAngle(double angle) {
+    const snapIn = math.pi / 60; // 3°: deliberate, never surprising.
+    const snapOut = math.pi / 18; // 10°: needs an intentional turn to leave.
+    final quarter = math.pi / 2;
+    final nearest = (angle / quarter).round() * quarter;
+    double distance(double a, double b) =>
+        ((a - b + math.pi) % (2 * math.pi) - math.pi).abs();
+    final locked = _rulerSnapAngle;
+    if (locked != null) {
+      if (distance(angle, locked) <= snapOut) return locked;
+      _rulerSnapAngle = null;
+    }
+    if (distance(angle, nearest) <= snapIn) {
+      _rulerSnapAngle = nearest;
+      return nearest;
+    }
+    return angle;
   }
 
   bool _endRulerPointer(PointerEvent e) {
@@ -1044,7 +1115,7 @@ class _PageCanvasState extends State<PageCanvas> {
       _schedulePinchTransform();
     } else if (_touches.length == 1 && !_multiTouchSeen) {
       final delta = e.localPosition - _lastScreen;
-      controller.panBy(delta);
+      controller.panBy(delta, elasticLeading: true);
       if (elapsed > 0) {
         final instant = delta * (1000000 / elapsed);
         // The final pointer sample is often a tiny stationary sample emitted
@@ -1112,26 +1183,30 @@ class _PageCanvasState extends State<PageCanvas> {
       // perform a second correction on lift: that used to move the page
       // after the fingers had stopped and looked like a sudden jump.
       if (!_multiTouchSeen) {
-        _startInertia();
+        if (!_startInertia()) controller.springLeadingEdge();
       }
       _multiTouchSeen = false;
       app.touchCanvasGesture = false;
     }
   }
 
-  void _startInertia() {
+  bool _startInertia() {
     var velocity = _touchVelocity;
-    if (velocity.distance < 70) return;
+    if (velocity.distance < 70) return false;
     _inertia?.cancel();
     var previous = DateTime.now();
     _inertia = Timer.periodic(const Duration(milliseconds: 16), (timer) {
       final now = DateTime.now();
       final dt = now.difference(previous).inMicroseconds / 1000000;
       previous = now;
-      controller.panBy(velocity * dt);
+      controller.panBy(velocity * dt, elasticLeading: true);
       velocity *= math.pow(0.055, dt).toDouble();
-      if (velocity.distance < 8) timer.cancel();
+      if (velocity.distance < 8) {
+        timer.cancel();
+        controller.springLeadingEdge();
+      }
     });
+    return true;
   }
 
   // ── Select-mode pointer model ───────────────────────────────────────────
@@ -1245,7 +1320,7 @@ class _PageCanvasState extends State<PageCanvas> {
     _lastScreen = e.localPosition;
     switch (_mode) {
       case _DragMode.pan:
-        controller.panBy(delta);
+        controller.panBy(delta, elasticLeading: true);
       case _DragMode.pending:
         if ((e.localPosition - _downScreen).distance > 5) {
           if (_downKind == PointerDeviceKind.touch) {
@@ -1253,7 +1328,8 @@ class _PageCanvasState extends State<PageCanvas> {
             // already travelled is applied too, so the page doesn't hiccup
             // by the 5px it took to decide.
             _mode = _DragMode.pan;
-            controller.panBy(e.localPosition - _downScreen);
+            controller.panBy(e.localPosition - _downScreen,
+                elasticLeading: true);
           } else {
             _mode = _DragMode.marquee;
             _marqueeEndPage = controller.screenToPage(e.localPosition);
@@ -1315,6 +1391,7 @@ class _PageCanvasState extends State<PageCanvas> {
       default:
         break;
     }
+    if (mode == _DragMode.pan && !wasTouch) controller.springLeadingEdge();
   }
 
   void _createTextAt(Offset pagePt) {
@@ -1907,14 +1984,30 @@ class _PageCanvasState extends State<PageCanvas> {
         child: Listener(
           behavior: HitTestBehavior.opaque,
           onPointerDown: _eyedropperDown,
+          onPointerMove: _eyedropperMove,
           onPointerUp: _eyedropperUp,
           onPointerCancel: (event) {
             if (_eyedropperPointer == event.pointer) {
               _eyedropperPointer = null;
+              _eyedropperPosition = null;
+              _eyedropperPreview = null;
               app.setInkEyedropperActive(false);
             }
           },
-          child: AbsorbPointer(child: canvas),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              AbsorbPointer(child: canvas),
+              if (_eyedropperPosition case final position?)
+                Positioned(
+                  left: position.dx - 12,
+                  top: position.dy - 12,
+                  child: IgnorePointer(
+                    child: _EyedropperCursor(color: _eyedropperPreview),
+                  ),
+                ),
+            ],
+          ),
         ),
       );
     }
@@ -2058,12 +2151,13 @@ class _PageCanvasState extends State<PageCanvas> {
           controller.transformAt(e.localPosition, scaleFactor, Offset.zero);
         } else if (e.localPanDelta != Offset.zero) {
           // Two-finger scrolling without a scale change is still a pan.
-          controller.panBy(e.localPanDelta);
+          controller.panBy(e.localPanDelta, elasticLeading: true);
         }
         _pzLastScale = e.scale;
       },
       onPointerPanZoomEnd: (e) {
         if (_panZoomClaimedBy == e.pointer) _panZoomClaimedBy = null;
+        controller.springLeadingEdge();
       },
       child: MouseRegion(
         cursor: _windowsPen.enabled &&
@@ -2087,6 +2181,44 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 }
 
+/// Crosshair for the one-shot colour sampler. The small chip is intentionally
+/// offset above-right of the sampling point, so it never hides the pixel being
+/// inspected with a pen tip or mouse cursor.
+class _EyedropperCursor extends StatelessWidget {
+  const _EyedropperCursor({this.color});
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        width: 34,
+        height: 34,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            const Positioned.fill(
+              child: Center(
+                child: Icon(Icons.add, size: 27, color: Colors.white),
+              ),
+            ),
+            Positioned(
+              left: 22,
+              bottom: 22,
+              child: Container(
+                width: 14,
+                height: 14,
+                decoration: BoxDecoration(
+                  color: color ?? Colors.transparent,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                  boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 3)],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
 /// Screen-space ruler. Gesture ownership lives in PageCanvas's single pointer
 /// router; this widget only paints. That prevents a nested recognizer and the
 /// canvas from both transforming something from the same two fingers.
@@ -2100,6 +2232,8 @@ class _RulerOverlay extends StatelessWidget {
   final Offset center;
   final double angle;
   final double length;
+
+  int get degrees => ((angle * 180 / math.pi) % 360).round() % 360;
 
   @override
   Widget build(BuildContext context) {
@@ -2116,6 +2250,7 @@ class _RulerOverlay extends StatelessWidget {
               size: Size(length, 48),
               painter: _RulerPainter(
                 color: Theme.of(context).colorScheme.primary,
+                degrees: degrees,
               ),
             ),
           ),
@@ -2126,8 +2261,9 @@ class _RulerOverlay extends StatelessWidget {
 }
 
 class _RulerPainter extends CustomPainter {
-  const _RulerPainter({required this.color});
+  const _RulerPainter({required this.color, required this.degrees});
   final Color color;
+  final int degrees;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -2155,10 +2291,23 @@ class _RulerPainter extends CustomPainter {
     }
     final grip = Paint()..color = color.withValues(alpha: .85);
     canvas.drawCircle(Offset(size.width / 2, size.height / 2), 8, grip);
+    final label = TextPainter(
+      text: TextSpan(
+        text: '$degrees°',
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    label.paint(canvas, Offset(size.width / 2 - label.width / 2, 29));
   }
 
   @override
-  bool shouldRepaint(covariant _RulerPainter old) => old.color != color;
+  bool shouldRepaint(covariant _RulerPainter old) =>
+      old.color != color || old.degrees != degrees;
 }
 
 /// The page surface. At normal zoom the page fills the whole viewport so it

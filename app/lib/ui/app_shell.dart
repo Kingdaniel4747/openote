@@ -59,6 +59,7 @@ class _AppShellState extends State<AppShell> {
   Offset? _writingToolbarDragStart;
   Offset? _writingToolbarDragOrigin;
   bool _writingToolbarDragging = false;
+  bool _writingToolbarFloatingVertical = false;
 
   /// Whether the Ctrl+/ shortcut reference is up. Tracked here because the
   /// global handler runs even under a dialog: Ctrl+/ must toggle rather than
@@ -1204,8 +1205,10 @@ class _AppShellState extends State<AppShell> {
                 builder: (context, constraints) {
                   final horizontalWidth = math.min(
                       760.0, math.max(220.0, constraints.maxWidth - 32));
-                  final vertical =
+                  final dockedVertical =
                       _writingToolbarDock != _WritingToolbarDock.floating;
+                  final vertical =
+                      dockedVertical || _writingToolbarFloatingVertical;
                   // A docked bar keeps the same 48px controls as its normal
                   // horizontal form. Just a four-pixel breathing room remains
                   // on either side: no wide, visually empty rail around thin
@@ -1275,7 +1278,7 @@ class _AppShellState extends State<AppShell> {
                       final total = start == null
                           ? details.delta
                           : details.globalPosition - start;
-                      if (vertical) {
+                      if (vertical && dockedVertical) {
                         final inward = _writingToolbarDock ==
                                 _WritingToolbarDock.right
                             ? -total.dx
@@ -1305,11 +1308,25 @@ class _AppShellState extends State<AppShell> {
                         _writingToolbarOffset =
                             Offset(floatingLeft + total.dx, movedTop);
                         _writingToolbarDock = _WritingToolbarDock.floating;
+                        _writingToolbarFloatingVertical = true;
+                      } else if (vertical) {
+                        _writingToolbarOffset =
+                            (origin ?? _writingToolbarOffset) + total;
+                        // A vertical palette that has just left a side keeps
+                        // its orientation while travelling through the page.
+                        // Reaching the top edge is the deliberate gesture that
+                        // unfolds it into the normal horizontal command bar.
+                        if (_writingToolbarOffset.dy <= edgeZone) {
+                          _writingToolbarFloatingVertical = false;
+                        }
                       } else {
                         _writingToolbarOffset += details.delta;
                       }
                       final dock = dockAt(_writingToolbarOffset);
-                      if (dock != null) _writingToolbarDock = dock;
+                      if (dock != null) {
+                        _writingToolbarDock = dock;
+                        _writingToolbarFloatingVertical = false;
+                      }
                     });
                   }
 
@@ -1322,6 +1339,10 @@ class _AppShellState extends State<AppShell> {
                         _writingToolbarDock =
                             dockAt(_writingToolbarOffset) ??
                                 _WritingToolbarDock.floating;
+                        if (_writingToolbarDock !=
+                            _WritingToolbarDock.floating) {
+                          _writingToolbarFloatingVertical = false;
+                        }
                       }
                     });
                   }
@@ -1399,6 +1420,7 @@ class _AppShellState extends State<AppShell> {
         _writingToolbarDragStart = null;
         _writingToolbarDragOrigin = null;
         _writingToolbarDragging = false;
+        _writingToolbarFloatingVertical = false;
         return MediaQuery.removeViewInsets(
           context: context,
           removeBottom: true,

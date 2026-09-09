@@ -954,17 +954,6 @@ class _NavRail extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 2),
-          IconButton(
-            icon: const Icon(Icons.star_outline, size: 16),
-            color: OnoteColors.brass400,
-            tooltip: 'Home — favourites & recents',
-            visualDensity: VisualDensity.compact,
-            onPressed: () {
-              app.toggleNavCollapsed();
-              app.openHome();
-            },
-          ),
           const Divider(height: 10, indent: 10, endIndent: 10),
           // Initial chips, not bare colour dots: section colours only exist on
           // imported notebooks, so dots alone would be fifteen identical grey

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
@@ -11,10 +12,12 @@ import '../export/pdf_export.dart';
 import '../export/pdf_vector_export.dart';
 import '../export/print_page.dart';
 import '../editor/list_editing.dart';
+import '../canvas/media_drop.dart';
 import '../markdown/md_syntax.dart';
 import '../model/tags.dart';
 import '../planner/agenda.dart';
 import '../state/app_state.dart';
+import '../platform/screen_capture.dart';
 import '../theme/onote_theme.dart';
 import 'color_picker.dart';
 import 'command_button.dart';
@@ -89,6 +92,41 @@ class _CommandBarState extends State<CommandBar> {
   static const _tabs = ['Home', 'Insert', 'Draw', 'View'];
 
   AppState get app => widget.app;
+
+  Future<void> _insertScreenRegion(BuildContext context) async {
+    final bytes = await ScreenCapture.selectRegion();
+    if (bytes == null || bytes.isEmpty || !context.mounted) return;
+    ui.Codec? codec;
+    ui.FrameInfo? frame;
+    double? naturalWidth;
+    double? naturalHeight;
+    try {
+      codec = await ui.instantiateImageCodec(bytes);
+      frame = await codec.getNextFrame();
+      naturalWidth = frame.image.width.toDouble();
+      naturalHeight = frame.image.height.toDouble();
+    } catch (_) {
+      // The native selector always sends PNG, but retaining the insertion path
+      // keeps a captured file useful even if a future encoder changes.
+    } finally {
+      frame?.image.dispose();
+      codec?.dispose();
+    }
+    if (!context.mounted) return;
+    final at = app.canvas.screenToPage(Offset(app.canvas.viewport.width / 2,
+        app.canvas.viewport.height / 2));
+    final width = naturalWidth == null
+        ? 480.0
+        : naturalWidth.clamp(160.0, 720.0).toDouble();
+    final height = naturalHeight != null && naturalWidth != null
+        ? width * naturalHeight / naturalWidth
+        : null;
+    insertImageBytes(app, bytes, 'image/png', at,
+        width: width,
+        height: height,
+        naturalWidth: naturalWidth,
+        naturalHeight: naturalHeight);
+  }
 
   List<Widget> _utilityControls(BuildContext context, ColorScheme scheme) => [
         // The trailing cluster COMPACTS rather than scrolling.
@@ -803,6 +841,18 @@ class _CommandBarState extends State<CommandBar> {
                         ),
                     ],
             ),
+          ToolbarControl(
+            width: 160,
+            icon: Icons.screenshot_monitor_outlined,
+            label: 'Bildschirmausschnitt',
+            inline: IconButton(
+              icon: const Icon(Icons.screenshot_monitor_outlined, size: 18),
+              tooltip: 'Bildschirmausschnitt',
+              visualDensity: VisualDensity.compact,
+              onPressed: () => _insertScreenRegion(context),
+            ),
+            onPressed: () => _insertScreenRegion(context),
+          ),
         ],
       );
   Widget _drawRow(BuildContext context, {bool vertical = false}) {
@@ -932,6 +982,38 @@ class _CommandBarState extends State<CommandBar> {
                   ),
                 ),
               ),
+            for (final hex in app.customColors.take(4))
+              if (onoteColorFromHex(hex) case final custom?)
+                Padding(
+                  padding: vertical
+                      ? const EdgeInsets.symmetric(vertical: 2)
+                      : const EdgeInsets.symmetric(horizontal: 2),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(99),
+                    onTap: () {
+                      final opaque = hex.replaceFirst('#', '').substring(0, 6);
+                      app.setCustomInkColor(opaque);
+                      if (app.hasInkSelection) {
+                        app.recolorSelectedInk('#$opaque');
+                      }
+                    },
+                    child: Container(
+                      width: 18,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        color: custom,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          width: 2,
+                          color: activeCustomColour ==
+                                  hex.replaceFirst('#', '').substring(0, 6)
+                              ? scheme.primary
+                              : Colors.transparent,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
             IconButton(
               key: const ValueKey('pen-eyedropper'),
               tooltip: app.inkEyedropperActive
@@ -972,20 +1054,28 @@ class _CommandBarState extends State<CommandBar> {
                         .toRadixString(16)
                         .padLeft(6, '0')
                         .toUpperCase();
+                void useColour(String value) {
+                  final opaque = value.replaceFirst('#', '').substring(0, 6);
+                  app.setCustomInkColor(opaque);
+                  if (app.hasInkSelection) app.recolorSelectedInk('#$opaque');
+                }
+
                 final picked = await showOnoteColorPicker(context, app,
-                    initial: initial, title: 'Pen colour');
+                    initial: initial,
+                    title: 'Pen colour',
+                    onChanged: useColour);
                 if (picked == null) return;
-                final opaque = picked.replaceFirst('#', '').substring(0, 6);
-                app.setCustomInkColor(opaque);
-                if (app.hasInkSelection) app.recolorSelectedInk('#$opaque');
+                useColour(picked);
               },
             ),
             gap(6),
             sizeSlider(key: const ValueKey('ink-size')),
             SizedBox(
-              width: vertical ? 70 : 43,
-              child: AppText('${app.penSize.toStringAsFixed(1)} px',
-                  style: const TextStyle(fontSize: 10)),
+              width: vertical ? 48 : 43,
+              child: Center(
+                child: AppText('${app.penSize.toStringAsFixed(1)} px',
+                    style: const TextStyle(fontSize: 10)),
+              ),
             ),
           ] else if (app.tool == Tool.eraser) ...[
             SizedBox(
@@ -1009,21 +1099,28 @@ class _CommandBarState extends State<CommandBar> {
                   style: const TextStyle(fontSize: 11)),
             ),
             SizedBox(
-              height: 28,
-              child: SegmentedButton<EraserMode>(
-                segments: [
-                  for (final m in EraserMode.values)
-                    ButtonSegment(
-                        value: m,
-                        label: AppText(m.label,
-                            style: const TextStyle(fontSize: 10))),
-                ],
-                selected: {app.eraserMode},
-                onSelectionChanged: (s) => app.setEraserMode(s.first),
-                showSelectedIcon: false,
-                style: const ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+              width: vertical ? 48 : null,
+              height: vertical ? 114 : 28,
+              child: RotatedBox(
+                quarterTurns: vertical ? 3 : 0,
+                child: SizedBox(
+                  width: vertical ? 114 : null,
+                  child: SegmentedButton<EraserMode>(
+                    segments: [
+                      for (final m in EraserMode.values)
+                        ButtonSegment(
+                            value: m,
+                            label: AppText(m.label,
+                                style: const TextStyle(fontSize: 10))),
+                    ],
+                    selected: {app.eraserMode},
+                    onSelectionChanged: (s) => app.setEraserMode(s.first),
+                    showSelectedIcon: false,
+                    style: const ButtonStyle(
+                        visualDensity: VisualDensity.compact,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                  ),
+                ),
               ),
             ),
           ],

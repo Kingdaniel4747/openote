@@ -26,11 +26,13 @@ Color? onoteColorFromHex(String? hex) {
 /// box put up a window headed "Text colour" — one of the two callers was
 /// always contradicting the menu item that opened it.
 Future<String?> showOnoteColorPicker(BuildContext context, AppState app,
-    {String? initial, String title = 'Text colour'}) {
+    {String? initial,
+    String title = 'Text colour',
+    ValueChanged<String>? onChanged}) {
   return showOnoteDialog<String>(
     context: context,
-    builder: (ctx) =>
-        _ColorPickerDialog(app: app, initial: initial, title: title),
+    builder: (ctx) => _ColorPickerDialog(
+        app: app, initial: initial, title: title, onChanged: onChanged),
   );
 }
 
@@ -39,13 +41,14 @@ const _baseHues = <double>[0, 25, 48, 90, 140, 175, 210, 240, 275, 320];
 
 class _ColorPickerDialog extends StatefulWidget {
   const _ColorPickerDialog(
-      {required this.app, this.initial, required this.title});
+      {required this.app, this.initial, required this.title, this.onChanged});
   final AppState app;
   final String? initial;
 
   /// What the colour is FOR, so the heading agrees with the menu item that
   /// opened it.
   final String title;
+  final ValueChanged<String>? onChanged;
 
   @override
   State<_ColorPickerDialog> createState() => _ColorPickerDialogState();
@@ -94,6 +97,7 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
       _hsv = HSVColor.fromColor(c);
       _hex.text = _toHex(c);
     });
+    widget.onChanged?.call(_toHex(c));
   }
 
   void _done() {
@@ -189,10 +193,7 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
                 const SizedBox(height: 8),
                 // Hue slider
                 _slider('H', _hsv.hue, 360,
-                    (v) => setState(() {
-                          _hsv = _hsv.withHue(v);
-                          _hex.text = _toHex(_color);
-                        })),
+                    (v) => _setColor(_hsv.withHue(v).toColor())),
                 _slider('R', _color.r * 255, 255,
                     (v) => _setColor(_color.withValues(red: v / 255))),
                 _slider('G', _color.g * 255, 255,
@@ -231,11 +232,7 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
           ),
         ),
       ),
-      actions: [
-        TextButton(
-            onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-        FilledButton(onPressed: _done, child: const Text('Apply')),
-      ],
+      actions: [FilledButton(onPressed: _done, child: const Text('Done'))],
     );
   }
 
@@ -246,6 +243,7 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
           .withValue((1 - pos.dy / size.height).clamp(0, 1));
       _hex.text = _toHex(_color);
     });
+    widget.onChanged?.call(_toHex(_color));
   }
 
   Widget _slider(String label, double value, double max,

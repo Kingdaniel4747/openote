@@ -9,6 +9,7 @@ project(runner LANGUAGES CXX)
 add_executable(${BINARY_NAME} WIN32
   "flutter_window.cpp"
   "pen_buttons.cpp"
+  "screen_capture.cpp"
   "window_controls.cpp"
   "writing_services.cpp"
   "main.cpp"
@@ -47,6 +48,7 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 # dependencies here.
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
+target_link_libraries(${BINARY_NAME} PRIVATE "windowscodecs.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "windowsapp.lib" "ole32.lib" "uuid.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "comctl32.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE "hid.lib")

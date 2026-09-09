@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
@@ -11,6 +13,7 @@ class CanvasController extends ChangeNotifier {
 
   static const minScale = 0.15;
   static const maxScale = 8.0;
+  Timer? _leadingBounce;
 
   Matrix4 get matrix => Matrix4.identity()
     ..translate(offset.dx, offset.dy)
@@ -19,10 +22,24 @@ class CanvasController extends ChangeNotifier {
   Offset screenToPage(Offset screen) => (screen - offset) / scale;
   Offset pageToScreen(Offset page) => page * scale + offset;
 
-  void panBy(Offset delta) {
-    offset += delta;
+  void panBy(Offset delta, {bool elasticLeading = false}) {
+    _leadingBounce?.cancel();
+    if (elasticLeading) {
+      double resisted(double current, double movement) {
+        if (movement <= 0) return current + movement;
+        // The farther the page is already pulled beyond its upper/left edge,
+        // the more each additional pixel resists. This remains screen-space,
+        // so it feels identical at every zoom level.
+        final pulled = math.max(0.0, current);
+        return current + movement * .35 / (1 + pulled / 84);
+      }
+      offset = Offset(resisted(offset.dx, delta.dx),
+          resisted(offset.dy, delta.dy));
+    } else {
+      offset += delta;
+    }
     _resetRunwayAtMinimumZoom();
-    clampToPage();
+    clampToPage(allowLeadingOverscroll: elasticLeading);
     notifyListeners();
   }
 
@@ -136,11 +153,12 @@ class CanvasController extends ChangeNotifier {
 
   /// Keep the page origin at upper-left. A small, zoomed-out page also stays
   /// there rather than floating inside the viewport.
-  void clampToPage() {
+  void clampToPage({bool allowLeadingOverscroll = false}) {
     final ps = pageSize;
     if (ps == null || viewport == Size.zero) return;
     if (_growsTrailingEdges) _growTrailingRunway(offset);
     double axis(double o, double vp, double contentPx) {
+      if (allowLeadingOverscroll && o > 0) return o.clamp(0.0, 96.0);
       if (contentPx <= vp) return 0.0;
       return o.clamp(vp - contentPx, 0.0);
     }
@@ -179,6 +197,29 @@ class CanvasController extends ChangeNotifier {
   void settleToPage() {
     clampToPage();
     notifyListeners();
+  }
+
+  /// Release the top/left pull with a short, contained spring. It never runs
+  /// during a pinch transform, so the stable finger-anchored zoom path cannot
+  /// be affected by the visual affordance.
+  void springLeadingEdge() {
+    final start = offset;
+    if (start.dx <= 0 && start.dy <= 0) return;
+    _leadingBounce?.cancel();
+    final began = DateTime.now();
+    _leadingBounce = Timer.periodic(const Duration(milliseconds: 16), (timer) {
+      final t = (DateTime.now().difference(began).inMilliseconds / 260)
+          .clamp(0.0, 1.0);
+      final factor = math.pow(1 - t, 2).toDouble() * math.cos(t * math.pi * 2.5);
+      offset = Offset(start.dx > 0 ? start.dx * factor : start.dx,
+          start.dy > 0 ? start.dy * factor : start.dy);
+      if (t >= 1) {
+        offset = Offset(start.dx > 0 ? 0 : offset.dx,
+            start.dy > 0 ? 0 : offset.dy);
+        timer.cancel();
+      }
+      notifyListeners();
+    });
   }
 
   /// Initial view: page anchored top-left, filling the window (the page is at
@@ -230,15 +271,13 @@ class CanvasController extends ChangeNotifier {
       reset();
       return;
     }
-    const pad = 48.0;
-    final sx = (viewport.width - pad * 2) / pageBounds.width;
-    final sy = (viewport.height - pad * 2) / pageBounds.height;
+    final sx = viewport.width / pageBounds.width;
+    final sy = viewport.height / pageBounds.height;
     scale = (sx < sy ? sx : sy).clamp(minScale, maxScale);
-    offset = Offset(
-      (viewport.width - pageBounds.width * scale) / 2 - pageBounds.left * scale,
-      (viewport.height - pageBounds.height * scale) / 2 -
-          pageBounds.top * scale,
-    );
+    // An overview stays attached to the title corner instead of recentring
+    // everything around one distant block on the right or below.
+    offset = Offset(-pageBounds.left * scale, -pageBounds.top * scale);
+    clampToPage();
     notifyListeners();
   }
 }
