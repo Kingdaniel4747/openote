@@ -51,6 +51,7 @@ import 'dart:ui' as ui;
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/painting.dart' show decodeImageFromList;
 import '../l10n/app_strings.dart';
 
 import '../canvas/media_drop.dart';
@@ -474,7 +475,7 @@ Future<void> insertPickedImage(
     }
     ui.Image? decoded;
     try {
-      decoded = await ui.decodeImageFromList(bytes);
+      decoded = await decodeImageFromList(bytes);
     } catch (_) {
       // Insert a normal placeholder for a format the current platform cannot
       // decode now; this must not cancel the rest of a multi-selection.
