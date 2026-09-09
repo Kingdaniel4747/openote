@@ -656,19 +656,6 @@ class _CommandBarState extends State<CommandBar> {
         : Color(0xFF000000 | lcv);
     return Row(
       children: [
-        IconButton(
-          icon: const Icon(Icons.undo, size: 18),
-          tooltip: tr(context, 'Undo  (Ctrl+Z)'),
-          visualDensity: VisualDensity.compact,
-          onPressed: app.canUndo ? app.undo : null,
-        ),
-        IconButton(
-          icon: const Icon(Icons.redo, size: 18),
-          tooltip: tr(context, 'Redo  (Ctrl+Y)'),
-          visualDensity: VisualDensity.compact,
-          onPressed: app.canRedo ? app.redo : null,
-        ),
-        const _Div(),
         // **The row never changes shape.** An earlier revision collapsed the
         // formatting commands to three group heads when nothing was focused, on
         // the reasoning that a wall of greyed glyphs reads as broken. That traded
@@ -878,74 +865,115 @@ class _CommandBarState extends State<CommandBar> {
   /// measures, +22 for the split button's own dropdown arrow when the item
   /// has [InsertItem.extras], +2 for `_InsertButton`'s own trailing gap.
   static double _insertItemWidth(InsertItem item) {
-    final base = item.showLabel ? 40 + item.label.length * 12 : 40;
+    // Matches the actual compact TextButton metric (18px icon, 8px icon/text
+    // gap and 2 × 16px padding). The old 12px-per-character estimate reserved
+    // almost twice the room a small-label glyph occupies, which is why Page
+    // Link, Page Window and Template were folded despite blank ribbon space.
+    final base = item.showLabel ? 52 + item.label.length * 6.8 : 40;
     return base + (item.extras.isEmpty ? 0 : 22) + 2;
   }
 
-  Widget _insertRow(BuildContext context) => SizedBox(
-    width: double.infinity,
-    child: CompactingToolbar(
-      fillAvailable: true,
-      moreAtTrailingEdge: true,
-      controls: [
-        // These two are deliberately first: they are physical input routes,
-        // not an occasional insert variant, so they remain visible on a
-        // laptop-width ribbon before lower-frequency catalogue commands fold.
-        ToolbarControl(
-          width: 40,
-          icon: Icons.screenshot_monitor_outlined,
-          label: 'Screen clip',
-          inline: IconButton(
-            icon: const Icon(Icons.screenshot_monitor_outlined, size: 18),
-            tooltip: tr(context, 'Screen clip'),
-            visualDensity: VisualDensity.compact,
-            onPressed: () => _insertScreenRegion(context),
-          ),
+  Widget _insertRow(BuildContext context) {
+    final controls = <ToolbarControl>[
+      // These two are deliberately first: they are physical input routes,
+      // not an occasional insert variant, so they remain visible on a
+      // laptop-width ribbon before lower-frequency catalogue commands fold.
+      ToolbarControl(
+        id: 'screen-clip',
+        width: 40,
+        icon: Icons.screenshot_monitor_outlined,
+        label: 'Screen clip',
+        inline: IconButton(
+          icon: const Icon(Icons.screenshot_monitor_outlined, size: 18),
+          tooltip: tr(context, 'Screen clip'),
+          visualDensity: VisualDensity.compact,
           onPressed: () => _insertScreenRegion(context),
         ),
-        ToolbarControl(
-          width: 40,
-          icon: Icons.document_scanner_outlined,
-          label: 'Scan from phone',
-          inline: IconButton(
-            icon: const Icon(Icons.document_scanner_outlined, size: 18),
-            tooltip: tr(context, 'Scan from phone'),
-            visualDensity: VisualDensity.compact,
-            onPressed: () => showScannerPairingDialog(context, app),
-          ),
+        onPressed: () => _insertScreenRegion(context),
+      ),
+      ToolbarControl(
+        id: 'scan-from-phone',
+        width: 40,
+        icon: Icons.document_scanner_outlined,
+        label: 'Scan from phone',
+        inline: IconButton(
+          icon: const Icon(Icons.document_scanner_outlined, size: 18),
+          tooltip: tr(context, 'Scan from phone'),
+          visualDensity: VisualDensity.compact,
           onPressed: () => showScannerPairingDialog(context, app),
         ),
-        for (final item in kInsertRibbon)
-          ToolbarControl(
-            width: _insertItemWidth(item),
-            icon: item.icon,
-            label: item.label,
-            inline: _InsertButton(app: app, item: item),
-            onPressed: () => item.run(context, app, insertAnchor(app, item)),
-            submenu: item.extras.isEmpty
-                ? null
-                : [
-                    // The split button's own MAIN half, first — folding
-                    // must not cost the item the one action it already
-                    // had before it grew a dropdown arrow.
-                    ToolbarSubmenuItem(
-                      icon: item.icon,
-                      label: item.label,
-                      onPressed: () =>
-                          item.run(context, app, insertAnchor(app, item)),
-                    ),
-                    for (final extra in item.extras)
-                      ToolbarSubmenuItem(
-                        icon: extra.icon,
-                        label: extra.label,
-                        onPressed: () =>
-                            extra.run(context, app, insertAnchor(app, extra)),
-                      ),
-                  ],
-          ),
-      ],
-    ),
-  );
+        onPressed: () => showScannerPairingDialog(context, app),
+      ),
+      // Keep the four page-structure commands beside the everyday input
+      // controls. They are not optional overflow: people use them to build
+      // a page, and the corrected width calculation above lets them stay
+      // visible whenever the physical ribbon has room.
+      for (final item in kInsertRibbon.where(
+        (item) => const {
+          'flashcard',
+          'pagelink',
+          'portal',
+          'template',
+        }.contains(item.id),
+      ))
+        _insertToolbarControl(context, item),
+      for (final item in kInsertRibbon.where(
+        (item) => !const {
+          'flashcard',
+          'pagelink',
+          'portal',
+          'template',
+        }.contains(item.id),
+      ))
+        _insertToolbarControl(context, item),
+    ];
+    final defaults = [for (final control in controls) control.id!];
+    final ordered = app.orderedRibbon(
+      'insert',
+      controls,
+      (control) => control.id!,
+    );
+    return SizedBox(
+      width: double.infinity,
+      child: CompactingToolbar(
+        fillAvailable: true,
+        moreAtTrailingEdge: true,
+        controls: ordered,
+        onReorder: (dragged, before) =>
+            app.placeRibbonControl('insert', dragged, before, defaults),
+      ),
+    );
+  }
+
+  ToolbarControl _insertToolbarControl(BuildContext context, InsertItem item) =>
+      ToolbarControl(
+        id: item.id,
+        width: _insertItemWidth(item),
+        icon: item.icon,
+        label: item.label,
+        inline: _InsertButton(app: app, item: item),
+        onPressed: () => item.run(context, app, insertAnchor(app, item)),
+        submenu: item.extras.isEmpty
+            ? null
+            : [
+                // The split button's own MAIN half, first — folding
+                // must not cost the item the one action it already
+                // had before it grew a dropdown arrow.
+                ToolbarSubmenuItem(
+                  icon: item.icon,
+                  label: item.label,
+                  onPressed: () =>
+                      item.run(context, app, insertAnchor(app, item)),
+                ),
+                for (final extra in item.extras)
+                  ToolbarSubmenuItem(
+                    icon: extra.icon,
+                    label: extra.label,
+                    onPressed: () =>
+                        extra.run(context, app, insertAnchor(app, extra)),
+                  ),
+              ],
+      );
 
   Future<void> _showToolbarColourMenu(
     BuildContext context,
@@ -962,18 +990,42 @@ class _CommandBarState extends State<CommandBar> {
         0,
       ),
       items: const [
-        PopupMenuItem(value: 'before', child: AppText('Move left')),
-        PopupMenuItem(value: 'after', child: AppText('Move right')),
-        PopupMenuDivider(),
-        PopupMenuItem(value: 'remove', child: AppText('Remove from toolbar')),
+        PopupMenuItem(
+          value: 'edit',
+          child: Row(
+            children: [
+              Icon(Icons.palette_outlined, size: 18),
+              SizedBox(width: 9),
+              AppText('Edit colour'),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'remove',
+          child: Row(
+            children: [
+              Icon(Icons.delete_outline, size: 18),
+              SizedBox(width: 9),
+              AppText('Remove from toolbar'),
+            ],
+          ),
+        ),
       ],
     );
     if (!mounted || action == null) return;
     switch (action) {
-      case 'before':
-        app.moveToolbarInkColor(hex, brush, -1);
-      case 'after':
-        app.moveToolbarInkColor(hex, brush, 1);
+      case 'edit':
+        final edited = await showOnoteColorPicker(
+          context,
+          app,
+          initial: hex,
+          title: brush == Tool.highlighter
+              ? tr(context, 'Highlighter colour')
+              : tr(context, 'Pen colour'),
+        );
+        if (!mounted || edited == null) return;
+        app.removeToolbarInkColor(hex, brush);
+        app.addToolbarInkColor(edited, brush);
       case 'remove':
         app.removeToolbarInkColor(hex, brush);
     }

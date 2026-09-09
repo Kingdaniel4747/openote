@@ -616,31 +616,42 @@ class _NotebookManagerState extends State<_NotebookManager> {
                           child: Text('Move to recycle bin'),
                         ),
                         const PopupMenuDivider(),
+                        // A fixed-size Wrap, rather than a scrollable GridView
+                        // inside a menu item. A popup menu supplies only tight
+                        // height constraints to its child; GridView then has no
+                        // viewport to paint into on some Windows layouts. The
+                        // Wrap is always a visible 4 × 3 colour matrix.
                         PopupMenuItem(
                           value: '__palette',
-                          height: 108,
+                          height: 116,
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
                           child: SizedBox(
-                            width: 168,
-                            child: GridView.count(
-                              crossAxisCount: 4,
-                              mainAxisSpacing: 8,
-                              crossAxisSpacing: 8,
-                              physics: const NeverScrollableScrollPhysics(),
+                            width: 208,
+                            height: 96,
+                            child: Wrap(
+                              spacing: 14,
+                              runSpacing: 8,
                               children: [
                                 for (final color
                                     in _coverTokens.whereType<String>())
-                                  InkWell(
-                                    borderRadius: BorderRadius.circular(99),
-                                    onTap: () {
-                                      Navigator.pop(context);
-                                      app.setNotebookColor(nb.id, color);
-                                    },
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        color: _coverColor(color, nb.id),
-                                        shape: BoxShape.circle,
-                                        border: Border.all(
-                                          color: Colors.black26,
+                                  Tooltip(
+                                    message: color,
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        Navigator.of(context).pop();
+                                        app.setNotebookColor(nb.id, color);
+                                      },
+                                      child: Container(
+                                        width: 40,
+                                        height: 24,
+                                        decoration: BoxDecoration(
+                                          color: _coverColor(color, nb.id),
+                                          borderRadius: BorderRadius.circular(
+                                            99,
+                                          ),
+                                          border: Border.all(
+                                            color: Colors.black26,
+                                          ),
                                         ),
                                       ),
                                     ),

@@ -4485,6 +4485,51 @@ class AppState extends ChangeNotifier
   final List<String> penToolbarColors = [];
   final List<String> highlighterToolbarColors = [];
 
+  /// Per-ribbon command order. It deliberately stores ids, never widget
+  /// positions, so an update can add a new command without losing a person's
+  /// own layout. Unknown ids are ignored when a ribbon is reconstructed.
+  final Map<String, List<String>> ribbonOrders = {};
+
+  List<T> orderedRibbon<T>(
+    String ribbon,
+    List<T> controls,
+    String Function(T control) idOf,
+  ) {
+    final byId = {for (final control in controls) idOf(control): control};
+    final saved = ribbonOrders[ribbon] ?? const <String>[];
+    return [
+      for (final id in saved)
+        if (byId.remove(id) case final control?) control,
+      ...byId.values,
+    ];
+  }
+
+  void placeRibbonControl(
+    String ribbon,
+    String value,
+    String? before,
+    List<String> defaults,
+  ) {
+    if (!defaults.contains(value)) return;
+    final valid = defaults.toSet();
+    final order = <String>[
+      for (final id in ribbonOrders[ribbon] ?? const <String>[])
+        if (valid.contains(id)) id,
+      for (final id in defaults)
+        if (!(ribbonOrders[ribbon] ?? const <String>[]).contains(id)) id,
+    ];
+    order.remove(value);
+    final at = before == null ? -1 : order.indexOf(before);
+    if (at < 0) {
+      order.add(value);
+    } else {
+      order.insert(at, value);
+    }
+    ribbonOrders[ribbon] = order;
+    _repo.setSetting('ribbonOrders', ribbonOrders);
+    notifyListeners();
+  }
+
   List<String> toolbarInkColorsFor(Tool value) =>
       value == Tool.highlighter ? highlighterToolbarColors : penToolbarColors;
 
@@ -6726,6 +6771,16 @@ class AppState extends ChangeNotifier
 
     loadToolbarColors('penToolbarColors', penToolbarColors);
     loadToolbarColors('highlighterToolbarColors', highlighterToolbarColors);
+    final storedRibbonOrders = _repo.getSetting('ribbonOrders');
+    if (storedRibbonOrders is Map) {
+      for (final entry in storedRibbonOrders.entries) {
+        if (entry.key is! String || entry.value is! List) continue;
+        ribbonOrders[entry.key as String] = [
+          for (final id in entry.value)
+            if (id is String) id,
+        ];
+      }
+    }
     final penColour = _repo.getSetting('penCustomColor');
     if (penColour is String &&
         RegExp(r'^[0-9A-Fa-f]{6}$').hasMatch(penColour)) {
