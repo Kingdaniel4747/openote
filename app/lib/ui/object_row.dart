@@ -27,6 +27,7 @@ import '../state/app_state.dart';
 import '../theme/tokens.dart';
 import 'math_bar.dart';
 import 'object_face.dart';
+import 'fixed_toolbar.dart';
 
 /// The row's height, everywhere. `OnoteSize.button` plus two above and below.
 const double kObjectRowHeight = 36;
@@ -175,7 +176,18 @@ class PageFace extends StatelessWidget {
           onPressed: () => app.setBackground(v),
         );
     final paged = app.pageProps.isPaged;
-    return Row(mainAxisSize: MainAxisSize.min, children: [
+    return FixedToolbar(children: [
+      TextButton.icon(
+        key: const ValueKey('split-screen'),
+        icon: Icon(
+            app.splitViewEnabled
+                ? Icons.view_agenda_outlined
+                : Icons.vertical_split_outlined,
+            size: 18),
+        label:
+            Text(app.splitViewEnabled ? 'Close split screen' : 'Split screen'),
+        onPressed: app.toggleSplitView,
+      ),
       const SizedBox(width: 2),
       bg('blank', Icons.crop_din, 'blank'),
       bg('grid', Icons.grid_4x4, 'grid'),

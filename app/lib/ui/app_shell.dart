@@ -52,7 +52,99 @@ class AppShell extends StatefulWidget {
 enum _WritingToolbarDock { floating, left, right }
 
 class _AppShellState extends State<AppShell> {
-  AppState get app => widget.app;
+  AppState get app => _activeEditor ?? widget.app;
+  AppState? _activeEditor;
+  AppState? _splitEditor;
+  bool _changingSplit = false;
+
+  void _activateEditor(AppState editor) {
+    if (app == editor) return;
+    editor.reloadNodes();
+    setState(() => _activeEditor = editor);
+  }
+
+  Future<void> _toggleSplit() async {
+    if (_changingSplit) return;
+    _changingSplit = true;
+    try {
+      final second = _splitEditor;
+      if (second != null) {
+        await second.flushSave();
+        if (second.saveError != null) {
+          if (mounted)
+            ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(second.saveError!.message)));
+          return;
+        }
+        if (!mounted) return;
+        setState(() {
+          _activeEditor = widget.app;
+          _splitEditor = null;
+          widget.app.splitViewEnabled = false;
+        });
+        // Keep the old canvas state alive through its final unmount frame.
+        WidgetsBinding.instance.addPostFrameCallback((_) => second.dispose());
+      } else {
+        final editor = await widget.app.createSplitEditor();
+        if (!mounted) {
+          editor.dispose();
+          return;
+        }
+        editor.activateEditor = () => _activateEditor(editor);
+        editor.toggleSplitView = _toggleSplit;
+        editor.splitViewEnabled = true;
+        editor.navigateNudge = _nudge;
+        setState(() {
+          _splitEditor = editor;
+          widget.app.splitViewEnabled = true;
+        });
+      }
+    } finally {
+      _changingSplit = false;
+    }
+  }
+
+  Widget _editorPane(AppState editor, String label) {
+    final page = editor.nodes.where((n) => n.id == editor.pageId).firstOrNull;
+    return Expanded(
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (_) => _activateEditor(editor),
+        child: Column(children: [
+          Material(
+            color: app == editor
+                ? Theme.of(context).colorScheme.primaryContainer
+                : Theme.of(context).colorScheme.surface,
+            child: InkWell(
+              onTap: () => _activateEditor(editor),
+              child: SizedBox(
+                  height: 32,
+                  width: double.infinity,
+                  child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                              '$label · ${page?.title ?? 'Select a page'}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis)))),
+            ),
+          ),
+          Expanded(
+              child: page == null
+                  ? const Center(
+                      child: Text('Select another page in the sidebar'))
+                  : editor.isLocked(page.id)
+                      ? _LockedPage(app: editor, page: page)
+                      : PageCanvas(
+                          key: ValueKey(
+                              '${identityHashCode(editor)}:${page.id}'),
+                          state: editor)),
+        ]),
+      ),
+    );
+  }
+
   Offset _writingToolbarOffset = Offset.zero;
   _WritingToolbarDock _writingToolbarDock = _WritingToolbarDock.floating;
   bool _writingToolbarPlaced = false;
@@ -74,6 +166,8 @@ class _AppShellState extends State<AppShell> {
     // The OneNote-style pending caret's arrow keys (live_markdown_engine.dart)
     // reuse this same block-nudge rather than reimplementing it.
     app.navigateNudge = _nudge;
+    widget.app.toggleSplitView = _toggleSplit;
+    widget.app.activateEditor = () => _activateEditor(widget.app);
     // One listener, every region: the moment focus leaves the region F6 put
     // it in, the ring is a lie and goes away.
     for (final n in [
@@ -127,9 +221,11 @@ class _AppShellState extends State<AppShell> {
 
   @override
   void dispose() {
+    widget.app.toggleSplitView = null;
+    widget.app.activateEditor = null;
     HardwareKeyboard.instance.removeHandler(_onKey);
-    app.navigateNudge = null;
-    app.removeListener(_openNoticeChanged);
+    widget.app.navigateNudge = null;
+    widget.app.removeListener(_openNoticeChanged);
     for (final n in [
       _canvasFocus,
       _sidebarRegion,
@@ -1144,6 +1240,7 @@ class _AppShellState extends State<AppShell> {
 
   Widget _navigator() {
     final key = <Object?>[
+      app,
       app.nodesRevision,
       app.pageId,
       app.activeSectionId,
@@ -1181,7 +1278,7 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: app,
+      listenable: Listenable.merge([widget.app, _splitEditor]),
       builder: (context, _) {
         final page = app.nodes.where((n) => n.id == app.pageId).firstOrNull;
         final panel = _openPanel(page);
@@ -1279,17 +1376,18 @@ class _AppShellState extends State<AppShell> {
                           ? details.delta
                           : details.globalPosition - start;
                       if (vertical && dockedVertical) {
-                        final inward = _writingToolbarDock ==
-                                _WritingToolbarDock.right
-                            ? -total.dx
-                            : total.dx;
+                        final inward =
+                            _writingToolbarDock == _WritingToolbarDock.right
+                                ? -total.dx
+                                : total.dx;
                         final movedTop = (origin?.dy ?? top) + total.dy;
                         // A docked bar remains docked while it is simply slid
                         // up/down. It only unfolds after a deliberate movement
                         // away from the side, or after travelling well into a
                         // corner â€” hysteresis prevents accidental flipping.
                         final reachesCorner =
-                            total.dy.abs() >= undockDistance && isCorner(movedTop);
+                            total.dy.abs() >= undockDistance &&
+                                isCorner(movedTop);
                         if (inward < undockDistance && !reachesCorner) {
                           _writingToolbarOffset = Offset(
                             _writingToolbarOffset.dx,
@@ -1301,10 +1399,10 @@ class _AppShellState extends State<AppShell> {
                           );
                           return;
                         }
-                        final floatingLeft = _writingToolbarDock ==
-                                _WritingToolbarDock.right
-                            ? constraints.maxWidth - horizontalWidth - 8
-                            : 8.0;
+                        final floatingLeft =
+                            _writingToolbarDock == _WritingToolbarDock.right
+                                ? constraints.maxWidth - horizontalWidth - 8
+                                : 8.0;
                         _writingToolbarOffset =
                             Offset(floatingLeft + total.dx, movedTop);
                         _writingToolbarDock = _WritingToolbarDock.floating;
@@ -1336,9 +1434,8 @@ class _AppShellState extends State<AppShell> {
                       _writingToolbarDragStart = null;
                       _writingToolbarDragOrigin = null;
                       if (_writingToolbarDock == _WritingToolbarDock.floating) {
-                        _writingToolbarDock =
-                            dockAt(_writingToolbarOffset) ??
-                                _WritingToolbarDock.floating;
+                        _writingToolbarDock = dockAt(_writingToolbarOffset) ??
+                            _WritingToolbarDock.floating;
                         if (_writingToolbarDock !=
                             _WritingToolbarDock.floating) {
                           _writingToolbarFloatingVertical = false;
@@ -1440,6 +1537,7 @@ class _AppShellState extends State<AppShell> {
               child: Column(children: [
                 if (WindowsWindowFrame.of(context)?.customChrome == true)
                   CommandBar(app: app, titlebarOnly: true),
+                _regionWrap(_Region.toolbar, CommandBar(app: app)),
                 Expanded(
                     child: Stack(children: [
                   Row(
@@ -1449,7 +1547,6 @@ class _AppShellState extends State<AppShell> {
                       Expanded(
                         child: Column(
                           children: [
-                            _regionWrap(_Region.toolbar, CommandBar(app: app)),
                             // **The object row**, permanent and always 36 px.
                             //
                             // Permanent because a band that appeared with the
@@ -1473,22 +1570,24 @@ class _AppShellState extends State<AppShell> {
                               child: Row(
                                 children: [
                                   Expanded(
-                                    // The gate is HERE, at the point the canvas would
-                                    // be built, rather than only on the click that
-                                    // opened the page. A page can become locked while
-                                    // it is on screen — the policy expires, or "Lock
-                                    // now" is pressed — and gating only the click
-                                    // would leave the content sitting there.
                                     child: _regionWrap(
-                                        _Region.page,
-                                        page == null
-                                            ? _EmptyState(app: app)
-                                            : app.isLocked(page.id)
-                                                ? _LockedPage(
-                                                    app: app, page: page)
-                                                : _canvasKeys(PageCanvas(
-                                                    key: ValueKey(app.pageId),
-                                                    state: app))),
+                                      _Region.page,
+                                      _splitEditor != null
+                                          ? _canvasKeys(Row(children: [
+                                              _editorPane(widget.app, 'Left'),
+                                              const VerticalDivider(width: 3),
+                                              _editorPane(
+                                                  _splitEditor!, 'Right'),
+                                            ]))
+                                          : page == null
+                                              ? _EmptyState(app: app)
+                                              : app.isLocked(page.id)
+                                                  ? _LockedPage(
+                                                      app: app, page: page)
+                                                  : _canvasKeys(PageCanvas(
+                                                      key: ValueKey(app.pageId),
+                                                      state: app)),
+                                    ),
                                   ),
                                   if (panel != null) ...[
                                     const VerticalDivider(width: 1),

@@ -455,9 +455,9 @@ Future<void> insertPickedImage(
   List<XFile> files;
   try {
     files = await openFiles(acceptedTypeGroups: const [
-      XTypeGroup(label: 'Images', extensions: [
-        'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'
-      ])
+      XTypeGroup(
+          label: 'Images',
+          extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'])
     ]);
   } catch (e) {
     _say(context, "Couldn't open the image picker: $e");
@@ -490,11 +490,10 @@ Future<void> insertPickedImage(
     const width = 480.0;
     final naturalWidth = decoded?.width.toDouble();
     final naturalHeight = decoded?.height.toDouble();
-    final height = naturalWidth != null &&
-            naturalHeight != null &&
-            naturalWidth > 0
-        ? width * naturalHeight / naturalWidth
-        : width * .75;
+    final height =
+        naturalWidth != null && naturalHeight != null && naturalWidth > 0
+            ? width * naturalHeight / naturalWidth
+            : width * .75;
     insertImageBytes(app, bytes, mime, Offset(at.dx, nextTop + height / 2),
         width: width,
         height: height,
@@ -699,26 +698,30 @@ Future<void> insertPageLink(
 Future<void> importPdfWithProgress(BuildContext context, AppState app,
     {PdfPlacement placement = PdfPlacement.currentPage}) async {
   final progress = ValueNotifier<String>('Opening PDF…');
+  var currentFile = '';
   var dialogOpen = false;
   if (context.mounted) {
     dialogOpen = true;
     showOnoteDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        content: Row(children: [
-          const SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(strokeWidth: 2.6)),
-          const SizedBox(width: 16),
-          Expanded(
-            child: ValueListenableBuilder<String>(
-              valueListenable: progress,
-              builder: (_, text, __) => AppText(text),
+      builder: (_) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          content: Row(children: [
+            const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2.6)),
+            const SizedBox(width: 16),
+            Expanded(
+              child: ValueListenableBuilder<String>(
+                valueListenable: progress,
+                builder: (_, text, __) => AppText(text),
+              ),
             ),
-          ),
-        ]),
+          ]),
+        ),
       ),
     );
   }
@@ -726,9 +729,19 @@ Future<void> importPdfWithProgress(BuildContext context, AppState app,
     final result = await importPdfAsPages(
       app,
       placement: placement,
+      onStatus: (message) {
+        currentFile = message;
+        progress.value = '$message\nOpening PDF…';
+      },
       onProgress: (done, total) =>
-          progress.value = 'Importing page $done of $total…',
+          progress.value = '$currentFile\nPreparing page $done of $total…'
+              '${done == total ? '\nSaving…' : ''}',
     );
+    if (result != null) {
+      await app.flushSave();
+      final problem = app.saveError;
+      if (problem != null) throw StateError(problem.message);
+    }
     if (dialogOpen && context.mounted) {
       Navigator.of(context, rootNavigator: true).pop();
       dialogOpen = false;
@@ -750,8 +763,8 @@ Future<void> importPdfWithProgress(BuildContext context, AppState app,
       duration: const Duration(seconds: 6),
       content: Text('Imported ${result.pages} '
           '${result.pages == 1 ? 'slide' : 'slides'}'
-          '${result.sectionId == null ? ' onto this page' : ''} — pick the pen '
-          'and write on them. The slide text is searchable.'),
+          '${result.sectionId == null ? ' onto this page' : ''}. '
+          '${placement == PdfPlacement.card ? 'PDF saved.' : 'All pages are prepared and saved.'}'),
     ));
   } catch (e) {
     if (dialogOpen && context.mounted) {
@@ -760,7 +773,7 @@ Future<void> importPdfWithProgress(BuildContext context, AppState app,
     if (context.mounted) {
       final message = e is TimeoutException
           ? 'This PDF took too long to open. Try saving it again or restart Openote.'
-          : 'PDF import failed: $e';
+          : 'PDF import incomplete ($currentFile): $e';
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(message)));
     }

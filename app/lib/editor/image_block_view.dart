@@ -157,9 +157,7 @@ class _ImageBlockViewState extends State<ImageBlockView> {
       return;
     }
     _rendering = true;
-    PdfPages.pageImage(widget.app, pdf, page)
-        .timeout(const Duration(seconds: 45))
-        .then((png) {
+    PdfPages.pageImage(widget.app, pdf, page).then((png) {
       if (!mounted || request != _loadRequest) return;
       if (png != null) {
         _persistPdfPreview(png, request);
@@ -216,13 +214,17 @@ class _ImageBlockViewState extends State<ImageBlockView> {
     // Record intrinsic size once, so width-resize keeps aspect ratio.
     if (b != null && widget.block.content['naturalW'] == null) {
       ui.decodeImageFromList(b, (img) {
-        if (!mounted) return;
-        widget.block.content['naturalW'] = img.width.toDouble();
-        widget.block.content['naturalH'] = img.height.toDouble();
-        // Persist it (once) so proportional resize, export and hit-testing
-        // all agree without re-decoding on every load.
-        widget.app.markDirty();
-        setState(() {});
+        try {
+          if (!mounted) return;
+          widget.block.content['naturalW'] = img.width.toDouble();
+          widget.block.content['naturalH'] = img.height.toDouble();
+          widget.app.markDirty();
+          setState(() {});
+        } finally {
+          // This decode is only for dimensions; Image owns a separate decode.
+          // Release even when scrolling has already disposed this widget.
+          img.dispose();
+        }
       });
     }
   }
@@ -247,22 +249,30 @@ class _ImageBlockViewState extends State<ImageBlockView> {
     if (_provider == null) {
       final isPdf = widget.block.content['pdf'] != null;
       if (isPdf && _pdfError != null) {
-        return Center(child: Padding(padding: const EdgeInsets.all(12),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            AppText(_pdfError!, textAlign: TextAlign.center),
-            TextButton.icon(onPressed: _load, icon: const Icon(Icons.refresh),
-                label: const AppText('Retry')),
-          ])));
+        return Center(
+            child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  AppText(_pdfError!, textAlign: TextAlign.center),
+                  TextButton.icon(
+                      onPressed: _load,
+                      icon: const Icon(Icons.refresh),
+                      label: const AppText('Retry')),
+                ])));
       }
       return Padding(
         padding: const EdgeInsets.all(12),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(isPdf ? Icons.picture_as_pdf_outlined : Icons.broken_image_outlined,
+          Icon(
+              isPdf
+                  ? Icons.picture_as_pdf_outlined
+                  : Icons.broken_image_outlined,
               color: OnoteColors.graphite400),
           const SizedBox(width: 8),
-          Flexible(child: Text(
-              isPdf ? 'PDF not here yet — still syncing?' : 'Missing image',
-              style: const TextStyle(color: OnoteColors.graphite400))),
+          Flexible(
+              child: Text(
+                  isPdf ? 'PDF not here yet — still syncing?' : 'Missing image',
+                  style: const TextStyle(color: OnoteColors.graphite400))),
         ]),
       );
     }

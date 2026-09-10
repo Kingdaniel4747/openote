@@ -26,7 +26,7 @@ abstract final class PdfRuntime {
     unawaited(opening.then((doc) async {
       if (expired) await doc.dispose();
     }, onError: (Object _) {}));
-    return opening.timeout(const Duration(seconds: 30), onTimeout: () {
+    return opening.timeout(const Duration(minutes: 2), onTimeout: () {
       expired = true;
       throw TimeoutException(
           'PDF opening timed out. Check or re-save this PDF.');

@@ -7,16 +7,14 @@
 /// is Apple-locked and paid there. OneNote's equivalent ("Insert → PDF
 /// printout") rasterises pages into images.
 ///
-/// **The PDF is stored ONCE, and visible pages get a durable preview.** The
+/// **The PDF is stored ONCE, and every slide gets a durable preview.** The
 /// source PDF remains one content-addressed blob, preserving searchable text
-/// and lossless export. A preview is generated lazily when a slide is first
-/// visible, so importing a large deck is immediate rather than appearing to
-/// hang while every page is rasterised.
+/// and lossless export. Previews are prepared sequentially with progress before
+/// the slides are inserted. Only the visible images need decoding for display.
 ///
 /// This intentionally spends disk space for reliability. The blobs are
 /// content-addressed, so identical bytes are deduplicated, sync safely and can
-/// never become stale. The image view renders a `{pdf, page}` block once and
-/// upgrades it lazily.
+/// never become stale. Legacy slides retain their on-demand fallback.
 ///
 /// Two deliberate choices survive from the raster era:
 ///
@@ -38,6 +36,7 @@ import 'package:pdfrx/pdfrx.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../media/pdf_runtime.dart';
+import '../media/pdf_pages.dart';
 
 /// Page width we lay imported slides out at, matching the default page width
 /// so a slide fills the page the way it does in a PDF reader.
@@ -78,6 +77,7 @@ Future<PdfImportResult?> importPdfAsPages(
   BuildContext? progressContext,
   PdfPlacement placement = PdfPlacement.currentPage,
   void Function(int done, int total)? onProgress,
+  void Function(String message)? onStatus,
 }) async {
   const typeGroup = XTypeGroup(label: 'PDF', extensions: ['pdf']);
   if (placement == PdfPlacement.pdfOnly || app.pageProps.pdfOnly) {
@@ -86,6 +86,8 @@ Future<PdfImportResult?> importPdfAsPages(
     PdfImportResult? first;
     var pages = 0;
     for (final file in files) {
+      onStatus?.call(
+          'PDF ${files.indexOf(file) + 1} / ${files.length}: ${file.name}');
       final result = await importPdfFile(app, file.path, file.name,
           placement: PdfPlacement.pdfOnly, onProgress: onProgress);
       first ??= result;
@@ -99,6 +101,7 @@ Future<PdfImportResult?> importPdfAsPages(
   }
   final file = await openFile(acceptedTypeGroups: [typeGroup]);
   if (file == null) return null;
+  onStatus?.call(file.name);
   return importPdfFile(app, file.path, file.name,
       placement: placement, onProgress: onProgress);
 }
@@ -137,6 +140,13 @@ Future<PdfImportResult> importPdfFile(
   final bytes = await File(path).readAsBytes();
   final doc = await PdfRuntime.open(bytes, displayName);
   try {
+    if (doc.pages.isEmpty) throw StateError('The PDF contains no pages.');
+    await app.warmRecorder(nb);
+    // Finish expensive rendering before publishing any slide blocks. Retain
+    // only hashes, never a whole deck of PNGs or decoded images in memory.
+    final previews = placement == PdfPlacement.card
+        ? <String>[]
+        : await preparePdfPreviews(app, nb, doc, onProgress: onProgress);
     final title =
         displayName.replaceAll(RegExp(r'\.pdf$', caseSensitive: false), '');
 
@@ -164,10 +174,10 @@ Future<PdfImportResult> importPdfFile(
           app, doc, pdfHash, title.isEmpty ? displayName : title);
     }
     if (placement == PdfPlacement.currentPage) {
-      return await _importOntoCurrentPage(app, doc, pdfHash, onProgress);
+      return await _importOntoCurrentPage(app, doc, pdfHash, previews);
     }
     if (placement == PdfPlacement.pdfOnly) {
-      return await _importIntoPdfPage(app, doc, pdfHash, onProgress);
+      return await _importIntoPdfPage(app, doc, pdfHash, previews);
     }
 
     // A section per PDF: a 60-slide deck dumped into an existing section
@@ -201,10 +211,7 @@ Future<PdfImportResult> importPdfFile(
           // hold up importing an otherwise valid worksheet. Some scanned or
           // malformed school PDFs keep PDFium in this call for many seconds.
           text: null,
-          // Page previews are generated lazily by ImageBlockView. Rendering a
-          // 100-page deck before inserting anything is why imports looked as
-          // though they were stuck forever on Windows.
-          preview: null,
+          preview: previews[i],
           index: i,
         ));
       }
@@ -239,7 +246,6 @@ Future<PdfImportResult> importPdfFile(
           made++;
         }
       });
-      onProgress?.call(made, total);
       // A real delay, not Duration.zero: this loop runs on the UI isolate, and
       // on Windows posted work outranks hardware input, so a queue that never
       // goes idle starves the mouse and keyboard for the whole import.
@@ -251,6 +257,32 @@ Future<PdfImportResult> importPdfFile(
   } finally {
     await doc.dispose().timeout(const Duration(seconds: 5), onTimeout: () {});
   }
+}
+
+/// Prepare durable previews sequentially, before committing visible pages.
+/// A failed page fails the import instead of reporting a partially ready deck.
+@visibleForTesting
+Future<List<String>> preparePdfPreviews(
+  AppState app,
+  String notebookId,
+  PdfDocument doc, {
+  void Function(int done, int total)? onProgress,
+  Future<RenderedPdfPage?> Function(PdfPage)? render,
+}) async {
+  final refs = <String>[];
+  onProgress?.call(0, doc.pages.length);
+  for (var i = 0; i < doc.pages.length; i++) {
+    final image = await (render ?? renderPdfPageToPng)(doc.pages[i]);
+    if (image == null) {
+      throw StateError(
+          'Could not prepare PDF page ${i + 1}. Import incomplete.');
+    }
+    final hash = app.importBlob(notebookId, image.png, 'image/png');
+    refs.add('sha256:$hash');
+    onProgress?.call(i + 1, doc.pages.length);
+    await Future<void>.delayed(const Duration(milliseconds: 2));
+  }
+  return refs;
 }
 
 /// One reference block for one slide.
@@ -325,7 +357,7 @@ Future<PdfImportResult> _importOntoCurrentPage(
   AppState app,
   PdfDocument doc,
   String pdfHash,
-  void Function(int done, int total)? onProgress,
+  List<String> previews,
 ) async {
   final total = doc.pages.length;
   // Slide width: the page's own writing column, so a slide lines up with the
@@ -344,14 +376,9 @@ Future<PdfImportResult> _importOntoCurrentPage(
   var made = 0;
   for (var i = 0; i < total; i++) {
     final page = doc.pages[i];
-    // Keep the import path to copying the source and writing references.
-    // Rendering and text extraction are not allowed to make a large printout
-    // look stuck before the student can write on it.
+    // Rendering has finished; publishing a slide only writes its references.
     const String? text = null;
-    // The original PDF is already safely stored. Its preview is cached the
-    // first time this slide appears on screen, so inserting a large deck is
-    // immediate instead of waiting for every PDF page to rasterise.
-    const String? preview = null;
+    final preview = previews[i];
     final h = page.height / page.width * width;
     final block = app.addBlock(
       _slideBlock(pdfHash, page, i, text,
@@ -368,7 +395,6 @@ Future<PdfImportResult> _importOntoCurrentPage(
       d.y += advance;
     }
     made++;
-    onProgress?.call(made, total);
     // Text extraction is quick, but the loop still yields so a 200-slide
     // deck never freezes input — and a REAL delay, for the same Windows
     // message-loop reason as always.
@@ -390,7 +416,7 @@ Future<PdfImportResult> _importIntoPdfPage(
   AppState app,
   PdfDocument doc,
   String pdfHash,
-  void Function(int done, int total)? onProgress,
+  List<String> previews,
 ) async {
   const width = kPdfPageWidth;
   var y = 0.0;
@@ -410,7 +436,7 @@ Future<PdfImportResult> _importIntoPdfPage(
   for (var i = 0; i < doc.pages.length; i++) {
     final page = doc.pages[i];
     const String? text = null;
-    const String? preview = null;
+    final preview = previews[i];
     final height = page.height / page.width * width;
     final block = app.addBlock(
       _slideBlock(pdfHash, page, i, text,
@@ -420,7 +446,6 @@ Future<PdfImportResult> _importIntoPdfPage(
     );
     first ??= block;
     y += height + kPdfStackGap;
-    onProgress?.call(i + 1, doc.pages.length);
     await Future<void>.delayed(const Duration(milliseconds: 2));
   }
 

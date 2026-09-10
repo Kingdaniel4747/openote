@@ -7,12 +7,20 @@ import 'package:flutter/widgets.dart';
 /// Maps between screen space and page space. The page origin stays in the
 /// upper-left corner, so the canvas cannot drift into an empty margin.
 class CanvasController extends ChangeNotifier {
+  @override
+  void dispose() {
+    stopMotion();
+    super.dispose();
+  }
+
   double scale = 1.0;
   Offset offset = Offset.zero; // page-space origin's screen position
 
   static const minScale = 0.15;
   static const maxScale = 8.0;
   Timer? _leadingBounce;
+  Timer? _wheelScroll;
+  Offset _wheelPending = Offset.zero;
 
   /// Whether the page is currently pulled past its natural top/left origin.
   /// Kept here rather than inferred by a gesture recognizer so touch, mouse
@@ -27,18 +35,15 @@ class CanvasController extends ChangeNotifier {
   Offset pageToScreen(Offset page) => page * scale + offset;
 
   void panBy(Offset delta, {bool elasticLeading = false}) {
-    _leadingBounce?.cancel();
+    stopMotion();
     if (elasticLeading) {
       double resisted(double current, double movement) {
-        if (movement <= 0) return current + movement;
-        // The farther the page is already pulled beyond its upper/left edge,
-        // the more each additional pixel resists. This remains screen-space,
-        // so it feels identical at every zoom level.
+        final next = current + movement;
+        if (movement <= 0 || next <= 0) return next;
+        // Resistance applies only beyond the edge, never to normal scrolling.
         final pulled = math.max(0.0, current);
-        // Start soft enough to communicate an edge, then grow distinctly
-        // heavier. The old .35 multiplier made touch feel like it had simply
-        // hit a slow wall; this keeps the pull visible before the spring.
-        return current + movement * .62 / (1 + pulled / 92);
+        final beyond = current < 0 ? next : movement;
+        return pulled + beyond * .32 / (1 + pulled / 24);
       }
 
       offset = Offset(
@@ -66,6 +71,7 @@ class CanvasController extends ChangeNotifier {
     Offset panDelta, {
     bool clamp = true,
   }) {
+    stopMotion();
     final newScale = (scale * factor).clamp(minScale, maxScale);
     final pageFocal = screenToPage(screenFocal);
     scale = newScale;
@@ -124,6 +130,7 @@ class CanvasController extends ChangeNotifier {
   }
 
   void reset() {
+    stopMotion();
     scale = 1.0;
     offset = Offset.zero; // page anchored top-left (OneNote-like)
     clampToPage();
@@ -153,11 +160,11 @@ class CanvasController extends ChangeNotifier {
     final current = _pageSize;
     _pageSize =
         !growsTrailingEdges || current == null || scale <= minScale + .001
-        ? minimum
-        : Size(
-            math.max(minimum.width, current.width),
-            math.max(minimum.height, current.height),
-          );
+            ? minimum
+            : Size(
+                math.max(minimum.width, current.width),
+                math.max(minimum.height, current.height),
+              );
   }
 
   void resetPageBounds() {
@@ -173,7 +180,7 @@ class CanvasController extends ChangeNotifier {
     if (ps == null || viewport == Size.zero) return;
     if (_growsTrailingEdges) _growTrailingRunway(offset);
     double axis(double o, double vp, double contentPx) {
-      if (allowLeadingOverscroll && o > 0) return o.clamp(0.0, 132.0);
+      if (allowLeadingOverscroll && o > 0) return o.clamp(0.0, 44.0);
       if (contentPx <= vp) return 0.0;
       return o.clamp(vp - contentPx, 0.0);
     }
@@ -219,32 +226,89 @@ class CanvasController extends ChangeNotifier {
   /// Release the top/left pull with a short, contained spring. It never runs
   /// during a pinch transform, so the stable finger-anchored zoom path cannot
   /// be affected by the visual affordance.
-  void springLeadingEdge() {
-    final start = offset;
-    if (start.dx <= 0 && start.dy <= 0) return;
-    _leadingBounce?.cancel();
-    final began = DateTime.now();
+  void springLeadingEdge() => release(Offset.zero);
+
+  /// Each axis has its own spring/coast. A small horizontal edge pull must
+  /// never consume the vertical fling (or restore a stale vertical position).
+  void release(Offset velocity) {
+    stopMotion();
+    if (!hasLeadingOverscroll && velocity.distance < 8) return;
+    var vx = velocity.dx;
+    var vy = velocity.dy;
+    var springX = offset.dx > 0;
+    var springY = offset.dy > 0;
+    if (springX && vx > 0) vx = 0;
+    if (springY && vy > 0) vy = 0;
+    var previous = DateTime.now();
     _leadingBounce = Timer.periodic(const Duration(milliseconds: 16), (timer) {
-      final t = (DateTime.now().difference(began).inMilliseconds / 300).clamp(
-        0.0,
-        1.0,
-      );
-      // One clear, contained overshoot sells the elastic edge without letting
-      // the page visibly oscillate under a pen or a pinch gesture.
-      final factor =
-          math.pow(1 - t, 1.35).toDouble() * math.cos(t * math.pi * 2.25);
-      offset = Offset(
-        start.dx > 0 ? start.dx * factor : start.dx,
-        start.dy > 0 ? start.dy * factor : start.dy,
-      );
-      if (t >= 1) {
-        offset = Offset(
-          start.dx > 0 ? 0 : offset.dx,
-          start.dy > 0 ? 0 : offset.dy,
-        );
-        timer.cancel();
-        if (identical(_leadingBounce, timer)) _leadingBounce = null;
+      final now = DateTime.now();
+      final dt =
+          (now.difference(previous).inMicroseconds / 1000000).clamp(.001, .032);
+      previous = now;
+      (double, double, bool) step(
+          double pos, double speed, bool spring, double minimum) {
+        if (spring) {
+          speed += (-500 * pos - 36 * speed) * dt;
+          pos += speed * dt;
+          if (pos <= 0 || (pos < .3 && speed.abs() < 8)) return (0, 0, false);
+        } else {
+          pos += speed * dt;
+          speed *= math.exp(-3.2 * dt);
+          if (pos > 0) return (math.min(pos, 44), 0, true);
+          if (pos < minimum) return (minimum, 0, false);
+          if (speed.abs() < 8) speed = 0;
+        }
+        return (pos, speed, spring);
       }
+
+      if (_growsTrailingEdges)
+        _growTrailingRunway(offset + Offset(vx, vy) * dt);
+      final bounds = _pageSize;
+      final minX = bounds == null
+          ? -double.infinity
+          : math.min(0.0, viewport.width - bounds.width * scale);
+      final minY = bounds == null
+          ? -double.infinity
+          : math.min(0.0, viewport.height - bounds.height * scale);
+      final x = step(offset.dx, vx, springX, minX);
+      final y = step(offset.dy, vy, springY, minY);
+      offset = Offset(x.$1, y.$1);
+      vx = x.$2;
+      vy = y.$2;
+      springX = x.$3;
+      springY = y.$3;
+      if (!springX && !springY && vx == 0 && vy == 0) {
+        timer.cancel();
+        _leadingBounce = null;
+      }
+      notifyListeners();
+    });
+  }
+
+  void stopMotion() {
+    _leadingBounce?.cancel();
+    _leadingBounce = null;
+    _wheelScroll?.cancel();
+    _wheelScroll = null;
+    _wheelPending = Offset.zero;
+  }
+
+  /// Accumulate wheel notches into a short easing tail without inventing extra
+  /// distance. Touchpad pan/zoom keeps the operating system's own momentum.
+  void scrollBySmooth(Offset delta) {
+    _leadingBounce?.cancel();
+    _wheelPending += delta;
+    _wheelScroll ??= Timer.periodic(const Duration(milliseconds: 16), (timer) {
+      final step = _wheelPending * .3;
+      _wheelPending -= step;
+      offset += step;
+      if (_wheelPending.distance < .5) {
+        offset += _wheelPending;
+        _wheelPending = Offset.zero;
+        timer.cancel();
+        _wheelScroll = null;
+      }
+      clampToPage();
       notifyListeners();
     });
   }

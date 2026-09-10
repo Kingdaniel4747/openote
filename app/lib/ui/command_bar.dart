@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 
-import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import '../l10n/app_strings.dart';
 import 'package:flutter/services.dart';
@@ -22,6 +21,7 @@ import '../theme/onote_theme.dart';
 import 'color_picker.dart';
 import 'command_button.dart';
 import 'compacting_toolbar.dart';
+import 'fixed_toolbar.dart';
 import 'font_picker.dart';
 import 'insert_catalog.dart';
 import 'object_face.dart';
@@ -135,174 +135,175 @@ class _CommandBarState extends State<CommandBar> {
   }
 
   List<Widget> _utilityControls(BuildContext context, ColorScheme scheme) => [
-    // The trailing cluster COMPACTS rather than scrolling.
-    //
-    // Reported: "it doesnt handle resizing well (menus should
-    // either compact as required or become sliding, again i
-    // belive the former is cleaner)." A `Row` that overflows is
-    // CLIPPED, and clipped pixels do not hit-test — so on a
-    // narrow window (laptop + navigator open) the rightmost
-    // buttons used to stop responding, and the horizontal-scroll
-    // fix that followed traded that for "responds, but you can't
-    // see it without scrolling first." `CompactingToolbar` folds
-    // whatever does not fit into one "More" menu instead —
-    // `alignment: end` keeps it flush against the window edge,
-    // the one thing the scrolling version got right.
-    Expanded(
-      child: CompactingToolbar(
-        alignment: MainAxisAlignment.end,
-        fillAvailable: true,
-        controls: [
-          // Update-through-app: the "little update button" of
-          // PLANNING.md. Exists only when launch found a newer
-          // release, and leads with the version so the tooltip
-          // answers "to what?" before the click.
-          if (app.updateAvailable != null)
-            ToolbarControl(
-              width: 40,
-              icon: Icons.system_update_alt,
-              label: 'Update to ${app.updateAvailable!.version}…',
-              onPressed: () => showUpdateDialog(context, app),
-              inline: IconButton(
-                icon: Icon(
-                  Icons.system_update_alt,
-                  size: 18,
-                  color: scheme.primary,
-                ),
-                tooltip: 'Update to ${app.updateAvailable!.version}…',
-                visualDensity: VisualDensity.compact,
-                onPressed: () => showUpdateDialog(context, app),
-              ),
-            ),
-          // Planner and quick homework capture stay beside the app-wide
-          // controls, so a due task is reachable from every page.
-          ToolbarControl(
-            width: 40,
-            icon: Icons.event_note_outlined,
-            label: 'Homework & reminders',
-            selected: app.showPlannerPanel,
-            onPressed: app.togglePlannerPanel,
-            inline: _PlannerButton(app: app),
-          ),
-          ToolbarControl(
-            width: 40,
-            icon: Icons.add_task_outlined,
-            label: 'Add homework',
-            onPressed: () => _addQuickHomework(context, app),
-            inline: IconButton(
-              icon: const Icon(Icons.add_task_outlined, size: 18),
-              tooltip: 'Add homework for this page',
-              visualDensity: VisualDensity.compact,
-              onPressed: () => _addQuickHomework(context, app),
-            ),
-          ),
-          ToolbarControl(
-            width: 40,
-            icon: Icons.account_tree_outlined,
-            label: 'Links & backlinks',
-            selected: app.showLinksPanel,
-            onPressed: app.toggleLinksPanel,
-            inline: IconButton(
-              icon: const Icon(Icons.account_tree_outlined, size: 18),
-              tooltip: tr(context, 'Links & backlinks'),
-              isSelected: app.showLinksPanel,
-              visualDensity: VisualDensity.compact,
-              onPressed: app.toggleLinksPanel,
-            ),
-          ),
-          ToolbarControl(
-            width: 40,
-            icon: Icons.search,
-            label: 'Find on page',
-            selected: app.findOpen,
-            onPressed: app.toggleFind,
-            inline: IconButton(
-              icon: const Icon(Icons.search, size: 18),
-              tooltip: tr(context, 'Find on page  (Ctrl+F)'),
-              isSelected: app.findOpen,
-              visualDensity: VisualDensity.compact,
-              onPressed: app.toggleFind,
-            ),
-          ),
-          ToolbarControl(
-            width: 40,
-            icon: Icons.ios_share_outlined,
-            label: 'Export',
-            inline: MenuAnchor(
-              builder: (context, controller, _) => IconButton(
-                icon: const Icon(Icons.ios_share_outlined, size: 18),
-                tooltip: tr(context, 'Export page…'),
-                visualDensity: VisualDensity.compact,
-                onPressed: () =>
-                    controller.isOpen ? controller.close() : controller.open(),
-              ),
-              menuChildren: _exportMenuItems(context),
-            ),
-            submenu: [
-              ToolbarSubmenuItem(
-                icon: Icons.description_outlined,
-                label: 'Markdown (.md)',
-                onPressed: () => _export(context, exportPageMarkdown),
-              ),
-              // Vector by default: the shared/printed artefact
-              // should be searchable, selectable and small. The
-              // raster capture stays available for the rare page
-              // whose look matters more than its text.
-              ToolbarSubmenuItem(
-                icon: Icons.picture_as_pdf_outlined,
-                label: 'PDF (.pdf)',
-                onPressed: () => _export(context, exportPagePdfVector),
-              ),
-              ToolbarSubmenuItem(
-                icon: Icons.print_outlined,
-                label: 'Print…',
-                onPressed: () => printCurrentPage(app),
-              ),
-              ToolbarSubmenuItem(
-                icon: Icons.image_outlined,
-                label: 'PDF — picture of the page',
-                onPressed: () => _export(context, exportPagePdf),
-              ),
-              ToolbarSubmenuItem(
-                icon: Icons.hub_outlined,
-                label: 'For Obsidian Canvas (.canvas)',
-                onPressed: () => _export(context, exportPageJsonCanvas),
-              ),
-              ToolbarSubmenuItem(
-                icon: Icons.gesture,
-                label: 'Just the drawing (.inkml)',
-                onPressed: () => _export(context, exportPageInkML),
-              ),
-              // Say what lands on disk. "Materialize" is this
-              // codebase's own architecture vocabulary
-              // (`sync/materializer.dart`) and appears in no
-              // other user-visible string in the app.
-              ToolbarSubmenuItem(
-                icon: Icons.folder_zip_outlined,
-                label: 'Save the whole notebook as folders and files…',
-                onPressed: () => _exportWithProgress(
-                  context,
-                  'Saving the notebook…',
-                  (report) => materializeNotebook(
-                    app,
-                    onProgress: (done, total) =>
-                        report('Page $done of $total…'),
+        // The trailing cluster COMPACTS rather than scrolling.
+        //
+        // Reported: "it doesnt handle resizing well (menus should
+        // either compact as required or become sliding, again i
+        // belive the former is cleaner)." A `Row` that overflows is
+        // CLIPPED, and clipped pixels do not hit-test — so on a
+        // narrow window (laptop + navigator open) the rightmost
+        // buttons used to stop responding, and the horizontal-scroll
+        // fix that followed traded that for "responds, but you can't
+        // see it without scrolling first." `CompactingToolbar` folds
+        // whatever does not fit into one "More" menu instead —
+        // `alignment: end` keeps it flush against the window edge,
+        // the one thing the scrolling version got right.
+        Expanded(
+          child: CompactingToolbar(
+            alignment: MainAxisAlignment.end,
+            fillAvailable: true,
+            controls: [
+              // Update-through-app: the "little update button" of
+              // PLANNING.md. Exists only when launch found a newer
+              // release, and leads with the version so the tooltip
+              // answers "to what?" before the click.
+              if (app.updateAvailable != null)
+                ToolbarControl(
+                  width: 40,
+                  icon: Icons.system_update_alt,
+                  label: 'Update to ${app.updateAvailable!.version}…',
+                  onPressed: () => showUpdateDialog(context, app),
+                  inline: IconButton(
+                    icon: Icon(
+                      Icons.system_update_alt,
+                      size: 18,
+                      color: scheme.primary,
+                    ),
+                    tooltip: 'Update to ${app.updateAvailable!.version}…',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => showUpdateDialog(context, app),
                   ),
                 ),
+              // Planner and quick homework capture stay beside the app-wide
+              // controls, so a due task is reachable from every page.
+              ToolbarControl(
+                width: 40,
+                icon: Icons.event_note_outlined,
+                label: 'Homework & reminders',
+                selected: app.showPlannerPanel,
+                onPressed: app.togglePlannerPanel,
+                inline: _PlannerButton(app: app),
+              ),
+              ToolbarControl(
+                width: 40,
+                icon: Icons.add_task_outlined,
+                label: 'Add homework',
+                onPressed: () => _addQuickHomework(context, app),
+                inline: IconButton(
+                  icon: const Icon(Icons.add_task_outlined, size: 18),
+                  tooltip: 'Add homework for this page',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _addQuickHomework(context, app),
+                ),
+              ),
+              ToolbarControl(
+                width: 40,
+                icon: Icons.account_tree_outlined,
+                label: 'Links & backlinks',
+                selected: app.showLinksPanel,
+                onPressed: app.toggleLinksPanel,
+                inline: IconButton(
+                  icon: const Icon(Icons.account_tree_outlined, size: 18),
+                  tooltip: tr(context, 'Links & backlinks'),
+                  isSelected: app.showLinksPanel,
+                  visualDensity: VisualDensity.compact,
+                  onPressed: app.toggleLinksPanel,
+                ),
+              ),
+              ToolbarControl(
+                width: 40,
+                icon: Icons.search,
+                label: 'Find on page',
+                selected: app.findOpen,
+                onPressed: app.toggleFind,
+                inline: IconButton(
+                  icon: const Icon(Icons.search, size: 18),
+                  tooltip: tr(context, 'Find on page  (Ctrl+F)'),
+                  isSelected: app.findOpen,
+                  visualDensity: VisualDensity.compact,
+                  onPressed: app.toggleFind,
+                ),
+              ),
+              ToolbarControl(
+                width: 40,
+                icon: Icons.ios_share_outlined,
+                label: 'Export',
+                inline: MenuAnchor(
+                  builder: (context, controller, _) => IconButton(
+                    icon: const Icon(Icons.ios_share_outlined, size: 18),
+                    tooltip: tr(context, 'Export page…'),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => controller.isOpen
+                        ? controller.close()
+                        : controller.open(),
+                  ),
+                  menuChildren: _exportMenuItems(context),
+                ),
+                submenu: [
+                  ToolbarSubmenuItem(
+                    icon: Icons.description_outlined,
+                    label: 'Markdown (.md)',
+                    onPressed: () => _export(context, exportPageMarkdown),
+                  ),
+                  // Vector by default: the shared/printed artefact
+                  // should be searchable, selectable and small. The
+                  // raster capture stays available for the rare page
+                  // whose look matters more than its text.
+                  ToolbarSubmenuItem(
+                    icon: Icons.picture_as_pdf_outlined,
+                    label: 'PDF (.pdf)',
+                    onPressed: () => _export(context, exportPagePdfVector),
+                  ),
+                  ToolbarSubmenuItem(
+                    icon: Icons.print_outlined,
+                    label: 'Print…',
+                    onPressed: () => printCurrentPage(app),
+                  ),
+                  ToolbarSubmenuItem(
+                    icon: Icons.image_outlined,
+                    label: 'PDF — picture of the page',
+                    onPressed: () => _export(context, exportPagePdf),
+                  ),
+                  ToolbarSubmenuItem(
+                    icon: Icons.hub_outlined,
+                    label: 'For Obsidian Canvas (.canvas)',
+                    onPressed: () => _export(context, exportPageJsonCanvas),
+                  ),
+                  ToolbarSubmenuItem(
+                    icon: Icons.gesture,
+                    label: 'Just the drawing (.inkml)',
+                    onPressed: () => _export(context, exportPageInkML),
+                  ),
+                  // Say what lands on disk. "Materialize" is this
+                  // codebase's own architecture vocabulary
+                  // (`sync/materializer.dart`) and appears in no
+                  // other user-visible string in the app.
+                  ToolbarSubmenuItem(
+                    icon: Icons.folder_zip_outlined,
+                    label: 'Save the whole notebook as folders and files…',
+                    onPressed: () => _exportWithProgress(
+                      context,
+                      'Saving the notebook…',
+                      (report) => materializeNotebook(
+                        app,
+                        onProgress: (done, total) =>
+                            report('Page $done of $total…'),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
-        ],
-      ),
-    ),
-    IconButton(
-      icon: const Icon(Icons.settings_outlined, size: 18),
-      tooltip: tr(context, 'Settings…'),
-      visualDensity: VisualDensity.compact,
-      onPressed: () => showSettingsDialog(context, app),
-    ),
-    const WindowsCaptionButtons(),
-  ];
+        ),
+        IconButton(
+          icon: const Icon(Icons.settings_outlined, size: 18),
+          tooltip: tr(context, 'Settings…'),
+          visualDensity: VisualDensity.compact,
+          onPressed: () => showSettingsDialog(context, app),
+        ),
+        const WindowsCaptionButtons(),
+      ];
 
   @override
   Widget build(BuildContext context) {
@@ -311,9 +312,8 @@ class _CommandBarState extends State<CommandBar> {
       return Material(
         color: scheme.surface,
         child: SingleChildScrollView(
-          scrollDirection: widget.verticalDrawOnly
-              ? Axis.vertical
-              : Axis.horizontal,
+          scrollDirection:
+              widget.verticalDrawOnly ? Axis.vertical : Axis.horizontal,
           child: _drawRow(context, vertical: widget.verticalDrawOnly),
         ),
       );
@@ -438,41 +438,16 @@ class _CommandBarState extends State<CommandBar> {
                 alignment: Alignment.centerLeft,
                 children: [...previous, if (current != null) current],
               ),
-              // Insert COMPACTS (`CompactingToolbar` needs the real, bounded
-              // window width to decide what folds, which a `Scrollable`
-              // never offers its child — that axis is unbounded on
-              // purpose, it's what lets content wider than the viewport
-              // scroll). Home and Draw still scroll: both mix dividers,
-              // split buttons and a live text field with no single "this
-              // control folds into a menu item" shape the way Insert's
-              // uniform ribbon of commands does — see the doc comment on
-              // `CompactingToolbar` itself for why Insert was the tractable
-              // one to convert first.
-              //
-              // A horizontal `Scrollable` reads `scrollDelta.dx`, which a
-              // mouse wheel does not produce, and there was no scrollbar
-              // anywhere in the subtree — so a row wider than the window was
-              // simply unreachable. Measured on Insert too (1217 px against
-              // 965) before it compacted instead.
-              child: _tab == 1
-                  ? KeyedSubtree(
-                      key: const ValueKey(1),
-                      child: _insertRow(context),
-                    )
-                  : KeyedSubtree(
-                      key: ValueKey(_tab),
-                      child: ScrollConfiguration(
-                        behavior: const _ToolbarScroll(),
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: _tab == 2
-                              ? _drawRow(context)
-                              : _tab == 3
-                              ? PageFace(app: app)
-                              : _homeRow(context),
-                        ),
-                      ),
-                    ),
+              child: KeyedSubtree(
+                key: ValueKey(_tab),
+                child: _tab == 1
+                    ? _insertRow(context)
+                    : _tab == 2
+                        ? _drawRow(context)
+                        : _tab == 3
+                            ? PageFace(app: app)
+                            : _homeRow(context),
+              ),
             ),
           ),
         ],
@@ -558,57 +533,58 @@ class _CommandBarState extends State<CommandBar> {
   /// (shown once Export itself has to fold into the command bar's own
   /// "More" menu) can share one definition rather than drifting apart.
   List<Widget> _exportMenuItems(BuildContext context) => [
-    MenuItemButton(
-      leadingIcon: const Icon(Icons.description_outlined, size: 18),
-      onPressed: () => _export(context, exportPageMarkdown),
-      child: const AppText('Markdown (.md)'),
-    ),
-    // Vector by default: the shared/printed artefact should be
-    // searchable, selectable and small. The raster capture stays
-    // available for the rare page whose look matters more than its text.
-    MenuItemButton(
-      leadingIcon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
-      onPressed: () => _export(context, exportPagePdfVector),
-      child: const AppText('PDF (.pdf)'),
-    ),
-    MenuItemButton(
-      leadingIcon: const Icon(Icons.print_outlined, size: 18),
-      shortcut: const SingleActivator(LogicalKeyboardKey.keyP, control: true),
-      onPressed: () => printCurrentPage(app),
-      child: const AppText('Print…'),
-    ),
-    MenuItemButton(
-      leadingIcon: const Icon(Icons.image_outlined, size: 18),
-      onPressed: () => _export(context, exportPagePdf),
-      child: const AppText('PDF — picture of the page'),
-    ),
-    MenuItemButton(
-      leadingIcon: const Icon(Icons.hub_outlined, size: 18),
-      onPressed: () => _export(context, exportPageJsonCanvas),
-      child: const AppText('For Obsidian Canvas (.canvas)'),
-    ),
-    MenuItemButton(
-      leadingIcon: const Icon(Icons.gesture, size: 18),
-      onPressed: () => _export(context, exportPageInkML),
-      child: const AppText('Just the drawing (.inkml)'),
-    ),
-    const Divider(height: 6),
-    MenuItemButton(
-      leadingIcon: const Icon(Icons.folder_zip_outlined, size: 18),
-      onPressed: () => _exportWithProgress(
-        context,
-        'Saving the notebook…',
-        (report) => materializeNotebook(
-          app,
-          onProgress: (done, total) => report('Page $done of $total…'),
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.description_outlined, size: 18),
+          onPressed: () => _export(context, exportPageMarkdown),
+          child: const AppText('Markdown (.md)'),
         ),
-      ),
-      // Say what lands on disk. "Materialize" is this codebase's own
-      // architecture vocabulary (`sync/materializer.dart`) and appears
-      // in no other user-visible string in the app.
-      child: const AppText('Save the whole notebook as folders and files…'),
-    ),
-  ];
+        // Vector by default: the shared/printed artefact should be
+        // searchable, selectable and small. The raster capture stays
+        // available for the rare page whose look matters more than its text.
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+          onPressed: () => _export(context, exportPagePdfVector),
+          child: const AppText('PDF (.pdf)'),
+        ),
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.print_outlined, size: 18),
+          shortcut:
+              const SingleActivator(LogicalKeyboardKey.keyP, control: true),
+          onPressed: () => printCurrentPage(app),
+          child: const AppText('Print…'),
+        ),
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.image_outlined, size: 18),
+          onPressed: () => _export(context, exportPagePdf),
+          child: const AppText('PDF — picture of the page'),
+        ),
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.hub_outlined, size: 18),
+          onPressed: () => _export(context, exportPageJsonCanvas),
+          child: const AppText('For Obsidian Canvas (.canvas)'),
+        ),
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.gesture, size: 18),
+          onPressed: () => _export(context, exportPageInkML),
+          child: const AppText('Just the drawing (.inkml)'),
+        ),
+        const Divider(height: 6),
+        MenuItemButton(
+          leadingIcon: const Icon(Icons.folder_zip_outlined, size: 18),
+          onPressed: () => _exportWithProgress(
+            context,
+            'Saving the notebook…',
+            (report) => materializeNotebook(
+              app,
+              onProgress: (done, total) => report('Page $done of $total…'),
+            ),
+          ),
+          // Say what lands on disk. "Materialize" is this codebase's own
+          // architecture vocabulary (`sync/materializer.dart`) and appears
+          // in no other user-visible string in the app.
+          child: const AppText('Save the whole notebook as folders and files…'),
+        ),
+      ];
 
   Future<void> _export(
     BuildContext context,
@@ -654,7 +630,7 @@ class _CommandBarState extends State<CommandBar> {
     final curColor = app.lastColor.length == 8
         ? Color(((lcv & 0xFF) << 24) | (lcv >> 8))
         : Color(0xFF000000 | lcv);
-    return Row(
+    return FixedToolbar(
       children: [
         // **The row never changes shape.** An earlier revision collapsed the
         // formatting commands to three group heads when nothing was focused, on
@@ -750,9 +726,8 @@ class _CommandBarState extends State<CommandBar> {
                     width: 18,
                     height: 3,
                     margin: const EdgeInsets.only(top: 1),
-                    color: canFormat
-                        ? curColor
-                        : context.surfaces.textSecondary,
+                    color:
+                        canFormat ? curColor : context.surfaces.textSecondary,
                   ),
                 ],
               ),
@@ -927,22 +902,8 @@ class _CommandBarState extends State<CommandBar> {
       ))
         _insertToolbarControl(context, item),
     ];
-    final defaults = [for (final control in controls) control.id!];
-    final ordered = app.orderedRibbon(
-      'insert',
-      controls,
-      (control) => control.id!,
-    );
-    return SizedBox(
-      width: double.infinity,
-      child: CompactingToolbar(
-        fillAvailable: true,
-        moreAtTrailingEdge: true,
-        controls: ordered,
-        onReorder: (dragged, before) =>
-            app.placeRibbonControl('insert', dragged, before, defaults),
-      ),
-    );
+    return FixedToolbar(
+        children: [for (final control in controls) control.inline]);
   }
 
   ToolbarControl _insertToolbarControl(BuildContext context, InsertItem item) =>
@@ -1040,50 +1001,49 @@ class _CommandBarState extends State<CommandBar> {
     required bool active,
     required bool target,
     required ColorScheme scheme,
-  }) => AnimatedContainer(
-    duration: const Duration(milliseconds: 120),
-    curve: Curves.easeOut,
-    width: 24,
-    height: 24,
-    alignment: Alignment.center,
-    decoration: BoxDecoration(
-      shape: BoxShape.circle,
-      color: target ? scheme.primary.withValues(alpha: .12) : null,
-    ),
-    child: AnimatedContainer(
-      duration: const Duration(milliseconds: 120),
-      width: target ? 20 : 18,
-      height: target ? 20 : 18,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: target || active ? scheme.primary : Colors.transparent,
-          width: target ? 2.5 : 2,
+  }) =>
+      AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+        width: 24,
+        height: 24,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: target ? scheme.primary.withValues(alpha: .12) : null,
         ),
-      ),
-    ),
-  );
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          width: target ? 20 : 18,
+          height: target ? 20 : 18,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: target || active ? scheme.primary : Colors.transparent,
+              width: target ? 2.5 : 2,
+            ),
+          ),
+        ),
+      );
 
   Widget _drawRow(BuildContext context, {bool vertical = false}) {
     final scheme = Theme.of(context).colorScheme;
     Widget toolButton(Tool t, IconData icon, String tip) => IconButton(
-      icon: Icon(icon, size: 18),
-      tooltip: tr(context, tip),
-      isSelected: app.tool == t,
-      visualDensity: VisualDensity.compact,
-      style: IconButton.styleFrom(
-        backgroundColor: app.tool == t
-            ? scheme.primary.withValues(alpha: .14)
-            : null,
-        foregroundColor: app.tool == t ? scheme.primary : null,
-      ),
-      onPressed: () => app.setTool(t),
-    );
+          icon: Icon(icon, size: 18),
+          tooltip: tr(context, tip),
+          isSelected: app.tool == t,
+          visualDensity: VisualDensity.compact,
+          style: IconButton.styleFrom(
+            backgroundColor:
+                app.tool == t ? scheme.primary.withValues(alpha: .14) : null,
+            foregroundColor: app.tool == t ? scheme.primary : null,
+          ),
+          onPressed: () => app.setTool(t),
+        );
     // The swatches also appear with ink selected, so a lassoed diagram can be
     // recoloured without first re-picking the pen.
-    final inkActive =
-        app.tool == Tool.pen ||
+    final inkActive = app.tool == Tool.pen ||
         app.tool == Tool.ballpoint ||
         app.tool == Tool.highlighter ||
         app.tool == Tool.shape ||
@@ -1092,9 +1052,8 @@ class _CommandBarState extends State<CommandBar> {
       dark: Theme.of(context).brightness == Brightness.dark,
       highlighter: app.tool == Tool.highlighter,
     );
-    final colourTool = app.tool == Tool.highlighter
-        ? Tool.highlighter
-        : Tool.pen;
+    final colourTool =
+        app.tool == Tool.highlighter ? Tool.highlighter : Tool.pen;
     final activeColour = app.inkColorFor(colourTool);
     final activeCustomColour = app.customInkColorFor(colourTool);
     Widget gap([double size = 4]) =>
@@ -1126,8 +1085,7 @@ class _CommandBarState extends State<CommandBar> {
 
     Future<void> pickCustomColour() async {
       final preset = colors[activeColour % colors.length];
-      final initial =
-          activeCustomColour ??
+      final initial = activeCustomColour ??
           (preset.toARGB32() & 0xFFFFFF)
               .toRadixString(16)
               .padLeft(6, '0')
@@ -1145,311 +1103,277 @@ class _CommandBarState extends State<CommandBar> {
       if (picked != null) useCustomColour(picked);
     }
 
-    return Flex(
-      direction: vertical ? Axis.vertical : Axis.horizontal,
-      children: [
-        toolButton(Tool.select, Icons.near_me_outlined, 'Select / move  (V)'),
-        toolButton(Tool.text, Icons.text_fields, 'Text  (T)'),
-        toolButton(Tool.pen, Icons.brush_outlined, 'Pen  (P)'),
-        toolButton(Tool.ballpoint, Icons.edit, 'Ballpoint — constant width'),
-        toolButton(
-          Tool.highlighter,
-          Icons.border_color_outlined,
-          'Highlighter  (H)',
+    final children = <Widget>[
+      toolButton(Tool.select, Icons.near_me_outlined, 'Select / move  (V)'),
+      toolButton(Tool.text, Icons.text_fields, 'Text  (T)'),
+      toolButton(Tool.pen, Icons.brush_outlined, 'Pen  (P)'),
+      toolButton(Tool.ballpoint, Icons.edit, 'Ballpoint — constant width'),
+      toolButton(
+        Tool.highlighter,
+        Icons.border_color_outlined,
+        'Highlighter  (H)',
+      ),
+      toolButton(
+        Tool.eraser,
+        Icons.cleaning_services_outlined,
+        'Eraser  (E)',
+      ),
+      toolButton(Tool.lasso, Icons.gesture_outlined, 'Lasso-select ink'),
+      IconButton(
+        icon: const Icon(Icons.category_outlined, size: 18),
+        tooltip: 'Shape recognition — draw with the pen and hold',
+        isSelected: app.shapeRecognition,
+        style: IconButton.styleFrom(
+          backgroundColor: app.shapeRecognition
+              ? scheme.primary.withValues(alpha: .18)
+              : null,
+          foregroundColor: app.shapeRecognition ? scheme.primary : null,
         ),
-        toolButton(
-          Tool.eraser,
-          Icons.cleaning_services_outlined,
-          'Eraser  (E)',
+        visualDensity: VisualDensity.compact,
+        onPressed: () => app.setShapeRecognition(!app.shapeRecognition),
+      ),
+      IconButton(
+        icon: const Icon(Icons.straighten_outlined, size: 18),
+        tooltip: 'Ruler — drag the grip, pinch to resize or rotate',
+        isSelected: app.rulerVisible,
+        style: IconButton.styleFrom(
+          backgroundColor:
+              app.rulerVisible ? scheme.primary.withValues(alpha: .18) : null,
+          foregroundColor: app.rulerVisible ? scheme.primary : null,
         ),
-        toolButton(Tool.lasso, Icons.gesture_outlined, 'Lasso-select ink'),
-        IconButton(
-          icon: const Icon(Icons.category_outlined, size: 18),
-          tooltip: 'Shape recognition — draw with the pen and hold',
-          isSelected: app.shapeRecognition,
-          style: IconButton.styleFrom(
-            backgroundColor: app.shapeRecognition
-                ? scheme.primary.withValues(alpha: .18)
-                : null,
-            foregroundColor: app.shapeRecognition ? scheme.primary : null,
+        visualDensity: VisualDensity.compact,
+        onPressed: () => app.setRulerVisible(!app.rulerVisible),
+      ),
+      _Div(vertical: vertical),
+      if (inkActive) ...[
+        for (final (i, c) in colors.indexed
+            .where((entry) => app.toolbarPresetVisible(colourTool, entry.$1)))
+          Padding(
+            padding: vertical
+                ? const EdgeInsets.symmetric(vertical: 2)
+                : const EdgeInsets.symmetric(horizontal: 2),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(99),
+              onSecondaryTapDown: (details) async {
+                final remove = await showMenu<bool>(
+                  context: context,
+                  position: RelativeRect.fromLTRB(details.globalPosition.dx,
+                      details.globalPosition.dy, 0, 0),
+                  items: const [
+                    PopupMenuItem(value: true, child: AppText('Remove colour'))
+                  ],
+                );
+                if (remove == true) app.hideToolbarPreset(colourTool, i);
+              },
+              onTap: () {
+                app.setInkColor(i);
+                // With ink selected (typically just lassoed), a colour click
+                // recolours it rather than only arming the next stroke —
+                // recolouring after the fact is most of why you lasso a
+                // diagram (INK-7).
+                if (app.hasInkSelection) {
+                  app.recolorSelectedInk(
+                    '#'
+                    '${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}',
+                  );
+                } else {
+                  app.refresh();
+                }
+              },
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    key: ValueKey('pen-swatch-$i'),
+                    width: 18,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      color: c,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        width: 2,
+                        color: activeCustomColour == null && activeColour == i
+                            ? scheme.primary
+                            : i == 0
+                                ? scheme.outline
+                                : Colors.transparent,
+                      ),
+                    ),
+                  ),
+                  if (i == 0)
+                    Positioned(
+                      right: -3,
+                      bottom: -3,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: scheme.surface,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: scheme.outline, width: 1),
+                        ),
+                        child: Icon(
+                          Icons.auto_awesome,
+                          size: 5,
+                          color: scheme.onSurface,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
-          visualDensity: VisualDensity.compact,
-          onPressed: () => app.setShapeRecognition(!app.shapeRecognition),
-        ),
-        IconButton(
-          icon: const Icon(Icons.straighten_outlined, size: 18),
-          tooltip: 'Ruler — drag the grip, pinch to resize or rotate',
-          isSelected: app.rulerVisible,
-          style: IconButton.styleFrom(
-            backgroundColor: app.rulerVisible
-                ? scheme.primary.withValues(alpha: .18)
-                : null,
-            foregroundColor: app.rulerVisible ? scheme.primary : null,
-          ),
-          visualDensity: VisualDensity.compact,
-          onPressed: () => app.setRulerVisible(!app.rulerVisible),
-        ),
-        _Div(vertical: vertical),
-        if (inkActive) ...[
-          for (final (i, c) in colors.indexed)
+        // Pinned colours are explicitly added from the picker. Recent
+        // colours never appear here merely because they were sampled.
+        for (final hex in app.toolbarInkColorsFor(colourTool))
+          if (onoteColorFromHex(hex) case final custom?)
             Padding(
               padding: vertical
                   ? const EdgeInsets.symmetric(vertical: 2)
                   : const EdgeInsets.symmetric(horizontal: 2),
-              child: InkWell(
+              child: Tooltip(
+                message: 'Use colour / right-click to remove',
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => useCustomColour(hex),
+                  onSecondaryTapDown: (details) => _showToolbarColourMenu(
+                      context, details.globalPosition, colourTool, hex),
+                  child: _toolbarColourDot(custom,
+                      active: activeCustomColour == hex,
+                      target: false,
+                      scheme: scheme),
+                ),
+              ),
+            ), // A quiet capsule separates "choose/mix/sample" from the fixed
+        // swatches. It deliberately has no corners and keeps the pipette
+        // immediately beside the mixer, where those two tools read as one.
+        gap(20),
+        Container(
+          padding: const EdgeInsets.all(2),
+          decoration: BoxDecoration(
+            color: scheme.primary.withValues(alpha: .055),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: scheme.outline.withValues(alpha: .22)),
+          ),
+          child: Flex(
+            direction: vertical ? Axis.vertical : Axis.horizontal,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              InkWell(
+                key: const ValueKey('pen-active-colour'),
                 borderRadius: BorderRadius.circular(99),
-                onTap: () {
-                  app.setInkColor(i);
-                  // With ink selected (typically just lassoed), a colour click
-                  // recolours it rather than only arming the next stroke —
-                  // recolouring after the fact is most of why you lasso a
-                  // diagram (INK-7).
-                  if (app.hasInkSelection) {
-                    app.recolorSelectedInk(
-                      '#'
-                      '${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}',
-                    );
-                  } else {
-                    app.refresh();
-                  }
-                },
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Container(
-                      key: ValueKey('pen-swatch-$i'),
-                      width: 18,
-                      height: 18,
-                      decoration: BoxDecoration(
-                        color: c,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          width: 2,
-                          color: activeCustomColour == null && activeColour == i
-                              ? scheme.primary
-                              : i == 0
-                              ? scheme.outline
-                              : Colors.transparent,
-                        ),
-                      ),
-                    ),
-                    if (i == 0)
-                      Positioned(
-                        right: -3,
-                        bottom: -3,
-                        child: Container(
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            color: scheme.surface,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: scheme.outline, width: 1),
-                          ),
-                          child: Icon(
-                            Icons.auto_awesome,
-                            size: 5,
-                            color: scheme.onSurface,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          // Pinned colours are explicitly added from the picker. Recent
-          // colours never appear here merely because they were sampled.
-          for (final hex in app.toolbarInkColorsFor(colourTool))
-            if (onoteColorFromHex(hex) case final custom?)
-              Padding(
-                padding: vertical
-                    ? const EdgeInsets.symmetric(vertical: 2)
-                    : const EdgeInsets.symmetric(horizontal: 2),
-                child: DragTarget<String>(
-                  onWillAccept: (dragged) => dragged != null && dragged != hex,
-                  onAccept: (dragged) =>
-                      app.placeToolbarInkColorBefore(dragged, hex, colourTool),
-                  builder: (context, candidate, _) => LongPressDraggable<String>(
-                    data: hex,
-                    feedback: Material(
-                      color: Colors.transparent,
-                      child: Container(
-                        width: 24,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          color: custom,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: scheme.primary, width: 2),
-                          boxShadow: const [
-                            BoxShadow(color: Colors.black26, blurRadius: 4),
-                          ],
-                        ),
-                      ),
-                    ),
-                    childWhenDragging: Opacity(
-                      opacity: .3,
-                      child: _toolbarColourDot(
-                        custom,
-                        active:
-                            activeCustomColour ==
-                            hex.replaceFirst('#', '').substring(0, 6),
-                        target: false,
-                        scheme: scheme,
-                      ),
-                    ),
-                    child: Tooltip(
-                      message:
-                          'Use colour • right-click to remove • hold and drag to reorder',
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () => useCustomColour(hex),
-                        onSecondaryTapDown: (details) => _showToolbarColourMenu(
-                          context,
-                          details.globalPosition,
-                          colourTool,
-                          hex,
-                        ),
-                        child: _toolbarColourDot(
-                          custom,
-                          active:
-                              activeCustomColour ==
-                              hex.replaceFirst('#', '').substring(0, 6),
-                          target: candidate.isNotEmpty,
-                          scheme: scheme,
-                        ),
-                      ),
-                    ),
+                onTap: pickCustomColour,
+                child: Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: activeCustomColour == null
+                        ? colors[activeColour % colors.length]
+                        : onoteColorFromHex(activeCustomColour),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: scheme.primary, width: 2),
                   ),
                 ),
               ),
-          // A quiet capsule separates "choose/mix/sample" from the fixed
-          // swatches. It deliberately has no corners and keeps the pipette
-          // immediately beside the mixer, where those two tools read as one.
-          gap(20),
-          Container(
-            padding: const EdgeInsets.all(2),
-            decoration: BoxDecoration(
-              color: scheme.primary.withValues(alpha: .055),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(color: scheme.outline.withValues(alpha: .22)),
-            ),
-            child: Flex(
-              direction: vertical ? Axis.vertical : Axis.horizontal,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                InkWell(
-                  key: const ValueKey('pen-active-colour'),
-                  borderRadius: BorderRadius.circular(99),
-                  onTap: pickCustomColour,
-                  child: Container(
-                    width: 24,
-                    height: 24,
-                    decoration: BoxDecoration(
-                      color: activeCustomColour == null
-                          ? colors[activeColour % colors.length]
-                          : onoteColorFromHex(activeCustomColour),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: scheme.primary, width: 2),
-                    ),
-                  ),
+              IconButton(
+                key: const ValueKey('pen-eyedropper'),
+                tooltip: app.inkEyedropperActive
+                    ? 'Cancel colour sampler'
+                    : 'Pick a colour from the page',
+                visualDensity: VisualDensity.compact,
+                isSelected: app.inkEyedropperActive,
+                style: IconButton.styleFrom(
+                  backgroundColor: app.inkEyedropperActive
+                      ? scheme.primary.withValues(alpha: .18)
+                      : null,
+                  foregroundColor:
+                      app.inkEyedropperActive ? scheme.primary : null,
                 ),
-                IconButton(
-                  key: const ValueKey('pen-eyedropper'),
-                  tooltip: app.inkEyedropperActive
-                      ? 'Cancel colour sampler'
-                      : 'Pick a colour from the page',
-                  visualDensity: VisualDensity.compact,
-                  isSelected: app.inkEyedropperActive,
-                  style: IconButton.styleFrom(
-                    backgroundColor: app.inkEyedropperActive
-                        ? scheme.primary.withValues(alpha: .18)
-                        : null,
-                    foregroundColor: app.inkEyedropperActive
-                        ? scheme.primary
-                        : null,
-                  ),
-                  icon: const Icon(Icons.colorize_outlined, size: 19),
-                  onPressed: () =>
-                      app.setInkEyedropperActive(!app.inkEyedropperActive),
-                ),
-                IconButton(
-                  key: const ValueKey('pen-colour-picker'),
-                  tooltip: tr(context, 'Mix a custom colour'),
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.palette_outlined, size: 19),
-                  onPressed: pickCustomColour,
-                ),
-              ],
-            ),
-          ),
-          gap(6),
-          sizeSlider(key: const ValueKey('ink-size')),
-          SizedBox(
-            width: vertical ? 48 : 43,
-            child: Center(
-              child: AppText(
-                '${app.penSize.toStringAsFixed(1)} px',
-                style: const TextStyle(fontSize: 10),
+                icon: const Icon(Icons.colorize_outlined, size: 19),
+                onPressed: () =>
+                    app.setInkEyedropperActive(!app.inkEyedropperActive),
               ),
-            ),
-          ),
-        ] else if (app.tool == Tool.eraser) ...[
-          SizedBox(
-            width: vertical ? 48 : 118,
-            height: vertical ? 118 : null,
-            child: RotatedBox(
-              quarterTurns: vertical ? 3 : 0,
-              child: Slider(
-                key: const ValueKey('eraser-size'),
-                value: app.eraserSize,
-                min: 4,
-                max: 80,
-                divisions: 38,
-                label: '${app.eraserSize.round()} px',
-                onChanged: app.setEraserSize,
+              IconButton(
+                key: const ValueKey('pen-colour-picker'),
+                tooltip: tr(context, 'Mix a custom colour'),
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.palette_outlined, size: 19),
+                onPressed: pickCustomColour,
               ),
-            ),
+            ],
           ),
-          Padding(
-            padding: const EdgeInsets.only(right: 10),
+        ),
+        gap(6),
+        sizeSlider(key: const ValueKey('ink-size')),
+        SizedBox(
+          width: vertical ? 48 : 43,
+          child: Center(
             child: AppText(
-              '${app.eraserSize.round()} px',
-              style: const TextStyle(fontSize: 11),
+              '${app.penSize.toStringAsFixed(1)} px',
+              style: const TextStyle(fontSize: 10),
             ),
           ),
-          SizedBox(
-            width: vertical ? 48 : null,
-            height: vertical ? 114 : 28,
-            child: RotatedBox(
-              quarterTurns: vertical ? 3 : 0,
-              child: SizedBox(
-                width: vertical ? 114 : null,
-                child: SegmentedButton<EraserMode>(
-                  segments: [
-                    for (final m in EraserMode.values)
-                      ButtonSegment(
-                        value: m,
-                        label: AppText(
-                          m.label,
-                          style: const TextStyle(fontSize: 10),
-                        ),
+        ),
+      ] else if (app.tool == Tool.eraser) ...[
+        SizedBox(
+          width: vertical ? 48 : 118,
+          height: vertical ? 118 : null,
+          child: RotatedBox(
+            quarterTurns: vertical ? 3 : 0,
+            child: Slider(
+              key: const ValueKey('eraser-size'),
+              value: app.eraserSize,
+              min: 4,
+              max: 80,
+              divisions: 38,
+              label: '${app.eraserSize.round()} px',
+              onChanged: app.setEraserSize,
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(right: 10),
+          child: AppText(
+            '${app.eraserSize.round()} px',
+            style: const TextStyle(fontSize: 11),
+          ),
+        ),
+        SizedBox(
+          width: vertical ? 48 : null,
+          height: vertical ? 114 : 28,
+          child: RotatedBox(
+            quarterTurns: vertical ? 3 : 0,
+            child: SizedBox(
+              width: vertical ? 114 : null,
+              child: SegmentedButton<EraserMode>(
+                segments: [
+                  for (final m in EraserMode.values)
+                    ButtonSegment(
+                      value: m,
+                      label: AppText(
+                        m.label,
+                        style: const TextStyle(fontSize: 10),
                       ),
-                  ],
-                  selected: {app.eraserMode},
-                  onSelectionChanged: (s) => app.setEraserMode(s.first),
-                  showSelectedIcon: false,
-                  style: const ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
+                    ),
+                ],
+                selected: {app.eraserMode},
+                onSelectionChanged: (s) => app.setEraserMode(s.first),
+                showSelectedIcon: false,
+                style: const ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
               ),
             ),
           ),
-        ],
-        gap(12),
-        gap(),
+        ),
       ],
-    );
+      gap(12),
+      gap(),
+    ];
+    return vertical
+        ? Column(mainAxisSize: MainAxisSize.min, children: children)
+        : FixedToolbar(children: children);
   }
 }
 
@@ -1475,13 +1399,13 @@ class _Div extends StatelessWidget {
   final bool vertical;
   @override
   Widget build(BuildContext context) => Container(
-    width: vertical ? 22 : 1,
-    height: vertical ? 1 : 22,
-    margin: vertical
-        ? const EdgeInsets.symmetric(vertical: 8)
-        : const EdgeInsets.symmetric(horizontal: 8),
-    color: Theme.of(context).dividerColor,
-  );
+        width: vertical ? 22 : 1,
+        height: vertical ? 1 : 22,
+        margin: vertical
+            ? const EdgeInsets.symmetric(vertical: 8)
+            : const EdgeInsets.symmetric(horizontal: 8),
+        color: Theme.of(context).dividerColor,
+      );
 }
 
 /// Font-size control for the text block being edited (TEXT-1).
@@ -1706,8 +1630,8 @@ class _PlannerButton extends StatelessWidget {
       message: count == 0
           ? 'No homework or reminders waiting'
           : overdue
-          ? '$count homework item${count == 1 ? '' : 's'} — some overdue'
-          : '$count homework item${count == 1 ? '' : 's'} waiting',
+              ? '$count homework item${count == 1 ? '' : 's'} — some overdue'
+              : '$count homework item${count == 1 ? '' : 's'} waiting',
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -1763,9 +1687,9 @@ class _PlannerButton extends StatelessWidget {
 Future<void> _addQuickHomework(BuildContext context, AppState app) async {
   final result =
       await showOnoteDialog<({String subject, String task, DateTime due})>(
-        context: context,
-        builder: (_) => const _QuickHomeworkDialog(),
-      );
+    context: context,
+    builder: (_) => const _QuickHomeworkDialog(),
+  );
   if (result == null || !context.mounted) return;
   final title = result.subject.trim().isEmpty
       ? result.task.trim()
@@ -1832,62 +1756,62 @@ class _QuickHomeworkDialogState extends State<_QuickHomeworkDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: const Text('Add homework'),
-    content: SizedBox(
-      width: 380,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _subject,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'Subject',
-              hintText: 'For example: Chemistry',
-            ),
-          ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: _task,
-            maxLines: 2,
-            onSubmitted: (_) => _submit(),
-            decoration: const InputDecoration(
-              labelText: 'Homework',
-              hintText: 'What needs to be done?',
-            ),
-          ),
-          const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: OutlinedButton.icon(
-              onPressed: _pickDay,
-              icon: const Icon(Icons.event_outlined, size: 18),
-              label: Text(
-                MaterialLocalizations.of(context).formatMediumDate(_due),
+        title: const Text('Add homework'),
+        content: SizedBox(
+          width: 380,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _subject,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: 'Subject',
+                  hintText: 'For example: Chemistry',
+                ),
               ),
-            ),
-          ),
-          const Align(
-            alignment: Alignment.centerLeft,
-            child: Padding(
-              padding: EdgeInsets.only(top: 6),
-              child: Text(
-                'Linked to the page currently open.',
-                style: TextStyle(fontSize: 12),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _task,
+                maxLines: 2,
+                onSubmitted: (_) => _submit(),
+                decoration: const InputDecoration(
+                  labelText: 'Homework',
+                  hintText: 'What needs to be done?',
+                ),
               ),
-            ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  onPressed: _pickDay,
+                  icon: const Icon(Icons.event_outlined, size: 18),
+                  label: Text(
+                    MaterialLocalizations.of(context).formatMediumDate(_due),
+                  ),
+                ),
+              ),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: EdgeInsets.only(top: 6),
+                  child: Text(
+                    'Linked to the page currently open.',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                ),
+              ),
+            ],
           ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(onPressed: _submit, child: const Text('Add')),
         ],
-      ),
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.of(context).pop(),
-        child: const Text('Cancel'),
-      ),
-      FilledButton(onPressed: _submit, child: const Text('Add')),
-    ],
-  );
+      );
 
   void _submit() {
     final task = _task.text.trim();
@@ -1995,17 +1919,6 @@ class _InsertButton extends StatelessWidget {
 /// Lets the toolbar row be dragged and wheel-scrolled when it is wider than
 /// the window. Flutter's default behaviour excludes mouse and trackpad from
 /// drag scrolling, and a horizontal viewport ignores a vertical wheel.
-class _ToolbarScroll extends MaterialScrollBehavior {
-  const _ToolbarScroll();
-
-  @override
-  Set<PointerDeviceKind> get dragDevices => const {
-    PointerDeviceKind.touch,
-    PointerDeviceKind.mouse,
-    PointerDeviceKind.trackpad,
-    PointerDeviceKind.stylus,
-  };
-}
 
 /// **What the object row is about**, shown where the contextual tab used to
 /// be — and deliberately not a tab.

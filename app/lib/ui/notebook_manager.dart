@@ -29,7 +29,7 @@ Future<void> showNotebookManager(
   AppState app, {
   String? focusId,
 }) async {
-  await app.purgeExpiredTrash();
+  // Cleanup runs with workspace housekeeping, never on the dialog-open path.
   if (!context.mounted) return;
   await showOnoteDialog<void>(
     context: context,
@@ -56,9 +56,42 @@ class _NotebookManagerState extends State<_NotebookManager> {
   late String? _highlightId = widget.focusId;
 
   final _renameCtl = TextEditingController();
+  final _counts = <String, ({int sections, int pages})>{};
+  bool _countsLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    app.addListener(_changed);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadCounts());
+  }
+
+  void _changed() {
+    if (!mounted) return;
+    setState(() {});
+    if (!_countsLoading) _loadCounts();
+  }
+
+  Future<void> _loadCounts() async {
+    if (_countsLoading) return;
+    _countsLoading = true;
+    try {
+      for (final nb in app.notebooks.toList()) {
+        if (!mounted) return;
+        if (_counts.containsKey(nb.id)) continue;
+        await Future<void>.delayed(const Duration(milliseconds: 16));
+        if (!mounted) return;
+        final counts = app.notebookCounts(nb.id);
+        setState(() => _counts[nb.id] = counts);
+      }
+    } finally {
+      _countsLoading = false;
+    }
+  }
 
   @override
   void dispose() {
+    app.removeListener(_changed);
     _renameCtl.dispose();
     super.dispose();
   }
@@ -199,6 +232,15 @@ class _NotebookManagerState extends State<_NotebookManager> {
           Icon(Icons.menu_book_outlined, size: 18, color: scheme.primary),
           const SizedBox(width: 9),
           const AppText('Notebooks'),
+          if (_busyId != null)
+            const Padding(
+              padding: EdgeInsets.only(left: 12),
+              child: SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
           const Spacer(),
           Text(
             '${notebooks.length} open',
@@ -223,7 +265,10 @@ class _NotebookManagerState extends State<_NotebookManager> {
                 mainAxisSpacing: 18,
                 crossAxisSpacing: 18,
                 childAspectRatio: .72,
-                children: [for (final nb in notebooks) _coverCard(nb, scheme)],
+                children: [
+                  for (final nb in notebooks)
+                    RepaintBoundary(child: _coverCard(nb, scheme)),
+                ],
               ),
               if (_importOpen) ...[
                 const SizedBox(height: 6),
@@ -247,7 +292,11 @@ class _NotebookManagerState extends State<_NotebookManager> {
       // OverflowBar — a `Spacer` there throws ("applying parent data"), since
       // Spacer needs a Flex parent.
       actions: [
-        Row(
+        Wrap(
+          spacing: 4,
+          runSpacing: 4,
+          alignment: WrapAlignment.end,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             TextButton.icon(
               icon: const Icon(Icons.add, size: 18),
@@ -266,8 +315,17 @@ class _NotebookManagerState extends State<_NotebookManager> {
                   hintText: 'Notebook name',
                 );
                 if (title == null || !mounted) return;
-                await app.createNotebook(title);
-                if (mounted) setState(() {});
+                setState(() => _busyId = '__new__');
+                // Let the pressed state paint before SQLite creates the first
+                // section and page, so a slow folder never reads as a dead tap.
+                await Future<void>.delayed(const Duration(milliseconds: 16));
+                try {
+                  await app.createNotebook(title);
+                } catch (e) {
+                  if (mounted) _toast('Could not create notebook: $e');
+                } finally {
+                  if (mounted) setState(() => _busyId = null);
+                }
               },
             ),
             // Import expands INLINE rather than opening a popup menu: a popup here
@@ -298,26 +356,14 @@ class _NotebookManagerState extends State<_NotebookManager> {
                 for (final nb in notebooks)
                   PopupMenuItem(value: nb.id, child: Text(nb.title)),
               ],
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: scheme.primary,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.backup_outlined,
-                        size: 18,
-                        color: Colors.white,
-                      ),
-                      SizedBox(width: 7),
-                      AppText('Backup', style: TextStyle(color: Colors.white)),
-                    ],
-                  ),
-                ),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.backup_outlined, size: 18, color: scheme.primary),
+                  const SizedBox(width: 8),
+                  AppText('Backup', style: TextStyle(color: scheme.primary)),
+                ]),
               ),
             ),
             TextButton.icon(
@@ -330,7 +376,6 @@ class _NotebookManagerState extends State<_NotebookManager> {
               label: const AppText('Sync'),
               onPressed: () => showSyncDialog(context, app),
             ),
-            const Spacer(),
             TextButton(
               onPressed: () => Navigator.pop(context),
               child: const AppText('Done'),
@@ -358,25 +403,26 @@ class _NotebookManagerState extends State<_NotebookManager> {
       IconData icon,
       String label,
       Future<void> Function(ScaffoldMessengerState, BuildContext) run,
-    ) => Padding(
-      padding: const EdgeInsets.only(right: 6, top: 6),
-      child: OutlinedButton.icon(
-        icon: Icon(icon, size: 16),
-        label: AppText(label, style: const TextStyle(fontSize: 13)),
-        onPressed: () async {
-          final messenger = ScaffoldMessenger.of(context);
-          final rootContext = Navigator.of(
-            context,
-            rootNavigator: true,
-          ).context;
-          setState(() => _importOpen = false);
-          // Close the panel first: the imports that still show a modal put
-          // it over the shell, not over a list the user has finished with.
-          Navigator.pop(context);
-          await run(messenger, rootContext);
-        },
-      ),
-    );
+    ) =>
+        Padding(
+          padding: const EdgeInsets.only(right: 6, top: 6),
+          child: OutlinedButton.icon(
+            icon: Icon(icon, size: 16),
+            label: AppText(label, style: const TextStyle(fontSize: 13)),
+            onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              final rootContext = Navigator.of(
+                context,
+                rootNavigator: true,
+              ).context;
+              setState(() => _importOpen = false);
+              // Close the panel first: the imports that still show a modal put
+              // it over the shell, not over a list the user has finished with.
+              Navigator.pop(context);
+              await run(messenger, rootContext);
+            },
+          ),
+        );
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
       child: Wrap(
@@ -412,14 +458,26 @@ class _NotebookManagerState extends State<_NotebookManager> {
   /// Nothing is auto-selected and nothing is deleted here: the row deletes to
   /// the recycle bin through the same `deleteNotebook` path as any other, so
   /// a mistake is recoverable for the retention period.
-  late final List<DuplicateGroup> _dupes = app.findDuplicateNotebooks();
+  List<DuplicateGroup>? _dupes;
 
   List<Widget> _duplicateSection() {
-    if (_dupes.isEmpty) return const [];
+    if (_dupes == null) {
+      return [
+        Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              icon: const Icon(Icons.content_copy_outlined, size: 16),
+              label: const AppText('Find duplicate notebooks'),
+              onPressed: () =>
+                  setState(() => _dupes = app.findDuplicateNotebooks()),
+            ))
+      ];
+    }
+    if (_dupes!.isEmpty) return const [];
     return [
       const SizedBox(height: 6),
       _sectionLabel('Possible duplicates · same title and same page count'),
-      for (final g in _dupes)
+      for (final g in _dupes!)
         Padding(
           padding: const EdgeInsets.fromLTRB(6, 2, 6, 8),
           child: Column(
@@ -479,7 +537,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
                                   if (!mounted) return;
                                   setState(() {
                                     _busyId = null;
-                                    _dupes.remove(g);
+                                    _dupes!.remove(g);
                                   });
                                 },
                           child: const AppText(
@@ -504,21 +562,21 @@ class _NotebookManagerState extends State<_NotebookManager> {
   }
 
   Widget _sectionLabel(String text) => Padding(
-    padding: const EdgeInsets.fromLTRB(6, 8, 6, 4),
-    child: Text(
-      text.toUpperCase(),
-      style: TextStyle(
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-        letterSpacing: .6,
-        color: context.surfaces.textSecondary,
-      ),
-    ),
-  );
+        padding: const EdgeInsets.fromLTRB(6, 8, 6, 4),
+        child: Text(
+          text.toUpperCase(),
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: .6,
+            color: context.surfaces.textSecondary,
+          ),
+        ),
+      );
 
   Widget _coverCard(NotebookRef nb, ColorScheme scheme) {
     final current = nb.id == app.notebookId;
-    final counts = app.notebookCounts(nb.id);
+    final counts = _counts[nb.id] ?? (sections: 0, pages: 0);
     final cover = _coverColor(app.notebookColor(nb.id), nb.id);
     return InkWell(
       borderRadius: BorderRadius.circular(10),
@@ -583,6 +641,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
                     child: PopupMenuButton<String>(
                       icon: const Icon(Icons.more_vert, color: Colors.white),
                       tooltip: 'Notebook options',
+                      popUpAnimationStyle: AnimationStyle.noAnimation,
                       onSelected: (value) async {
                         if (value == 'rename') {
                           final title = await promptForText(
@@ -626,7 +685,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
                           height: 116,
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                           child: SizedBox(
-                            width: 208,
+                            width: 202,
                             height: 96,
                             child: Wrap(
                               spacing: 14,
@@ -646,9 +705,8 @@ class _NotebookManagerState extends State<_NotebookManager> {
                                         height: 24,
                                         decoration: BoxDecoration(
                                           color: _coverColor(color, nb.id),
-                                          borderRadius: BorderRadius.circular(
-                                            99,
-                                          ),
+                                          borderRadius:
+                                              BorderRadius.circular(6),
                                           border: Border.all(
                                             color: Colors.black26,
                                           ),
@@ -695,7 +753,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
     final renaming = _renamingId == nb.id;
     final confirming = _confirmDeleteId == nb.id;
     final busy = _busyId == nb.id;
-    final counts = app.notebookCounts(nb.id);
+    final counts = _counts[nb.id] ?? (sections: 0, pages: 0);
     final highlight = _highlightId == nb.id;
     final cover = _coverColor(app.notebookColor(nb.id), nb.id);
 
@@ -714,8 +772,8 @@ class _NotebookManagerState extends State<_NotebookManager> {
           color: current
               ? scheme.primary.withValues(alpha: .07)
               : highlight
-              ? scheme.secondary.withValues(alpha: .10)
-              : null,
+                  ? scheme.secondary.withValues(alpha: .10)
+                  : null,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
             color: current
@@ -774,9 +832,8 @@ class _NotebookManagerState extends State<_NotebookManager> {
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontSize: 13,
-                                fontWeight: current
-                                    ? FontWeight.w600
-                                    : FontWeight.w400,
+                                fontWeight:
+                                    current ? FontWeight.w600 : FontWeight.w400,
                                 color: current ? scheme.primary : null,
                               ),
                             ),
@@ -920,13 +977,14 @@ class _NotebookManagerState extends State<_NotebookManager> {
     String tip,
     VoidCallback onTap, {
     bool danger = false,
-  }) => IconButton(
-    icon: Icon(icon, size: 16),
-    color: danger ? OnoteColors.danger : null,
-    visualDensity: VisualDensity.compact,
-    tooltip: tip,
-    onPressed: onTap,
-  );
+  }) =>
+      IconButton(
+        icon: Icon(icon, size: 16),
+        color: danger ? OnoteColors.danger : null,
+        visualDensity: VisualDensity.compact,
+        tooltip: tip,
+        onPressed: onTap,
+      );
 }
 
 Future<bool> _confirmPurge(
@@ -978,16 +1036,15 @@ Future<void> importOneNotePackageWithFeedback(
   AppState app, {
   Future<XFile?> Function()? pickFile,
 }) async {
-  final file =
-      await (pickFile?.call() ??
-          openFile(
-            acceptedTypeGroups: const [
-              XTypeGroup(
-                label: 'OneNote notebook package',
-                extensions: ['onepkg'],
-              ),
-            ],
-          ));
+  final file = await (pickFile?.call() ??
+      openFile(
+        acceptedTypeGroups: const [
+          XTypeGroup(
+            label: 'OneNote notebook package',
+            extensions: ['onepkg'],
+          ),
+        ],
+      ));
   if (file == null) return;
   try {
     final job = ImportJob.start(app, p.basename(file.name), file.path);
@@ -996,7 +1053,7 @@ Future<void> importOneNotePackageWithFeedback(
       job == null
           ? 'An import is already running — one at a time.'
           : 'Importing in the background — keep working, the card in the '
-                "corner will say when it's done.",
+              "corner will say when it's done.",
     );
   } on OneNoteUnavailable {
     _say(messenger, _coreMissing, seconds: 8);
@@ -1026,8 +1083,8 @@ Future<void> importOneNoteSectionWithFeedback(
       count == 0
           ? "Couldn't read any content from that .one file."
           : 'Imported '
-                '${importArrivalNote(count, lastImportedImages, lastImportedStrokes, lastImportedTags)}'
-                ' from OneNote.${_strokeNote()}',
+              '${importArrivalNote(count, lastImportedImages, lastImportedStrokes, lastImportedTags)}'
+              ' from OneNote.${_strokeNote()}',
     );
   } on OneNoteUnavailable {
     _say(m, _coreMissing, seconds: 8);
@@ -1046,8 +1103,7 @@ Future<void> importMarkdownWithFeedback(
   try {
     count = await importMarkdownFolder(
       app,
-      onProgress: (done) => progress.value =
-          'Imported $done '
+      onProgress: (done) => progress.value = 'Imported $done '
           'page${done == 1 ? '' : 's'}…',
     );
   } catch (e) {
@@ -1085,8 +1141,8 @@ const _coreMissing =
 String _strokeNote() => lastDroppedStrokes == 0
     ? ''
     : ' $lastDroppedStrokes ink stroke'
-          '${lastDroppedStrokes == 1 ? '' : 's'} could not be decoded and '
-          '${lastDroppedStrokes == 1 ? 'was' : 'were'} left out.';
+        '${lastDroppedStrokes == 1 ? '' : 's'} could not be decoded and '
+        '${lastDroppedStrokes == 1 ? 'was' : 'were'} left out.';
 
 /// "Repair" — heal every page of the open notebook at once.
 ///
@@ -1140,7 +1196,7 @@ Future<void> _repairWithProgress(BuildContext context, AppState app) async {
           r.pages == 0
               ? 'Nothing to repair — every page is already up to date.'
               : 'Repaired ${r.blocks} box${r.blocks == 1 ? '' : 'es'} '
-                    'across ${r.pages} page${r.pages == 1 ? '' : 's'}.',
+                  'across ${r.pages} page${r.pages == 1 ? '' : 's'}.',
         ),
       ),
     );

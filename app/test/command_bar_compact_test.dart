@@ -72,7 +72,6 @@ void main() {
     expect(find.byIcon(Icons.event_note_outlined), findsOneWidget,
         reason: 'Planner');
     for (final tip in const [
-      'Scan from phone',
       'Links & backlinks',
       'Find on page  (Ctrl+F)',
       'Export page…',
@@ -81,7 +80,8 @@ void main() {
       expect(find.byTooltip(tip), findsOneWidget, reason: tip);
     }
     expect(find.byTooltip('More'), findsNothing,
-        reason: 'a fold button folding nothing is worse than none');
+        reason:
+            'the compact utility cluster does not need a menu at full width');
     app.cancelPendingSave();
   });
 

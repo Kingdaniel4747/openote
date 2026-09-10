@@ -74,9 +74,9 @@ enum EraserMode {
   stroke;
 
   String get label => switch (this) {
-    EraserMode.area => 'Area',
-    EraserMode.stroke => 'Whole stroke',
-  };
+        EraserMode.area => 'Area',
+        EraserMode.stroke => 'Whole stroke',
+      };
 }
 
 /// Whether a finger draws when an ink tool is selected (INK-1 / INK-4).
@@ -94,10 +94,10 @@ enum TouchDrawing {
   never;
 
   String get label => switch (this) {
-    TouchDrawing.auto => 'Auto (pen takes over)',
-    TouchDrawing.always => 'Always',
-    TouchDrawing.never => 'Never',
-  };
+        TouchDrawing.auto => 'Auto (pen takes over)',
+        TouchDrawing.always => 'Always',
+        TouchDrawing.never => 'Never',
+      };
 }
 
 /// The panels that can occupy the right-hand slot (style guide §7c).
@@ -212,7 +212,7 @@ class SaveProblem {
 class AppState extends ChangeNotifier
     implements StudyDocument, PlannerDocument {
   AppState(this._repo, {DocumentEngine? documentEngine})
-    : engine = documentEngine ?? _selectEngine(_repo) {
+      : engine = documentEngine ?? _selectEngine(_repo) {
     // Forwarded, not replaced. Every surface listens to `AppState`, so the
     // extraction must not change who wakes up when a card is graded — the
     // point of E3 is to give state an owner, not to renegotiate rebuilds in
@@ -223,6 +223,46 @@ class AppState extends ChangeNotifier
 
   final Repository _repo;
   final DocumentEngine engine;
+
+  // Split editors own their selection, undo stack and camera, but share one
+  // repository and recorder owner. Two recorders for this device would issue
+  // duplicate operation sequence numbers.
+  AppState? _editorOwner;
+  final List<AppState> _editors = [];
+  VoidCallback? activateEditor;
+  VoidCallback? toggleSplitView;
+  bool splitViewEnabled = false;
+
+  Future<AppState> createSplitEditor() async {
+    final owner = _editorOwner ?? this;
+    await owner.flushSave();
+    final editor = AppState(_repo)
+      .._editorOwner = owner
+      ..spellCheckEnabled = spellCheckEnabled
+      ..onboardingSeen = true
+      ..tool = tool
+      ..penColor = penColor
+      ..highlighterColor = highlighterColor
+      ..penCustomColor = penCustomColor
+      ..highlighterCustomColor = highlighterCustomColor
+      ..penSize = penSize;
+    editor.penToolbarColors.addAll(penToolbarColors);
+    editor.highlighterToolbarColors.addAll(highlighterToolbarColors);
+    editor.hiddenPenPresets.addAll(hiddenPenPresets);
+    editor.hiddenHighlighterPresets.addAll(hiddenHighlighterPresets);
+    owner._editors.add(editor);
+    if (notebookId != null) await editor.selectNotebook(notebookId!);
+    return editor;
+  }
+
+  AppState? _editorDisplaying(String? nb, String? page) {
+    if (nb == null || page == null) return null;
+    final owner = _editorOwner ?? this;
+    return [owner, ...owner._editors]
+        .where((editor) =>
+            editor != this && editor.notebookId == nb && editor.pageId == page)
+        .firstOrNull;
+  }
 
   /// Use the Rust core when its native library is linked, else the pure-Dart
   /// engine. Chosen once at construction — the app depends only on the seam.
@@ -279,8 +319,7 @@ class AppState extends ChangeNotifier
       debugPrint('[openote] could not store pasted/dropped bytes: $e');
       _blobWriteError = SaveProblem(
         short: "That didn't get added",
-        message:
-            'Openote could not save the picture or file you just added, '
+        message: 'Openote could not save the picture or file you just added, '
             'so it is not in your notebook.\n\n'
             'Check that the disk is not full and that the notebook\'s folder '
             'is not set to read-only, then paste or drop it again.',
@@ -355,7 +394,8 @@ class AppState extends ChangeNotifier
   List<({String pageId, String snippet})> searchPagesOf(
     String nb,
     String query,
-  ) => _repo.searchPageContent(nb, query);
+  ) =>
+      _repo.searchPageContent(nb, query);
 
   // ── The MCP server (spec 14): AI tools reading and writing notes ──────
 
@@ -478,8 +518,8 @@ class AppState extends ChangeNotifier
 
   ProtectionRecord? protectionFor(String nodeId) =>
       _protectedIds.contains(nodeId)
-      ? ProtectionRecord.fromJson(_repo.getSetting(_protectKey(nodeId)))
-      : null;
+          ? ProtectionRecord.fromJson(_repo.getSetting(_protectKey(nodeId)))
+          : null;
 
   /// The nearest protected ancestor of [nodeId], itself included — the node
   /// whose passcode actually governs it. Null when nothing above it is
@@ -773,7 +813,7 @@ class AppState extends ChangeNotifier
           'storage — never in a plain file — and this computer\'s password '
           'storage did not take it.'
           '${Platform.isLinux ? ' On Linux, installing the "libsecret-tools" '
-                    'package usually fixes this.' : ''}';
+              'package usually fixes this.' : ''}';
     }
     _githubToken = t;
     _githubLogin = login;
@@ -965,14 +1005,14 @@ class AppState extends ChangeNotifier
     gitStatus = 'Creating the repository…';
     notifyListeners();
     try {
-      final made = await GitHubApi(_githubToken!, baseUrl: debugGitHubBase)
-          .createRepo(
-            name?.trim().isNotEmpty == true
-                ? repoNameFor(name!)
-                : repoNameFor(currentNotebook.title),
-            private: private,
-            description: 'Openote notebook — ${currentNotebook.title}',
-          );
+      final made =
+          await GitHubApi(_githubToken!, baseUrl: debugGitHubBase).createRepo(
+        name?.trim().isNotEmpty == true
+            ? repoNameFor(name!)
+            : repoNameFor(currentNotebook.title),
+        private: private,
+        description: 'Openote notebook — ${currentNotebook.title}',
+      );
       if (!made.ok) {
         gitStatus = made.error;
         return made.error;
@@ -1001,8 +1041,7 @@ class AppState extends ChangeNotifier
         // The repository is real and the remote is set, so this is recoverable
         // by pressing Sync now — say so rather than leaving them wondering
         // whether to create another one.
-        gitStatus =
-            'Created ${made.fullName}, but the first push failed: '
+        gitStatus = 'Created ${made.fullName}, but the first push failed: '
             '${pushed.message.split('\n').first}';
         return gitStatus;
       }
@@ -1053,10 +1092,10 @@ class AppState extends ChangeNotifier
       folded = await syncPull(nb);
       gitStatus = r.ok
           ? (folded > 0
-                ? 'Synced — brought in $folded ${folded == 1 ? 'change' : 'changes'}'
-                : (r.noop ? 'Up to date' : 'Synced'))
+              ? 'Synced — brought in $folded ${folded == 1 ? 'change' : 'changes'}'
+              : (r.noop ? 'Up to date' : 'Synced'))
           : 'Could not sync: '
-                '${friendlyGitFailure(r.message, connected: githubConnected)}';
+              '${friendlyGitFailure(r.message, connected: githubConnected)}';
     } catch (e) {
       gitStatus = 'Could not sync: $e';
     } finally {
@@ -1188,6 +1227,7 @@ class AppState extends ChangeNotifier
   ///   a bare [OpLogStore]; the watcher takes paths, not a recorder. A read
   ///   that opened a recorder was the launch freeze.
   SyncRecorder? _recorderFor(String nb) {
+    if (_editorOwner != null) return _editorOwner!._recorderFor(nb);
     if (!syncLogEnabled) return null;
     if (_importingNotebooks.contains(nb)) return null;
     final existing = _recorders[nb];
@@ -1257,8 +1297,7 @@ class AppState extends ChangeNotifier
     debugPrint('[openote/sync] $where: $e');
     _logError = SaveProblem(
       short: 'Saved, but not recorded',
-      message:
-          'Openote saved your notes on this computer, but it could not '
+      message: 'Openote saved your notes on this computer, but it could not '
           "add the change to this notebook's history.\n\n"
           'The history is the copy your other devices, your backups and your '
           'shared folders read from, so those may fall behind until this '
@@ -1274,16 +1313,15 @@ class AppState extends ChangeNotifier
 
   /// A page save that could not be written to the notebook file at all.
   static SaveProblem _pageSaveFailed(Object e) => SaveProblem(
-    short: "Couldn't save — changes kept in memory",
-    message:
-        'Openote could not save this page to your computer.\n\n'
-        'Your changes are still on screen and Openote will try again the '
-        'next time you type, so nothing is lost yet — but close the app '
-        'now and they would be.\n\n'
-        'Check that the disk is not full and that the notebook is not '
-        'open in another program.',
-    details: '$e',
-  );
+        short: "Couldn't save — changes kept in memory",
+        message: 'Openote could not save this page to your computer.\n\n'
+            'Your changes are still on screen and Openote will try again the '
+            'next time you type, so nothing is lost yet — but close the app '
+            'now and they would be.\n\n'
+            'Check that the disk is not full and that the notebook is not '
+            'open in another program.',
+        details: '$e',
+      );
 
   /// In-flight background opens, so two callers don't replay the same log
   /// twice.
@@ -1302,6 +1340,7 @@ class AppState extends ChangeNotifier
   /// [SyncRecorder.openAsync] guarantees a discarded recorder has written
   /// nothing (its title seeding is deferred to the installer).
   Future<SyncRecorder?> warmRecorder(String nb) {
+    if (_editorOwner != null) return _editorOwner!.warmRecorder(nb);
     if (_disposed || !syncLogEnabled || _importingNotebooks.contains(nb)) {
       return Future.value(null);
     }
@@ -1328,8 +1367,7 @@ class AppState extends ChangeNotifier
         // Unconditional, exactly as in `_recorderFor` — see the note there.
         materialiseBlobs: true,
       );
-      final lostTheRace =
-          _disposed ||
+      final lostTheRace = _disposed ||
           _recorders.containsKey(nb) ||
           _importingNotebooks.contains(nb) ||
           !syncLogEnabled;
@@ -1504,74 +1542,72 @@ class AppState extends ChangeNotifier
     if (_disposed || !r.materialiseBlobs) return;
     final f = r
         .backfillBlobs(
-          // `containerBlob`, not `getBlob`: this is the copy OUT of the container,
-          // and the ordinary read path now answers from `blobs/` first (v0.17
-          // Step 6). Handed that, the backfill would read each file it is meant to
-          // be creating and write it back over itself, and a blob the container
-          // alone holds — the entire 378-of-488 hole this exists to close — would
-          // never be seen.
-          index: _repo.blobIndex(nb),
-          read: (h) => _repo.containerBlob(nb, h),
-        )
+      // `containerBlob`, not `getBlob`: this is the copy OUT of the container,
+      // and the ordinary read path now answers from `blobs/` first (v0.17
+      // Step 6). Handed that, the backfill would read each file it is meant to
+      // be creating and write it back over itself, and a blob the container
+      // alone holds — the entire 378-of-488 hole this exists to close — would
+      // never be seen.
+      index: _repo.blobIndex(nb),
+      read: (h) => _repo.containerBlob(nb, h),
+    )
         .catchError((Object e) {
-          // Third of Step 1's three silent paths, and the most expensive one.
-          // `backfillBlobs` is what puts image BYTES into `blobs/`; a failure here
-          // leaves a log that names pictures the folder does not contain, which on
-          // another device is a notebook whose images are all missing, and after
-          // the demotion is the only copy of those bytes. A spike stopped this at
-          // 100 of 488 blobs and the migration still printed MIGRATION COMPLETE —
-          // 193 image blocks across 40 pages destroyed, `integrity_check` ok.
-          // Returning 0 to a `debugPrint` made that indistinguishable from
-          // "nothing to copy".
-          _noteLogProblem('blob backfill for $nb stopped', e);
-          return 0;
-        })
-        .then((copied) async {
-          // **The backfill's completion is asserted, not inferred** (v0.17 plan,
-          // Step 5). Returning without throwing proves nothing: `backfillBlobs`
-          // returns 0 when it was not allowed to look, skips any hash that already
-          // has a file whatever that file contains, and a container row it cannot
-          // read is a `continue`. The only honest answer comes from re-reading
-          // `blobs/` and re-hashing it.
-          if (_disposed) return copied;
-          try {
-            _noteBlobProof(
-              nb,
-              await r.proveBlobs(read: (h) => _repo.containerBlob(nb, h)),
-            );
-          } catch (e) {
-            // This proof half had no handler of its own, and the chain is awaited
-            // by nobody unless a mirror is waiting on it — so a throw here was an
-            // UNHANDLED async error. Under `flutter test` that fails whichever
-            // test happens to be running when it lands (the Windows CI runner is
-            // slow enough to lose the race against teardown on most pushes; six
-            // unrelated tests went red for it), and in the app it is a crash
-            // report for background work nobody asked to keep.
-            //
-            // The common cause is the notebook legitimately LEAVING mid-proof —
-            // purged, moved in Explorer, its workspace torn down — which makes
-            // the proof moot, not failed: there is nothing left to prove ABOUT.
-            // Only a notebook still present and readable gets the "Saved, but not
-            // recorded" report the backfill half above already uses.
-            bool gone;
-            try {
-              final refs = _repo.notebooks.where((n) => n.id == nb).toList();
-              gone =
-                  _disposed ||
-                  e is NotebookFileMissing ||
-                  refs.isEmpty ||
-                  !File(refs.single.file).existsSync();
-            } catch (_) {
-              gone = true; // the check itself failing is the strongest "gone"
-            }
-            if (gone) {
-              debugPrint('[openote/sync] blob proof for $nb stopped: $e');
-            } else {
-              _noteLogProblem('blob proof for $nb stopped', e);
-            }
-          }
-          return copied;
-        });
+      // Third of Step 1's three silent paths, and the most expensive one.
+      // `backfillBlobs` is what puts image BYTES into `blobs/`; a failure here
+      // leaves a log that names pictures the folder does not contain, which on
+      // another device is a notebook whose images are all missing, and after
+      // the demotion is the only copy of those bytes. A spike stopped this at
+      // 100 of 488 blobs and the migration still printed MIGRATION COMPLETE —
+      // 193 image blocks across 40 pages destroyed, `integrity_check` ok.
+      // Returning 0 to a `debugPrint` made that indistinguishable from
+      // "nothing to copy".
+      _noteLogProblem('blob backfill for $nb stopped', e);
+      return 0;
+    }).then((copied) async {
+      // **The backfill's completion is asserted, not inferred** (v0.17 plan,
+      // Step 5). Returning without throwing proves nothing: `backfillBlobs`
+      // returns 0 when it was not allowed to look, skips any hash that already
+      // has a file whatever that file contains, and a container row it cannot
+      // read is a `continue`. The only honest answer comes from re-reading
+      // `blobs/` and re-hashing it.
+      if (_disposed) return copied;
+      try {
+        _noteBlobProof(
+          nb,
+          await r.proveBlobs(read: (h) => _repo.containerBlob(nb, h)),
+        );
+      } catch (e) {
+        // This proof half had no handler of its own, and the chain is awaited
+        // by nobody unless a mirror is waiting on it — so a throw here was an
+        // UNHANDLED async error. Under `flutter test` that fails whichever
+        // test happens to be running when it lands (the Windows CI runner is
+        // slow enough to lose the race against teardown on most pushes; six
+        // unrelated tests went red for it), and in the app it is a crash
+        // report for background work nobody asked to keep.
+        //
+        // The common cause is the notebook legitimately LEAVING mid-proof —
+        // purged, moved in Explorer, its workspace torn down — which makes
+        // the proof moot, not failed: there is nothing left to prove ABOUT.
+        // Only a notebook still present and readable gets the "Saved, but not
+        // recorded" report the backfill half above already uses.
+        bool gone;
+        try {
+          final refs = _repo.notebooks.where((n) => n.id == nb).toList();
+          gone = _disposed ||
+              e is NotebookFileMissing ||
+              refs.isEmpty ||
+              !File(refs.single.file).existsSync();
+        } catch (_) {
+          gone = true; // the check itself failing is the strongest "gone"
+        }
+        if (gone) {
+          debugPrint('[openote/sync] blob proof for $nb stopped: $e');
+        } else {
+          _noteLogProblem('blob proof for $nb stopped', e);
+        }
+      }
+      return copied;
+    });
     // Kept so a mirror run can wait for it. Without that, configuring a backup
     // on a notebook whose blobs have never been materialised would copy out a
     // `blobs/` that is still filling — a backup with most of the images missing,
@@ -1620,8 +1656,7 @@ class AppState extends ChangeNotifier
       // it told someone with a genuinely lost picture not to worry about it.
       _blobHole[nb] = SaveProblem(
         short: 'Some pictures may be missing',
-        message:
-            'Openote keeps a second copy of every picture and drawing '
+        message: 'Openote keeps a second copy of every picture and drawing '
             "inside this notebook's own folder, so your other devices and your "
             'backups can show them too.\n\n'
             'For ${proof.holes} of them, Openote could not find good bytes '
@@ -1633,8 +1668,7 @@ class AppState extends ChangeNotifier
             'Check that the disk is not full and that the folder is not set to '
             'read-only, then close the notebook and open it again. Openote '
             'tries again every time you open it.',
-        details:
-            '$nb\n$proof\n'
+        details: '$nb\n$proof\n'
             'missing: ${_someHashes(proof.missing)}\n'
             'unrepairable: ${_someHashes(proof.damaged)}',
       );
@@ -1905,20 +1939,19 @@ class AppState extends ChangeNotifier
   /// notebook that cannot fold must still open.
   void _foldWhenWarm(String nb) {
     unawaited(
-      warmRecorder(nb)
-          .then<int>((r) async {
-            // The user may have moved on to another notebook while this replayed.
-            if (r == null || _disposed || notebookId != nb) return 0;
-            return syncPull(nb);
-          })
-          .catchError((Object e) {
-            debugPrint('[openote/sync] open-time fold failed: $e');
-            return 0;
-          }),
+      warmRecorder(nb).then<int>((r) async {
+        // The user may have moved on to another notebook while this replayed.
+        if (r == null || _disposed || notebookId != nb) return 0;
+        return syncPull(nb);
+      }).catchError((Object e) {
+        debugPrint('[openote/sync] open-time fold failed: $e');
+        return 0;
+      }),
     );
   }
 
   Future<int> syncPull(String nb) async {
+    if (_editorOwner != null) return _editorOwner!.syncPull(nb);
     if (_pulling) {
       // Don't queue a second concurrent pull — two overlapping pulls would both
       // read the same pending ops and both advance the watermark, applying
@@ -2360,6 +2393,16 @@ class AppState extends ChangeNotifier
       docRevision++;
     }
     lastSyncPull = pending.length;
+    for (final editor in _editors.where((editor) => editor.notebookId == nb)) {
+      editor.reloadNodes();
+      if (editor.pageId != null && changed.pages.contains(editor.pageId)) {
+        final data = await editor.engine.loadPage(nb, editor.pageId!);
+        editor.blocks = data.blocks;
+        editor.pageProps = data.props;
+        editor.docRevision++;
+      }
+      editor.notifyListeners();
+    }
     _invalidateSyncStatus();
     notifyListeners();
     return pending.length;
@@ -2475,9 +2518,9 @@ class AppState extends ChangeNotifier
   }
 
   void _saveMirrors() => _repo.setSetting('mirrors', {
-    for (final e in _mirrors.entries)
-      e.key: [for (final t in e.value) t.toJson()],
-  });
+        for (final e in _mirrors.entries)
+          e.key: [for (final t in e.value) t.toJson()],
+      });
 
   /// When each notebook's mirrors last ran, so saves don't trigger a copy
   /// storm. A mirror is a safety net, not a live replica.
@@ -2872,9 +2915,8 @@ class AppState extends ChangeNotifier
           suffix++;
         }
         await File(candidate.path).copy(destination);
-        final sourceLogs = candidate.logs == null
-            ? null
-            : Directory(candidate.logs!);
+        final sourceLogs =
+            candidate.logs == null ? null : Directory(candidate.logs!);
         if (sourceLogs != null && sourceLogs.existsSync()) {
           await _copyBackupDirectory(
             sourceLogs,
@@ -3086,15 +3128,13 @@ class AppState extends ChangeNotifier
         debugPrint('[openote/sync] a foreign log changed — pulling');
         // Fire-and-forget: a failed pull must not take down the watcher, and
         // the next change (or the manual button) retries anyway.
-        syncPull(notebookId!)
-            .then((n) {
-              lastPullAt = DateTime.now();
-              debugPrint('[openote/sync] auto-pull folded $n op(s)');
-              notifyListeners();
-            })
-            .catchError((Object e) {
-              debugPrint('[openote/sync] auto-pull failed: $e');
-            });
+        syncPull(notebookId!).then((n) {
+          lastPullAt = DateTime.now();
+          debugPrint('[openote/sync] auto-pull folded $n op(s)');
+          notifyListeners();
+        }).catchError((Object e) {
+          debugPrint('[openote/sync] auto-pull failed: $e');
+        });
       },
     )..start();
   }
@@ -3238,9 +3278,9 @@ class AppState extends ChangeNotifier
   }
 
   void _persistSyncRoots() => _repo.setSetting('syncRoots', [
-    for (final f in _syncRoots)
-      {'path': f.path, 'name': f.name, 'kind': f.kind.name},
-  ]);
+        for (final f in _syncRoots)
+          {'path': f.path, 'name': f.name, 'kind': f.kind.name},
+      ]);
 
   /// Restore the remembered roots. Public and standalone, like `study.load()`
   /// and `planner.load()` — `init()` needs a widgets binding, and a test of
@@ -3278,9 +3318,8 @@ class AppState extends ChangeNotifier
     // notebook keeps its container in the local workspace, so asking where the
     // container is told that device it wasn't syncing — while it was.
     final path = notebookLogDir(nb);
-    final folder = path == null
-        ? null
-        : cloudFolderContaining(path, also: _syncRoots);
+    final folder =
+        path == null ? null : cloudFolderContaining(path, also: _syncRoots);
     final devices = syncDeviceCount(nb);
     final status = SyncStatus(
       folder: folder,
@@ -3302,8 +3341,7 @@ class AppState extends ChangeNotifier
 
   /// Where this notebook's container and logs actually are, with sizes.
   Future<NotebookStorage> storageFor(String nb) async {
-    final ref =
-        _repo.notebooks.where((n) => n.id == nb).firstOrNull ??
+    final ref = _repo.notebooks.where((n) => n.id == nb).firstOrNull ??
         _repo.trashedNotebooks.where((n) => n.id == nb).firstOrNull;
     if (ref == null) {
       return const NotebookStorage(
@@ -3407,8 +3445,7 @@ class AppState extends ChangeNotifier
         converted: 0,
         failed: 0,
         freed: 0,
-        firstError:
-            'there are changes from another device still to fold in. '
+        firstError: 'there are changes from another device still to fold in. '
             'Try again in a moment.',
         deferred: true,
       );
@@ -3479,8 +3516,7 @@ class AppState extends ChangeNotifier
             // took 45 seconds and reported nothing — so it is counted, not
             // shrugged off.
             failed++;
-            firstError ??=
-                'a page matched the search but held no convertible '
+            firstError ??= 'a page matched the search but held no convertible '
                 'handwriting';
             continue;
           }
@@ -3582,8 +3618,7 @@ class AppState extends ChangeNotifier
     await flushSave();
     if (notebookIsReadOnly(nb)) {
       return const BlobReclaim(
-        refusal:
-            'This notebook was written by a newer version of Openote, '
+        refusal: 'This notebook was written by a newer version of Openote, '
             'so this one is only showing it to you. Nothing will be changed.',
       );
     }
@@ -3594,25 +3629,21 @@ class AppState extends ChangeNotifier
     final r = await warmRecorder(nb);
     if (r == null) {
       return const BlobReclaim(
-        refusal:
-            "Openote could not open this notebook's own folder, so it "
+        refusal: "Openote could not open this notebook's own folder, so it "
             'cannot check that your pictures are safely copied there. '
             'Nothing has been changed.',
-        details:
-            'no SyncRecorder for the notebook; see the save problem '
+        details: 'no SyncRecorder for the notebook; see the save problem '
             'reported separately',
       );
     }
     final proof = await proveBlobBytes(nb);
     if (!proof.ok) {
       return BlobReclaim(
-        refusal:
-            'Openote will not do this yet. ${proof.holes} of this '
+        refusal: 'Openote will not do this yet. ${proof.holes} of this '
             "notebook's pictures and drawings are missing or damaged in the "
             "notebook's own folder, and that is the copy this would leave "
             'you with. Nothing has been changed.',
-        details:
-            '$proof\n'
+        details: '$proof\n'
             'missing: ${_someHashes(proof.missing)}\n'
             'unrepairable: ${_someHashes(proof.damaged)}',
       );
@@ -3659,8 +3690,7 @@ class AppState extends ChangeNotifier
     await flushSave();
     if (notebookIsReadOnly(nb)) {
       return const ContainerRebuild(
-        refusal:
-            'This notebook was written by a newer version of Openote, '
+        refusal: 'This notebook was written by a newer version of Openote, '
             'so this one is only showing it to you. Nothing will be changed.',
       );
     }
@@ -3670,24 +3700,20 @@ class AppState extends ChangeNotifier
     final r = await warmRecorder(nb);
     if (r == null) {
       return const ContainerRebuild(
-        refusal:
-            "Openote could not open this notebook's own folder, so it "
+        refusal: "Openote could not open this notebook's own folder, so it "
             'has no history to rebuild from. Nothing has been changed.',
-        details:
-            'no SyncRecorder for the notebook; see the save problem '
+        details: 'no SyncRecorder for the notebook; see the save problem '
             'reported separately',
       );
     }
     final proof = await proveBlobBytes(nb);
     if (!proof.ok) {
       return ContainerRebuild(
-        refusal:
-            'Openote will not do this yet. ${proof.holes} of this '
+        refusal: 'Openote will not do this yet. ${proof.holes} of this '
             "notebook's pictures and drawings are missing or damaged in the "
             "notebook's own folder, and that folder is what a rebuilt "
             'notebook reads them from. Nothing has been changed.',
-        details:
-            '$proof\n'
+        details: '$proof\n'
             'missing: ${_someHashes(proof.missing)}\n'
             'unrepairable: ${_someHashes(proof.damaged)}',
       );
@@ -3743,8 +3769,7 @@ class AppState extends ChangeNotifier
     await flushSave();
     if (notebookIsReadOnly(nb)) {
       return const ContainerDemotion(
-        refusal:
-            'This notebook was written by a newer version of Openote, '
+        refusal: 'This notebook was written by a newer version of Openote, '
             'so this one is only showing it to you. Nothing will be changed.',
       );
     }
@@ -3752,25 +3777,21 @@ class AppState extends ChangeNotifier
     final r = await warmRecorder(nb);
     if (r == null) {
       return const ContainerDemotion(
-        refusal:
-            "Openote could not open this notebook's own folder, so "
+        refusal: "Openote could not open this notebook's own folder, so "
             'there would be nothing left to rebuild it from. Nothing has '
             'been changed.',
-        details:
-            'no SyncRecorder for the notebook; see the save problem '
+        details: 'no SyncRecorder for the notebook; see the save problem '
             'reported separately',
       );
     }
     final proof = await proveBlobBytes(nb);
     if (!proof.ok) {
       return ContainerDemotion(
-        refusal:
-            'Openote will not do this yet. ${proof.holes} of this '
+        refusal: 'Openote will not do this yet. ${proof.holes} of this '
             "notebook's pictures and drawings are missing or damaged in the "
             "notebook's own folder, and that folder is where they would be "
             'read from. Nothing has been changed.',
-        details:
-            '$proof\n'
+        details: '$proof\n'
             'missing: ${_someHashes(proof.missing)}\n'
             'unrepairable: ${_someHashes(proof.damaged)}',
       );
@@ -3938,8 +3959,7 @@ class AppState extends ChangeNotifier
           // `-shm` and a `-wal` for a notebook that no longer exists. They are
           // only ever orphans when the `.onote` is absent; a live pair belongs
           // to a working database and deleting it would be destructive.
-          final isStrayWal =
-              e is File &&
+          final isStrayWal = e is File &&
               (ext == '.onote-wal' || ext == '.onote-shm') &&
               !File('${p.withoutExtension(e.path)}.onote').existsSync();
           if (!isLog && !isContainer && !isStrayWal) continue;
@@ -4017,8 +4037,7 @@ class AppState extends ChangeNotifier
     final rec = await warmRecorder(nb);
     if (rec != null && rec.foreignPending) {
       return const VideoSweep(
-        refusal:
-            'There are changes from another device still to fold in. '
+        refusal: 'There are changes from another device still to fold in. '
             'Try again in a moment.',
       );
     }
@@ -4040,8 +4059,7 @@ class AppState extends ChangeNotifier
       }
       if (history == null) {
         return const VideoSweep(
-          refusal:
-              "Openote couldn't read this notebook's list of recent "
+          refusal: "Openote couldn't read this notebook's list of recent "
               'deletions, so it cannot tell which videos "Put it back" '
               'still needs. Nothing has been removed.',
         );
@@ -4342,9 +4360,9 @@ class AppState extends ChangeNotifier
   /// the navigator shows them" is exactly the thing a section-wide export or
   /// sort has to agree with the navigator about.
   List<TreeNode> pagesOf(String sectionId) => [
-    for (final n in nodes)
-      if (n.kind == NodeKind.page && n.parentId == sectionId) n,
-  ];
+        for (final n in nodes)
+          if (n.kind == NodeKind.page && n.parentId == sectionId) n,
+      ];
 
   /// Focus a section (the pages pane shows its pages). When the current page
   /// isn't inside the section, return to the page you were last on THERE —
@@ -4485,48 +4503,22 @@ class AppState extends ChangeNotifier
   final List<String> penToolbarColors = [];
   final List<String> highlighterToolbarColors = [];
 
-  /// Per-ribbon command order. It deliberately stores ids, never widget
-  /// positions, so an update can add a new command without losing a person's
-  /// own layout. Unknown ids are ignored when a ribbon is reconstructed.
-  final Map<String, List<String>> ribbonOrders = {};
+  final Set<int> hiddenPenPresets = {};
+  final Set<int> hiddenHighlighterPresets = {};
 
-  List<T> orderedRibbon<T>(
-    String ribbon,
-    List<T> controls,
-    String Function(T control) idOf,
-  ) {
-    final byId = {for (final control in controls) idOf(control): control};
-    final saved = ribbonOrders[ribbon] ?? const <String>[];
-    return [
-      for (final id in saved)
-        if (byId.remove(id) case final control?) control,
-      ...byId.values,
-    ];
-  }
+  bool toolbarPresetVisible(Tool brush, int index) =>
+      !(brush == Tool.highlighter ? hiddenHighlighterPresets : hiddenPenPresets)
+          .contains(index);
 
-  void placeRibbonControl(
-    String ribbon,
-    String value,
-    String? before,
-    List<String> defaults,
-  ) {
-    if (!defaults.contains(value)) return;
-    final valid = defaults.toSet();
-    final order = <String>[
-      for (final id in ribbonOrders[ribbon] ?? const <String>[])
-        if (valid.contains(id)) id,
-      for (final id in defaults)
-        if (!(ribbonOrders[ribbon] ?? const <String>[]).contains(id)) id,
-    ];
-    order.remove(value);
-    final at = before == null ? -1 : order.indexOf(before);
-    if (at < 0) {
-      order.add(value);
-    } else {
-      order.insert(at, value);
-    }
-    ribbonOrders[ribbon] = order;
-    _repo.setSetting('ribbonOrders', ribbonOrders);
+  void hideToolbarPreset(Tool brush, int index) {
+    final hidden =
+        brush == Tool.highlighter ? hiddenHighlighterPresets : hiddenPenPresets;
+    if (!hidden.add(index)) return;
+    _repo.setSetting(
+        brush == Tool.highlighter
+            ? 'hiddenHighlighterPresets'
+            : 'hiddenPenPresets',
+        hidden.toList());
     notifyListeners();
   }
 
@@ -4551,43 +4543,6 @@ class AppState extends ChangeNotifier
   void removeToolbarInkColor(String value, Tool brush) {
     final colors = toolbarInkColorsFor(brush);
     if (!colors.remove(value)) return;
-    _repo.setSetting(
-      brush == Tool.highlighter
-          ? 'highlighterToolbarColors'
-          : 'penToolbarColors',
-      colors,
-    );
-    notifyListeners();
-  }
-
-  void moveToolbarInkColor(String value, Tool brush, int direction) {
-    final colors = toolbarInkColorsFor(brush);
-    final from = colors.indexOf(value);
-    final to = from + direction;
-    if (from < 0 || to < 0 || to >= colors.length) return;
-    final colour = colors.removeAt(from);
-    colors.insert(to, colour);
-    _repo.setSetting(
-      brush == Tool.highlighter
-          ? 'highlighterToolbarColors'
-          : 'penToolbarColors',
-      colors,
-    );
-    notifyListeners();
-  }
-
-  /// Place a pinned colour immediately before another pinned colour. Used by
-  /// the long-press drag target; keeping this mutation in state makes the
-  /// order durable across restarts just like a normal move button.
-  void placeToolbarInkColorBefore(String value, String before, Tool brush) {
-    if (value == before) return;
-    final colors = toolbarInkColorsFor(brush);
-    final from = colors.indexOf(value);
-    final target = colors.indexOf(before);
-    if (from < 0 || target < 0) return;
-    final colour = colors.removeAt(from);
-    final insertion = colors.indexOf(before);
-    colors.insert(insertion < 0 ? colors.length : insertion, colour);
     _repo.setSetting(
       brush == Tool.highlighter
           ? 'highlighterToolbarColors'
@@ -4644,9 +4599,8 @@ class AppState extends ChangeNotifier
 
   void setCustomPenColor(String? value) {
     final raw = value?.replaceFirst('#', '').toUpperCase();
-    penCustomColor = raw != null && RegExp(r'^[0-9A-F]{6}$').hasMatch(raw)
-        ? raw
-        : null;
+    penCustomColor =
+        raw != null && RegExp(r'^[0-9A-F]{6}$').hasMatch(raw) ? raw : null;
     _repo.setSetting('penCustomColor', penCustomColor);
     notifyListeners();
   }
@@ -4676,9 +4630,8 @@ class AppState extends ChangeNotifier
 
   void setCustomInkColor(String? value) {
     final raw = value?.replaceFirst('#', '').toUpperCase();
-    final clean = raw != null && RegExp(r'^[0-9A-F]{6}$').hasMatch(raw)
-        ? raw
-        : null;
+    final clean =
+        raw != null && RegExp(r'^[0-9A-F]{6}$').hasMatch(raw) ? raw : null;
     if (tool == Tool.highlighter) {
       highlighterCustomColor = clean;
       _repo.setSetting('highlighterCustomColor', clean);
@@ -4816,13 +4769,14 @@ class AppState extends ChangeNotifier
     TagKind kind,
     DateTime? day, {
     String? pageId,
-  }) => _updateTag(
-    pageId ?? this.pageId ?? '',
-    blockId,
-    line,
-    kind,
-    (t) => t.withDue(day),
-  );
+  }) =>
+      _updateTag(
+        pageId ?? this.pageId ?? '',
+        blockId,
+        line,
+        kind,
+        (t) => t.withDue(day),
+      );
 
   /// Tick a to-do off, wherever in the notebook it lives.
   bool setTagCheckedOn(
@@ -4830,13 +4784,14 @@ class AppState extends ChangeNotifier
     String blockId,
     int line,
     bool checked,
-  ) => _updateTag(
-    pageId_,
-    blockId,
-    line,
-    TagKind.todo,
-    (t) => t.copyWith(checked: checked),
-  );
+  ) =>
+      _updateTag(
+        pageId_,
+        blockId,
+        line,
+        TagKind.todo,
+        (t) => t.copyWith(checked: checked),
+      );
 
   /// Tags on the caret's line, so the toolbar can show which are active.
   Set<TagKind> tagsAtCaret() {
@@ -4873,9 +4828,8 @@ class AppState extends ChangeNotifier
   /// Falls back to line 0 when nothing is being edited (a tag applied to a
   /// merely-selected block is a tag on its first line).
   int _caretLine(Block b) {
-    final ctl = activeEditor?.block.id == b.id
-        ? activeEditor?.controller
-        : null;
+    final ctl =
+        activeEditor?.block.id == b.id ? activeEditor?.controller : null;
     final text = b.content['text'] as String? ?? '';
     if (ctl == null || !ctl.selection.isValid) return 0;
     final at = ctl.selection.baseOffset.clamp(0, text.length);
@@ -5094,9 +5048,10 @@ class AppState extends ChangeNotifier
 
   /// Favourite page ids in THIS notebook, in tree order.
   List<TreeNode> favouritePages() => [
-    for (final n in nodes)
-      if (n.kind == NodeKind.page && _favourites.contains(_pageKey(n.id))) n,
-  ];
+        for (final n in nodes)
+          if (n.kind == NodeKind.page && _favourites.contains(_pageKey(n.id)))
+            n,
+      ];
 
   void toggleFavourite(String pageId) {
     final k = _pageKey(pageId);
@@ -5530,8 +5485,11 @@ class AppState extends ChangeNotifier
 
   /// The text/code editor currently mounted & editing, registered by its view
   /// so command-bar formatting can act on the live selection.
-  ({TextEditingController controller, Block block, String contentKey})?
-  activeEditor;
+  ({
+    TextEditingController controller,
+    Block block,
+    String contentKey
+  })? activeEditor;
 
   /// The same editor as [activeEditor], through the engine seam.
   ///
@@ -6079,8 +6037,8 @@ class AppState extends ChangeNotifier
   /// `~hello world~`, which no renderer matches — permanently visible tildes,
   /// exactly the bug class this command exists to avoid. `~hello~ ~world~`
   /// looks identical on the page and actually renders.
-  static String _wrapRun(String s, String mark, String close) =>
-      _noSpaceMarks.contains(mark)
+  static String _wrapRun(String s, String mark, String close) => _noSpaceMarks
+          .contains(mark)
       ? s.replaceAllMapped(RegExp(r'\S+'), (m) => '$mark${m.group(0)}$close')
       : '$mark$s$close';
 
@@ -6114,8 +6072,7 @@ class AppState extends ChangeNotifier
       RegExpMatch? enclosingMatch;
       for (final m in mdInlineRe.allMatches(scan)) {
         final c = classifyInline(m);
-        final isBoth =
-            c.kind == MdInline.boldItalic &&
+        final isBoth = c.kind == MdInline.boldItalic &&
             (want == MdInline.bold || want == MdInline.italic);
         final innerStart = m.start + c.openLen, innerEnd = m.end - c.closeLen;
         if (lo < innerStart || hi > innerEnd) continue;
@@ -6229,7 +6186,7 @@ class AppState extends ChangeNotifier
   /// this one answers "how many of this CHARACTER am I inside", which is the
   /// only question a ladder can be built from.
   static ({int start, int end, int openLen, int closeLen, int total})?
-  _markerRunAround(String t, int s, int e, String ch) {
+      _markerRunAround(String t, int s, int e, String ch) {
     final lineStart = lineStartOf(t, s);
     final lineEnd = math.max(lineStart, lineEndOf(t, e));
     var scan = t.substring(lineStart, lineEnd);
@@ -6681,12 +6638,10 @@ class AppState extends ChangeNotifier
     if (as is bool) autoSync = as;
     final sc = _repo.getSetting('spellCheck');
     if (sc is bool) spellCheckEnabled = sc;
-    interfaceLanguage = _repo.getSetting('interfaceLanguage') == 'de'
-        ? 'de'
-        : 'en';
-    writingLanguage = _repo.getSetting('writingLanguage') == 'de-DE'
-        ? 'de-DE'
-        : 'en-US';
+    interfaceLanguage =
+        _repo.getSetting('interfaceLanguage') == 'de' ? 'de' : 'en';
+    writingLanguage =
+        _repo.getSetting('writingLanguage') == 'de-DE' ? 'de-DE' : 'en-US';
     handwritingSpellCheck = _repo.getSetting('handwritingSpellCheck') != false;
     final ignoredMarks = _repo.getSetting('ignoredHandwritingMarks');
     if (ignoredMarks is List) {
@@ -6726,8 +6681,7 @@ class AppState extends ChangeNotifier
     if (td != null) {
       touchDrawing = TouchDrawing.values.asNameMap()[td] ?? touchDrawing;
     }
-    final maximized =
-        _repo.getSetting('startMaximized') ??
+    final maximized = _repo.getSetting('startMaximized') ??
         _repo.getSetting('startFullscreen');
     if (maximized is bool) startMaximized = maximized;
     final eraser = _repo.getSetting('eraserSize');
@@ -6746,9 +6700,9 @@ class AppState extends ChangeNotifier
         final storedTool = Tool.values.asNameMap()[entry.key];
         if (storedTool != null && _hasInkSize(storedTool)) {
           _inkToolSizes[storedTool] = entry.value.toDouble().clamp(
-            minInkSizeFor(storedTool),
-            maxInkSizeFor(storedTool),
-          );
+                minInkSizeFor(storedTool),
+                maxInkSizeFor(storedTool),
+              );
         }
       }
       if (_hasInkSize(tool)) penSize = inkSizeFor(tool);
@@ -6771,15 +6725,13 @@ class AppState extends ChangeNotifier
 
     loadToolbarColors('penToolbarColors', penToolbarColors);
     loadToolbarColors('highlighterToolbarColors', highlighterToolbarColors);
-    final storedRibbonOrders = _repo.getSetting('ribbonOrders');
-    if (storedRibbonOrders is Map) {
-      for (final entry in storedRibbonOrders.entries) {
-        if (entry.key is! String || entry.value is! List) continue;
-        ribbonOrders[entry.key as String] = [
-          for (final id in entry.value)
-            if (id is String) id,
-        ];
-      }
+    for (final entry in {
+      'hiddenPenPresets': hiddenPenPresets,
+      'hiddenHighlighterPresets': hiddenHighlighterPresets
+    }.entries) {
+      final stored = _repo.getSetting(entry.key);
+      if (stored is List)
+        entry.value.addAll(stored.whereType<int>().where((i) => i >= 0));
     }
     final penColour = _repo.getSetting('penCustomColor');
     if (penColour is String &&
@@ -6841,14 +6793,12 @@ class AppState extends ChangeNotifier
       // up on the last notebook, and the shell says what happened to the one
       // that was asked for. Refusing to start because a shortcut points at a
       // moved file is the silent-no-op's louder cousin.
-      pendingOpenNotice =
-          resolved.problem ??
+      pendingOpenNotice = resolved.problem ??
           (resolved.copied
               ? _copiedInNotice(resolved.ref!, notebookPath)
               : null);
     }
-    notebookId =
-        asked ??
+    notebookId = asked ??
         (_repo.notebooks.any((n) => n.id == lastNb)
             ? lastNb!
             : _repo.notebooks.first.id);
@@ -6890,6 +6840,7 @@ class AppState extends ChangeNotifier
   }
 
   void _persistSession() {
+    if (_editorOwner != null) return;
     _repo.setSetting('viewMemory', _viewMemory);
     _repo.setSetting('lastNotebook', notebookId);
     _repo.setSetting('lastPage', pageId);
@@ -6897,6 +6848,18 @@ class AppState extends ChangeNotifier
 
   Future<void> _loadNotebook() async {
     reloadNodes();
+    if (_editorOwner != null) {
+      reloadProtection();
+      activeSectionId =
+          nodes.where((n) => n.kind == NodeKind.section).firstOrNull?.id;
+      final first = nodes
+          .where((n) =>
+              n.kind == NodeKind.page &&
+              _editorDisplaying(notebookId, n.id) == null)
+          .firstOrNull;
+      await selectPage(first?.id);
+      return;
+    }
     // The single funnel every notebook-open goes through — startup, switching,
     // creating, joining — which is why the gate is rehydrated HERE rather than
     // in init(). Before any page is selected: `selectPage` below loads a
@@ -6931,11 +6894,13 @@ class AppState extends ChangeNotifier
     // first, so calling it unconditionally is safe.
     _startWatching();
     // Reset the focused section for the new notebook (selectPage refines it).
-    activeSectionId = nodes
-        .where((n) => n.kind == NodeKind.section)
-        .firstOrNull
-        ?.id;
-    final firstPage = nodes.where((n) => n.kind == NodeKind.page).firstOrNull;
+    activeSectionId =
+        nodes.where((n) => n.kind == NodeKind.section).firstOrNull?.id;
+    final firstPage = nodes
+        .where((n) =>
+            n.kind == NodeKind.page &&
+            _editorDisplaying(notebookId, n.id) == null)
+        .firstOrNull;
     await selectPage(firstPage?.id);
   }
 
@@ -7044,7 +7009,7 @@ class AppState extends ChangeNotifier
   /// what genuinely differs between them (switching notebooks and showing the
   /// notice now, versus recording it for the shell to show after startup).
   Future<({NotebookRef? ref, OpenNotebookResult? problem, bool copied})>
-  _resolveHandedPath(String path) async {
+      _resolveHandedPath(String path) async {
     // ── v0.17 Step 8b: what arrives here is no longer always a container ────
     //
     // Since decision 2 ("register the folder instead") the thing a student
@@ -7114,7 +7079,7 @@ class AppState extends ChangeNotifier
   /// there, which is a fact the user has to be told: their edits stop going to
   /// the file they double-clicked.
   Future<({NotebookRef? ref, OpenNotebookResult? problem, bool copied})>
-  _resolveNotebookFile(String path) async {
+      _resolveNotebookFile(String path) async {
     // Absolute and normalised before anything compares it. `p.equals` against
     // the registry, `p.isWithin` against the workspace and the sniff below all
     // want a real path, and a relative one reaches here whenever the request
@@ -7187,23 +7152,23 @@ class AppState extends ChangeNotifier
   ) {
     final (outcome, message) = switch (problem) {
       NotebookFileProblem.missing => (
-        OpenNotebookOutcome.notFound,
-        "Openote couldn't find that notebook. It may have been moved, "
-            'renamed or deleted since you last opened it.',
-      ),
+          OpenNotebookOutcome.notFound,
+          "Openote couldn't find that notebook. It may have been moved, "
+              'renamed or deleted since you last opened it.',
+        ),
       NotebookFileProblem.notAFile => (
-        OpenNotebookOutcome.notANotebook,
-        "That's a folder, not a notebook, so there is nothing to open.",
-      ),
+          OpenNotebookOutcome.notANotebook,
+          "That's a folder, not a notebook, so there is nothing to open.",
+        ),
       NotebookFileProblem.unreadable => (
-        OpenNotebookOutcome.failed,
-        "Openote couldn't read that file. Another program may have it open, "
-            'or it may be somewhere you do not have permission to read.',
-      ),
+          OpenNotebookOutcome.failed,
+          "Openote couldn't read that file. Another program may have it open, "
+              'or it may be somewhere you do not have permission to read.',
+        ),
       NotebookFileProblem.notANotebook => (
-        OpenNotebookOutcome.notANotebook,
-        "That file isn't an Openote notebook, so there is nothing to open.",
-      ),
+          OpenNotebookOutcome.notANotebook,
+          "That file isn't an Openote notebook, so there is nothing to open.",
+        ),
     };
     return OpenNotebookResult(outcome, message, details: path);
   }
@@ -7261,8 +7226,12 @@ class AppState extends ChangeNotifier
   }
 
   Future<void> renameNotebook(String id, String title) async {
-    await _repo.renameNotebook(id, title);
-    _recorderFor(id)?.notebookMeta({'title': title});
+    final saving = _repo.renameNotebook(id, title);
+    navRevision++;
+    notifyListeners();
+    await saving;
+    final recorder = await warmRecorder(id);
+    recorder?.notebookMeta({'title': title});
     notifyListeners();
   }
 
@@ -7331,7 +7300,7 @@ class AppState extends ChangeNotifier
   /// folders-with-a-dot — "your other devices" is the thing the user has.
   String? purgeCaveat(String id) => purgeKeepsSharedFolder(id)
       ? 'This notebook is in a folder you share, so your other devices keep '
-            'their copy. Deleting it here takes it off this computer.'
+          'their copy. Deleting it here takes it off this computer.'
       : null;
 
   /// Throw away a notebook that was never the user's — the half-built target of
@@ -7357,6 +7326,11 @@ class AppState extends ChangeNotifier
   }
 
   Future<void> selectPage(String? id) async {
+    final other = _editorDisplaying(notebookId, id);
+    if (other != null) {
+      other.activateEditor?.call();
+      return;
+    }
     _rememberView(); // keep your place when flicking between pages (§7a.5)
     await flushSave();
     pageId = id;
@@ -7485,9 +7459,8 @@ class AppState extends ChangeNotifier
         for (var i = start; i < end; i++) {
           final n = pages[i];
           // The open page is already in memory and owns unsaved edits.
-          final data = n.id == pageId
-              ? PageData(blocks, pageProps)
-              : readPage(n.id);
+          final data =
+              n.id == pageId ? PageData(blocks, pageProps) : readPage(n.id);
           final changed = _healBlocks(data.blocks, core);
           if (changed == 0) continue;
           healedPages++;
@@ -8283,8 +8256,7 @@ class AppState extends ChangeNotifier
   /// they should be in and renumbered — the same thing `sortSection` does, and
   /// bounded the same way, by the number of pages in one section.
   Future<void> addPage({String? sectionId}) async {
-    sectionId ??=
-        sectionOf(pageId) ??
+    sectionId ??= sectionOf(pageId) ??
         nodes.where((n) => n.kind == NodeKind.section).firstOrNull?.id;
     if (sectionId == null) return;
 
@@ -8452,9 +8424,8 @@ class AppState extends ChangeNotifier
         groups.last.add(s);
       }
     }
-    final movingGroup = groups
-        .where((g) => g.any((n) => n.id == movingId))
-        .firstOrNull;
+    final movingGroup =
+        groups.where((g) => g.any((n) => n.id == movingId)).firstOrNull;
     if (movingGroup == null) return;
     // Dropping a page onto its own subpage would try to nest it inside itself.
     if (movingGroup.any((n) => n.id == targetId) &&
@@ -8462,9 +8433,8 @@ class AppState extends ChangeNotifier
       return;
     }
     groups.remove(movingGroup);
-    final targetGroup = groups
-        .where((g) => g.any((n) => n.id == targetId))
-        .firstOrNull;
+    final targetGroup =
+        groups.where((g) => g.any((n) => n.id == targetId)).firstOrNull;
     final at = targetGroup == null
         ? groups.length
         : groups.indexOf(targetGroup) + (after ? 1 : 0);
@@ -8520,7 +8490,7 @@ class AppState extends ChangeNotifier
   // ── Recycle bin (ORG-7) ────────────────────────────────────────────────
 
   List<({String id, String kind, String title, int deletedAt})>
-  deletedNodes() => _repo.loadDeletedNodes(notebookId!);
+      deletedNodes() => _repo.loadDeletedNodes(notebookId!);
 
   Future<void> restoreDeleted(String id) async {
     if (notebookIsReadOnly(notebookId!)) return;
@@ -8551,8 +8521,10 @@ class AppState extends ChangeNotifier
   /// Cached on the same key as the links panel: without it, the panel rescans
   /// every block's Markdown on each notify — i.e. per keystroke — which is the
   /// exact cost the memoised navigator exists to avoid.
-  ({String key, List<({String blockId, int level, String text})> items})?
-  _tocCache;
+  ({
+    String key,
+    List<({String blockId, int level, String text})> items
+  })? _tocCache;
 
   List<({String blockId, int level, String text})> pageOutline() {
     final key = '$pageId#$docRevision';
@@ -8594,10 +8566,10 @@ class AppState extends ChangeNotifier
     final back = pageId == null
         ? <TreeNode>[]
         : _repo
-              .backlinkPageIds(notebookId!, pageId!)
-              .map(node)
-              .whereType<TreeNode>()
-              .toList();
+            .backlinkPageIds(notebookId!, pageId!)
+            .map(node)
+            .whereType<TreeNode>()
+            .toList();
     // Outgoing: `[[Title|id]]` resolves by id, a bare `[[Title]]` by title —
     // the panel used to ignore the bare form entirely.
     final out = <String, TreeNode>{};
@@ -8605,9 +8577,8 @@ class AppState extends ChangeNotifier
       for (final m in _outgoingLinkRe.allMatches(
         b.content['text'] as String? ?? '',
       )) {
-        final target = m.group(2) != null
-            ? node(m.group(2))
-            : pageByTitle(m.group(1)!);
+        final target =
+            m.group(2) != null ? node(m.group(2)) : pageByTitle(m.group(1)!);
         if (target != null) out[target.id] = target;
       }
     }
@@ -8636,9 +8607,8 @@ class AppState extends ChangeNotifier
   /// Resolve a wiki-link target (EMBED-1): prefer the stable id, fall back to
   /// title match, and navigate.
   void openWikiLink(String label, String? id) {
-    final target = (id != null && node(id) != null)
-        ? id
-        : pageByTitle(label)?.id;
+    final target =
+        (id != null && node(id) != null) ? id : pageByTitle(label)?.id;
     if (target != null) selectPage(target);
   }
 
@@ -8739,9 +8709,9 @@ class AppState extends ChangeNotifier
   // ── Undo / redo (page-scoped snapshots) ────────────────────────────────
 
   String _snapshot() => jsonEncode({
-    'page': pageProps.toJson(),
-    'blocks': [for (final b in blocks) b.toJson()],
-  });
+        'page': pageProps.toJson(),
+        'blocks': [for (final b in blocks) b.toJson()],
+      });
 
   void _restore(String snap) {
     final j = jsonDecode(snap) as Map<String, dynamic>;
@@ -8854,8 +8824,7 @@ class AppState extends ChangeNotifier
   /// them — it is simply no longer the thing this makes.
   Block insertFlashcard({Offset? at}) {
     const line = '?[Question](Answer)';
-    final where =
-        at ??
+    final where = at ??
         canvas.screenToPage(
           Offset(canvas.viewport.width / 2, canvas.viewport.height / 2),
         );
@@ -8899,13 +8868,11 @@ class AppState extends ChangeNotifier
     String? fromLatex,
     Offset? at,
   }) {
-    final near = from == null
-        ? null
-        : blocks.where((b) => b.id == from).firstOrNull;
+    final near =
+        from == null ? null : blocks.where((b) => b.id == from).firstOrNull;
     // Beside the equation, not on top of it: to its right if there is room on
     // the page, underneath it otherwise.
-    final where =
-        at ??
+    final where = at ??
         (near == null
             ? canvas.screenToPage(
                 Offset(canvas.viewport.width / 2, canvas.viewport.height / 2),
@@ -8932,11 +8899,11 @@ class AppState extends ChangeNotifier
 
   /// Every graph on this page that follows the maths BLOCK [equationId].
   Iterable<Block> graphsFollowing(String equationId) => blocks.where(
-    (b) =>
-        b.type == BlockType.graph &&
-        b.content['from'] == equationId &&
-        b.content['fromLatex'] == null,
-  );
+        (b) =>
+            b.type == BlockType.graph &&
+            b.content['from'] == equationId &&
+            b.content['fromLatex'] == null,
+      );
 
   /// Every graph that follows one particular equation inside a sentence.
   Iterable<Block> graphsFollowingInline(String blockId, String latex) {
@@ -9085,11 +9052,9 @@ class AppState extends ChangeNotifier
     String? fromLatex,
     Offset? at,
   }) {
-    final near = from == null
-        ? null
-        : blocks.where((b) => b.id == from).firstOrNull;
-    final where =
-        at ??
+    final near =
+        from == null ? null : blocks.where((b) => b.id == from).firstOrNull;
+    final where = at ??
         (near == null
             ? canvas.screenToPage(
                 Offset(canvas.viewport.width / 2, canvas.viewport.height / 2),
@@ -9116,11 +9081,11 @@ class AppState extends ChangeNotifier
   /// Every substitute block on this page that follows the maths BLOCK
   /// [equationId]. See [graphsFollowing] — same rule, other block type.
   Iterable<Block> substitutesFollowing(String equationId) => blocks.where(
-    (b) =>
-        b.type == BlockType.substitute &&
-        b.content['from'] == equationId &&
-        b.content['fromLatex'] == null,
-  );
+        (b) =>
+            b.type == BlockType.substitute &&
+            b.content['from'] == equationId &&
+            b.content['fromLatex'] == null,
+      );
 
   /// Every substitute block that follows one particular equation inside a
   /// sentence. See [graphsFollowingInline] — same rule, other block type.
@@ -9481,8 +9446,8 @@ class AppState extends ChangeNotifier
     if (find.isEmpty) return 0;
     final targets = onlyCurrent
         ? (findMatches.isEmpty
-              ? const <String>[]
-              : [findMatches[findIndex.clamp(0, findMatches.length - 1)]])
+            ? const <String>[]
+            : [findMatches[findIndex.clamp(0, findMatches.length - 1)]])
         : findMatches;
     if (targets.isEmpty) return 0;
     pushUndo();
@@ -9541,12 +9506,12 @@ class AppState extends ChangeNotifier
   }
 
   String _blockText(Block b) => switch (b.type) {
-    BlockType.text => b.content['text'] as String? ?? '',
-    BlockType.code => b.content['source'] as String? ?? '',
-    BlockType.math =>
-      '${b.content['latex'] ?? ''} ${b.content['linearSource'] ?? ''}',
-    _ => '',
-  };
+        BlockType.text => b.content['text'] as String? ?? '',
+        BlockType.code => b.content['source'] as String? ?? '',
+        BlockType.math =>
+          '${b.content['latex'] ?? ''} ${b.content['linearSource'] ?? ''}',
+        _ => '',
+      };
 
   // ── Persistence ────────────────────────────────────────────────────────
 
@@ -9621,7 +9586,9 @@ class AppState extends ChangeNotifier
   /// encrypted payload. Everything the user can already see stays on screen;
   /// what stops is writing, because every op this device would append is a
   /// diff against a replay that is missing whatever those operations did.
-  bool notebookIsReadOnly(String nb) => _logAhead.containsKey(nb);
+  bool notebookIsReadOnly(String nb) =>
+      (_editorOwner?.notebookIsReadOnly(nb) ?? false) ||
+      _logAhead.containsKey(nb);
 
   /// Look at a freshly opened recorder and decide whether its notebook is
   /// readable but not writable.
@@ -9640,18 +9607,17 @@ class AppState extends ChangeNotifier
     final encs = {
       for (final op in ahead)
         if (op.encryption != 'none') op.encryption,
-    }.toList()..sort();
+    }.toList()
+      ..sort();
     _logAhead[nb] = SaveProblem(
       short: 'Read-only — made by a newer Openote',
-      message:
-          'This notebook has changes in it that were made by a newer '
+      message: 'This notebook has changes in it that were made by a newer '
           'version of Openote, and this version cannot read them.\n\n'
           'So Openote is showing you this notebook without changing it. '
           'Everything in it is safe, and nothing you do here can damage it — '
           'but anything you type now will not be kept.\n\n'
           'Updating Openote to the latest version lets you edit it again.',
-      details:
-          'the log holds ${ahead.length} operation(s) this build cannot '
+      details: 'the log holds ${ahead.length} operation(s) this build cannot '
           'apply\n'
           'envelope version(s): ${versions.join(', ')} — this build writes and '
           'understands $opFormatVersion\n'
@@ -9661,6 +9627,10 @@ class AppState extends ChangeNotifier
   }
 
   Future<void> flushSave({bool closing = false}) async {
+    for (final editor in _editors.toList()) {
+      if (!editor._disposed) await editor.flushSave(closing: closing);
+    }
+    if (_editorOwner != null) await _editorOwner!._applyingPull?.future;
     final saveCancellationGeneration = _saveCancellationGeneration;
     _saveDebounce?.cancel();
     if (!_dirty || pageId == null || notebookId == null) return;
@@ -9838,7 +9808,12 @@ class AppState extends ChangeNotifier
 
   @override
   void dispose() {
+    if (_disposed) return;
     _disposed = true;
+    for (final editor in _editors.toList()) {
+      editor.dispose();
+    }
+    _editorOwner?._editors.remove(this);
     _saveCancellationGeneration++;
     // The caret watcher outlives nothing. A widget test builds and tears down
     // an AppState per case, and a listener left on a controller from the last
@@ -9857,7 +9832,7 @@ class AppState extends ChangeNotifier
     // keeps the isolate awake, which does.
     planner.dispose();
     canvas.dispose();
-    _repo.dispose();
+    if (_editorOwner == null) _repo.dispose();
     super.dispose();
   }
 }
@@ -9964,7 +9939,7 @@ class InkConversionResult {
     final tail = failed == 0
         ? ''
         : ' $failed could not be converted'
-              '${firstError == null ? '.' : ' — $firstError'}';
+            '${firstError == null ? '.' : ' — $firstError'}';
     return 'Shrank $converted of $candidates pages, '
         '${bytes(freed)} smaller.$tail';
   }

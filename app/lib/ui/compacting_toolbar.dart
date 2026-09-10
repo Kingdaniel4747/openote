@@ -30,7 +30,6 @@ class CompactingToolbar extends StatelessWidget {
     this.alignment = MainAxisAlignment.start,
     this.fillAvailable = false,
     this.moreAtTrailingEdge = false,
-    this.onReorder,
   });
 
   final List<ToolbarControl> controls;
@@ -53,10 +52,6 @@ class CompactingToolbar extends StatelessWidget {
   /// useful for Insert: the last visible command stays in reading order while
   /// More remains immediately below the app controls at the window edge.
   final bool moreAtTrailingEdge;
-
-  /// Called with `(draggedId, targetId)`. A null target means that a command
-  /// was dropped on More and should move into the overflow at the end.
-  final void Function(String draggedId, String? targetId)? onReorder;
 
   /// The width of the "More" button itself, in the same units as each
   /// [ToolbarControl.width] — reserved whenever folding is even possible,
@@ -95,7 +90,7 @@ class CompactingToolbar extends StatelessWidget {
           final row = Row(
             mainAxisAlignment: alignment,
             mainAxisSize: MainAxisSize.min,
-            children: [for (final c in controls) _inlineControl(context, c)],
+            children: [for (final c in controls) c.inline],
           );
           return fill(row, totalWidth);
         }
@@ -116,55 +111,13 @@ class CompactingToolbar extends StatelessWidget {
               ? MainAxisSize.max
               : MainAxisSize.min,
           children: [
-            for (final c in visible) _inlineControl(context, c),
+            for (final c in visible) c.inline,
             if (fillAvailable && moreAtTrailingEdge) const Spacer(),
-            _MoreMenu(overflow: overflow.toList(), onReorder: onReorder),
+            _MoreMenu(overflow: overflow.toList()),
           ],
         );
         return fill(row, used);
       },
-    );
-  }
-
-  Widget _inlineControl(BuildContext context, ToolbarControl control) {
-    final id = control.id;
-    final reorder = onReorder;
-    if (id == null || reorder == null) return control.inline;
-    return DragTarget<String>(
-      onWillAccept: (dragged) => dragged != null && dragged != id,
-      onAccept: (dragged) => reorder(dragged, id),
-      builder: (context, candidate, _) => LongPressDraggable<String>(
-        data: id,
-        feedback: Material(
-          color: Colors.transparent,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(8),
-              boxShadow: const [
-                BoxShadow(color: Colors.black26, blurRadius: 5),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(3),
-              child: Icon(control.icon, size: 19),
-            ),
-          ),
-        ),
-        childWhenDragging: Opacity(opacity: .32, child: control.inline),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: candidate.isNotEmpty
-                ? Theme.of(context).colorScheme.primary.withValues(alpha: .13)
-                : null,
-            borderRadius: BorderRadius.circular(7),
-          ),
-          child: Tooltip(
-            message: 'Hold and drag to reorder',
-            child: control.inline,
-          ),
-        ),
-      ),
     );
   }
 }
@@ -184,7 +137,7 @@ class ToolbarControl {
   });
 
   /// A durable, ribbon-local identifier. Supplying it opts this item into
-  /// [CompactingToolbar.onReorder].
+  /// the catalogue.
   final String? id;
 
   /// The space this needs when shown inline, measured — see the class doc
@@ -224,32 +177,19 @@ class ToolbarSubmenuItem {
 }
 
 class _MoreMenu extends StatelessWidget {
-  const _MoreMenu({required this.overflow, this.onReorder});
+  const _MoreMenu({required this.overflow});
   final List<ToolbarControl> overflow;
-  final void Function(String draggedId, String? targetId)? onReorder;
 
   @override
   Widget build(BuildContext context) {
     if (overflow.isEmpty) return const SizedBox.shrink();
     return MenuAnchor(
-      builder: (context, controller, _) => DragTarget<String>(
-        onWillAccept: (dragged) => dragged != null && onReorder != null,
-        onAccept: (dragged) => onReorder?.call(dragged, null),
-        builder: (context, candidate, _) => DecoratedBox(
-          decoration: BoxDecoration(
-            color: candidate.isNotEmpty
-                ? Theme.of(context).colorScheme.primary.withValues(alpha: .13)
-                : null,
-            borderRadius: BorderRadius.circular(7),
-          ),
-          child: IconButton(
-            icon: const Icon(Icons.more_horiz, size: 18),
-            tooltip: tr(context, 'More'),
-            visualDensity: VisualDensity.compact,
-            onPressed: () =>
-                controller.isOpen ? controller.close() : controller.open(),
-          ),
-        ),
+      builder: (context, controller, _) => IconButton(
+        icon: const Icon(Icons.more_horiz, size: 18),
+        tooltip: tr(context, 'More'),
+        visualDensity: VisualDensity.compact,
+        onPressed: () =>
+            controller.isOpen ? controller.close() : controller.open(),
       ),
       menuChildren: [for (final c in overflow) _menuControl(context, c)],
     );
@@ -273,39 +213,12 @@ class _MoreMenu extends StatelessWidget {
     } else {
       item = MenuItemButton(
         leadingIcon: Icon(control.icon, size: 18),
-        trailingIcon: control.selected
-            ? const Icon(Icons.check, size: 16)
-            : null,
+        trailingIcon:
+            control.selected ? const Icon(Icons.check, size: 16) : null,
         onPressed: control.onPressed,
         child: AppText(control.label),
       );
     }
-    final id = control.id;
-    if (id == null || onReorder == null) return item;
-    return LongPressDraggable<String>(
-      data: id,
-      feedback: Material(
-        color: Colors.transparent,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            borderRadius: BorderRadius.circular(8),
-            boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 5)],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(control.icon, size: 18),
-                const SizedBox(width: 8),
-                AppText(control.label),
-              ],
-            ),
-          ),
-        ),
-      ),
-      child: item,
-    );
+    return item;
   }
 }

@@ -77,8 +77,7 @@ class _PageCanvasState extends State<PageCanvas> {
     }
     if (erase) {
       if (!_buttonOverride) {
-        _penReturnTool =
-            (app.tool == Tool.highlighter ||
+        _penReturnTool = (app.tool == Tool.highlighter ||
                 app.tool == Tool.ballpoint ||
                 app.tool == Tool.lasso)
             ? app.tool
@@ -127,7 +126,7 @@ class _PageCanvasState extends State<PageCanvas> {
   Offset? _pinchStartOffset;
   bool _pinchFramePending = false;
   double _pzLastScale = 1.0;
-  Timer? _inertia;
+
   Offset _touchVelocity = Offset.zero;
   DateTime? _lastTouchMove;
   bool _multiTouchSeen = false;
@@ -189,14 +188,10 @@ class _PageCanvasState extends State<PageCanvas> {
       final imageWidth = image.width;
       final imageHeight = image.height;
       if (bytes == null || !mounted) return null;
-      final x = (position.dx * pixelRatio)
-          .floor()
-          .clamp(0, imageWidth - 1)
-          .toInt();
-      final y = (position.dy * pixelRatio)
-          .floor()
-          .clamp(0, imageHeight - 1)
-          .toInt();
+      final x =
+          (position.dx * pixelRatio).floor().clamp(0, imageWidth - 1).toInt();
+      final y =
+          (position.dy * pixelRatio).floor().clamp(0, imageHeight - 1).toInt();
       final i = (y * imageWidth + x) * 4;
       final data = bytes.buffer.asUint8List();
       return Color.fromARGB(data[i + 3], data[i], data[i + 1], data[i + 2]);
@@ -228,11 +223,10 @@ class _PageCanvasState extends State<PageCanvas> {
     final color = await _colorAtEyedropperPosition(event.localPosition);
     if (!mounted) return;
     if (color != null) {
-      final hex =
-          '${(color.r * 255).round().toRadixString(16).padLeft(2, '0')}'
-                  '${(color.g * 255).round().toRadixString(16).padLeft(2, '0')}'
-                  '${(color.b * 255).round().toRadixString(16).padLeft(2, '0')}'
-              .toUpperCase();
+      final hex = '${(color.r * 255).round().toRadixString(16).padLeft(2, '0')}'
+              '${(color.g * 255).round().toRadixString(16).padLeft(2, '0')}'
+              '${(color.b * 255).round().toRadixString(16).padLeft(2, '0')}'
+          .toUpperCase();
       app.setCustomInkColor(hex);
       app.rememberCustomColor(hex);
     }
@@ -311,7 +305,7 @@ class _PageCanvasState extends State<PageCanvas> {
 
   @override
   void dispose() {
-    _inertia?.cancel();
+    controller.stopMotion();
     _shapeHold?.cancel();
     app.touchCanvasGesture = false;
     app.relinquishedTouchPointers.clear();
@@ -374,8 +368,7 @@ class _PageCanvasState extends State<PageCanvas> {
     // Windows additionally observes native pen flags and rechecks on moves.
     // Other platforms keep their existing contact-time behavior.
     _gestureErase = _windowsPen.erasesAtContact(e);
-    final stylus =
-        e.kind == PointerDeviceKind.stylus ||
+    final stylus = e.kind == PointerDeviceKind.stylus ||
         e.kind == PointerDeviceKind.invertedStylus;
     if (stylus) _pendingErase = _gestureErase;
     _contactTool = !stylus && _buttonOverride ? _penReturnTool : app.tool;
@@ -416,15 +409,15 @@ class _PageCanvasState extends State<PageCanvas> {
         tool: _contactTool == Tool.highlighter
             ? 'highlighter'
             : _contactTool == Tool.ballpoint || app.rulerVisible
-            ? 'ballpoint'
-            : 'pen',
+                ? 'ballpoint'
+                : 'pen',
         colorHex: customColor != null
             ? '#$customColor'
             : colorIndex == 0 &&
-                  !fixedBackdrop &&
-                  _contactTool != Tool.highlighter
-            ? 'auto'
-            : '#${((fixedBackdrop && colorIndex == 0 && _contactTool != Tool.highlighter ? OnoteColors.graphite900 : color).toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}',
+                    !fixedBackdrop &&
+                    _contactTool != Tool.highlighter
+                ? 'auto'
+                : '#${((fixedBackdrop && colorIndex == 0 && _contactTool != Tool.highlighter ? OnoteColors.graphite900 : color).toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}',
         size: app.penSize,
         opacity: _contactTool == Tool.highlighter ? 0.4 : 1.0,
       );
@@ -506,13 +499,13 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   bool _hasFixedBackdropAt(Offset point) => app.blocks.any(
-    (b) =>
-        b.type == BlockType.image &&
-        _blockRect(b).contains(point) &&
-        (b.content['background'] == true ||
-            b.content['pdf'] is String ||
-            b.content['blob'] is String),
-  );
+        (b) =>
+            b.type == BlockType.image &&
+            _blockRect(b).contains(point) &&
+            (b.content['background'] == true ||
+                b.content['pdf'] is String ||
+                b.content['blob'] is String),
+      );
 
   void _addPoint(PointerEvent e, Offset pagePt) {
     final w = _wet!;
@@ -606,9 +599,8 @@ class _PageCanvasState extends State<PageCanvas> {
       // A circle is rotationally identical. Polygons, however, follow the
       // pen around their centre while the tip remains down, so the same hold
       // gesture can resize and rotate them without another tool.
-      final rotation = _shapeKind == 'ellipse'
-          ? 0.0
-          : angle - _shapeResizeAngle;
+      final rotation =
+          _shapeKind == 'ellipse' ? 0.0 : angle - _shapeResizeAngle;
       final c = math.cos(rotation), s = math.sin(rotation);
       outline = [
         for (final p in original)
@@ -995,7 +987,7 @@ class _PageCanvasState extends State<PageCanvas> {
   // ── Touch pan/pinch (shared: pen-mode palm rejection & navigation) ──────
 
   void _touchDown(PointerDownEvent e) {
-    _inertia?.cancel();
+    controller.stopMotion();
     if (_beginRulerPointer(e)) return;
     _touches[e.pointer] = e.localPosition;
     _lastScreen = e.localPosition;
@@ -1035,7 +1027,8 @@ class _PageCanvasState extends State<PageCanvas> {
     if (_rulerPointers.isEmpty && !_screenHitsRuler(e.localPosition)) {
       return false;
     }
-    _inertia?.cancel();
+
+    controller.stopMotion();
     // Gesture delivery is ordered by contact arrival, not by intent. If a
     // finger is already resting on the page and the next one lands on the
     // ruler, transfer the existing canvas contacts to the ruler too. Without
@@ -1069,9 +1062,8 @@ class _PageCanvasState extends State<PageCanvas> {
     if (_rulerPointers.isEmpty) return;
     final points = _rulerPointers.values.toList(growable: false);
     _rulerStartCenter = _rulerCenterForViewport();
-    _rulerStartFocal = points.length == 1
-        ? points.first
-        : (points[0] + points[1]) / 2;
+    _rulerStartFocal =
+        points.length == 1 ? points.first : (points[0] + points[1]) / 2;
     _rulerStartAngle = _rulerAngle;
     _rulerStartLength = _rulerLength;
     if (points.length >= 2) {
@@ -1088,9 +1080,8 @@ class _PageCanvasState extends State<PageCanvas> {
     if (!_rulerPointers.containsKey(e.pointer)) return false;
     _rulerPointers[e.pointer] = e.localPosition;
     final points = _rulerPointers.values.toList(growable: false);
-    final focal = points.length == 1
-        ? points.first
-        : (points[0] + points[1]) / 2;
+    final focal =
+        points.length == 1 ? points.first : (points[0] + points[1]) / 2;
     var angle = _rulerStartAngle;
     var length = _rulerStartLength;
     if (points.length >= 2) {
@@ -1226,8 +1217,8 @@ class _PageCanvasState extends State<PageCanvas> {
         // A fling that begins after the page is already against the elastic
         // edge just keeps feeding the resistance and makes the page look
         // stuck. Release it immediately into the spring instead.
-        if (controller.hasLeadingOverscroll || !_startInertia()) {
-          _inertia?.cancel();
+        if (!_startInertia()) {
+          controller.stopMotion();
           controller.springLeadingEdge();
         }
       }
@@ -1237,25 +1228,10 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   bool _startInertia() {
-    if (controller.hasLeadingOverscroll) return false;
-    var velocity = _touchVelocity;
-    if (velocity.distance < 70) return false;
-    _inertia?.cancel();
-    var previous = DateTime.now();
-    _inertia = Timer.periodic(const Duration(milliseconds: 16), (timer) {
-      final now = DateTime.now();
-      final dt = now.difference(previous).inMicroseconds / 1000000;
-      previous = now;
-      controller.panBy(velocity * dt, elasticLeading: true);
-      velocity *= math.pow(0.055, dt).toDouble();
-      if (velocity.distance < 8) {
-        timer.cancel();
-        controller.springLeadingEdge();
-      }
-    });
+    if (_touchVelocity.distance < 70) return false;
+    controller.release(_touchVelocity);
     return true;
   }
-
   // ── Select-mode pointer model ───────────────────────────────────────────
 
   Rect _blockRect(Block b) =>
@@ -1329,8 +1305,7 @@ class _PageCanvasState extends State<PageCanvas> {
       if (!app.selectedIds.contains(inkHit)) {
         app.select(
           inkHit,
-          additive:
-              HardwareKeyboard.instance.isShiftPressed ||
+          additive: HardwareKeyboard.instance.isShiftPressed ||
               HardwareKeyboard.instance.isControlPressed ||
               HardwareKeyboard.instance.isMetaPressed,
         );
@@ -1558,7 +1533,7 @@ class _PageCanvasState extends State<PageCanvas> {
               color: _scrollbarDrag
                   ? Theme.of(context).colorScheme.primary
                   : (dark ? OnoteColors.moon100 : OnoteColors.graphite500)
-                        .withValues(alpha: _scrollbarHover ? .85 : .55),
+                      .withValues(alpha: _scrollbarHover ? .85 : .55),
               borderRadius: BorderRadius.circular(4),
             ),
           ),
@@ -1583,8 +1558,7 @@ class _PageCanvasState extends State<PageCanvas> {
       // consumed here: otherwise the ruler changes size correctly while this
       // independent event scrolls the page behind it.
       if (_rulerPointers.isNotEmpty) return;
-      final ctrl =
-          HardwareKeyboard.instance.isControlPressed ||
+      final ctrl = HardwareKeyboard.instance.isControlPressed ||
           HardwareKeyboard.instance.isMetaPressed;
       final shift = HardwareKeyboard.instance.isShiftPressed;
       if (ctrl) {
@@ -1594,9 +1568,10 @@ class _PageCanvasState extends State<PageCanvas> {
         );
       } else if (shift) {
         // Shift+wheel → horizontal scroll (a mouse's vertical wheel drives X).
-        controller.panBy(Offset(-e.scrollDelta.dy - e.scrollDelta.dx, 0));
+        controller
+            .scrollBySmooth(Offset(-e.scrollDelta.dy - e.scrollDelta.dx, 0));
       } else {
-        controller.panBy(-e.scrollDelta);
+        controller.scrollBySmooth(-e.scrollDelta);
       }
       setState(() {});
     });
@@ -1706,11 +1681,11 @@ class _PageCanvasState extends State<PageCanvas> {
                           sheet: app.pageProps.pdfOnly
                               ? app.pageSize()
                               : app.pageProps.isPaged
-                              ? Size(
-                                  app.pageProps.paper.width,
-                                  app.pageProps.paper.height,
-                                )
-                              : null,
+                                  ? Size(
+                                      app.pageProps.paper.width,
+                                      app.pageProps.paper.height,
+                                    )
+                                  : null,
                           sheets: app.sheetCount,
                         ),
                       ),
@@ -1746,8 +1721,7 @@ class _PageCanvasState extends State<PageCanvas> {
                                     child: PageTitleView(
                                       key: ValueKey('title-${app.pageId}'),
                                       app: app,
-                                      width:
-                                          livePageSize.width -
+                                      width: livePageSize.width -
                                           AppState.pageLeftMargin * 2,
                                     ),
                                   ),
@@ -1762,26 +1736,25 @@ class _PageCanvasState extends State<PageCanvas> {
                               // the box the mouse should mean, so it paints (and
                               // therefore hit-tests) above everything while
                               // selected, and drops back into place on deselect.
-                              for (final b
-                                  in ([
-                                    ...app.blocks.where(
-                                      (b) =>
-                                          b.type != BlockType.ink &&
-                                          (visible.overlaps(_blockRect(b)) ||
-                                              app.selectedIds.contains(b.id) ||
-                                              app.editingBlockId == b.id),
-                                    ),
-                                  ]..sort((a, b) {
-                                    int lift(Block x) =>
-                                        app.selectedIds.contains(x.id) ||
-                                            app.editingBlockId == x.id
-                                        ? 1
-                                        : 0;
-                                    final byLift = lift(a) - lift(b);
-                                    return byLift != 0
-                                        ? byLift
-                                        : a.z.compareTo(b.z);
-                                  })))
+                              for (final b in ([
+                                ...app.blocks.where(
+                                  (b) =>
+                                      b.type != BlockType.ink &&
+                                      (visible.overlaps(_blockRect(b)) ||
+                                          app.selectedIds.contains(b.id) ||
+                                          app.editingBlockId == b.id),
+                                ),
+                              ]..sort((a, b) {
+                                  int lift(Block x) =>
+                                      app.selectedIds.contains(x.id) ||
+                                              app.editingBlockId == x.id
+                                          ? 1
+                                          : 0;
+                                  final byLift = lift(a) - lift(b);
+                                  return byLift != 0
+                                      ? byLift
+                                      : a.z.compareTo(b.z);
+                                })))
                                 BlockView(
                                   key: ValueKey('${b.id}#${app.docRevision}'),
                                   block: b,
@@ -2025,8 +1998,7 @@ class _PageCanvasState extends State<PageCanvas> {
           // context menu.
           if (_multiTouchSeen ||
               _touches.length != 1 ||
-              _mode != _DragMode.pending)
-            return;
+              _mode != _DragMode.pending) return;
           _mode = _DragMode.none;
           _touches.clear();
           _pinchStartDist = null;
@@ -2240,8 +2212,7 @@ class _PageCanvasState extends State<PageCanvas> {
       // page mid-gesture the instant something unrelated cleared the set.
       onPointerPanZoomStart: (e) {
         _pzLastScale = 1.0;
-        _panZoomClaimedBy =
-            app.claimedPointers.contains(e.pointer) ||
+        _panZoomClaimedBy = app.claimedPointers.contains(e.pointer) ||
                 _rulerPointers.isNotEmpty ||
                 (app.rulerVisible && _screenHitsRuler(e.localPosition))
             ? e.pointer
@@ -2270,8 +2241,7 @@ class _PageCanvasState extends State<PageCanvas> {
         controller.springLeadingEdge();
       },
       child: MouseRegion(
-        cursor:
-            _windowsPen.enabled &&
+        cursor: _windowsPen.enabled &&
                 _inkTool &&
                 (_gestureErase || _windowsPen.nativeEraser)
             ? SystemMouseCursors.cell
@@ -2280,7 +2250,8 @@ class _PageCanvasState extends State<PageCanvas> {
                 Tool.pen ||
                 Tool.ballpoint ||
                 Tool.highlighter ||
-                Tool.shape => SystemMouseCursors.precise,
+                Tool.shape =>
+                  SystemMouseCursors.precise,
                 Tool.eraser => SystemMouseCursors.cell,
                 Tool.lasso => SystemMouseCursors.precise,
                 _ => MouseCursor.defer,
@@ -2300,33 +2271,34 @@ class _EyedropperCursor extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-    width: 46,
-    height: 46,
-    child: Stack(
-      clipBehavior: Clip.none,
-      children: [
-        const Positioned.fill(
-          child: Center(child: Icon(Icons.add, size: 30, color: Colors.white)),
-        ),
-        Positioned(
-          left: 25,
-          bottom: 25,
-          child: Container(
-            width: 26,
-            height: 26,
-            decoration: BoxDecoration(
-              color: color ?? Colors.transparent,
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 2.5),
-              boxShadow: const [
-                BoxShadow(color: Colors.black54, blurRadius: 4),
-              ],
+        width: 46,
+        height: 46,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            const Positioned.fill(
+              child:
+                  Center(child: Icon(Icons.add, size: 30, color: Colors.white)),
             ),
-          ),
+            Positioned(
+              left: 25,
+              bottom: 25,
+              child: Container(
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(
+                  color: color ?? Colors.transparent,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2.5),
+                  boxShadow: const [
+                    BoxShadow(color: Colors.black54, blurRadius: 4),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
-      ],
-    ),
-  );
+      );
 }
 
 /// Screen-space ruler. Gesture ownership lives in PageCanvas's single pointer
@@ -2503,9 +2475,8 @@ class _PagePainter extends CustomPainter {
     if (background == 'blank') return;
     final step = gridSize * controller.scale;
     if (step < 6) return;
-    final originY = controller
-        .pageToScreen(const Offset(0, AppState.contentTop))
-        .dy;
+    final originY =
+        controller.pageToScreen(const Offset(0, AppState.contentTop)).dy;
     final right = size.width, bottom = size.height;
     final paint = Paint()
       ..color = dark ? OnoteColors.night200 : OnoteColors.paper200
@@ -2588,9 +2559,9 @@ class _OverlayPainter extends CustomPainter {
     required this.inkSelections,
     required this.lasso,
     required this.color,
-  }) : lassoPointCount = lasso?.length ?? 0,
-       viewOffset = controller.offset,
-       viewScale = controller.scale;
+  })  : lassoPointCount = lasso?.length ?? 0,
+        viewOffset = controller.offset,
+        viewScale = controller.scale;
   final CanvasController controller;
   final int lassoPointCount;
   final Offset viewOffset;

@@ -27,10 +27,13 @@ abstract final class PdfPages {
   static final LinkedHashMap<String, Uint8List> _pages = LinkedHashMap();
   static final Map<String, Future<Uint8List?>> _renders = {};
   static final Map<String, void Function()> _cancelRenders = {};
-  static const _maxDocs = 4;
-  static const _maxPageBytes = 96 << 20;
+  static const _maxDocs = 2;
+  static const _maxDocBytes = 32 << 20;
+  static const _maxPageBytes = 32 << 20;
+  static Timer? _idleRelease;
   static var _pageBytes = 0;
   static var _generation = 0;
+  static Future<void>? _pageQueue;
 
   @visibleForTesting
   static Future<PdfDocument> Function(Uint8List, String)? openForTest;
@@ -45,8 +48,22 @@ abstract final class PdfPages {
       return Future.value(hit);
     }
     // One open per document, one render per page, even for overlapping viewers.
-    return _renders.putIfAbsent(
-        key, () => Future.microtask(() => _render(app, hash, page, key)));
+    return _renders.putIfAbsent(key, () {
+      final generation = _generation;
+      final notebook = app.notebookId;
+      // Queue before acquiring source bytes: rapid scrolling must not open
+      // dozens of documents that all wait with their bytes pinned in memory.
+      final result = (_pageQueue ?? Future<void>.value()).then<Uint8List?>((_) {
+        if (generation != _generation || notebook != app.notebookId) {
+          return null;
+        }
+        return _render(app, hash, page, key);
+      }).whenComplete(() {
+        if (generation == _generation) _renders.remove(key);
+      });
+      _pageQueue = result.then<void>((_) {}, onError: (Object _) {});
+      return result;
+    });
   }
 
   static Future<Uint8List?> _render(
@@ -65,7 +82,7 @@ abstract final class PdfPages {
         _pageBytes -= _pages.remove(key)?.length ?? 0;
         _pages[key] = image.png;
         _pageBytes += image.png.length;
-        while (_pageBytes > _maxPageBytes && _pages.length > 1) {
+        while (_pageBytes > _maxPageBytes && _pages.isNotEmpty) {
           _pageBytes -= _pages.remove(_pages.keys.first)!.length;
         }
       }
@@ -75,8 +92,6 @@ abstract final class PdfPages {
       return null;
     } finally {
       if (entry != null) entry.busy--;
-      // A reset/new attempt must never be removed by an older render.
-      if (generation == _generation) _renders.remove(key);
       _evict();
     }
   }
@@ -102,7 +117,7 @@ abstract final class PdfPages {
       final bytes = app.blob(hash);
       if (bytes == null) return null;
       // Cache the FUTURE, not a late, uninitialized PdfDocument.
-      entry = _Doc((openForTest ?? PdfRuntime.open)(bytes, hash));
+      entry = _Doc((openForTest ?? PdfRuntime.open)(bytes, hash), bytes.length);
     }
     _docs[hash] = entry;
     entry.busy++;
@@ -110,17 +125,33 @@ abstract final class PdfPages {
   }
 
   static void _evict() {
+    var bytes = _docs.values.fold<int>(0, (sum, doc) => sum + doc.sourceBytes);
     final keys = _docs.keys.toList();
     for (final key in keys) {
       final entry = _docs[key]!;
       if (entry.busy != 0) continue;
-      if (!entry.failed && _docs.length <= _maxDocs) continue;
+      if (!entry.failed && _docs.length <= _maxDocs && bytes <= _maxDocBytes) {
+        continue;
+      }
       _docs.remove(key);
+      bytes -= entry.sourceBytes;
       unawaited(entry.dispose());
     }
+    _idleRelease?.cancel();
+    if (_docs.isEmpty) return;
+    _idleRelease = Timer(const Duration(seconds: 10), () {
+      for (final key in _docs.keys.toList()) {
+        final entry = _docs[key]!;
+        if (entry.busy != 0) continue;
+        _docs.remove(key);
+        unawaited(entry.dispose());
+      }
+    });
   }
 
   static Future<void> reset() async {
+    _idleRelease?.cancel();
+    final queue = _pageQueue;
     _generation++;
     for (final cancel in _cancelRenders.values.toList(growable: false)) {
       cancel();
@@ -133,6 +164,8 @@ abstract final class PdfPages {
     _pages.clear();
     _pageBytes = 0;
     await Future.wait(renders);
+    if (identical(queue, _pageQueue)) _pageQueue = null;
+    _idleRelease?.cancel();
     for (final doc in docs) {
       await doc.dispose();
     }
@@ -140,13 +173,14 @@ abstract final class PdfPages {
 }
 
 class _Doc {
-  _Doc(Future<PdfDocument> opening) {
+  _Doc(Future<PdfDocument> opening, this.sourceBytes) {
     ready = opening.then((doc) => doc, onError: (Object e, StackTrace st) {
       failed = true;
       Error.throwWithStackTrace(e, st);
     });
   }
   late final Future<PdfDocument> ready;
+  final int sourceBytes;
   var busy = 0;
   var failed = false;
   Future<void> dispose() async {
@@ -159,14 +193,24 @@ class _Doc {
 /// A rendered page's PNG bytes and pixel size.
 typedef RenderedPdfPage = ({Uint8List png, int width, int height});
 
-/// Render one page at the standard scale. Shared by the importer (which uses
-/// it for nothing but sizing now), the on-demand path above, and the vector
-/// PDF exporter's pre-render pass.
-Future<RenderedPdfPage?> renderPdfPageToPng(PdfPage page) async {
+Future<void> _renderQueue = Future<void>.value();
+
+/// Render one page at the standard scale for import, display or export.
+Future<RenderedPdfPage?> renderPdfPageToPng(PdfPage page) {
+  // Bound raw pixel buffers and PNG encodes across imports and legacy views.
+  // The timeout starts when work begins, not while waiting for another page.
+  final result = _renderQueue.then((_) => _renderPdfPageToPng(page));
+  _renderQueue = result.then<void>((_) {}, onError: (Object _) {});
+  return result;
+}
+
+Future<RenderedPdfPage?> _renderPdfPageToPng(PdfPage page) async {
   if (!page.width.isFinite ||
       !page.height.isFinite ||
       page.width <= 0 ||
-      page.height <= 0) return null;
+      page.height <= 0) {
+    return null;
+  }
   final scale =
       math.min(kPdfPageScale, 4096 / math.max(page.width, page.height));
   final w = (page.width * scale).round();
@@ -175,7 +219,8 @@ Future<RenderedPdfPage?> renderPdfPageToPng(PdfPage page) async {
 
   PdfImage? img;
   final cancellation = page.createCancellationToken();
-  final cancelId = '${identityHashCode(page)}#${DateTime.now().microsecondsSinceEpoch}';
+  final cancelId =
+      '${identityHashCode(page)}#${DateTime.now().microsecondsSinceEpoch}';
   PdfPages._cancelRenders[cancelId] = cancellation.cancel;
   var expired = false;
   try {

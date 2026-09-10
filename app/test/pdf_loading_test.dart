@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:openote/editor/image_block_view.dart';
 import 'package:openote/export/pdf_vector_export.dart';
+import 'package:openote/export/pdf_import.dart';
 import 'package:openote/media/pdf_pages.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
@@ -94,6 +95,106 @@ void main() {
     expect(await PdfPages.pageImage(app, hash, 0), null);
     expect(await PdfPages.pageImage(app, hash, 0), null);
     expect(opens, 2);
+  });
+
+  test('queued slides do not open more sources while a render is active',
+      () async {
+    final firstRender = Completer<RenderedPdfPage?>();
+    var opens = 0;
+    var renders = 0;
+    PdfPages.openForTest = (_, __) async {
+      opens++;
+      return _Document([_Page()]);
+    };
+    PdfPages.renderForTest = (_) {
+      renders++;
+      return renders == 1 ? firstRender.future : Future.value(null);
+    };
+    final otherHash = app.addBlob(Uint8List.fromList([4]), 'application/pdf');
+    final first = PdfPages.pageImage(app, hash, 0);
+    final second = PdfPages.pageImage(app, otherHash, 0);
+    await Future<void>.delayed(Duration.zero);
+    expect(opens, 1);
+    expect(renders, 1);
+    firstRender.complete(null);
+    await Future.wait([first, second]);
+    expect(opens, 2);
+    expect(renders, 2);
+  });
+
+  test('reset discards queued work before it opens a source', () async {
+    var opens = 0;
+    PdfPages.openForTest = (_, __) async {
+      opens++;
+      return _Document();
+    };
+    final pending = PdfPages.pageImage(app, hash, 0);
+    await PdfPages.reset();
+    expect(await pending, null);
+    expect(opens, 0);
+    await PdfPages.pageImage(app, hash, 0);
+    expect(opens, 1);
+  });
+
+  test('preparation stores every preview before completion, one page at a time',
+      () async {
+    final pages = List.generate(40, (_) => _Page());
+    var active = 0;
+    var peak = 0;
+    var rendered = 0;
+    final progress = <int>[];
+    final refs = await preparePdfPreviews(
+        app, app.notebookId!, _Document(pages), render: (page) async {
+      active++;
+      if (active > peak) peak = active;
+      await Future<void>.delayed(Duration.zero);
+      final png = Uint8List.fromList([++rendered]);
+      active--;
+      return (png: png, width: 1, height: 1);
+    }, onProgress: (done, total) {
+      expect(total, 40);
+      progress.add(done);
+    });
+    expect(peak, 1);
+    expect(progress, List.generate(41, (i) => i));
+    expect(refs, hasLength(40));
+    for (var i = 0; i < refs.length; i++) {
+      expect(app.blob(refs[i]), orderedEquals([i + 1]));
+    }
+  });
+
+  test('a failed preview never reports the deck as complete', () async {
+    var attempts = 0;
+    final progress = <int>[];
+    await expectLater(
+        preparePdfPreviews(app, app.notebookId!, _Document([_Page(), _Page()]),
+            render: (_) async {
+              if (++attempts == 2) return null;
+              return (png: Uint8List.fromList([1]), width: 1, height: 1);
+            },
+            onProgress: (done, _) => progress.add(done)),
+        throwsStateError);
+    expect(attempts, 2);
+    expect(progress, [0, 1]);
+    expect(app.blocks.where((b) => b.content['pdf'] != null), isEmpty);
+  });
+
+  test('opening more PDFs evicts and disposes the least recent document',
+      () async {
+    final docs = <_Document>[];
+    PdfPages.openForTest = (_, __) async {
+      final doc = _Document();
+      docs.add(doc);
+      return doc;
+    };
+    for (var i = 0; i < 3; i++) {
+      final ref = app.addBlob(Uint8List.fromList([i]), 'application/pdf');
+      await PdfPages.pageCount(app, ref);
+    }
+    await Future<void>.delayed(Duration.zero);
+    expect(docs.map((d) => d.disposals), [1, 0, 0]);
+    await PdfPages.reset();
+    expect(docs.map((d) => d.disposals), [1, 1, 1]);
   });
 
   testWidgets('PDF failure stops the spinner and offers a retry',
