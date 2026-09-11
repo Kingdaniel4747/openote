@@ -426,6 +426,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _inkMove(PointerMoveEvent e) {
+    app.noteBackupActivity();
     if (_updateRulerPointer(e)) return;
     if (_windowsPen.enabled) {
       if (_windowsInkPointer != e.pointer) return;
@@ -826,6 +827,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _lassoMove(PointerMoveEvent e) {
+    app.noteBackupActivity();
     if (_updateRulerPointer(e)) return;
     if (_windowsInkPointer == e.pointer) {
       _inkMove(e);
@@ -1131,6 +1133,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _touchMove(PointerMoveEvent e) {
+    app.noteBackupActivity();
     final now = DateTime.now();
     final elapsed = now.difference(_lastTouchMove ?? now).inMicroseconds;
     _touches[e.pointer] = e.localPosition;
@@ -1321,6 +1324,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _selectMove(PointerMoveEvent e) {
+    app.noteBackupActivity();
     if (_updateRulerPointer(e)) return;
     if (_windowsInkPointer == e.pointer) {
       _inkMove(e);
@@ -1553,6 +1557,7 @@ class _PageCanvasState extends State<PageCanvas> {
   void _onScroll(PointerSignalEvent e) {
     if (e is! PointerScrollEvent) return;
     GestureBinding.instance.pointerSignalResolver.register(e, (_) {
+      app.noteBackupActivity();
       // Some Windows touch/precision-touchpad drivers emit a scroll signal
       // alongside the raw contacts used to stretch the ruler. It must be
       // consumed here: otherwise the ruler changes size correctly while this
@@ -1920,6 +1925,7 @@ class _PageCanvasState extends State<PageCanvas> {
           }
         },
         onPointerMove: (e) {
+          app.noteBackupActivity();
           if (_lassoMovePointer == e.pointer) {
             _moveLassoFingerSelection(e);
             return;
@@ -1981,6 +1987,7 @@ class _PageCanvasState extends State<PageCanvas> {
           // finger from ever producing ink or an eraser mark.
         },
         onPointerMove: (e) {
+          app.noteBackupActivity();
           if (_touches.containsKey(e.pointer)) {
             _touchMove(e);
           } else {
@@ -2237,6 +2244,7 @@ class _PageCanvasState extends State<PageCanvas> {
         if (_panZoomClaimedBy == e.pointer || _rulerPointers.isNotEmpty) {
           return;
         }
+        app.noteBackupActivity();
         final scaleFactor = e.scale / _pzLastScale;
         if (e.scale != _pzLastScale) {
           // A precision-touchpad event can carry a small pan delta alongside

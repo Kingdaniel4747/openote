@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -61,6 +62,25 @@ import '../sync/cloud_folders.dart';
 import '../sync/mirrors.dart';
 import '../sync/sync_recorder.dart';
 import '../sync/webdav_backup.dart';
+
+/// Archive encoding reads every snapshot byte. It must not share the UI
+/// isolate with drawing and scrolling just because the resulting ZIP is local.
+Future<int> _encodeWorkspaceBackupZip(
+    (String source, String destination) job) async {
+  final output = File(job.$2);
+  if (output.existsSync()) await output.delete();
+  final encoder = ZipFileEncoder();
+  // PDFs and images are already compressed. Storing them directly is much
+  // faster than recompressing a whole school archive.
+  encoder.create(output.path, level: ZipFileEncoder.store);
+  await encoder.addDirectory(
+    Directory(job.$1),
+    includeDirName: false,
+    level: ZipFileEncoder.store,
+  );
+  await encoder.close();
+  return output.length();
+}
 
 enum Tool { select, text, pen, ballpoint, highlighter, eraser, lasso, shape }
 
@@ -2646,6 +2666,67 @@ class AppState extends ChangeNotifier
   String? webDavError;
   DateTime? webDavLastUpload;
   Timer? _webDavUploadDebounce;
+  Timer? _webDavProgressNotify;
+  DateTime? _webDavLastProgressNotice;
+  bool _webDavBackupPending = false;
+  bool _backupNotebookSwitching = false;
+  bool _backupWorkInProgress = false;
+  DateTime _lastBackupActivity = DateTime.now();
+  DateTime _lastWebDavAutomaticUpload = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// Automatic backups are deliberately conservative: they are background
+  /// safety nets, never work that competes with drawing or navigation.
+  static const _webDavIdleDelay = Duration(minutes: 5);
+  static const _webDavAutomaticMinGap = Duration(hours: 1);
+
+  /// Tell the backup scheduler that the person is actively using the canvas.
+  /// Pointer handlers call this for writing and scrolling; it does no rebuild
+  /// and merely moves a pending automatic backup past the idle window.
+  void noteBackupActivity() {
+    _lastBackupActivity = DateTime.now();
+    if (_webDavBackupPending) _armWebDavBackup();
+  }
+
+  /// Importers and PDF preparation use this around their work. A pending
+  /// upload remains pending until that work has ended and the app is idle.
+  void setBackupWorkInProgress(bool value) {
+    if (_backupWorkInProgress == value) return;
+    _backupWorkInProgress = value;
+    if (!value && _webDavBackupPending) _armWebDavBackup();
+  }
+
+  bool get _automaticBackupBlocked =>
+      _backupNotebookSwitching ||
+      _backupWorkInProgress ||
+      writingMode ||
+      touchCanvasGesture ||
+      _dirty;
+
+  /// Network and archive code can produce hundreds of progress ticks. Keep the
+  /// text current, but repaint at most four times per second; the editor owns
+  /// the frames between those updates.
+  void _reportWebDavProgress(String message, {bool finalUpdate = false}) {
+    webDavProgress = message;
+    final now = DateTime.now();
+    final elapsed = _webDavLastProgressNotice == null
+        ? const Duration(days: 1)
+        : now.difference(_webDavLastProgressNotice!);
+    if (finalUpdate || elapsed >= const Duration(milliseconds: 250)) {
+      _webDavProgressNotify?.cancel();
+      _webDavProgressNotify = null;
+      _webDavLastProgressNotice = now;
+      notifyListeners();
+      return;
+    }
+    _webDavProgressNotify ??= Timer(
+      const Duration(milliseconds: 250),
+      () {
+        _webDavProgressNotify = null;
+        _webDavLastProgressNotice = DateTime.now();
+        notifyListeners();
+      },
+    );
+  }
 
   bool get webDavConfigured =>
       webDavUrl != null && webDavUsername != null && _webDavPassword != null;
@@ -2701,6 +2782,8 @@ class AppState extends ChangeNotifier
 
   void disconnectWebDav() {
     _webDavUploadDebounce?.cancel();
+    _webDavProgressNotify?.cancel();
+    _webDavBackupPending = false;
     SecretStore.delete(_webDavSecretKey);
     webDavUrl = null;
     webDavUsername = null;
@@ -2740,8 +2823,7 @@ class AppState extends ChangeNotifier
       final manifest = <Map<String, Object?>>[];
       final usedNames = <String>{};
       for (final ref in selected) {
-        webDavProgress = 'Preparing ${ref.title}...';
-        notifyListeners();
+        _reportWebDavProgress('Preparing ${ref.title}...');
         await awaitBlobBackfill(ref.id);
         var stem = ref.title.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_').trim();
         if (stem.isEmpty) stem = 'Notebook';
@@ -2788,21 +2870,14 @@ class AppState extends ChangeNotifier
           'notebooks': manifest,
         }),
       );
-      final output = File(destination);
-      if (output.existsSync()) await output.delete();
-      final encoder = ZipFileEncoder();
-      // PDF and image data is already compressed. Storing it directly is much
-      // faster than recompressing the whole school archive every minute.
-      encoder.create(output.path, level: ZipFileEncoder.store);
-      await encoder.addDirectory(
-        temporary,
-        includeDirName: false,
-        level: ZipFileEncoder.store,
+      // The consistent snapshots above are intentionally made before the
+      // isolate starts. SQLite belongs to this isolate; ZIP encoding does not.
+      final bytes = await Isolate.run(
+        () => _encodeWorkspaceBackupZip((temporary.path, destination)),
       );
-      await encoder.close();
       return WorkspaceBackupResult(
         notebooks: selected.length,
-        bytes: await output.length(),
+        bytes: bytes,
       );
     } finally {
       try {
@@ -2951,8 +3026,7 @@ class AppState extends ChangeNotifier
     if (webDavBusy) throw StateError('An upload is already running.');
     webDavBusy = true;
     webDavError = null;
-    webDavProgress = 'Saving current notes…';
-    notifyListeners();
+    _reportWebDavProgress('Saving current notes…', finalUpdate: true);
     Directory? temporary;
     WebDavBackupClient? client;
     try {
@@ -2968,8 +3042,7 @@ class AppState extends ChangeNotifier
       final bytes = await client.uploadBackup(
         archive,
         onProgress: (message) {
-          webDavProgress = message;
-          notifyListeners();
+          _reportWebDavProgress(message);
         },
       );
       webDavLastUpload = DateTime.now();
@@ -2978,7 +3051,7 @@ class AppState extends ChangeNotifier
         'username': webDavUsername,
         'lastUpload': webDavLastUpload!.toUtc().toIso8601String(),
       });
-      webDavProgress = 'Synced';
+      _reportWebDavProgress('Synced', finalUpdate: true);
       _syncStatusCache.clear();
       return WebDavUploadResult(files: 1, bytes: bytes);
     } catch (e) {
@@ -3018,14 +3091,12 @@ class AppState extends ChangeNotifier
       await client.downloadBackup(
         archive,
         onProgress: (message) {
-          webDavProgress = message;
-          notifyListeners();
+          _reportWebDavProgress(message);
         },
       );
-      webDavProgress = 'Restoring notebooks...';
-      notifyListeners();
+      _reportWebDavProgress('Restoring notebooks...', finalUpdate: true);
       final count = await restoreWorkspaceBackup(archive.path);
-      webDavProgress = 'Restored $count notebooks';
+      _reportWebDavProgress('Restored $count notebooks', finalUpdate: true);
       return count;
     } catch (e) {
       webDavError = '$e';
@@ -3044,20 +3115,39 @@ class AppState extends ChangeNotifier
 
   void _scheduleWebDavBackup() {
     if (!webDavConfigured) return;
+    _webDavBackupPending = true;
+    noteBackupActivity();
+  }
+
+  void _armWebDavBackup() {
+    if (!webDavConfigured || !_webDavBackupPending) return;
     _webDavUploadDebounce?.cancel();
-    _webDavUploadDebounce = Timer(const Duration(minutes: 1), () {
-      // An edit made while a large archive is uploading deserves one later
-      // pass; otherwise it would be absent until the next edit.
-      if (webDavBusy) {
-        _scheduleWebDavBackup();
-        return;
-      }
-      unawaited(
-        uploadAllToWebDav().catchError(
-          (_) => const WebDavUploadResult(files: 0, bytes: 0),
-        ),
+    final now = DateTime.now();
+    final idleAt = _lastBackupActivity.add(_webDavIdleDelay);
+    final hourlyAt = _lastWebDavAutomaticUpload.add(_webDavAutomaticMinGap);
+    final due = idleAt.isAfter(hourlyAt) ? idleAt : hourlyAt;
+    _webDavUploadDebounce = Timer(
+      due.isAfter(now) ? due.difference(now) : Duration.zero,
+      _runScheduledWebDavBackup,
+    );
+  }
+
+  void _runScheduledWebDavBackup() {
+    if (!webDavConfigured || !_webDavBackupPending) return;
+    // Imports, previews, active drawing and notebook changes are not failures:
+    // leave the work queued and check again shortly after they settle.
+    if (webDavBusy || _automaticBackupBlocked) {
+      _webDavUploadDebounce = Timer(
+        const Duration(seconds: 30),
+        _runScheduledWebDavBackup,
       );
-    });
+      return;
+    }
+    _webDavBackupPending = false;
+    _lastWebDavAutomaticUpload = DateTime.now();
+    unawaited(uploadAllToWebDav().catchError(
+      (_) => const WebDavUploadResult(files: 0, bytes: 0),
+    ));
   }
 
   /// Pull automatically when another device's log changes. On by default —
@@ -4452,7 +4542,12 @@ class AppState extends ChangeNotifier
 
   void setWritingMode(bool value) {
     writingMode = value;
-    if (value) requestDrawTab();
+    if (value) {
+      noteBackupActivity();
+      requestDrawTab();
+    } else if (_webDavBackupPending) {
+      _armWebDavBackup();
+    }
     notifyListeners();
   }
 
@@ -6905,13 +7000,20 @@ class AppState extends ChangeNotifier
   }
 
   Future<void> selectNotebook(String id) async {
-    await flushSave();
-    notebookId = id;
-    // Replay this notebook's log in the background now, so the first edit
-    // finds a ready recorder instead of paying the replay synchronously.
-    unawaited(warmRecorder(id));
-    await _loadNotebook();
-    notifyListeners();
+    _backupNotebookSwitching = true;
+    noteBackupActivity();
+    try {
+      await flushSave();
+      notebookId = id;
+      // Replay this notebook's log in the background now, so the first edit
+      // finds a ready recorder instead of paying the replay synchronously.
+      unawaited(warmRecorder(id));
+      await _loadNotebook();
+      notifyListeners();
+    } finally {
+      _backupNotebookSwitching = false;
+      if (_webDavBackupPending) _armWebDavBackup();
+    }
   }
 
   Future<void> createNotebook(String title) async {
