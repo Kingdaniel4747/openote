@@ -30,12 +30,281 @@ import '../theme/tokens.dart';
 import 'onote_dialog.dart';
 
 Future<void> showSyncDialog(BuildContext context, AppState app) async {
-  final nb = app.notebookId;
-  if (nb == null) return;
   await showOnoteDialog<void>(
     context: context,
-    builder: (_) => _SyncDialog(app: app, notebookId: nb),
+    // Backups belong to the whole workspace.  In particular, this must still
+    // be useful from the notebook manager, before a notebook has been opened.
+    builder: (_) => _BackupDialog(app: app),
   );
+}
+
+/// The workspace-level backup surface opened by the Sync button.
+///
+/// A previous version reused the per-notebook sync configuration here.  That
+/// made a button in the notebook manager silently do nothing until a notebook
+/// happened to be open, and mixed storage and sync setup into backups.
+enum _BackupPane { duplicate, webdav }
+
+class _BackupDialog extends StatefulWidget {
+  const _BackupDialog({required this.app});
+  final AppState app;
+
+  @override
+  State<_BackupDialog> createState() => _BackupDialogState();
+}
+
+class _BackupDialogState extends State<_BackupDialog> {
+  AppState get app => widget.app;
+
+  late final TextEditingController _webDavUrl;
+  late final TextEditingController _webDavUser;
+  late final TextEditingController _webDavPassword;
+  _BackupPane? _open;
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _webDavUrl = TextEditingController(text: app.webDavUrl ?? '');
+    _webDavUser = TextEditingController(text: app.webDavUsername ?? '');
+    _webDavPassword = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _webDavUrl.dispose();
+    _webDavUser.dispose();
+    _webDavPassword.dispose();
+    super.dispose();
+  }
+
+  Future<void> _duplicate() async {
+    final stamp = DateTime.now().toIso8601String().substring(0, 10);
+    final location = await getSaveLocation(
+      suggestedName: 'Openote Backup $stamp.zip',
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'Openote backup', extensions: ['zip']),
+      ],
+    );
+    if (location == null || !mounted) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final result = await app.createWorkspaceBackup(location.path);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Backup saved: ${result.notebooks} notebook'
+            '${result.notebooks == 1 ? '' : 's'}.'),
+      ));
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _restoreDuplicate() async {
+    final file = await openFile(
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'Openote backup', extensions: ['zip']),
+      ],
+    );
+    if (file == null || !mounted) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final count = await app.restoreWorkspaceBackup(file.path);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Restored $count notebooks.')));
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _connectWebDav() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await app.configureWebDav(
+        url: _webDavUrl.text,
+        username: _webDavUser.text,
+        password: _webDavPassword.text,
+      );
+      await app.uploadAllToWebDav();
+      _webDavPassword.clear();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Connected and synced. Automatic backup is now on.')));
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _uploadWebDav() async {
+    setState(() => _error = null);
+    try {
+      final result = await app.uploadAllToWebDav();
+      if (!mounted) return;
+      final mb = result.bytes / (1024 * 1024);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+            'Uploaded ${result.files} files (${mb.toStringAsFixed(1)} MB).'),
+      ));
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    }
+  }
+
+  Future<void> _restoreWebDav() async {
+    setState(() => _error = null);
+    try {
+      final count = await app.restoreAllFromWebDav();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Restored $count notebooks from Nextcloud.')));
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    }
+  }
+
+  Widget _duplicateSection() => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Creates one portable ZIP copy of all your notebooks, including PDFs and images.',
+            style: TextStyle(
+                fontSize: 12,
+                height: 1.4,
+                color: context.surfaces.textSecondary),
+          ),
+          const SizedBox(height: 10),
+          Row(children: [
+            FilledButton.icon(
+              onPressed: _busy ? null : _duplicate,
+              icon: const Icon(Icons.copy_all_outlined, size: 18),
+              label: const Text('Create duplicate'),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              onPressed: _busy ? null : _restoreDuplicate,
+              icon: const Icon(Icons.restore, size: 18),
+              label: const Text('Restore duplicate'),
+            ),
+          ]),
+        ],
+      );
+
+  Widget _webDavSection() {
+    final connected = app.webDavConfigured;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(
+        'Keeps one complete Openote Backup.zip in Nextcloud and updates it one minute after you finish writing.',
+        style: TextStyle(
+            fontSize: 12, height: 1.4, color: context.surfaces.textSecondary),
+      ),
+      const SizedBox(height: 10),
+      if (!connected) ...[
+        TextField(
+            controller: _webDavUrl,
+            decoration:
+                const InputDecoration(labelText: 'WebDAV URL', isDense: true)),
+        const SizedBox(height: 8),
+        TextField(
+            controller: _webDavUser,
+            decoration:
+                const InputDecoration(labelText: 'Username', isDense: true)),
+        const SizedBox(height: 8),
+        TextField(
+            controller: _webDavPassword,
+            obscureText: true,
+            enableSuggestions: false,
+            autocorrect: false,
+            decoration: const InputDecoration(
+                labelText: 'Nextcloud app password', isDense: true)),
+        const SizedBox(height: 10),
+        FilledButton.icon(
+            onPressed: _busy ? null : _connectWebDav,
+            icon: const Icon(Icons.link, size: 18),
+            label: const Text('Connect')),
+      ] else ...[
+        SelectableText('${app.webDavUsername}\n${app.webDavUrl}',
+            style: const TextStyle(fontSize: 12)),
+        const SizedBox(height: 10),
+        Row(children: [
+          FilledButton.icon(
+              onPressed: app.webDavBusy ? null : _uploadWebDav,
+              icon: const Icon(Icons.cloud_upload_outlined, size: 18),
+              label: const Text('Sync now')),
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+              onPressed: app.webDavBusy ? null : _restoreWebDav,
+              icon: const Icon(Icons.restore, size: 18),
+              label: const Text('Restore backup')),
+        ]),
+      ],
+    ]);
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Row(children: [
+          Icon(Icons.backup_outlined, size: 18),
+          SizedBox(width: 8),
+          Text('Backups'),
+        ]),
+        content: SizedBox(
+          width: 480,
+          child: ListenableBuilder(
+            listenable: app,
+            builder: (context, _) =>
+                Column(mainAxisSize: MainAxisSize.min, children: [
+              _Disclosure(
+                  icon: Icons.copy_all_outlined,
+                  title: 'Duplicate',
+                  subtitle: 'Portable ZIP copy',
+                  open: _open == _BackupPane.duplicate,
+                  onTap: () => setState(() => _open =
+                      _open == _BackupPane.duplicate
+                          ? null
+                          : _BackupPane.duplicate),
+                  child: _duplicateSection()),
+              _Disclosure(
+                  icon: Icons.cloud_upload_outlined,
+                  title: 'Nextcloud / WebDAV',
+                  subtitle: app.webDavConfigured
+                      ? 'All notebooks · connected'
+                      : 'All notebooks · off',
+                  open: _open == _BackupPane.webdav,
+                  onTap: () => setState(() => _open =
+                      _open == _BackupPane.webdav ? null : _BackupPane.webdav),
+                  child: _webDavSection()),
+              if (_error != null)
+                Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(_error!,
+                        style: const TextStyle(
+                            fontSize: 12, color: OnoteColors.danger))),
+            ]),
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: _busy ? null : () => Navigator.of(context).pop(),
+              child: const Text('Close'))
+        ],
+      );
 }
 
 /// "3s ago", for the sync readout. [absent] when there is no time yet.

@@ -1568,10 +1568,12 @@ class _PageCanvasState extends State<PageCanvas> {
         );
       } else if (shift) {
         // Shift+wheel → horizontal scroll (a mouse's vertical wheel drives X).
-        controller
-            .scrollBySmooth(Offset(-e.scrollDelta.dy - e.scrollDelta.dx, 0));
+        controller.panBy(Offset(-e.scrollDelta.dy - e.scrollDelta.dx, 0));
       } else {
-        controller.scrollBySmooth(-e.scrollDelta);
+        // Scroll signals include precision-touchpad scrolling on Windows.
+        // Apply the delta immediately, like a finger/trackpad pan; easing it
+        // here made that input feel noticeably slower than direct touch.
+        controller.panBy(-e.scrollDelta);
       }
       setState(() {});
     });

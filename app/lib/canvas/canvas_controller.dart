@@ -19,8 +19,6 @@ class CanvasController extends ChangeNotifier {
   static const minScale = 0.15;
   static const maxScale = 8.0;
   Timer? _leadingBounce;
-  Timer? _wheelScroll;
-  Offset _wheelPending = Offset.zero;
 
   /// Whether the page is currently pulled past its natural top/left origin.
   /// Kept here rather than inferred by a gesture recognizer so touch, mouse
@@ -288,29 +286,6 @@ class CanvasController extends ChangeNotifier {
   void stopMotion() {
     _leadingBounce?.cancel();
     _leadingBounce = null;
-    _wheelScroll?.cancel();
-    _wheelScroll = null;
-    _wheelPending = Offset.zero;
-  }
-
-  /// Accumulate wheel notches into a short easing tail without inventing extra
-  /// distance. Touchpad pan/zoom keeps the operating system's own momentum.
-  void scrollBySmooth(Offset delta) {
-    _leadingBounce?.cancel();
-    _wheelPending += delta;
-    _wheelScroll ??= Timer.periodic(const Duration(milliseconds: 16), (timer) {
-      final step = _wheelPending * .3;
-      _wheelPending -= step;
-      offset += step;
-      if (_wheelPending.distance < .5) {
-        offset += _wheelPending;
-        _wheelPending = Offset.zero;
-        timer.cancel();
-        _wheelScroll = null;
-      }
-      clampToPage();
-      notifyListeners();
-    });
   }
 
   /// Initial view: page anchored top-left, filling the window (the page is at
