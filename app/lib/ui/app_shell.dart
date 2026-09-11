@@ -1537,7 +1537,6 @@ class _AppShellState extends State<AppShell> {
               child: Column(children: [
                 if (WindowsWindowFrame.of(context)?.customChrome == true)
                   CommandBar(app: app, titlebarOnly: true),
-                _regionWrap(_Region.toolbar, CommandBar(app: app)),
                 Expanded(
                     child: Stack(children: [
                   Row(
@@ -1547,6 +1546,7 @@ class _AppShellState extends State<AppShell> {
                       Expanded(
                         child: Column(
                           children: [
+                            _regionWrap(_Region.toolbar, CommandBar(app: app)),
                             // **The object row**, permanent and always 36 px.
                             //
                             // Permanent because a band that appeared with the

@@ -24,7 +24,6 @@ import 'compacting_toolbar.dart';
 import 'fixed_toolbar.dart';
 import 'font_picker.dart';
 import 'insert_catalog.dart';
-import 'notebook_manager.dart';
 import 'object_face.dart';
 import 'object_row.dart';
 import 'settings_dialog.dart';
@@ -403,21 +402,6 @@ class _CommandBarState extends State<CommandBar> {
                 if (objectFaceOf(app) == ObjectFace.equation)
                   const _SubjectBadge(icon: Icons.functions, label: 'Equation'),
                 const Spacer(),
-                if (app.notebookId != null)
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 190),
-                    child: TextButton.icon(
-                      icon: const Icon(Icons.menu_book_outlined, size: 18),
-                      label: Flexible(
-                        child: Text(
-                          app.currentNotebook.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      onPressed: () => showNotebookManager(context, app),
-                    ),
-                  ),
                 if (WindowsWindowFrame.of(context)?.customChrome != true)
                   ..._utilityControls(context, scheme),
               ],
