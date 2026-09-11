@@ -1146,7 +1146,7 @@ class _PageCanvasState extends State<PageCanvas> {
       _schedulePinchTransform();
     } else if (_touches.length == 1 && !_multiTouchSeen) {
       final delta = e.localPosition - _lastScreen;
-      controller.panBy(delta, elasticLeading: true);
+      controller.panBy(delta);
       if (elapsed > 0) {
         final instant = delta * (1000000 / elapsed);
         // The final pointer sample is often a tiny stationary sample emitted
@@ -1351,7 +1351,7 @@ class _PageCanvasState extends State<PageCanvas> {
     _lastScreen = e.localPosition;
     switch (_mode) {
       case _DragMode.pan:
-        controller.panBy(delta, elasticLeading: true);
+        controller.panBy(delta);
       case _DragMode.pending:
         if ((e.localPosition - _downScreen).distance > 5) {
           if (_downKind == PointerDeviceKind.touch) {
@@ -1359,10 +1359,7 @@ class _PageCanvasState extends State<PageCanvas> {
             // already travelled is applied too, so the page doesn't hiccup
             // by the 5px it took to decide.
             _mode = _DragMode.pan;
-            controller.panBy(
-              e.localPosition - _downScreen,
-              elasticLeading: true,
-            );
+            controller.panBy(e.localPosition - _downScreen);
           } else {
             _mode = _DragMode.marquee;
             _marqueeEndPage = controller.screenToPage(e.localPosition);
@@ -1723,6 +1720,30 @@ class _PageCanvasState extends State<PageCanvas> {
                                       app: app,
                                       width: livePageSize.width -
                                           AppState.pageLeftMargin * 2,
+                                    ),
+                                  ),
+                                ),
+                              if (app.pageProps.pdfOnly)
+                                Positioned(
+                                  left: AppState.pageLeftMargin,
+                                  top: 10,
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: .9),
+                                      borderRadius: BorderRadius.circular(5),
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 2,
+                                      ),
+                                      child: PageTitleView(
+                                        key: ValueKey('title-${app.pageId}'),
+                                        app: app,
+                                        width: livePageSize.width -
+                                            AppState.pageLeftMargin * 2 -
+                                            16,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -2232,7 +2253,7 @@ class _PageCanvasState extends State<PageCanvas> {
           controller.transformAt(e.localPosition, scaleFactor, Offset.zero);
         } else if (e.localPanDelta != Offset.zero) {
           // Two-finger scrolling without a scale change is still a pan.
-          controller.panBy(e.localPanDelta, elasticLeading: true);
+          controller.panBy(e.localPanDelta);
         }
         _pzLastScale = e.scale;
       },

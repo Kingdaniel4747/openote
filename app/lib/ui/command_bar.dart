@@ -24,6 +24,7 @@ import 'compacting_toolbar.dart';
 import 'fixed_toolbar.dart';
 import 'font_picker.dart';
 import 'insert_catalog.dart';
+import 'notebook_manager.dart';
 import 'object_face.dart';
 import 'object_row.dart';
 import 'settings_dialog.dart';
@@ -402,6 +403,21 @@ class _CommandBarState extends State<CommandBar> {
                 if (objectFaceOf(app) == ObjectFace.equation)
                   const _SubjectBadge(icon: Icons.functions, label: 'Equation'),
                 const Spacer(),
+                if (app.notebookId != null)
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 190),
+                    child: TextButton.icon(
+                      icon: const Icon(Icons.menu_book_outlined, size: 18),
+                      label: Flexible(
+                        child: Text(
+                          app.currentNotebook.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      onPressed: () => showNotebookManager(context, app),
+                    ),
+                  ),
                 if (WindowsWindowFrame.of(context)?.customChrome != true)
                   ..._utilityControls(context, scheme),
               ],
@@ -936,6 +952,15 @@ class _CommandBarState extends State<CommandBar> {
               ],
       );
 
+  RelativeRect _colourMenuPosition(
+      BuildContext context, Offset globalPosition) {
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    return RelativeRect.fromRect(
+      Rect.fromLTWH(globalPosition.dx, globalPosition.dy + 18, 1, 1),
+      Offset.zero & overlay.size,
+    );
+  }
+
   Future<void> _showToolbarColourMenu(
     BuildContext context,
     Offset globalPosition,
@@ -944,12 +969,7 @@ class _CommandBarState extends State<CommandBar> {
   ) async {
     final action = await showMenu<String>(
       context: context,
-      position: RelativeRect.fromLTRB(
-        globalPosition.dx,
-        globalPosition.dy,
-        0,
-        0,
-      ),
+      position: _colourMenuPosition(context, globalPosition),
       items: const [
         PopupMenuItem(
           value: 'edit',
@@ -1157,8 +1177,8 @@ class _CommandBarState extends State<CommandBar> {
               onSecondaryTapDown: (details) async {
                 final remove = await showMenu<bool>(
                   context: context,
-                  position: RelativeRect.fromLTRB(details.globalPosition.dx,
-                      details.globalPosition.dy, 0, 0),
+                  position:
+                      _colourMenuPosition(context, details.globalPosition),
                   items: const [
                     PopupMenuItem(value: true, child: AppText('Remove colour'))
                   ],
