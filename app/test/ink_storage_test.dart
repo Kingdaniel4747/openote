@@ -145,7 +145,7 @@ void main() {
     // The trap this test exists for: `Repository.putBlob` writes only the
     // container's `blobs` table and emits no `blob.put` op. Ink written that
     // way is invisible to the log, so a notebook rebuilt from its log — which
-    // is exactly what joining from a git URL does — would come back with the
+    // is exactly what restoring an operation-log directory does — would come back with the
     // handwriting missing. Locally everything would look fine.
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     app.blocks = [inkBlock(handwriting(count: 40))];

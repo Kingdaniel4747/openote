@@ -192,7 +192,7 @@ abstract final class InkStorage {
   /// The working form of [content], reading blobs through [getBlob].
   ///
   /// Returns [content] unchanged when it is already inline, or when the bytes
-  /// are not available — a notebook joined from a git remote can legitimately
+  /// are not available — a notebook restored from an operation log can legitimately
   /// hold a ref whose blob has not arrived yet, and the right behaviour then is
   /// an ink block that draws nothing rather than a page that fails to open.
   static Map<String, dynamic> toWorking(

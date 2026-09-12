@@ -140,7 +140,8 @@ void main() {
     expect(syncStateOf(app, nb), SyncState.synced);
 
     // Nothing was recorded twice: the ops were written at import time.
-    expect(moved.readAll().where((o) => o.kind == OpKind.blobPut), hasLength(2));
+    expect(
+        moved.readAll().where((o) => o.kind == OpKind.blobPut), hasLength(2));
   });
 
   test('images added after the move go straight out, without a backfill',
@@ -181,7 +182,8 @@ void main() {
         File(p.join(cloud.path, 'Images.onotebook', 'blobs', hash))
             .readAsBytesSync(),
         image(13),
-        reason: 'the backup has to contain the picture, not a reference to one');
+        reason:
+            'the backup has to contain the picture, not a reference to one');
   });
 
   test('naming the folder a notebook already sits in materialises it too',
@@ -234,14 +236,12 @@ void main() {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (repo, app, nb, _, cloud) = await fixture('onote_mat_allpaths_');
 
-    // Each of the four states a notebook can be in, one picture added in each.
+    // Each sharing state a notebook can be in, one picture added in each.
     final local = app.importBlob(nb, image(21), 'image/png');
     app.rememberSyncRoot(cloud.path);
     final root = app.importBlob(nb, image(23), 'image/png');
     app.addMirror(nb, MirrorTarget(path: cloud.path, keepVersions: 0));
     final mirrored = app.importBlob(nb, image(25), 'image/png');
-    app.debugSetGitSetting(nb, 'https://example.invalid/notes.git');
-    final gitted = app.importBlob(nb, image(27), 'image/png');
 
     await app.settleBackgroundWork();
     await app.awaitMirrorRun(nb);
@@ -251,7 +251,6 @@ void main() {
       ('local-only', local, image(21)),
       ('sync root remembered', root, image(23)),
       ('mirrored', mirrored, image(25)),
-      ('git remote', gitted, image(27)),
     ]) {
       expect(store.readBlob(hash), bytes, reason: 'added while $name');
     }

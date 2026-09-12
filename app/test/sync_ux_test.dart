@@ -58,7 +58,7 @@ void main() {
         tmp2.deleteSync(recursive: true);
       } catch (_) {}
     });
-    // The join path for a folder that holds only logs — the same one a git
+    // The join path for a folder that holds only logs — the same one an
     // clone uses. `openExistingNotebook` byte-copies a container and there is
     // deliberately no container to copy.
     final ref = await repo2.adoptLogDirectory(moved, title: 'Lectures');

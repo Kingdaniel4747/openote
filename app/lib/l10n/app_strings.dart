@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 String tr(BuildContext context, String text) =>
     Localizations.localeOf(context).languageCode == 'de'
-    ? (german[text] ?? text)
-    : text;
+        ? (german[text] ?? text)
+        : text;
 
 /// Only application labels use this widget. Notebook titles/content stay Text.
 class AppText extends StatelessWidget {
@@ -24,13 +24,13 @@ class AppText extends StatelessWidget {
   final bool? softWrap;
   @override
   Widget build(BuildContext context) => Text(
-    tr(context, text),
-    style: style,
-    textAlign: textAlign,
-    maxLines: maxLines,
-    overflow: overflow,
-    softWrap: softWrap,
-  );
+        tr(context, text),
+        style: style,
+        textAlign: textAlign,
+        maxLines: maxLines,
+        overflow: overflow,
+        softWrap: softWrap,
+      );
 }
 
 const german = <String, String>{
@@ -168,8 +168,6 @@ const german = <String, String>{
   'Checkbox': 'Kontrollkästchen',
   'Text font…': 'Schriftart…',
   'Apply text colour': 'Textfarbe anwenden',
-  'Back up and share this notebook — GitHub or a folder.':
-      'Notizbuch sichern und teilen – über GitHub oder einen Ordner.',
   'On — AI helpers on this computer can use your notes.':
       'Ein – lokale KI-Assistenten können deine Notizen verwenden.',
   'Off — connect Claude or other AI helpers.':
@@ -200,9 +198,6 @@ const german = <String, String>{
   'Colour': 'Farbe',
   'Move section to…': 'Abschnitt verschieben nach…',
   '(No group — top level)': '(Keine Gruppe – oberste Ebene)',
-  'Apply template': 'Vorlage anwenden',
-  'Save as template': 'Als Vorlage speichern',
-  'Template name': 'Name der Vorlage',
   'New section group': 'Neue Abschnittsgruppe',
   'Search or jump to…': 'Suchen oder wechseln zu…',
   'Find on page': 'Auf dieser Seite suchen',

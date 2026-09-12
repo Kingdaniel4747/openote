@@ -436,7 +436,7 @@ void main() {
       // Looking at a graph is not editing it. The fit reads the samples and
       // the number of samples follows the canvas zoom, so storing the fitted
       // window turned scrolling around a page into an edit: a bumped
-      // timestamp, a save, and a git commit for a change nobody made. The
+      // timestamp and a save for a change nobody made. The
       // window it drew in is remembered in the widget instead, which is all
       // the next drag needs.
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');

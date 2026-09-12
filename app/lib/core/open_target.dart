@@ -178,7 +178,7 @@ void ensureNotebookPointer(String folder, {required String title}) {
 /// `Physics.onotebook` by hand would otherwise be adopted as a notebook, and
 /// what that registers is a permanently empty entry with no ops behind it that
 /// never syncs anywhere and never goes away — the same ghost
-/// `Repository.adoptLogDirectory` refuses to seed for the git-clone case.
+/// `Repository.adoptLogDirectory` refuses to seed for an existing log.
 ///
 /// The two marks are `manifest.json` or `ops/`, which is exactly what
 /// `sync_dialog.dart` looks for when it scans a shared folder. Either, not

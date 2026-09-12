@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import '../export/pdf_vector_export.dart';
 import '../export/print_page.dart';
 import '../model/models.dart';
-import '../planner/agenda.dart';
 import '../state/app_state.dart';
 import '../study/study_stats.dart';
 import '../theme/onote_theme.dart';
@@ -14,7 +13,6 @@ import 'notebook_manager.dart';
 import 'page_history_dialog.dart';
 import 'protect_dialog.dart';
 import 'sync_dot.dart';
-import 'planner_format.dart';
 import '../theme/tokens.dart';
 import 'onote_dialog.dart';
 
@@ -783,6 +781,7 @@ class _HomePane extends StatelessWidget {
 ///
 /// Hidden entirely when there is nothing dated — an empty heading over an empty
 /// list is the "row of zeroes" the study stats deliberately avoid.
+/* Removed unused home-pane summary.
 class _ComingUp extends StatelessWidget {
   const _ComingUp({required this.app});
   final AppState app;
@@ -911,6 +910,7 @@ class _ComingUp extends StatelessWidget {
 
 /// The collapsed navigator: a 44px rail that keeps every destination one
 /// click away — expand, notebooks, Home, and a chip per section.
+*/
 class _NavRail extends StatelessWidget {
   const _NavRail({required this.app, required this.dark});
   final AppState app;
@@ -2129,20 +2129,12 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       await _onPage(app, node.id, () async {
         if (context.mounted) await showVersionHistory(context, app);
       });
-    case 'template':
-      await _onPage(app, node.id, () async {
-        if (context.mounted) await _promptSaveTemplate(context, app);
-      });
-    case 'applytemplate':
-      // NOT brought home: applying a template CHANGES this page, and leaving
-      // somebody somewhere else after changing it is worse than moving them.
-      if (app.pageId != node.id) await app.selectPage(node.id);
-      if (context.mounted) await promptApplyTemplate(context, app);
     case 'delete':
       await app.deleteNode(node.id);
   }
 }
 
+/* Removed unused saved-template command.
 Future<void> _promptSaveTemplate(BuildContext context, AppState app) async {
   // Through [promptForText], which owns the field's controller in the dialog's
   // own State. This used to build the field here and `controller.dispose()`
@@ -2160,6 +2152,7 @@ Future<void> _promptSaveTemplate(BuildContext context, AppState app) async {
   }
 }
 
+*/
 /// The page's change history.
 ///
 /// **One door, three answers.** It used to be `page_versions` alone — up to
@@ -2247,6 +2240,7 @@ String _examMenuLabel(
 /// talks about templates, and where its own "no templates yet" message sends
 /// people; the ribbon is where a student who has used the app for a term
 /// looks. One command, two entrances, which is why this is public.
+/* Removed unused saved-template command.
 Future<void> promptApplyTemplate(BuildContext context, AppState app) async {
   final names = app.templateNames();
   if (names.isEmpty) {
@@ -2268,6 +2262,7 @@ Future<void> promptApplyTemplate(BuildContext context, AppState app) async {
   if (choice != null) app.applyTemplate(choice);
 }
 
+*/
 /// Do something that needs [pageId] open, then go back to where you were.
 ///
 /// `selectPage` also clears the undo stack, so the cost of the detour is not

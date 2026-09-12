@@ -22,7 +22,6 @@ import '../store/media_gc.dart' show VideoSweep;
 import '../store/repository.dart'
     show BlobReclaim, ContainerDemotion, SpaceReclaim;
 import '../sync/cloud_folders.dart';
-import '../sync/github_api.dart';
 import '../sync/mirrors.dart';
 import '../theme/onote_theme.dart';
 import 'notebook_manager.dart';
@@ -43,7 +42,7 @@ Future<void> showSyncDialog(BuildContext context, AppState app) async {
 /// A previous version reused the per-notebook sync configuration here.  That
 /// made a button in the notebook manager silently do nothing until a notebook
 /// happened to be open, and mixed storage and sync setup into backups.
-enum _BackupPane { duplicate, webdav }
+enum _BackupPane { duplicate }
 
 class _BackupDialog extends StatefulWidget {
   const _BackupDialog({required this.app});
@@ -56,28 +55,9 @@ class _BackupDialog extends StatefulWidget {
 class _BackupDialogState extends State<_BackupDialog> {
   AppState get app => widget.app;
 
-  late final TextEditingController _webDavUrl;
-  late final TextEditingController _webDavUser;
-  late final TextEditingController _webDavPassword;
   _BackupPane? _open;
   bool _busy = false;
   String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _webDavUrl = TextEditingController(text: app.webDavUrl ?? '');
-    _webDavUser = TextEditingController(text: app.webDavUsername ?? '');
-    _webDavPassword = TextEditingController();
-  }
-
-  @override
-  void dispose() {
-    _webDavUrl.dispose();
-    _webDavUser.dispose();
-    _webDavPassword.dispose();
-    super.dispose();
-  }
 
   Future<void> _duplicate() async {
     final stamp = DateTime.now().toIso8601String().substring(0, 10);
@@ -129,56 +109,6 @@ class _BackupDialogState extends State<_BackupDialog> {
     }
   }
 
-  Future<void> _connectWebDav() async {
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    try {
-      await app.configureWebDav(
-        url: _webDavUrl.text,
-        username: _webDavUser.text,
-        password: _webDavPassword.text,
-      );
-      await app.uploadAllToWebDav();
-      _webDavPassword.clear();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Connected and synced. Automatic backup is now on.')));
-    } catch (e) {
-      if (mounted) setState(() => _error = '$e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _uploadWebDav() async {
-    setState(() => _error = null);
-    try {
-      final result = await app.uploadAllToWebDav();
-      if (!mounted) return;
-      final mb = result.bytes / (1024 * 1024);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(
-            'Uploaded ${result.files} files (${mb.toStringAsFixed(1)} MB).'),
-      ));
-    } catch (e) {
-      if (mounted) setState(() => _error = '$e');
-    }
-  }
-
-  Future<void> _restoreWebDav() async {
-    setState(() => _error = null);
-    try {
-      final count = await app.restoreAllFromWebDav();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Restored $count notebooks from Nextcloud.')));
-    } catch (e) {
-      if (mounted) setState(() => _error = '$e');
-    }
-  }
-
   Widget _duplicateSection() => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -206,57 +136,6 @@ class _BackupDialogState extends State<_BackupDialog> {
         ],
       );
 
-  Widget _webDavSection() {
-    final connected = app.webDavConfigured;
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(
-        'Keeps one complete Openote Backup.zip in Nextcloud and updates it one minute after you finish writing.',
-        style: TextStyle(
-            fontSize: 12, height: 1.4, color: context.surfaces.textSecondary),
-      ),
-      const SizedBox(height: 10),
-      if (!connected) ...[
-        TextField(
-            controller: _webDavUrl,
-            decoration:
-                const InputDecoration(labelText: 'WebDAV URL', isDense: true)),
-        const SizedBox(height: 8),
-        TextField(
-            controller: _webDavUser,
-            decoration:
-                const InputDecoration(labelText: 'Username', isDense: true)),
-        const SizedBox(height: 8),
-        TextField(
-            controller: _webDavPassword,
-            obscureText: true,
-            enableSuggestions: false,
-            autocorrect: false,
-            decoration: const InputDecoration(
-                labelText: 'Nextcloud app password', isDense: true)),
-        const SizedBox(height: 10),
-        FilledButton.icon(
-            onPressed: _busy ? null : _connectWebDav,
-            icon: const Icon(Icons.link, size: 18),
-            label: const Text('Connect')),
-      ] else ...[
-        SelectableText('${app.webDavUsername}\n${app.webDavUrl}',
-            style: const TextStyle(fontSize: 12)),
-        const SizedBox(height: 10),
-        Row(children: [
-          FilledButton.icon(
-              onPressed: app.webDavBusy ? null : _uploadWebDav,
-              icon: const Icon(Icons.cloud_upload_outlined, size: 18),
-              label: const Text('Sync now')),
-          const SizedBox(width: 8),
-          OutlinedButton.icon(
-              onPressed: app.webDavBusy ? null : _restoreWebDav,
-              icon: const Icon(Icons.restore, size: 18),
-              label: const Text('Restore backup')),
-        ]),
-      ],
-    ]);
-  }
-
   @override
   Widget build(BuildContext context) => AlertDialog(
         title: const Row(children: [
@@ -280,16 +159,6 @@ class _BackupDialogState extends State<_BackupDialog> {
                           ? null
                           : _BackupPane.duplicate),
                   child: _duplicateSection()),
-              _Disclosure(
-                  icon: Icons.cloud_upload_outlined,
-                  title: 'Nextcloud / WebDAV',
-                  subtitle: app.webDavConfigured
-                      ? 'All notebooks · connected'
-                      : 'All notebooks · off',
-                  open: _open == _BackupPane.webdav,
-                  onTap: () => setState(() => _open =
-                      _open == _BackupPane.webdav ? null : _BackupPane.webdav),
-                  child: _webDavSection()),
               if (_error != null)
                 Padding(
                     padding: const EdgeInsets.only(top: 12),
@@ -322,14 +191,14 @@ String _ago(DateTime? t, String absent, String label) {
 }
 
 /// The foldable halves of the dialog.
-enum _Pane { webdav, mirrors, storage }
+enum _Pane { mirrors, storage }
 
 /// A section header that stands on its own, and its contents when opened.
 ///
 /// Not an `ExpansionTile`: that draws its own dividers and its own padding,
 /// animates a chevron on the wrong side, and cannot show a value beside the
 /// title without fighting its `subtitle` slot. What is needed here is a row
-/// that answers the question when closed — "Sync with git · github.com/you/n"
+/// that answers the question when closed — "Sync · OneDrive"
 /// — so that opening it is a choice rather than the only way to find out.
 class _Disclosure extends StatelessWidget {
   const _Disclosure({
@@ -406,9 +275,6 @@ class _SyncDialogState extends State<_SyncDialog> {
   String get nb => widget.notebookId;
 
   late List<CloudFolder> _folders = detectCloudFolders();
-  late final TextEditingController _webDavUrl;
-  late final TextEditingController _webDavUser;
-  late final TextEditingController _webDavPassword;
   bool _busy = false;
   String? _error;
 
@@ -433,22 +299,6 @@ class _SyncDialogState extends State<_SyncDialog> {
   /// Which of the folded sections is open, if any. One at a time: the whole
   /// point is that the dialog is short enough to read.
   _Pane? _open;
-
-  @override
-  void initState() {
-    super.initState();
-    _webDavUrl = TextEditingController(text: app.webDavUrl ?? '');
-    _webDavUser = TextEditingController(text: app.webDavUsername ?? '');
-    _webDavPassword = TextEditingController();
-  }
-
-  @override
-  void dispose() {
-    _webDavUrl.dispose();
-    _webDavUser.dispose();
-    _webDavPassword.dispose();
-    super.dispose();
-  }
 
   /// Move the notebook into [dir], with the spinner on [button] — the control
   /// that started it, defaulting to the folder tile that names this folder.
@@ -510,175 +360,10 @@ class _SyncDialogState extends State<_SyncDialog> {
     setState(() {});
   }
 
-  Future<void> _connectWebDav() async {
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    try {
-      await app.configureWebDav(
-        url: _webDavUrl.text,
-        username: _webDavUser.text,
-        password: _webDavPassword.text,
-      );
-      await app.uploadAllToWebDav();
-      _webDavPassword.clear();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Connected and synced. Automatic backup is now on.'),
-      ));
-    } catch (e) {
-      if (mounted) setState(() => _error = '$e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _uploadWebDav() async {
-    setState(() => _error = null);
-    try {
-      final result = await app.uploadAllToWebDav();
-      if (!mounted) return;
-      final mb = result.bytes / (1024 * 1024);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content:
-            Text('Uploaded ${result.files} files (${mb.toStringAsFixed(1)} MB) '
-                'from all ${app.notebooks.length} notebooks.'),
-      ));
-    } catch (e) {
-      if (mounted) setState(() => _error = '$e');
-    }
-  }
-
-  Future<void> _restoreWebDav() async {
-    setState(() => _error = null);
-    try {
-      final count = await app.restoreAllFromWebDav();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Restored $count notebooks from Nextcloud.'),
-      ));
-    } catch (e) {
-      if (mounted) setState(() => _error = '$e');
-    }
-  }
-
-  Widget _webDavSection() {
-    final connected = app.webDavConfigured;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Keeps one complete Openote Backup.zip in Nextcloud. It contains '
-          'every notebook, PDF and image and updates one minute after you '
-          'finish writing.',
-          style: TextStyle(
-              fontSize: 12, height: 1.4, color: context.surfaces.textSecondary),
-        ),
-        const SizedBox(height: 10),
-        if (!connected) ...[
-          TextField(
-            controller: _webDavUrl,
-            decoration: const InputDecoration(
-              labelText: 'WebDAV URL',
-              hintText: 'https://cloud.example/remote.php/dav/files/username',
-              isDense: true,
-            ),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _webDavUser,
-            decoration:
-                const InputDecoration(labelText: 'Username', isDense: true),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _webDavPassword,
-            obscureText: true,
-            enableSuggestions: false,
-            autocorrect: false,
-            decoration: const InputDecoration(
-              labelText: 'Nextcloud app password',
-              helperText:
-                  'Create an app password in Nextcloud security settings.',
-              isDense: true,
-            ),
-          ),
-          const SizedBox(height: 10),
-          FilledButton.icon(
-            onPressed: _busy ? null : _connectWebDav,
-            icon: const Icon(Icons.link, size: 18),
-            label: _spinning(_busy, const Text('Connect')),
-          ),
-        ] else ...[
-          SelectableText('${app.webDavUsername}\n${app.webDavUrl}',
-              style: const TextStyle(fontSize: 12)),
-          if (app.webDavLastUpload != null) ...[
-            const SizedBox(height: 4),
-            Row(children: [
-              const Icon(Icons.cloud_done_outlined,
-                  size: 16, color: OnoteColors.success),
-              const SizedBox(width: 6),
-              Text(_ago(app.webDavLastUpload, 'Not uploaded yet', 'Synced'),
-                  style: TextStyle(
-                      fontSize: 11, color: context.surfaces.textSecondary)),
-            ]),
-          ],
-          if (app.webDavBusy || app.webDavProgress != null) ...[
-            const SizedBox(height: 8),
-            Row(children: [
-              if (app.webDavBusy) ...[
-                const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-                const SizedBox(width: 8),
-              ],
-              Expanded(
-                  child: Text(app.webDavProgress ?? '',
-                      style: const TextStyle(fontSize: 12))),
-            ]),
-          ],
-          const SizedBox(height: 10),
-          Row(children: [
-            FilledButton.icon(
-              onPressed: app.webDavBusy ? null : _uploadWebDav,
-              icon: const Icon(Icons.cloud_upload_outlined, size: 18),
-              label: const Text('Sync now'),
-            ),
-            const SizedBox(width: 8),
-            OutlinedButton.icon(
-              onPressed: app.webDavBusy ? null : _restoreWebDav,
-              icon: const Icon(Icons.restore, size: 18),
-              label: const Text('Restore backup'),
-            ),
-            const SizedBox(width: 8),
-            TextButton(
-              onPressed: app.webDavBusy
-                  ? null
-                  : () {
-                      app.disconnectWebDav();
-                      setState(() {
-                        _webDavUrl.clear();
-                        _webDavUser.clear();
-                        _webDavPassword.clear();
-                      });
-                    },
-              child: const Text('Disconnect'),
-            ),
-          ]),
-        ],
-      ],
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final status = app.syncStatus(nb);
     final path = app.notebookPath(nb);
-    // A notebook synced through git is still not in a cloud folder, so the
-    // folder chooser is still the answer to a question it has not been asked.
     final showChooser = !status.isFolderSynced || _changing;
 
     return AlertDialog(
@@ -691,16 +376,13 @@ class _SyncDialogState extends State<_SyncDialog> {
       content: SizedBox(
         width: 480,
         // **Bounded.** This was a SingleChildScrollView with no height
-        // constraint, so on a synced notebook with git on, two backups and the
+        // constraint, so on a synced notebook with two backups and the
         // storage figures open it measured well over a viewport — the dialog
         // filled the window and every answer was somewhere in a long scroll.
         // 460 is the number the notebook manager already uses.
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 460),
           // **Listening.** Nothing here subscribed to AppState: every value it
-          // reads — the status, gitStatus, gitBusy — was a snapshot refreshed
-          // only by an explicit setState after a click. A sync that finished
-          // on the 60-second timer, or a status written by a background push,
           // updated the state and left this dialog showing the old one.
           child: ListenableBuilder(
             listenable: app,
@@ -710,10 +392,7 @@ class _SyncDialogState extends State<_SyncDialog> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // `isFolderSynced`, not `isSynced`. This card is about a FOLDER
-                  // — it names one, and it offers "move it elsewhere" — and since
-                  // git started counting as synced, a git-only notebook reached it
-                  // with no folder to name. Same null assertion that took the
-                  // status chip down.
+                  // — it names one, and it offers "move it elsewhere".
                   if (status.isFolderSynced) _linkedCard(status, path),
                   if (status.isFolderSynced) const SizedBox(height: 4),
                   _containerInCloudCard(),
@@ -770,24 +449,13 @@ class _SyncDialogState extends State<_SyncDialog> {
                   _ComputerNameField(app: app, notebookId: nb),
                   // ── The rest, folded away until asked for.
                   //
-                  // These four are separate questions — "where are the files",
-                  // "keep it in git", "make me copies", "check for changes on my
-                  // own" — and only one of them is ever the reason someone opened
+                  // These are separate questions — "where are the files", "make
+                  // me copies", "check for changes on my own" — and only one of
+                  // them is ever the reason someone opened
                   // this. Stacked open they were four screens of controls and
                   // prose above the fold, which is what "very cluttered and hard
                   // to read" describes. One opens at a time.
                   const Divider(height: 22),
-                  _Disclosure(
-                    icon: Icons.cloud_upload_outlined,
-                    title: 'Nextcloud / WebDAV',
-                    subtitle: app.webDavConfigured
-                        ? 'All notebooks · connected'
-                        : 'All notebooks · off',
-                    open: _open == _Pane.webdav,
-                    onTap: () => setState(() =>
-                        _open = _open == _Pane.webdav ? null : _Pane.webdav),
-                    child: _webDavSection(),
-                  ),
                   _Disclosure(
                     icon: Icons.folder_copy_outlined,
                     title: 'Extra copies',
@@ -866,9 +534,6 @@ class _SyncDialogState extends State<_SyncDialog> {
                   // The old version of this ended "Openote never talks to a
                   // server itself … nothing is exposed to the network by
                   // Openote". That was true when folder sync was the only route
-                  // and it stopped being true the moment git and the GitHub API
-                  // shipped. A privacy claim that has quietly become false is
-                  // worse than no claim at all.
                   const Text(
                     'Running your own server? Point Syncthing, Nextcloud, or an '
                     'rsync job at the same folder — anything that copies files '
@@ -1318,18 +983,8 @@ class _StorageSectionState extends State<_StorageSection> {
                               'log is not — so it is being re-uploaded on '
                               'every save without actually syncing. Use '
                               '"Move elsewhere" above to put both in place.'
-                          : app.gitRemoteFor(widget.notebookId) != null
-                              // Git is a second way of being somewhere else,
-                              // and this used to flatly deny it — telling
-                              // someone whose notes had just been pushed to
-                              // GitHub that they were on this computer only.
-                              ? 'The notes are pushed to '
-                                  '${app.gitRemoteFor(widget.notebookId)}. '
-                                  'The working file stays on this computer, '
-                                  'which is deliberate — two machines sharing '
-                                  'one is what the sync log prevents.'
-                              : 'Both are on this computer only. Pick a '
-                                  'folder above to sync this notebook.',
+                          : 'Both are on this computer only. Pick a '
+                              'folder above to sync this notebook.',
                   style: const TextStyle(fontSize: 12, height: 1.4),
                 ),
               ],
@@ -2122,408 +1777,6 @@ List<({String name, String path, CloudFolder folder})> findExistingNotebooks({
     }
   }
   return out;
-}
-
-/// Backing a notebook with a git remote.
-///
-/// Shown to everyone but honest about who it is for: it needs git installed
-/// and a repository you already have somewhere. On a machine without git it
-/// says so and offers nothing, rather than presenting a switch that cannot
-/// work.
-///
-/// The wording avoids the word "backup". This IS a backup in every practical
-/// sense, but calling it one invites people to rely on it before they have
-/// checked that the remote is reachable, and the failure mode of a backup
-/// nobody verified is the worst one there is.
-class _GitSection extends StatefulWidget {
-  const _GitSection({required this.app});
-  final AppState app;
-
-  @override
-  State<_GitSection> createState() => _GitSectionState();
-}
-
-class _GitSectionState extends State<_GitSection> {
-  late final TextEditingController _remote =
-      TextEditingController(text: widget.app.gitRemote ?? '');
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.app.gitAvailable == null) {
-      widget.app.checkGitAvailable();
-    }
-  }
-
-  @override
-  void dispose() {
-    _remote.dispose();
-    super.dispose();
-  }
-
-  AppState get app => widget.app;
-
-  @override
-  Widget build(BuildContext context) {
-    final available = app.gitAvailable;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Same as "Extra copies": the disclosure row above says this already.
-        const SizedBox(height: 4),
-        Text(
-          available == false
-              ? 'Git is not installed on this computer, so this is not '
-                  'available here. Installing it from git-scm.com is all that '
-                  'is needed.'
-              : 'Keeps this notebook in a git repository and pushes it as you '
-                  'work. Your notes go in; the working file Openote keeps on '
-                  'this computer does not.',
-          style: TextStyle(
-              fontSize: 12, height: 1.4, color: context.surfaces.textSecondary),
-        ),
-        const SizedBox(height: 8),
-        SwitchListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Sync this notebook with git',
-              style: TextStyle(fontSize: 13)),
-          subtitle: app.gitStatus == null
-              ? null
-              : Text(app.gitStatus!,
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: app.gitStatus!.startsWith('Could not')
-                          ? OnoteColors.danger
-                          : context.surfaces.textSecondary)),
-          value: app.gitEnabled,
-          onChanged: available == false || app.gitBusy
-              ? null
-              : (v) async {
-                  await app.setGitEnabled(v, remote: _remote.text);
-                  if (mounted) setState(() {});
-                },
-        ),
-        if (app.gitEnabled) ...[
-          if (app.gitRemote == null) ...[
-            const SizedBox(height: 4),
-            _GitHubPublish(
-                app: app,
-                onDone: () => setState(() {
-                      // The field below is about to become the visible record
-                      // of where this notebook lives; it must not still be
-                      // showing the empty box the repository was created from.
-                      _remote.text = app.gitRemote ?? _remote.text;
-                    })),
-            const SizedBox(height: 10),
-            Row(children: [
-              Expanded(child: Divider(color: context.surfaces.border)),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Text('or use a repository you already have',
-                    style: TextStyle(
-                        fontSize: 11, color: context.surfaces.textSecondary)),
-              ),
-              Expanded(child: Divider(color: context.surfaces.border)),
-            ]),
-          ],
-          const SizedBox(height: 4),
-          TextField(
-            controller: _remote,
-            style: const TextStyle(fontSize: 12),
-            decoration: const InputDecoration(
-              isDense: true,
-              labelText: 'Remote address',
-              hintText: 'https://github.com/you/my-notes.git',
-              helperText: 'Leave empty to keep a history on this computer only',
-              helperMaxLines: 2,
-            ),
-            onSubmitted: (v) async {
-              await app.setGitEnabled(true, remote: v);
-              if (mounted) setState(() {});
-            },
-          ),
-          const SizedBox(height: 8),
-          Row(children: [
-            TextButton.icon(
-              onPressed: app.gitBusy
-                  ? null
-                  : () async {
-                      await app.setGitEnabled(true, remote: _remote.text);
-                      if (mounted) setState(() {});
-                    },
-              icon: app.gitBusy
-                  ? const SizedBox(
-                      width: 13,
-                      height: 13,
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.sync, size: 16),
-              label: Text(app.gitBusy ? 'Syncing…' : 'Sync now',
-                  style: const TextStyle(fontSize: 12)),
-            ),
-          ]),
-          const SizedBox(height: 4),
-          Text(
-            app.githubConnected
-                ? 'Signed in to GitHub as ${app.githubLogin}. Openote keeps '
-                    'the token in this computer\'s own password storage and '
-                    'sends it only to GitHub — it is never written into a '
-                    'plain file, the notebook, or its repository.'
-                : 'Openote never asks for your password: it runs the git '
-                    'already on this computer and uses whatever sign-in you '
-                    'have set up for it. If a push needs credentials you have '
-                    'not configured, it will say so here rather than appear '
-                    'to work.',
-            style: TextStyle(
-                fontSize: 11,
-                height: 1.4,
-                color: context.surfaces.textSecondary),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-/// Creating the repository, without leaving the app.
-///
-/// "I want to be able to create and push my notebook to github from within the
-/// app, no extra steps required outside the app."
-///
-/// One thing genuinely cannot move inside, and it is worth being straight
-/// about which: GitHub only issues tokens on its own site, so connecting an
-/// account is a visit to one page, once. Everything on either side of that —
-/// naming the repository, creating it, pointing the notebook at it, the first
-/// push and every sync afterwards — happens here. The button opens the page
-/// with the right scope already ticked so there is nothing to get wrong on it
-/// but the copying.
-class _GitHubPublish extends StatefulWidget {
-  const _GitHubPublish({required this.app, required this.onDone});
-  final AppState app;
-  final VoidCallback onDone;
-
-  @override
-  State<_GitHubPublish> createState() => _GitHubPublishState();
-}
-
-class _GitHubPublishState extends State<_GitHubPublish> {
-  late final TextEditingController _name = TextEditingController(
-      text: repoNameFor(widget.app.currentNotebook.title));
-  final TextEditingController _token = TextEditingController();
-
-  /// Private unless the user says otherwise. These are somebody's notes, and a
-  /// public repository of a student's coursework created by a default nobody
-  /// read is not a mistake to make on their behalf.
-  bool _private = true;
-  bool _busy = false;
-  String? _error;
-  bool _pasting = false;
-
-  @override
-  void dispose() {
-    _name.dispose();
-    _token.dispose();
-    super.dispose();
-  }
-
-  AppState get app => widget.app;
-
-  Future<void> _connect() async {
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    final problem = await app.connectGitHub(_token.text);
-    if (!mounted) return;
-    setState(() {
-      _busy = false;
-      _error = problem;
-      if (problem == null) {
-        _pasting = false;
-        _token.clear(); // it is stored now; no reason to keep it on screen
-      }
-    });
-  }
-
-  Future<void> _create() async {
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    final problem =
-        await app.createGitHubRepo(private: _private, name: _name.text);
-    if (!mounted) return;
-    setState(() {
-      _busy = false;
-      _error = problem;
-    });
-    if (problem == null) widget.onDone();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final connected = app.githubConnected;
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: context.surfaces.chrome2,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: context.surfaces.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            const Icon(Icons.cloud_upload_outlined, size: 16),
-            const SizedBox(width: 6),
-            const Expanded(
-              child: Text('Put this notebook on GitHub',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-            ),
-            if (connected)
-              Text(app.githubLogin!,
-                  style: TextStyle(
-                      fontSize: 11, color: context.surfaces.textSecondary)),
-          ]),
-          const SizedBox(height: 8),
-          if (!connected && !_pasting)
-            Text(
-              'Openote can create the repository and push to it for you. It '
-              'needs a token from GitHub first — one page, once.',
-              style: TextStyle(
-                  fontSize: 11,
-                  height: 1.4,
-                  color: context.surfaces.textSecondary),
-            ),
-          if (!connected && !_pasting) ...[
-            const SizedBox(height: 8),
-            FilledButton.icon(
-              onPressed: () async {
-                // **Only move on if the browser actually opened.** The result
-                // was discarded, so a machine with no registered browser
-                // flipped straight to "paste your token here" — asking for
-                // something the student had never been shown how to get.
-                final opened = await PlatformOpen.url(GitHubApi.tokenPage);
-                if (!mounted) return;
-                if (!opened) {
-                  ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
-                    content: Text("Openote couldn't open your browser. Go to "
-                        '${GitHubApi.tokenPage} and make a token there.'),
-                    duration: const Duration(seconds: 10),
-                  ));
-                  return;
-                }
-                setState(() => _pasting = true);
-              },
-              icon: const Icon(Icons.open_in_new, size: 15),
-              label:
-                  const Text('Connect GitHub', style: TextStyle(fontSize: 12)),
-            ),
-          ],
-          if (!connected && _pasting) ...[
-            Text(
-              'On the page that just opened, scroll to the bottom and press '
-              '“Generate token”, then copy it and paste it here. Openote asked '
-              'for the “repo” permission and nothing else.',
-              style: TextStyle(
-                  fontSize: 11,
-                  height: 1.4,
-                  color: context.surfaces.textSecondary),
-            ),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _token,
-              autofocus: true,
-              // Obscured because a token is a password in every way that
-              // matters, and this dialog gets opened while screen sharing.
-              obscureText: true,
-              style: const TextStyle(fontSize: 12),
-              decoration: const InputDecoration(
-                isDense: true,
-                labelText: 'Paste your token',
-                hintText: 'ghp_…',
-              ),
-              onSubmitted: (_) => _connect(),
-            ),
-            const SizedBox(height: 6),
-            Row(children: [
-              FilledButton(
-                onPressed: _busy ? null : _connect,
-                child: Text(_busy ? 'Checking…' : 'Connect',
-                    style: const TextStyle(fontSize: 12)),
-              ),
-              TextButton(
-                onPressed:
-                    _busy ? null : () => setState(() => _pasting = false),
-                child: const Text('Cancel', style: TextStyle(fontSize: 12)),
-              ),
-            ]),
-          ],
-          if (connected) ...[
-            TextField(
-              controller: _name,
-              style: const TextStyle(fontSize: 12),
-              decoration: const InputDecoration(
-                isDense: true,
-                labelText: 'Repository name',
-              ),
-            ),
-            const SizedBox(height: 2),
-            CheckboxListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              controlAffinity: ListTileControlAffinity.leading,
-              value: _private,
-              onChanged:
-                  _busy ? null : (v) => setState(() => _private = v ?? true),
-              title:
-                  const Text('Keep it private', style: TextStyle(fontSize: 12)),
-              subtitle: Text(
-                _private
-                    ? 'Only you can see it'
-                    : 'ANYONE ON THE INTERNET WILL BE ABLE TO READ THESE NOTES',
-                style: TextStyle(
-                    fontSize: 11,
-                    color: _private
-                        ? context.surfaces.textSecondary
-                        : OnoteColors.danger),
-              ),
-            ),
-            Row(children: [
-              FilledButton.icon(
-                onPressed: _busy || app.gitBusy ? null : _create,
-                icon: _busy || app.gitBusy
-                    ? const SizedBox(
-                        width: 13,
-                        height: 13,
-                        child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.add, size: 15),
-                label: Text(
-                    _busy || app.gitBusy ? 'Working…' : 'Create and push',
-                    style: const TextStyle(fontSize: 12)),
-              ),
-              const Spacer(),
-              TextButton(
-                onPressed: _busy
-                    ? null
-                    : () {
-                        app.disconnectGitHub();
-                        setState(() {});
-                      },
-                child: const Text('Sign out', style: TextStyle(fontSize: 12)),
-              ),
-            ]),
-          ],
-          if (_error != null) ...[
-            const SizedBox(height: 6),
-            Text(_error!,
-                style: const TextStyle(
-                    fontSize: 11, height: 1.4, color: OnoteColors.danger)),
-          ],
-        ],
-      ),
-    );
-  }
 }
 
 /// What other people in this notebook see this computer called.

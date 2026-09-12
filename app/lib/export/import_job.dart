@@ -122,7 +122,6 @@ class ImportJob extends ChangeNotifier {
     if (willParse && OnoteCore.instance == null) throw OneNoteUnavailable();
     final job = ImportJob._(app, fileName);
     current = job;
-    app.setBackupWorkInProgress(true);
     app.refresh(); // the shell mounts the card by watching AppState
     job._run(sourcePath, debugOverrides);
     return job;
@@ -349,7 +348,6 @@ class ImportJob extends ChangeNotifier {
     state = s;
     if (message != null) this.message = message;
     if (s == ImportJobState.cancelled) this.message = 'Import cancelled.';
-    app.setBackupWorkInProgress(false);
     notifyListeners();
     // The card is watching this job, not AppState — but whether a card should
     // exist at all is AppState-level (the shell checks ImportJob.current).

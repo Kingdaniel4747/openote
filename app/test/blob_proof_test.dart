@@ -71,7 +71,7 @@ void main() {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final (repo, app, nb) = await fixture('onote_blob_local_');
 
-      // No mirror, no git remote, no cloud folder: `notebookIsShared` is false,
+      // No mirror or cloud folder: `notebookIsShared` is false,
       // which is the state 378 of the owner's 488 blobs were deferred in.
       expect(app.notebookIsShared(nb), isFalse,
           reason: 'the local-only case is the one Step 5 is about; if this '

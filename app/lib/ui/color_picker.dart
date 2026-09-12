@@ -118,12 +118,6 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
     widget.onChanged?.call(_toHex(c));
   }
 
-  void _done() {
-    final hex = _toHex(_color);
-    widget.app.rememberCustomColor(hex);
-    Navigator.pop(context, hex);
-  }
-
   @override
   Widget build(BuildContext context) {
     Widget swatch(Color c, {double size = 24}) => InkWell(

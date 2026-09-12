@@ -291,7 +291,7 @@ void _incremental() {
   });
 
   test('THE PARSE YIELDS INSTEAD OF BLOCKING', () async {
-    // The offset alone did not make the FIRST read cheap. A git join, a
+    // The offset alone did not make the FIRST read cheap. A restored copy, a
     // restored offset, a device that just appeared: `from` is 0 and this reads
     // the whole log. Measured on a generated 64.6 MB log, 138,657 ops — 1,008
     // ms in ONE uninterrupted block on the UI thread (read 30 ms, utf8 26 ms,

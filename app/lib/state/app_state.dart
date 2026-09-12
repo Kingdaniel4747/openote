@@ -16,7 +16,6 @@ import '../canvas/canvas_controller.dart';
 import '../core/engine.dart';
 import '../core/ids.dart';
 import '../core/onote_ffi.dart';
-import '../core/secret_store.dart';
 import '../core/open_target.dart'
     show isOpenoteWorkingCopy, notebookFolderNamedBy;
 import '../editor/onote_text_editor.dart';
@@ -37,13 +36,11 @@ import '../store/media_store.dart';
 import '../ink/ink_codec.dart';
 import '../ink/ink_storage.dart';
 import '../sync/materializer.dart';
-import '../sync/git_sync.dart';
 import '../editor/list_editing.dart';
 import '../markdown/md_syntax.dart';
 import '../api/mcp_connect.dart';
 import '../api/mcp_server.dart';
 import '../update/app_update.dart';
-import '../sync/github_api.dart';
 import '../store/repository.dart';
 import '../math/math_editor.dart';
 import '../theme/tokens.dart';
@@ -51,7 +48,6 @@ import 'page_protection.dart';
 import '../model/tags.dart';
 import '../spell/spell_checker.dart';
 import '../study/flashcards.dart';
-import 'builtin_templates.dart';
 import 'planner_state.dart';
 import 'study_state.dart';
 import '../sync/device_identity.dart';
@@ -61,7 +57,6 @@ import '../sync/op_log.dart';
 import '../sync/cloud_folders.dart';
 import '../sync/mirrors.dart';
 import '../sync/sync_recorder.dart';
-import '../sync/webdav_backup.dart';
 
 /// Archive encoding reads every snapshot byte. It must not share the UI
 /// isolate with drawing and scrolling just because the resulting ZIP is local.
@@ -83,6 +78,12 @@ Future<int> _encodeWorkspaceBackupZip(
 }
 
 enum Tool { select, text, pen, ballpoint, highlighter, eraser, lasso, shape }
+
+class WorkspaceBackupResult {
+  const WorkspaceBackupResult({required this.notebooks, required this.bytes});
+  final int notebooks;
+  final int bytes;
+}
 
 /// How the eraser removes ink (INK-6).
 enum EraserMode {
@@ -653,492 +654,6 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
-  // ── Git as a sync transport (PLANNING: "git/github integration") ──────
-  //
-  // The engine is sync/git_sync.dart; this is the part that decides WHEN.
-
-  String _gitKey(String nb) => 'git:$nb';
-
-  bool _gitEnabled = false;
-  String? _gitRemote;
-  Timer? _gitDebounce;
-
-  /// Is this notebook backed by a git remote?
-  bool get gitEnabled => _gitEnabled;
-  String? get gitRemote => _gitRemote;
-
-  /// What the last cycle did, for the dialog. Null until one has run.
-  String? gitStatus;
-  bool gitBusy = false;
-
-  /// Whether git exists on this machine at all. Null until asked.
-  bool? gitAvailable;
-
-  Future<void> checkGitAvailable() async {
-    gitAvailable = await GitSync.gitExecutable() != null;
-    notifyListeners();
-  }
-
-  /// Re-read this notebook's git settings.
-  ///
-  /// Called from EVERY notebook-open path, and there are two — `_loadNotebook`
-  /// and `init`, which opens the last notebook inline rather than through it.
-  /// Wiring only one is precisely how the passcode gate came to evaporate on
-  /// restart in 0.4.2; the same trap was waiting here.
-  void reloadGit() {
-    // The account is global and the remote is per notebook, but they are
-    // reloaded together so there is only ONE thing every open path has to
-    // remember to call. Two reload methods and two call sites is four chances
-    // to wire three of them, which is the shape the passcode bug had.
-    reloadGitHub();
-    _gitEnabled = false;
-    _gitRemote = null;
-    gitStatus = null;
-    _gitDebounce?.cancel();
-    if (notebookId == null) return;
-    final raw = _repo.getSetting(_gitKey(notebookId!));
-    if (raw is! Map) return;
-    _gitEnabled = raw['enabled'] == true;
-    _gitRemote = raw['remote'] as String?;
-  }
-
-  Future<void> setGitEnabled(bool on, {String? remote}) async {
-    if (notebookId == null) return;
-    _gitEnabled = on;
-    if (remote != null)
-      _gitRemote = remote.trim().isEmpty ? null : remote.trim();
-    _repo.setSetting(
-      _gitKey(notebookId!),
-      on || _gitRemote != null ? {'enabled': on, 'remote': _gitRemote} : null,
-    );
-    if (on) {
-      final git = _git;
-      await git.init();
-      if (_gitRemote != null) await git.setRemote(_gitRemote!);
-      // Before the first sync, not after: the cycle commits whatever is in the
-      // directory, and a notebook that has just become shared has all of its
-      // blob bytes still inside the container. Pushing first would send op logs
-      // referencing pictures that are not there.
-      materialiseBlobsIfShared(notebookId!);
-      await syncGitNow();
-    }
-    // The dot, the chip and the storage figures all read a status memoised for
-    // five seconds; without this they keep saying "this computer only" for a
-    // moment after the user has just watched a push succeed.
-    _invalidateSyncStatus();
-    notifyListeners();
-  }
-
-  // ── A GitHub account, connected once ─────────────────────────────────
-  //
-  // "I want to be able to create and push my notebook to github from within
-  // the app, no extra steps required outside the app."
-  //
-  // The account is stored GLOBALLY rather than per notebook, because it is a
-  // property of the person, not of the notes: connect once and every notebook
-  // can be published. The per-notebook part is the remote, above.
-
-  static const _githubKey = 'github';
-
-  /// Where the GitHub API lives. Only tests move it, and they move it at a
-  /// real local server — the restart path is the one that has broken in this
-  /// codebase before (`reloadProtection` shipped with no caller), so it is
-  /// worth being able to exercise end to end rather than by inspection.
-  static String debugGitHubBase = 'https://api.github.com';
-
-  /// Where the token itself lives: the OS password store, under this key,
-  /// via [SecretStore]. **Never in `workspace.json`** — task #73 is that it
-  /// used to be, in clear text, and [reloadGitHub] still scrubs that shape.
-  static const _githubSecret = 'github';
-
-  String? _githubToken;
-  String? _githubLogin;
-
-  /// The in-flight move of a legacy clear-text token out of `workspace.json`,
-  /// if [reloadGitHub] found one. Exposed so a test can await the scrub
-  /// instead of polling the file.
-  Future<void>? debugGitHubScrub;
-
-  /// The connected account's username, or null when none is connected.
-  String? get githubLogin => _githubLogin;
-  bool get githubConnected => _githubToken != null && _githubToken!.isNotEmpty;
-
-  /// This notebook's working tree, authenticated if an account is connected.
-  ///
-  /// Every git call goes through here so that connecting an account is enough
-  /// to make ordinary background syncs authenticate too — otherwise the
-  /// create-and-push button would work and the timer that runs a minute later
-  /// would start failing, which is the worst of both.
-  GitSync get _git => GitSync(currentNotebook.logDirPath, token: _githubToken);
-
-  void reloadGitHub() {
-    final raw = _repo.getSetting(_githubKey);
-    if (raw is! Map) {
-      _githubToken = null;
-      _githubLogin = null;
-      return;
-    }
-    _githubLogin = raw['login'] as String?;
-    final legacy = raw['token'] as String?;
-    if (legacy != null && legacy.isNotEmpty) {
-      // A workspace written before 0.8: the token is sitting in
-      // `workspace.json` in clear text. Keep it usable right now, and move it
-      // where it belongs — the scrub rewrites the file (and its backup)
-      // without the token, so this branch runs at most once per workspace.
-      _githubToken = legacy;
-      debugGitHubScrub = _scrubLegacyGitHubToken(legacy)..ignore();
-    } else {
-      _githubToken = SecretStore.read(_githubSecret);
-      // A login with no key behind it must not read as "signed in" anywhere —
-      // `githubConnected` would say false while dialogs showed the name.
-      if (_githubToken == null) _githubLogin = null;
-    }
-  }
-
-  /// Move a clear-text token out of `workspace.json` and into the OS store.
-  ///
-  /// The order is store-first, scrub-always: even if the store refuses the
-  /// token (no store on this machine), the clear-text copy still goes —
-  /// leaving it would keep the exact exposure this exists to end. The user is
-  /// then signed out at the next start and reconnects, at which point
-  /// [connectGitHub] explains what is missing in plain words.
-  Future<void> _scrubLegacyGitHubToken(String token) async {
-    await SecretStore.write(_githubSecret, token);
-    _repo.setSetting(_githubKey, {
-      if (_githubLogin != null) 'login': _githubLogin,
-    });
-    await _repo.flushSettingsScrub();
-  }
-
-  /// Check a token and remember it if GitHub accepts it.
-  ///
-  /// Verified BEFORE it is stored, so "connected" never means "we kept a
-  /// string you pasted and will find out it was wrong at the next push".
-  /// Returns null on success, or a message to show.
-  Future<String?> connectGitHub(String token) async {
-    final t = token.trim();
-    if (t.isEmpty) return 'Paste the token you copied from GitHub.';
-    final login = await GitHubApi(t, baseUrl: debugGitHubBase).login();
-    if (login == null) {
-      return 'GitHub did not accept that token. Check it was copied whole, '
-          'and that it has not expired.';
-    }
-    // Into the OS password store, never into a file. If this machine has no
-    // store to offer, the answer is "not saved", said plainly — a clear-text
-    // file is not a fallback (task #73).
-    final kept = await SecretStore.write(_githubSecret, t);
-    if (!kept) {
-      return 'GitHub accepted the token, but Openote could not keep it. '
-          'Openote stores the token in your computer\'s own password '
-          'storage — never in a plain file — and this computer\'s password '
-          'storage did not take it.'
-          '${Platform.isLinux ? ' On Linux, installing the "libsecret-tools" '
-              'package usually fixes this.' : ''}';
-    }
-    _githubToken = t;
-    _githubLogin = login;
-    // Only the LOGIN goes in the workspace file — it is the display name, not
-    // a secret. The token's absence here is load-bearing and pinned by test.
-    _repo.setSetting(_githubKey, {'login': login});
-    notifyListeners();
-    return null;
-  }
-
-  void disconnectGitHub() {
-    _githubToken = null;
-    _githubLogin = null;
-    SecretStore.delete(_githubSecret);
-    _repo.setSetting(_githubKey, null);
-    notifyListeners();
-  }
-
-  /// Join a notebook from a git URL — the other half of publishing one.
-  ///
-  /// "I want to be able to create and push my notebook to github from within
-  /// the app" has a second machine at the end of it, and this is that machine.
-  /// Paste the URL, get the notebook.
-  ///
-  /// Returns null on success, or a message to show. Never throws.
-  ///
-  /// The order is: clone, register, select, turn git on, pull. Selecting
-  /// BEFORE writing the git setting matters — [setGitEnabled] keys on
-  /// `notebookId` and `_git` resolves `currentNotebook.logDirPath`, so doing
-  /// it earlier would file the new notebook's remote under the old notebook's
-  /// name and point the sync at the wrong directory.
-  Future<String?> joinNotebookFromGit(
-    String url, {
-    void Function(String stage)? onProgress,
-  }) async {
-    final trimmed = url.trim();
-    if (trimmed.isEmpty) return 'Paste the address of the repository.';
-    if (await GitSync.gitExecutable() == null) {
-      return 'Git is not installed on this computer. Installing it from '
-          'git-scm.com is all that is needed.';
-    }
-
-    // Already here? Match on the remote recorded for each notebook, INCLUDING
-    // ones whose git switch is currently off — turning it off keeps the
-    // address on disk, so reading through `gitRemoteFor` would miss a notebook
-    // the user had merely paused and clone a second ~100 MB copy beside it.
-    for (final n in [..._repo.notebooks, ..._repo.trashedNotebooks]) {
-      final raw = _repo.getSetting(_gitKey(n.id));
-      final known = raw is Map ? raw['remote'] : null;
-      if (known is String && _sameRepo(known, trimmed)) {
-        await selectNotebook(n.id);
-        return null;
-      }
-    }
-
-    onProgress?.call('Fetching…');
-    // Named from the URL rather than the manifest, because the directory has
-    // to exist before the manifest inside it can be read.
-    final name = repoNameFor(_repoNameFromUrl(trimmed));
-    final into = _repo.freeLogDirPath(name);
-    final cloned = await GitSync.clone(trimmed, into, token: _githubToken);
-    if (!cloned.ok) {
-      try {
-        final d = Directory(into);
-        if (d.existsSync()) d.deleteSync(recursive: true);
-      } catch (_) {
-        // A half-clone left behind would make the next attempt fail with
-        // "there is already something there", which reads as a different
-        // problem than the one that actually happened.
-      }
-      return _explainClone(cloned.message);
-    }
-
-    // The manifest is the notebook's own name for itself, and it is better
-    // than the repository's: someone's "Year 12 — Physics" became
-    // "Year-12-Physics" on the way to GitHub, and this puts it back.
-    var title = name;
-    String? knownId;
-    try {
-      final mf = File(p.join(into, 'manifest.json'));
-      if (mf.existsSync()) {
-        final j = jsonDecode(mf.readAsStringSync());
-        if (j is Map) {
-          final t = j['title'];
-          if (t is String && t.trim().isNotEmpty) title = t.trim();
-          final i = j['notebookId'];
-          if (i is String && i.isNotEmpty) knownId = i;
-        }
-      }
-    } catch (_) {
-      // A missing or unreadable manifest is not fatal — the logs are the
-      // notebook, and the name is cosmetic.
-    }
-    if (knownId == null) {
-      // Not an Openote notebook, or one from before manifests. Either way the
-      // pull below would produce an empty notebook and no explanation.
-      if (!Directory(p.join(into, 'ops')).existsSync()) {
-        try {
-          Directory(into).deleteSync(recursive: true);
-        } catch (_) {}
-        return 'That repository does not look like an Openote notebook — '
-            'there is no ops folder in it.';
-      }
-    }
-
-    onProgress?.call('Opening…');
-    final ref = await _repo.adoptLogDirectory(into, title: title);
-    await selectNotebook(ref.id);
-    // Git on, with the address it came from, so it keeps in step from here
-    // without the user setting anything up. `setGitEnabled` runs a cycle,
-    // which is the pull that materialises the notebook into its empty
-    // container.
-    await setGitEnabled(true, remote: trimmed);
-    onProgress?.call('Reading the notes…');
-    // Explicitly as well, because `setGitEnabled`'s cycle only folds what
-    // `syncOnce` returns from and a fresh clone's ops are already on disk
-    // before the first pull ever runs.
-    await syncPull(ref.id);
-    reloadNodes();
-    await _loadNotebook();
-    notifyListeners();
-    return null;
-  }
-
-  /// Are these two URLs the same repository?
-  ///
-  /// Compared on host and path with the scheme, any `user@`, a `.git` suffix
-  /// and case set aside, so `https://github.com/you/n.git`,
-  /// `https://github.com/You/N`, and `git@github.com:you/n.git` are one
-  /// notebook rather than three.
-  static bool _sameRepo(String a, String b) => _repoKey(a) == _repoKey(b);
-
-  static String _repoKey(String url) {
-    var s = url.trim().toLowerCase();
-    final scheme = s.indexOf('://');
-    if (scheme >= 0) s = s.substring(scheme + 3);
-    final at = s.indexOf('@');
-    if (at >= 0) s = s.substring(at + 1);
-    s = s.replaceFirst(':', '/');
-    if (s.endsWith('.git')) s = s.substring(0, s.length - 4);
-    while (s.endsWith('/')) {
-      s = s.substring(0, s.length - 1);
-    }
-    return s;
-  }
-
-  static String _repoNameFromUrl(String url) {
-    final key = _repoKey(url);
-    final slash = key.lastIndexOf('/');
-    final last = slash >= 0 ? key.substring(slash + 1) : key;
-    return last.isEmpty ? 'Notebook' : last;
-  }
-
-  /// Git's clone failures, in words that say what to do.
-  static String _explainClone(String message) {
-    final m = message.toLowerCase();
-    if (m.contains('authentication failed') ||
-        m.contains('could not read username') ||
-        m.contains('terminal prompts disabled')) {
-      return 'That repository needs a sign-in. Connect your GitHub account '
-          'above and try again.';
-    }
-    if (m.contains('repository not found') || m.contains('not found')) {
-      return 'No repository at that address — or it is private and this '
-          'account cannot see it. Check the address, and that you are signed '
-          'in to the right account.';
-    }
-    if (m.contains('could not resolve host')) {
-      return 'Could not reach that address. Check your connection.';
-    }
-    return 'Could not fetch it: ${message.split('\n').first}';
-  }
-
-  /// Create a repository on GitHub for this notebook, and push it there.
-  ///
-  /// The whole point of the feature: one button, from an empty notebook to
-  /// notes that exist somewhere other than this laptop. Returns null on
-  /// success, or a message.
-  ///
-  /// Order matters. The repository is created FIRST and the remote set only
-  /// once GitHub has confirmed it, because a remote pointing at a repository
-  /// that does not exist is a notebook that reports a sync failure every
-  /// minute forever.
-  Future<String?> createGitHubRepo({bool private = true, String? name}) async {
-    if (!githubConnected) return 'Connect a GitHub account first.';
-    if (notebookId == null) return 'Open a notebook first.';
-    if (gitBusy) return null;
-    gitBusy = true;
-    gitStatus = 'Creating the repository…';
-    notifyListeners();
-    try {
-      final made =
-          await GitHubApi(_githubToken!, baseUrl: debugGitHubBase).createRepo(
-        name?.trim().isNotEmpty == true
-            ? repoNameFor(name!)
-            : repoNameFor(currentNotebook.title),
-        private: private,
-        description: 'Openote notebook — ${currentNotebook.title}',
-      );
-      if (!made.ok) {
-        gitStatus = made.error;
-        return made.error;
-      }
-      _gitEnabled = true;
-      _gitRemote = made.cloneUrl;
-      _repo.setSetting(_gitKey(notebookId!), {
-        'enabled': true,
-        'remote': _gitRemote,
-      });
-      final git = _git;
-      await git.init();
-      await git.setRemote(_gitRemote!);
-      // The notebook is shared as of this line. Copy the blob bytes out before
-      // the push, or the repository gets op logs referencing pictures it does
-      // not contain.
-      materialiseBlobsIfShared(notebookId!);
-      _invalidateSyncStatus();
-      gitStatus = 'Pushing to ${made.fullName}…';
-      notifyListeners();
-      await flushSave();
-      final pushed = await git.syncOnce(
-        message: 'Openote: ${currentNotebook.title}',
-      );
-      if (!pushed.ok) {
-        // The repository is real and the remote is set, so this is recoverable
-        // by pressing Sync now — say so rather than leaving them wondering
-        // whether to create another one.
-        gitStatus = 'Created ${made.fullName}, but the first push failed: '
-            '${pushed.message.split('\n').first}';
-        return gitStatus;
-      }
-      gitStatus = 'Pushed to ${made.fullName}';
-      return null;
-    } catch (e) {
-      gitStatus = 'Could not create the repository: $e';
-      return gitStatus;
-    } finally {
-      gitBusy = false;
-      notifyListeners();
-    }
-  }
-
-  /// Run one cycle now, and report what happened.
-  ///
-  /// Never throws: a sync failure is a message, not an exception. It is also
-  /// never silent — a push that did not happen while the user believes their
-  /// notes are safe elsewhere is the one outcome worth being loud about.
-  /// Returns how many of the other devices' changes this cycle brought in, so
-  /// a caller that asked for it by hand can say what happened.
-  Future<int> syncGitNow() async {
-    if (!_gitEnabled || notebookId == null || gitBusy) return 0;
-    final nb = notebookId!;
-    var folded = 0;
-    gitBusy = true;
-    notifyListeners();
-    try {
-      // The logs have to be on disk before they can be committed.
-      await flushSave();
-      final r = await _git.syncOnce(
-        message: 'Openote: ${currentNotebook.title}',
-      );
-      // **Fold in whatever the pull brought down.** Without this the cycle was
-      // only half a sync: `git pull` wrote the other device's log files into
-      // `ops/` and then nothing read them, so the notes arrived on disk and
-      // stayed invisible. Worse than invisible — the recorder replays them at
-      // the next launch WITHOUT writing them to the container, and the next
-      // local save is diffed against that state, so an edit here can undo an
-      // edit there.
-      //
-      // Unconditional, deliberately. `syncOnce` is pull → commit → push, and a
-      // failure at the commit or the push says nothing about the pull that
-      // already succeeded: those files are on disk either way, and refusing to
-      // read them because a later step failed is how a merge gets lost.
-      // `syncPull` is cheap when there is nothing pending — it reads the
-      // watermark and returns 0.
-      folded = await syncPull(nb);
-      gitStatus = r.ok
-          ? (folded > 0
-              ? 'Synced — brought in $folded ${folded == 1 ? 'change' : 'changes'}'
-              : (r.noop ? 'Up to date' : 'Synced'))
-          : 'Could not sync: '
-              '${friendlyGitFailure(r.message, connected: githubConnected)}';
-    } catch (e) {
-      gitStatus = 'Could not sync: $e';
-    } finally {
-      gitBusy = false;
-      _invalidateSyncStatus();
-      notifyListeners();
-    }
-    return folded;
-  }
-
-  /// Ask for a sync once the user stops typing.
-  ///
-  /// Long — a minute — and deliberately so. Saving is debounced at 700ms
-  /// because losing edits matters; a commit every 700ms would be a commit per
-  /// sentence and a push per commit, which is noise on the remote and a
-  /// network round trip while someone is mid-paragraph. A minute of quiet is
-  /// a natural pause, and shutdown flushes anything still pending.
-  void scheduleGitSync() {
-    if (!_gitEnabled) return;
-    _gitDebounce?.cancel();
-    _gitDebounce = Timer(const Duration(seconds: 10), syncGitNow);
-  }
-
   // ── Operation log (ADR-0006, shadow mode) ────────────────────────────
   //
   // Every mutation below also records an op into
@@ -1439,45 +954,9 @@ class AppState extends ChangeNotifier
   /// many devices have written here, which opens a recorder, which asks this.
   bool notebookIsShared(String nb) {
     if (mirrorsFor(nb).isNotEmpty) return true;
-    // A git remote shares a notebook exactly as much as a cloud folder does,
-    // and this did not know it. The consequence is the one the doc comment on
-    // [materialiseBlobsIfShared] warns about: with this false the recorder
-    // never copies blob BYTES into `blobs/`, so a git-only notebook pushed op
-    // logs that referenced pictures the repository did not contain — and the
-    // other device saw a notebook whose images were all missing. Text arrived;
-    // everything else silently did not.
-    if (gitRemoteFor(nb) != null) return true;
     final path = notebookLogDir(nb);
     if (path == null) return false;
     return cloudFolderContaining(path, also: _syncRoots) != null;
-  }
-
-  /// The git remote configured for [nb], for any notebook — not just the open
-  /// one.
-  ///
-  /// [gitRemote] answers for the CURRENT notebook only, because `_gitRemote` is
-  /// re-read by [reloadGit] on every open. Anything that asks about a notebook
-  /// it does not have selected — the notebook list's sync dots, storage
-  /// figures, blob materialisation for a background recorder — has to read the
-  /// setting directly, or it gets the open notebook's answer for someone
-  /// else's notebook.
-  /// Put [nb] into the git-synced state without running git.
-  ///
-  /// For tests that need to render a git-synced notebook — which is the state
-  /// that produced three null-assertion crashes — rather than to exercise git
-  /// itself.
-  @visibleForTesting
-  void debugSetGitSetting(String nb, String remote) {
-    _repo.setSetting(_gitKey(nb), {'enabled': true, 'remote': remote});
-    if (nb == notebookId) reloadGit();
-    _invalidateSyncStatus();
-  }
-
-  String? gitRemoteFor(String nb) {
-    final raw = _repo.getSetting(_gitKey(nb));
-    if (raw is! Map || raw['enabled'] != true) return null;
-    final url = raw['remote'];
-    return url is String && url.isNotEmpty ? url : null;
   }
 
   /// Make sure this notebook's blob bytes are on their way into `blobs/` now
@@ -1525,7 +1004,7 @@ class AppState extends ChangeNotifier
   ///
   /// Nothing noticed, because every existing way of reaching a second device
   /// byte-copies the container first, and the missing rows were always already
-  /// there. Joining from a git URL is the first path where the log is the ONLY
+  /// there. Restoring an operation-log directory is the first path where the log is the ONLY
   /// copy — and its first pull failed on the foreign key from the page to a
   /// section that had never been mentioned.
   ///
@@ -2213,7 +1692,7 @@ class AppState extends ChangeNotifier
       // It has never mattered because every existing way of getting a
       // notebook onto a second device copies the container first, so the node
       // rows are always already there and the tree ops are updates. A notebook
-      // joined from a git URL has no container to copy — the log IS the
+      // restored from an operation-log directory has no container to copy — the log IS the
       // notebook — so its very first pull creates every node and every page at
       // once, and the order stops being an implementation detail.
       if (changed.treeChanged) {
@@ -2225,7 +1704,7 @@ class AppState extends ChangeNotifier
         //
         // Same reason as the block above: on a container that already has the
         // tree these are all updates and order is irrelevant. On the empty
-        // container a git join creates, every row is an insert.
+        // container an operation-log restore creates, every row is an insert.
         //
         // Chunked as one unit per slice rather than per node: a child whose
         // parent is in the SAME slice is fine (same transaction), and a child
@@ -2655,146 +2134,6 @@ class AppState extends ChangeNotifier
   String? notebookLogDir(String nb) =>
       _repo.notebooks.where((n) => n.id == nb).firstOrNull?.logDirPath;
 
-  // ── Whole-workspace WebDAV backup (Nextcloud) ───────────────────────
-
-  static const _webDavSecretKey = 'webdav-password';
-  String? webDavUrl;
-  String? webDavUsername;
-  String? _webDavPassword;
-  bool webDavBusy = false;
-  String? webDavProgress;
-  String? webDavError;
-  DateTime? webDavLastUpload;
-  Timer? _webDavUploadDebounce;
-  Timer? _webDavProgressNotify;
-  DateTime? _webDavLastProgressNotice;
-  bool _webDavBackupPending = false;
-  bool _backupNotebookSwitching = false;
-  bool _backupWorkInProgress = false;
-  DateTime _lastBackupActivity = DateTime.now();
-  DateTime _lastWebDavAutomaticUpload = DateTime.fromMillisecondsSinceEpoch(0);
-
-  /// Automatic backups are deliberately conservative: they are background
-  /// safety nets, never work that competes with drawing or navigation.
-  static const _webDavIdleDelay = Duration(seconds: 15);
-  static const _webDavAutomaticMinGap = Duration(minutes: 1);
-
-  /// Tell the backup scheduler that the person is actively using the canvas.
-  /// Pointer handlers call this for writing and scrolling; it does no rebuild
-  /// and merely moves a pending automatic backup past the idle window.
-  void noteBackupActivity() {
-    _lastBackupActivity = DateTime.now();
-    if (_webDavBackupPending) _armWebDavBackup();
-  }
-
-  /// Importers and PDF preparation use this around their work. A pending
-  /// upload remains pending until that work has ended and the app is idle.
-  void setBackupWorkInProgress(bool value) {
-    if (_backupWorkInProgress == value) return;
-    _backupWorkInProgress = value;
-    if (!value && _webDavBackupPending) _armWebDavBackup();
-  }
-
-  bool get _automaticBackupBlocked =>
-      _backupNotebookSwitching ||
-      _backupWorkInProgress ||
-      writingMode ||
-      touchCanvasGesture ||
-      _dirty;
-
-  /// Network and archive code can produce hundreds of progress ticks. Keep the
-  /// text current, but repaint at most four times per second; the editor owns
-  /// the frames between those updates.
-  void _reportWebDavProgress(String message, {bool finalUpdate = false}) {
-    webDavProgress = message;
-    final now = DateTime.now();
-    final elapsed = _webDavLastProgressNotice == null
-        ? const Duration(days: 1)
-        : now.difference(_webDavLastProgressNotice!);
-    if (finalUpdate || elapsed >= const Duration(milliseconds: 250)) {
-      _webDavProgressNotify?.cancel();
-      _webDavProgressNotify = null;
-      _webDavLastProgressNotice = now;
-      notifyListeners();
-      return;
-    }
-    _webDavProgressNotify ??= Timer(
-      const Duration(milliseconds: 250),
-      () {
-        _webDavProgressNotify = null;
-        _webDavLastProgressNotice = DateTime.now();
-        notifyListeners();
-      },
-    );
-  }
-
-  bool get webDavConfigured =>
-      webDavUrl != null && webDavUsername != null && _webDavPassword != null;
-
-  void _loadWebDav() {
-    final raw = _repo.getSetting('webdav');
-    if (raw is Map) {
-      webDavUrl = raw['url'] as String?;
-      webDavUsername = raw['username'] as String?;
-      final uploaded = raw['lastUpload'] as String?;
-      webDavLastUpload = uploaded == null ? null : DateTime.tryParse(uploaded);
-    }
-    _webDavPassword = SecretStore.read(_webDavSecretKey);
-  }
-
-  Future<void> configureWebDav({
-    required String url,
-    required String username,
-    required String password,
-  }) async {
-    final cleanUrl = url.trim().replaceFirst(RegExp(r'/+$'), '');
-    final cleanUser = username.trim();
-    if (cleanUser.isEmpty || password.isEmpty) {
-      throw const FormatException('Enter a username and an app password.');
-    }
-    final client = WebDavBackupClient(
-      baseUrl: cleanUrl,
-      username: cleanUser,
-      password: password,
-    );
-    try {
-      await client.testConnection();
-    } finally {
-      client.close();
-    }
-    if (!await SecretStore.write(_webDavSecretKey, password)) {
-      throw StateError(
-        'This computer could not store the WebDAV password securely.',
-      );
-    }
-    webDavUrl = cleanUrl;
-    webDavUsername = cleanUser;
-    _webDavPassword = password;
-    webDavError = null;
-    _repo.setSetting('webdav', {
-      'url': cleanUrl,
-      'username': cleanUser,
-      if (webDavLastUpload != null)
-        'lastUpload': webDavLastUpload!.toUtc().toIso8601String(),
-    });
-    notifyListeners();
-  }
-
-  void disconnectWebDav() {
-    _webDavUploadDebounce?.cancel();
-    _webDavProgressNotify?.cancel();
-    _webDavBackupPending = false;
-    SecretStore.delete(_webDavSecretKey);
-    webDavUrl = null;
-    webDavUsername = null;
-    _webDavPassword = null;
-    webDavLastUpload = null;
-    webDavProgress = null;
-    webDavError = null;
-    _repo.setSetting('webdav', null);
-    notifyListeners();
-  }
-
   Future<WorkspaceBackupResult> createWorkspaceBackup(
     String destination, {
     String? onlyNotebookId,
@@ -2823,7 +2162,6 @@ class AppState extends ChangeNotifier
       final manifest = <Map<String, Object?>>[];
       final usedNames = <String>{};
       for (final ref in selected) {
-        _reportWebDavProgress('Preparing ${ref.title}...');
         await awaitBlobBackfill(ref.id);
         var stem = ref.title.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_').trim();
         if (stem.isEmpty) stem = 'Notebook';
@@ -3016,138 +2354,6 @@ class AppState extends ChangeNotifier
         await temporary.delete(recursive: true);
       } catch (_) {}
     }
-  }
-
-  /// Upload one complete ZIP containing consistent snapshots of all notebooks.
-  Future<WebDavUploadResult> uploadAllToWebDav() async {
-    if (!webDavConfigured) {
-      throw StateError('Connect a WebDAV server first.');
-    }
-    if (webDavBusy) throw StateError('An upload is already running.');
-    webDavBusy = true;
-    webDavError = null;
-    _reportWebDavProgress('Saving current notes…', finalUpdate: true);
-    Directory? temporary;
-    WebDavBackupClient? client;
-    try {
-      await flushSave();
-      temporary = await Directory.systemTemp.createTemp('openote-webdav-');
-      final archive = File(p.join(temporary.path, 'Openote Backup.zip'));
-      await createWorkspaceBackup(archive.path);
-      client = WebDavBackupClient(
-        baseUrl: webDavUrl!,
-        username: webDavUsername!,
-        password: _webDavPassword!,
-      );
-      final bytes = await client.uploadBackup(
-        archive,
-        onProgress: (message) {
-          _reportWebDavProgress(message);
-        },
-      );
-      webDavLastUpload = DateTime.now();
-      _repo.setSetting('webdav', {
-        'url': webDavUrl,
-        'username': webDavUsername,
-        'lastUpload': webDavLastUpload!.toUtc().toIso8601String(),
-      });
-      _reportWebDavProgress('Synced', finalUpdate: true);
-      _syncStatusCache.clear();
-      return WebDavUploadResult(files: 1, bytes: bytes);
-    } catch (e) {
-      webDavError = '$e';
-      rethrow;
-    } finally {
-      client?.close();
-      if (temporary != null) {
-        try {
-          await temporary.delete(recursive: true);
-        } catch (_) {
-          // A stale temporary snapshot is harmless and can be cleaned by the OS.
-        }
-      }
-      webDavBusy = false;
-      notifyListeners();
-    }
-  }
-
-  Future<int> restoreAllFromWebDav() async {
-    if (!webDavConfigured) {
-      throw StateError('Connect a WebDAV server first.');
-    }
-    if (webDavBusy) throw StateError('A WebDAV operation is already running.');
-    webDavBusy = true;
-    webDavError = null;
-    Directory? temporary;
-    WebDavBackupClient? client;
-    try {
-      temporary = await Directory.systemTemp.createTemp('openote-webdav-get-');
-      final archive = File(p.join(temporary.path, 'Openote Backup.zip'));
-      client = WebDavBackupClient(
-        baseUrl: webDavUrl!,
-        username: webDavUsername!,
-        password: _webDavPassword!,
-      );
-      await client.downloadBackup(
-        archive,
-        onProgress: (message) {
-          _reportWebDavProgress(message);
-        },
-      );
-      _reportWebDavProgress('Restoring notebooks...', finalUpdate: true);
-      final count = await restoreWorkspaceBackup(archive.path);
-      _reportWebDavProgress('Restored $count notebooks', finalUpdate: true);
-      return count;
-    } catch (e) {
-      webDavError = '$e';
-      rethrow;
-    } finally {
-      client?.close();
-      if (temporary != null) {
-        try {
-          await temporary.delete(recursive: true);
-        } catch (_) {}
-      }
-      webDavBusy = false;
-      notifyListeners();
-    }
-  }
-
-  void _scheduleWebDavBackup() {
-    if (!webDavConfigured) return;
-    _webDavBackupPending = true;
-    noteBackupActivity();
-  }
-
-  void _armWebDavBackup() {
-    if (!webDavConfigured || !_webDavBackupPending) return;
-    _webDavUploadDebounce?.cancel();
-    final now = DateTime.now();
-    final idleAt = _lastBackupActivity.add(_webDavIdleDelay);
-    final hourlyAt = _lastWebDavAutomaticUpload.add(_webDavAutomaticMinGap);
-    final due = idleAt.isAfter(hourlyAt) ? idleAt : hourlyAt;
-    _webDavUploadDebounce = Timer(
-      due.isAfter(now) ? due.difference(now) : Duration.zero,
-      _runScheduledWebDavBackup,
-    );
-  }
-
-  void _runScheduledWebDavBackup() {
-    if (!webDavConfigured || !_webDavBackupPending) return;
-    // Imports, previews, active drawing and notebook changes are not failures:
-    // leave the work queued and check again shortly after they settle.
-    if (webDavBusy || _automaticBackupBlocked) {
-      _webDavUploadDebounce = Timer(
-        const Duration(seconds: 30),
-        _runScheduledWebDavBackup,
-      );
-      return;
-    }
-    _webDavBackupPending = false;
-    _lastWebDavAutomaticUpload = DateTime.now();
-    unawaited(uploadAllToWebDav().catchError(
-      (_) => const WebDavUploadResult(files: 0, bytes: 0),
-    ));
   }
 
   /// Pull automatically when another device's log changes. On by default —
@@ -3420,10 +2626,6 @@ class AppState extends ChangeNotifier
       mirrors: mirrorsFor(
         nb,
       ).where((t) => !mirrorTroubleFor(nb).containsKey(t.path)).length,
-      // Per notebook, not [gitRemote] — this is asked about every notebook in
-      // the list, and the open one's remote is not their answer.
-      gitRemote: gitRemoteFor(nb),
-      webDavBackedUp: webDavConfigured && webDavLastUpload != null,
     );
     _syncStatusCache[nb] = (status: status, at: now);
     return status;
@@ -4184,8 +3386,6 @@ class AppState extends ChangeNotifier
     if (clip != null) yield clip;
     // Not scoped to this notebook: a template is appliable into any of them,
     // and the name it carries only resolves in the one it was saved from.
-    final t = _repo.getSetting('templates');
-    if (t is Map) yield jsonEncode(t);
     // **The ten notable deletions are a garbage-collection root** (v0.17 plan,
     // Step 8a). `blob_refs` is rebuilt from CURRENT page content on every save
     // (`NotebookWriter.writePage`), so a deleted video's file becomes
@@ -4543,10 +3743,7 @@ class AppState extends ChangeNotifier
   void setWritingMode(bool value) {
     writingMode = value;
     if (value) {
-      noteBackupActivity();
       requestDrawTab();
-    } else if (_webDavBackupPending) {
-      _armWebDavBackup();
     }
     notifyListeners();
   }
@@ -6802,7 +5999,6 @@ class AppState extends ChangeNotifier
       }
       if (_hasInkSize(tool)) penSize = inkSizeFor(tool);
     }
-    _loadWebDav();
     // Detached: binding a port must never gate the app opening.
     unawaited(_restoreMcp());
     unawaited(checkForAppUpdate());
@@ -6905,7 +6101,6 @@ class AppState extends ChangeNotifier
     // inline — so the gate has to be rehydrated here as well. Both paths, or
     // the lock is only as good as which door you came in by.
     reloadProtection();
-    reloadGit();
     // Replay the open notebook's log in a background isolate, starting now.
     // This used to happen synchronously inside `_startWatching` on the first
     // frame — for a freshly imported notebook that is a multi-megabyte log,
@@ -6961,7 +6156,6 @@ class AppState extends ChangeNotifier
     // page's blocks, and it must not load a locked one into an app that has
     // forgotten the lock exists.
     reloadProtection();
-    reloadGit();
     // Fold in anything that arrived while this notebook was closed.
     //
     // Nothing did this before, on any path: the watcher only reports files
@@ -7000,20 +6194,13 @@ class AppState extends ChangeNotifier
   }
 
   Future<void> selectNotebook(String id) async {
-    _backupNotebookSwitching = true;
-    noteBackupActivity();
-    try {
-      await flushSave();
-      notebookId = id;
-      // Replay this notebook's log in the background now, so the first edit
-      // finds a ready recorder instead of paying the replay synchronously.
-      unawaited(warmRecorder(id));
-      await _loadNotebook();
-      notifyListeners();
-    } finally {
-      _backupNotebookSwitching = false;
-      if (_webDavBackupPending) _armWebDavBackup();
-    }
+    await flushSave();
+    notebookId = id;
+    // Replay this notebook's log in the background now, so the first edit
+    // finds a ready recorder instead of paying the replay synchronously.
+    unawaited(warmRecorder(id));
+    await _loadNotebook();
+    notifyListeners();
   }
 
   Future<void> createNotebook(String title) async {
@@ -7283,7 +6470,7 @@ class AppState extends ChangeNotifier
     // on the machine that made it (v0.17 plan, Step 4), so what the second
     // device is handed is a directory, not a file. `openExistingNotebook` in
     // the repository cannot serve it — it byte-copies a container — and
-    // `adoptLogDirectory` is exactly the path a git clone already uses: create
+    // `adoptLogDirectory` creates
     // the container empty here and let the first pull fill it in.
     final NotebookRef ref;
     if (Directory(path).existsSync() && p.extension(path) == '.onotebook') {
@@ -7308,7 +6495,7 @@ class AppState extends ChangeNotifier
   /// The name a shared log directory gives itself, or its folder name.
   ///
   /// The manifest is the notebook's own name for itself and it is better than
-  /// the directory's: the same reasoning as the git-clone path, where "Year
+  /// the directory's: the same reasoning as an imported directory, where "Year
   /// 12 — Physics" came back as "Year-12-Physics" from the repository name.
   String _titleOfLogDir(String path) {
     try {
@@ -7883,132 +7070,6 @@ class AppState extends ChangeNotifier
       at = parents[at];
     }
     return depth;
-  }
-
-  // ── Page templates (ORG-9) ─────────────────────────────────────────────
-
-  /// Built-ins first, then the user's own. A user template that shares a
-  /// built-in's name shadows it (their content wins in [applyTemplate]), so
-  /// customising a built-in is just "save under the same name".
-  List<String> templateNames() {
-    final t = _repo.getSetting('templates');
-    final user = t is Map ? t.keys.cast<String>().toList() : <String>[];
-    return [
-      ...builtinTemplates.keys,
-      ...user.where((n) => !builtinTemplates.containsKey(n)),
-    ];
-  }
-
-  void saveCurrentAsTemplate(String name) {
-    final t =
-        (_repo.getSetting('templates') as Map?)?.cast<String, dynamic>() ?? {};
-    t[name] = jsonEncode({
-      'page': pageProps.toJson(),
-      'blocks': [for (final b in blocks) b.toJson()],
-    });
-    _repo.setSetting('templates', t);
-    notifyListeners();
-  }
-
-  /// Drop a template onto the page, BELOW whatever is already there.
-  ///
-  /// It used to land on top: page properties replaced outright, and every
-  /// block placed at the coordinates it was saved with — which for a template
-  /// authored on an empty page means over the title band and over the first
-  /// paragraph of whatever you had written. "They dont respect the current
-  /// layout of the page (with the title and stuff), they just go over it all."
-  ///
-  /// So the template's own shape is preserved — every block keeps its position
-  /// RELATIVE to the others — and the whole arrangement is translated to sit
-  /// under the existing content, or at the top of the writing area when the
-  /// page is empty. Page properties are only taken on an empty page: applying
-  /// a template to a page you have been working on must not silently change
-  /// its background or grid.
-  void applyTemplate(String name) {
-    final t = _repo.getSetting('templates');
-    // User template first so a same-named save shadows the built-in.
-    final raw =
-        (t is Map ? t[name] as String? : null) ?? builtinTemplates[name];
-    if (raw == null) return;
-    pushUndo();
-    final j = jsonDecode(raw) as Map<String, dynamic>;
-    final onEmptyPage = blocks.isEmpty;
-    if (onEmptyPage) {
-      pageProps = PageProps.fromJson(
-        (j['page'] as Map?)?.cast<String, dynamic>(),
-      );
-    }
-
-    // Where the template's top edge should end up, and how far that is from
-    // where it was authored.
-    final incoming = <Block>[];
-    for (final bj in (j['blocks'] as List)) {
-      // `Block.fromJson` reads `j['id'] as String` — a NON-NULLABLE cast — and
-      // the built-in templates carry no ids, because their blocks were written
-      // by hand as literal JSON. So every built-in threw `type 'Null' is not a
-      // subtype of type 'String'` on its very first block, from the day they
-      // were added, and the throw landed in a discarded Future: no dialog, no
-      // red screen, nothing. That is the whole of "clicking any of these does
-      // nothing". A template is a PROTOTYPE, and an id is the one field a
-      // prototype has no business carrying — so one is supplied here rather
-      // than written into the data. A real id in the JSON still wins.
-      final src = Block.fromJson({
-        'id': newId(),
-        ...(bj as Map).cast<String, dynamic>(),
-      });
-      final fresh = Block(
-        id: newId(),
-        type: src.type,
-        // `rawType` and `unknownFields` are the two carriers the frozen-format
-        // promise rests on: without them a block written by a NEWER build is
-        // reduced to `"type":"unknown"` and its meaning is gone for good. A
-        // user template saved from a page containing one would have destroyed
-        // it on every apply. `rotation` has the same hazard.
-        rawType: src.rawType,
-        unknownFields: src.unknownFields,
-        rotation: src.rotation,
-        x: src.x,
-        y: src.y,
-        w: src.w,
-        h: src.h,
-        placement: src.placement,
-        content: jsonDecode(jsonEncode(src.content)) as Map<String, dynamic>,
-      );
-      if (fresh.type == BlockType.ink) {
-        for (final sj in (fresh.content['strokes'] as List)) {
-          (sj as Map)['id'] = newId();
-        }
-        invalidateInkStorage(fresh);
-      }
-      incoming.add(fresh);
-    }
-    if (incoming.isEmpty) return;
-
-    // Translate as one piece, so the template still looks like itself.
-    final templateTop = incoming.map((b) => b.y).reduce(math.min);
-    final landAt = onEmptyPage ? contentTop : contentExtent().bottom + 24;
-    final dy = landAt - templateTop;
-    // Ink is page-absolute (Ink Spec §3): its stroke points do not move with
-    // the block, so a translated ink block would leave its drawing behind.
-    final movesInk = dy != 0;
-    for (final b in incoming) {
-      b.y += dy;
-      if (movesInk && b.type == BlockType.ink) _translateInk(b, dy);
-    }
-
-    // Through addBlock so each lands on top of the stack rather than at z 0,
-    // which is what put a freshly applied template UNDERNEATH existing blocks.
-    for (final b in incoming) {
-      blocks.add(
-        b
-          ..z = (blocks.isEmpty
-              ? 0
-              : blocks.map((e) => e.z).reduce((a, c) => a > c ? a : c) + 1),
-      );
-    }
-    docRevision++;
-    markDirty();
-    notifyListeners();
   }
 
   /// Shift an ink block's strokes with its box. Stroke coordinates are
@@ -9630,7 +8691,6 @@ class AppState extends ChangeNotifier
     study.noteContentChanged();
     _saveDebounce?.cancel();
     _saveDebounce = Timer(const Duration(seconds: 1), flushSave);
-    _scheduleWebDavBackup();
     notifyListeners();
   }
 
@@ -9859,8 +8919,6 @@ class AppState extends ChangeNotifier
   /// interval of edits was silently lost on every close.
   Future<void> shutdown() async {
     _saveDebounce?.cancel();
-    _webDavUploadDebounce?.cancel();
-    _gitDebounce?.cancel();
     _housekeepingTimer?.cancel();
     final neededPageSave = _dirty;
     try {
@@ -9872,25 +8930,6 @@ class AppState extends ChangeNotifier
     } catch (_) {
       // flushSave recorded the problem and left _dirty set. The lifecycle
       // handler keeps the app open so unsaved notes can still be recovered.
-    }
-    // A short close must not discard a just-armed remote backup. Local saving
-    // still comes first, but a pending Git/WebDAV upload is now completed
-    // before exit instead of being cancelled with its debounce timer.
-    if (_gitEnabled && !gitBusy) {
-      try {
-        await syncGitNow();
-      } catch (_) {
-        // The durable local save above remains authoritative on an offline
-        // machine; the next session will retry the remote route.
-      }
-    }
-    if (webDavConfigured && _webDavBackupPending && !webDavBusy) {
-      _webDavBackupPending = false;
-      try {
-        await uploadAllToWebDav();
-      } catch (_) {
-        // As for Git, do not turn an unreachable server into lost local work.
-      }
     }
     // A successful dirty-page flush already persisted the session. Avoid
     // scheduling the same workspace write twice on the hottest exit path.
@@ -9910,8 +8949,6 @@ class AppState extends ChangeNotifier
   void cancelPendingSave() {
     _saveCancellationGeneration++;
     _saveDebounce?.cancel();
-    _webDavUploadDebounce?.cancel();
-    _gitDebounce?.cancel();
     // Housekeeping arms timers too (the post-open delay, the deferral retry,
     // the note clear), and a fake-async widget test that loaded a notebook
     // would otherwise end with one still pending.
@@ -9949,7 +8986,6 @@ class AppState extends ChangeNotifier
     _housekeepingNoteClear?.cancel();
     _syncStatusPoll?.cancel();
     _saveDebounce?.cancel();
-    _webDavUploadDebounce?.cancel();
     // The planner owns a Timer. A `late final` touched here is constructed
     // just to be torn down, which costs nothing; a live timer left behind
     // keeps the isolate awake, which does.
@@ -10139,8 +9175,6 @@ class SyncStatus {
     required this.folder,
     required this.devices,
     required this.mirrors,
-    this.gitRemote,
-    this.webDavBackedUp = false,
   });
 
   /// The detected cloud folder the notebook lives in, or null when it is only
@@ -10153,24 +9187,11 @@ class SyncStatus {
   /// Configured one-way mirror/backup destinations.
   final int mirrors;
 
-  /// The git remote this notebook pushes to, or null.
-  ///
-  /// A second way of being synced, added after the first. Every indicator in
-  /// the app derived "is this notebook safe somewhere else" from [folder]
-  /// alone, so a notebook being pushed to GitHub every minute read as "on this
-  /// computer only" — which is both wrong and the exact opposite of
-  /// reassuring.
-  final String? gitRemote;
-  final bool webDavBackedUp;
-
   /// Is a copy of these notes kept somewhere else, live?
   ///
-  /// Both routes count. They are not the same mechanism — a cloud folder is
-  /// continuous and a git remote is a minute behind — but the question this
-  /// answers is "if this laptop died, are the notes gone", and for that the
-  /// two are the same answer. The distinction is carried by [where] and by the
-  /// tooltip, not by pretending one of them does not exist.
-  bool get isSynced => folder != null || webDavBackedUp;
+  /// A cloud folder is a live second copy, so it also answers whether the
+  /// notebook would survive loss of this computer.
+  bool get isSynced => folder != null;
 
   /// Synced through a cloud folder specifically. The chooser and the storage
   /// rows still ask this, because those are about a FOLDER.
@@ -10178,30 +9199,8 @@ class SyncStatus {
 
   bool get hasOtherDevices => devices > 1;
 
-  /// The remote's host and path, for showing. `github.com/you/notes`.
-  ///
-  /// Trimmed of the scheme, any `user@` and the `.git` suffix, because the
-  /// full clone URL is longer than the space every caller has and the
-  /// interesting part is the middle.
-  String? get gitLabel {
-    final url = gitRemote;
-    if (url == null) return null;
-    var s = url.trim();
-    final scheme = s.indexOf('://');
-    if (scheme >= 0) s = s.substring(scheme + 3);
-    final at = s.indexOf('@');
-    // `git@github.com:you/notes.git` — SSH remotes put the colon where a path
-    // separator belongs, and leaving it makes the label read like a port.
-    if (at >= 0) s = s.substring(at + 1);
-    s = s.replaceFirst(':', '/');
-    if (s.endsWith('.git')) s = s.substring(0, s.length - 4);
-    if (s.endsWith('/')) s = s.substring(0, s.length - 1);
-    return s.isEmpty ? null : s;
-  }
-
   /// Where the notes live, in as few words as fit. Null when nowhere else.
-  String? get where =>
-      folder?.name ?? (webDavBackedUp ? 'Nextcloud / WebDAV' : null);
+  String? get where => folder?.name;
 
   /// The chip label.
   ///
@@ -10213,9 +9212,7 @@ class SyncStatus {
   String get label {
     if (!isSynced) return mirrors > 0 ? 'Backed up' : 'Sync…';
     if (hasOtherDevices) return '$devices devices';
-    // `where`, not `folder!.name` — a git-only notebook is synced and has no
-    // folder, and the bang would have thrown the moment git started counting.
-    return where ?? 'Syncing';
+    return folder!.name;
   }
 
   IconData get icon {

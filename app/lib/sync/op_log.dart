@@ -167,7 +167,7 @@ class OpLogStore {
     opsDir.createSync(recursive: true);
     // The one thing a student can double-click (v0.17 plan, Step 8b). Written
     // HERE because this is the single place every `.onotebook` comes into
-    // existence — created fresh, moved into Drive, adopted from a git clone —
+    // existence — created fresh, moved into Drive, adopted from another copy —
     // and a pointer file that only some notebooks had would be worse than none
     // at all. Best-effort and never rewritten; see core/open_target.dart.
     ensureNotebookPointer(dir.path, title: title);
@@ -298,7 +298,7 @@ class OpLogStore {
   /// next time would silently lose the op it belongs to.
   ///
   /// **Paced, because the offset alone did not make the first read cheap.**
-  /// Once a log has never been read (a git join, a restored offset, a device
+  /// Once a log has never been read (a restored offset or a new device),
   /// that just joined the folder) `from` is 0 and this reads the whole thing.
   /// Measured on a generated 64.6 MB log, 138,657 ops: **1,008 ms in one
   /// uninterrupted block**, broken down as read 30 ms, utf8 26 ms, line split

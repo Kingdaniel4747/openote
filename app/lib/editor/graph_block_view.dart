@@ -95,7 +95,7 @@ class _GraphBlockViewState extends State<GraphBlockView> {
   /// the first movement jumps. Held here rather than written back: the fit
   /// reads the samples, the number of samples follows the canvas zoom, so
   /// storing it turned scrolling around a page into an EDIT — a bumped
-  /// timestamp, a save, and a git commit for a change nobody made.
+  /// timestamp and a save for a change nobody made.
   GraphView? _drawn;
 
   /// What is on screen: the fitted window if there is one, else the stored.

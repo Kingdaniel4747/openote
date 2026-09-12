@@ -533,7 +533,7 @@ class Repository {
   /// Write the registry NOW and bring the `.bak` copy in line with it.
   ///
   /// For a caller that has just REMOVED a secret from the settings (the
-  /// clear-text GitHub token scrub, task #73). The ordinary atomic write
+  /// interrupted setting migration). The ordinary atomic write
   /// keeps the PREVIOUS file as `workspace.json.bak` — which, right after a
   /// scrub, is precisely the copy still carrying the secret. Copying the
   /// freshly written file over the backup keeps the recovery path intact and
@@ -1168,7 +1168,7 @@ class Repository {
 
   /// Register a notebook whose only copy is an op-log directory.
   ///
-  /// This is what a notebook cloned from a git URL looks like: `ops/`,
+  /// This is what an existing operation-log directory looks like: `ops/`,
   /// `blobs/` and a `manifest.json`, and no `.onote` at all, because the
   /// container is gitignored on purpose (ADR-0006 §3 — it is a local WAL cache
   /// and two machines sharing one is the corruption the logs exist to avoid).
@@ -2143,7 +2143,7 @@ class Repository {
   ///
   /// **Local, and never inside a synced tree.** ADR-0006 §3 drew `cache.onote`
   /// inside `MyNotebook.onotebook/`, and §8 of that same ADR — six days later —
-  /// made that directory the git repo root and the thing Drive, OneDrive,
+  /// made that directory the sync root and the thing Drive, OneDrive,
   /// Dropbox and Syncthing replicate file by file. The drawing therefore puts a
   /// live WAL SQLite database back into the replicated set: the exact
   /// 31,954,368 bytes commit 435b2bd removed from the owner's own Drive, and the
@@ -3029,7 +3029,7 @@ class Repository {
   ///
   /// Two shapes are private to this machine and safe to remove:
   ///
-  ///   * **inside the workspace** — [freeLogDirPath] puts a git-cloned
+  ///   * **inside the workspace** — [freeLogDirPath] puts an adopted
   ///     notebook's logs there, and a local notebook's logs are simply its
   ///     container's sibling; nothing else can be writing to them; and
   ///   * **a directory holding nobody's log but ours.** A log file is named
