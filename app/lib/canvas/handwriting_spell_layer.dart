@@ -45,6 +45,9 @@ class _HandwritingSpellLayerState extends State<HandwritingSpellLayer> {
         '${app.blocks.where((b) => b.type == BlockType.ink).map((b) => '${b.id}:${b.updatedAt}').join(',')}';
     if (_signature == signature) return;
     _signature = signature;
+    // Editing or drawing anywhere else dismisses the transient suggestion
+    // chrome; the underline remains until the word is corrected or ignored.
+    if (_selectedMarkKey != null) _selectedMarkKey = null;
     final revision = ++_revision;
     _timer?.cancel();
     if (!Platform.isWindows ||
@@ -124,10 +127,20 @@ class _HandwritingSpellLayerState extends State<HandwritingSpellLayer> {
   ) async {
     setState(() => _selectedMarkKey = mark.key);
     final box = context.findRenderObject() as RenderBox?;
-    final anchor = box?.localToGlobal(mark.rect.bottomRight) ?? position;
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    final anchor =
+        box?.localToGlobal(Offset(mark.rect.left, mark.rect.bottom)) ??
+            position;
+    final overlaySize = overlay?.size ?? MediaQuery.sizeOf(context);
     final action = await showMenu<String>(
       context: context,
-      position: RelativeRect.fromLTRB(anchor.dx, anchor.dy, 0, 0),
+      // A RelativeRect with zero right/bottom pins a popup to the screen edge.
+      // Anchor it below the recognised word instead.
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(anchor.dx, anchor.dy + 4, 1, 1),
+        Offset.zero & overlaySize,
+      ),
       items: [
         for (final suggestion in mark.suggestions)
           PopupMenuItem(value: 'suggest:$suggestion', child: Text(suggestion)),
@@ -146,6 +159,7 @@ class _HandwritingSpellLayerState extends State<HandwritingSpellLayer> {
       ],
     );
     if (!mounted) return;
+    setState(() => _selectedMarkKey = null);
     if (action == 'ignore') {
       widget.app.ignoreHandwritingMark(mark.key);
       setState(() => _marks = _marks.where((m) => m.key != mark.key).toList());

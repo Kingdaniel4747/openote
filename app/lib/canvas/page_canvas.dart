@@ -127,6 +127,8 @@ class _PageCanvasState extends State<PageCanvas> {
   Offset? _pinchStartOffset;
   bool _pinchFramePending = false;
   double _pzLastScale = 1.0;
+  Offset _pzVelocity = Offset.zero;
+  DateTime? _pzLastMotionAt;
 
   Offset _touchVelocity = Offset.zero;
   DateTime? _lastTouchMove;
@@ -2232,6 +2234,8 @@ class _PageCanvasState extends State<PageCanvas> {
       // page mid-gesture the instant something unrelated cleared the set.
       onPointerPanZoomStart: (e) {
         _pzLastScale = 1.0;
+        _pzVelocity = Offset.zero;
+        _pzLastMotionAt = DateTime.now();
         _panZoomClaimedBy = app.claimedPointers.contains(e.pointer) ||
                 _rulerPointers.isNotEmpty ||
                 (app.rulerVisible && _screenHitsRuler(e.localPosition))
@@ -2253,12 +2257,23 @@ class _PageCanvasState extends State<PageCanvas> {
         } else if (e.localPanDelta != Offset.zero) {
           // Two-finger scrolling without a scale change is still a pan.
           controller.panBy(e.localPanDelta, elasticLeading: true);
+          final now = DateTime.now();
+          final previous = _pzLastMotionAt ?? now;
+          final seconds = (now.difference(previous).inMicroseconds / 1000000)
+              .clamp(.001, .05);
+          final instant = e.localPanDelta / seconds;
+          // A small moving average filters touchpad report jitter while keeping
+          // the release speed faithful to the user's last swipe.
+          _pzVelocity = Offset.lerp(_pzVelocity, instant, .38)!;
+          _pzLastMotionAt = now;
         }
         _pzLastScale = e.scale;
       },
       onPointerPanZoomEnd: (e) {
         if (_panZoomClaimedBy == e.pointer) _panZoomClaimedBy = null;
-        controller.springLeadingEdge();
+        controller.release(_pzVelocity);
+        _pzVelocity = Offset.zero;
+        _pzLastMotionAt = null;
       },
       child: MouseRegion(
         cursor: _windowsPen.enabled &&
