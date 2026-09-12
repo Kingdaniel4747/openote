@@ -14,7 +14,6 @@ import '../editor/list_editing.dart';
 import '../canvas/media_drop.dart';
 import '../markdown/md_syntax.dart';
 import '../model/tags.dart';
-import '../planner/agenda.dart';
 import '../state/app_state.dart';
 import '../platform/screen_capture.dart';
 import '../theme/onote_theme.dart';
@@ -174,28 +173,6 @@ class _CommandBarState extends State<CommandBar> {
                     onPressed: () => showUpdateDialog(context, app),
                   ),
                 ),
-              // Planner and quick homework capture stay beside the app-wide
-              // controls, so a due task is reachable from every page.
-              ToolbarControl(
-                width: 40,
-                icon: Icons.event_note_outlined,
-                label: 'Homework & reminders',
-                selected: app.showPlannerPanel,
-                onPressed: app.togglePlannerPanel,
-                inline: _PlannerButton(app: app),
-              ),
-              ToolbarControl(
-                width: 40,
-                icon: Icons.add_task_outlined,
-                label: 'Add homework',
-                onPressed: () => _addQuickHomework(context, app),
-                inline: IconButton(
-                  icon: const Icon(Icons.add_task_outlined, size: 18),
-                  tooltip: 'Add homework for this page',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () => _addQuickHomework(context, app),
-                ),
-              ),
               ToolbarControl(
                 width: 40,
                 icon: Icons.account_tree_outlined,
@@ -321,7 +298,7 @@ class _CommandBarState extends State<CommandBar> {
     if (widget.titlebarOnly) {
       final window = WindowsWindowFrame.of(context);
       return Material(
-        color: scheme.surface,
+        color: context.surfaces.chrome2,
         child: SizedBox(
           height: 36,
           child: Row(
@@ -703,7 +680,6 @@ class _CommandBarState extends State<CommandBar> {
         ),
         fmt(Icons.format_quote, 'Quote', () => app.toggleLinePrefix('> ')),
         const _Div(),
-        _MakeCardButton(app: app),
         const _Div(),
         // Text colour — split button (§7a.2): main area applies the current
         // colour; the arrow opens the full picker (palette/wheel/RGBA).
@@ -879,25 +855,19 @@ class _CommandBarState extends State<CommandBar> {
         ),
         onPressed: () => showScannerPairingDialog(context, app),
       ),
-      // Keep the four page-structure commands beside the everyday input
+      // Keep page links beside the everyday input
       // controls. They are not optional overflow: people use them to build
       // a page, and the corrected width calculation above lets them stay
       // visible whenever the physical ribbon has room.
       for (final item in kInsertRibbon.where(
         (item) => const {
-          'flashcard',
           'pagelink',
-          'portal',
-          'template',
         }.contains(item.id),
       ))
         _insertToolbarControl(context, item),
       for (final item in kInsertRibbon.where(
         (item) => !const {
-          'flashcard',
           'pagelink',
-          'portal',
-          'template',
         }.contains(item.id),
       ))
         _insertToolbarControl(context, item),

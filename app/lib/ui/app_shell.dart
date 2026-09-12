@@ -19,14 +19,12 @@ import 'context_menus.dart';
 import 'object_row.dart';
 import 'onboarding.dart';
 import 'open_notice_dialog.dart';
-import 'planner_panel.dart';
 import 'side_panel.dart';
 import 'protect_dialog.dart';
 import 'save_problem_dialog.dart';
 import 'shortcut_overlay.dart';
 import 'sidebar.dart';
 import '../export/print_page.dart';
-import 'study_panel.dart';
 import 'sync_dialog.dart';
 import 'sync_dot.dart';
 import 'windows_window_frame.dart';
@@ -975,8 +973,10 @@ class _AppShellState extends State<AppShell> {
   /// the Row so the F6 marker is applied in exactly one place — a panel that
   /// grew its own `if` would quietly drop out of the rotation.
   Widget? _openPanel(TreeNode? page) => switch (app.openPanel) {
-        SidePanelKind.study => StudyPanel(app: app),
-        SidePanelKind.planner => PlannerPanel(app: app),
+        // Kept as inactive enum values while existing workspace data is read;
+        // neither feature has a visible panel or command route any more.
+        SidePanelKind.study => null,
+        SidePanelKind.planner => null,
         SidePanelKind.outline => page == null ? null : _TocPanel(app: app),
         SidePanelKind.links => page == null ? null : _LinksPanel(app: app),
         null => null,

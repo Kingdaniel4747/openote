@@ -8547,6 +8547,10 @@ class AppState extends ChangeNotifier
     if (moving.parentId != target.parentId) {
       moving.parentId = target.parentId;
     }
+    final levelDelta = target.level - moving.level;
+    for (final n in movingGroup) {
+      n.level = (n.level + levelDelta).clamp(0, 2);
+    }
     var seq = nowMs();
     for (final g in groups) {
       for (final n in g) {

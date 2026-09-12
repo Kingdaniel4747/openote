@@ -61,10 +61,8 @@ import '../export/pdf_import.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../store/media_store.dart';
-import 'insert_portal_dialog.dart';
 import 'media_link_dialog.dart';
 import 'onote_dialog.dart';
-import 'sidebar.dart';
 
 /// Put one thing on the page. [at] is the top-left the block should take.
 typedef InsertRun = Future<void> Function(
@@ -192,10 +190,7 @@ const List<String> kRibbonOrder = [
   'pdf',
   'file',
   'video',
-  'flashcard',
   'pagelink',
-  'portal',
-  'template',
 ];
 
 /// The ribbon's items, in [kRibbonOrder]. Anything the order forgets goes on
@@ -388,42 +383,12 @@ final List<InsertGroup> kInsertGroups = [
   ]),
   InsertGroup(title: 'Link up', items: [
     InsertItem(
-      id: 'flashcard',
-      icon: Icons.style_outlined,
-      label: 'Flashcard',
-      // Not on the right-click menu: the button on Home reads the LINE you
-      // are on, and a right click on empty canvas is not on a line.
-      onMenu: false,
-      size: const Size(300, 120),
-      run: (context, app, at) async => app.insertFlashcard(at: at),
-    ),
-    InsertItem(
       id: 'pagelink',
       icon: Icons.link,
       label: 'Page link',
       opensPicker: true,
       size: const Size(240, 40),
       run: insertPageLink,
-    ),
-    InsertItem(
-      id: 'portal',
-      icon: Icons.picture_in_picture_alt_outlined,
-      label: 'Page window',
-      opensPicker: true,
-      size: const Size(380, 260),
-      run: (context, app, at) => showInsertPortalDialog(context, app, at),
-    ),
-    InsertItem(
-      id: 'template',
-      icon: Icons.dashboard_customize_outlined,
-      label: 'Template',
-      opensPicker: true,
-      // Not on the right-click menu: this lays out a whole PAGE, which is not
-      // "put this thing here". It is on the page's own menu as well, beside
-      // Save as template, which is where it belongs by meaning.
-      onMenu: false,
-      size: Size.zero,
-      run: (context, app, at) => promptApplyTemplate(context, app),
     ),
   ]),
 ];

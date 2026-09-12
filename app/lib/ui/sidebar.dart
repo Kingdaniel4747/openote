@@ -487,41 +487,47 @@ class _SidebarState extends State<Sidebar> {
     Widget row(TreeNode s) => _SectionHeader(
         app: app, section: s, dark: dark, active: app.activeSectionId == s.id);
 
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 8),
-      children: [
-        for (final g in groups) ...[
-          _GroupHeader(app: app, group: g),
-          // Indented AND railed. Indentation alone says "these are children";
-          // the rail is what says where the group ENDS — with several groups
-          // in a column, an indent that just stops is ambiguous, because the
-          // next group's header looks like an outdented sibling either way.
-          _Reveal(
-            open: !app.collapsedGroups.contains(g.id),
-            child: Padding(
-              padding: const EdgeInsets.only(left: 13),
-              child: Container(
-                decoration: BoxDecoration(
-                  border: Border(
-                    left: BorderSide(
-                        color:
-                            dark ? OnoteColors.night300 : OnoteColors.paper300),
+    return DragTarget<String>(
+      onWillAcceptWithDetails: (d) =>
+          app.node(d.data)?.kind == NodeKind.section,
+      onAcceptWithDetails: (d) => app.moveSectionToGroup(d.data, null),
+      builder: (context, candidates, _) => ListView(
+        padding: const EdgeInsets.only(bottom: 8),
+        children: [
+          for (final g in groups) ...[
+            _GroupHeader(app: app, group: g),
+            // Indented AND railed. Indentation alone says "these are children";
+            // the rail is what says where the group ENDS — with several groups
+            // in a column, an indent that just stops is ambiguous, because the
+            // next group's header looks like an outdented sibling either way.
+            _Reveal(
+              open: !app.collapsedGroups.contains(g.id),
+              child: Padding(
+                padding: const EdgeInsets.only(left: 13),
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: Border(
+                      left: BorderSide(
+                          color: dark
+                              ? OnoteColors.night300
+                              : OnoteColors.paper300),
+                    ),
                   ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    for (final s in app.nodes.where((n) =>
-                        n.kind == NodeKind.section && n.parentId == g.id))
-                      row(s),
-                  ],
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final s in app.nodes.where((n) =>
+                          n.kind == NodeKind.section && n.parentId == g.id))
+                        row(s),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
+          ],
+          for (final s in looseSections) row(s),
         ],
-        for (final s in looseSections) row(s),
-      ],
+      ),
     );
   }
 
@@ -752,7 +758,6 @@ class _HomePane extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.only(bottom: 12),
       children: [
-        _ComingUp(app: app),
         if (favourites.isNotEmpty) ...[
           label('FAVOURITES'),
           for (final p in favourites)
@@ -1117,8 +1122,19 @@ class _SectionHeaderState extends State<_SectionHeader> {
   Widget build(BuildContext context) {
     // Drop a page ONTO a section header → move it into that section (ORG-2).
     return DragTarget<String>(
-      onWillAcceptWithDetails: (d) => app.node(d.data)?.kind == NodeKind.page,
-      onAcceptWithDetails: (d) => app.movePageToSection(d.data, section.id),
+      onWillAcceptWithDetails: (d) {
+        final moving = app.node(d.data);
+        return moving?.kind == NodeKind.page ||
+            (moving?.kind == NodeKind.section && moving!.id != section.id);
+      },
+      onAcceptWithDetails: (d) {
+        final moving = app.node(d.data);
+        if (moving?.kind == NodeKind.page) {
+          app.movePageToSection(d.data, section.id);
+        } else if (moving?.kind == NodeKind.section) {
+          app.reorderNode(d.data, section.id, after: true);
+        }
+      },
       builder: (ctx, cand, rej) {
         final header = _header(context, pageTarget: cand.isNotEmpty);
         if (_renaming) return header;
@@ -1962,12 +1978,6 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
         _nodeItem('print', Icons.print_outlined, 'Print…'),
         _nodeItem('copylink', Icons.link, 'Copy link to page'),
         _nodeItem('history', Icons.history, 'Recent changes…'),
-        _nodeItem('template', Icons.bookmark_add_outlined, 'Save as template…'),
-        // Laying out a whole page is not INSERTING something into it, which
-        // is why this left the Insert ribbon. It belongs beside saving one —
-        // and beside where "No templates yet" already sends people.
-        _nodeItem('applytemplate', Icons.dashboard_customize_outlined,
-            'Apply a template…'),
       ],
       const PopupMenuDivider(),
       // Available on every kind, because the ask was "a page ... a section, or
