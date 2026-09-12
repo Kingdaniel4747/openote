@@ -76,7 +76,7 @@ const double _kChromePad = 8;
 /// a drag moves the container. OneNote's model, and the reason for it is that
 /// a click-drag inside a text box means "select this text" to everyone who has
 /// ever used a text box.
-const double _kBarH = _kChromePad;
+const double _kBarH = 34;
 
 class _BlockViewState extends State<BlockView> {
   bool _hoverBody = false;
@@ -146,10 +146,8 @@ class _BlockViewState extends State<BlockView> {
         app.tool == Tool.shape ||
         app.tool == Tool.highlighter ||
         app.tool == Tool.eraser ||
-        app.tool == Tool.lasso)
-      return;
-    final additive =
-        HardwareKeyboard.instance.isShiftPressed ||
+        app.tool == Tool.lasso) return;
+    final additive = HardwareKeyboard.instance.isShiftPressed ||
         HardwareKeyboard.instance.isControlPressed ||
         HardwareKeyboard.instance.isMetaPressed;
     if (additive) {
@@ -240,8 +238,7 @@ class _BlockViewState extends State<BlockView> {
         !_locked &&
         !selected &&
         (e.buttons & kPrimaryButton) != 0) {
-      final additive =
-          HardwareKeyboard.instance.isShiftPressed ||
+      final additive = HardwareKeyboard.instance.isShiftPressed ||
           HardwareKeyboard.instance.isControlPressed ||
           HardwareKeyboard.instance.isMetaPressed;
       app.select(b.id, additive: additive);
@@ -371,11 +368,11 @@ class _BlockViewState extends State<BlockView> {
     _bodyDragMoves = _locked
         ? false
         : (!_editableType &&
-                  b.type != BlockType.embed &&
-                  b.type != BlockType.board &&
-                  b.type != BlockType.graph &&
-                  b.type != BlockType.substitute) ||
-              HardwareKeyboard.instance.isAltPressed;
+                b.type != BlockType.embed &&
+                b.type != BlockType.board &&
+                b.type != BlockType.graph &&
+                b.type != BlockType.substitute) ||
+            HardwareKeyboard.instance.isAltPressed;
     if (_bodyDragMoves) _dragStart(d);
   }
 
@@ -433,20 +430,20 @@ class _BlockViewState extends State<BlockView> {
       gestures: <Type, GestureRecognizerFactory>{
         LongPressGestureRecognizer:
             GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
-              () => LongPressGestureRecognizer(
-                duration: const Duration(milliseconds: 300),
-                supportedDevices: const {
-                  PointerDeviceKind.touch,
-                  PointerDeviceKind.mouse,
-                },
-              ),
-              (recognizer) {
-                recognizer
-                  ..onLongPressStart = _objectHoldStart
-                  ..onLongPressMoveUpdate = _objectHoldMove
-                  ..onLongPressEnd = _objectHoldEnd;
-              },
-            ),
+          () => LongPressGestureRecognizer(
+            duration: const Duration(milliseconds: 300),
+            supportedDevices: const {
+              PointerDeviceKind.touch,
+              PointerDeviceKind.mouse,
+            },
+          ),
+          (recognizer) {
+            recognizer
+              ..onLongPressStart = _objectHoldStart
+              ..onLongPressMoveUpdate = _objectHoldMove
+              ..onLongPressEnd = _objectHoldEnd;
+          },
+        ),
       },
       child: child,
     );
@@ -473,6 +470,36 @@ class _BlockViewState extends State<BlockView> {
       child: const SizedBox.expand(),
     );
   }
+
+  /// The same compact object actions for every floating block. Keeping this
+  /// on the selection wrapper rather than in each editor means text, tables,
+  /// code, boards, equations, files and media cannot drift apart again.
+  Widget _selectionToolbar(BuildContext context, Color primaryColor) =>
+      Material(
+        color: Theme.of(context).colorScheme.surface,
+        elevation: 3,
+        borderRadius: BorderRadius.circular(6),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          IconButton(
+            icon: const Icon(Icons.content_copy_outlined, size: 16),
+            tooltip: 'Duplicate',
+            visualDensity: VisualDensity.compact,
+            onPressed: () => app.duplicateBlock(b.id),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, size: 16),
+            tooltip: 'Close selection',
+            visualDensity: VisualDensity.compact,
+            onPressed: () => app.select(null),
+          ),
+          IconButton(
+            icon: Icon(Icons.delete_outline, size: 16, color: primaryColor),
+            tooltip: 'Delete',
+            visualDensity: VisualDensity.compact,
+            onPressed: () => app.removeBlock(b.id),
+          ),
+        ]),
+      );
 
   String _a11yLabel() {
     final t = switch (b.type) {
@@ -505,6 +532,7 @@ class _BlockViewState extends State<BlockView> {
   /// Height is only draggable for blocks that own one. A text block's height
   /// comes from its text, so a height handle there would fight the content.
   bool get _canResizeHeight =>
+      b.type == BlockType.text ||
       b.type == BlockType.ink ||
       b.type == BlockType.image ||
       b.type == BlockType.table ||
@@ -553,8 +581,7 @@ class _BlockViewState extends State<BlockView> {
       // natural without distorting the source.
       final naturalW = (b.content['naturalW'] as num?)?.toDouble();
       final naturalH = (b.content['naturalH'] as num?)?.toDouble();
-      final sourceH =
-          oldH ??
+      final sourceH = oldH ??
           (naturalW != null && naturalW > 0 && naturalH != null && naturalH > 0
               ? oldW * naturalH / naturalW
               : oldW * 1.414);
@@ -562,11 +589,11 @@ class _BlockViewState extends State<BlockView> {
       final byHeight = (sourceH + d.delta.dy / scale) / sourceH;
       final requestedFactor = width && height
           ? (byWidth - 1).abs() >= (byHeight - 1).abs()
-                ? byWidth
-                : byHeight
+              ? byWidth
+              : byHeight
           : width
-          ? byWidth
-          : byHeight;
+              ? byWidth
+              : byHeight;
       final factor = requestedFactor.clamp(.1, 8.0);
       // Clamp the scale once; independent width/height clamps distort images.
       final bounded = factor.clamp(
@@ -689,12 +716,12 @@ class _BlockViewState extends State<BlockView> {
       BlockType.graph => GraphBlockView(block: b, app: app),
       BlockType.substitute => SubstituteBlockView(block: b, app: app),
       _ => Padding(
-        padding: const EdgeInsets.all(8),
-        child: Text(
-          'Unsupported block: ${b.type.name}',
-          style: const TextStyle(color: OnoteColors.graphite400),
+          padding: const EdgeInsets.all(8),
+          child: Text(
+            'Unsupported block: ${b.type.name}',
+            style: const TextStyle(color: OnoteColors.graphite400),
+          ),
         ),
-      ),
     };
     // Expose content to assistive tech (PLAT-5).
     final labelled = Semantics(
@@ -706,8 +733,7 @@ class _BlockViewState extends State<BlockView> {
 
     // While an ink tool is active, blocks are inert — the pen draws OVER
     // them instead of dragging/editing them (fixes ink-over-block dragging).
-    final inkToolActive =
-        app.tool == Tool.pen ||
+    final inkToolActive = app.tool == Tool.pen ||
         app.tool == Tool.ballpoint ||
         app.tool == Tool.shape ||
         app.tool == Tool.highlighter ||
@@ -754,9 +780,8 @@ class _BlockViewState extends State<BlockView> {
         // A locked block (an imported PDF slide) is an annotation surface: it
         // must not move when the pen misses, or the whole point of writing on
         // it is lost.
-        onPanStart: editing || _locked || _fastHoldMovable
-            ? null
-            : _bodyDragStart,
+        onPanStart:
+            editing || _locked || _fastHoldMovable ? null : _bodyDragStart,
         onPanUpdate: editing || _locked || _fastHoldMovable ? null : _bodyDrag,
         onPanEnd: editing || _locked || _fastHoldMovable ? null : _bodyDragEnd,
         child: Container(
@@ -773,8 +798,7 @@ class _BlockViewState extends State<BlockView> {
                   // one end of the link is chosen, which is what
                   // `graphLinkHighlight` answers. Derived on every build, never
                   // stored: this must not dirty the page or survive the click.
-                  color:
-                      app.graphLinkHighlight(b)?.withValues(alpha: 0.14) ??
+                  color: app.graphLinkHighlight(b)?.withValues(alpha: 0.14) ??
                       onoteColorFromHex(b.content['bg'] as String?) ??
                       // **Hover does not fill.** The owner: *"Hovering over a box
                       // makes its background solid, this makes aligning with other
@@ -792,10 +816,12 @@ class _BlockViewState extends State<BlockView> {
                     color: editing
                         ? primaryColor.withValues(alpha: .55)
                         : selected
-                        ? primaryColor
-                        : _hover
-                        ? (dark ? OnoteColors.night300 : OnoteColors.paper300)
-                        : Colors.transparent,
+                            ? primaryColor
+                            : _hover
+                                ? (dark
+                                    ? OnoteColors.night300
+                                    : OnoteColors.paper300)
+                                : Colors.transparent,
                   ),
                 )
               // OneNote-style: no visible box at all until the first
@@ -959,6 +985,13 @@ class _BlockViewState extends State<BlockView> {
                           onExit: (_) => setState(() => _hoverChrome = false),
                           child: const SizedBox.expand(),
                         ),
+                ),
+              if (primary && !_locked && !_pendingEmpty)
+                Positioned(
+                  right: _kChromePad,
+                  top: 0,
+                  height: _kBarH,
+                  child: _selectionToolbar(context, primaryColor),
                 ),
               // Resize handles. Now that the chrome sits INSIDE the render
               // box, each handle's full visual extent is grabbable instead of

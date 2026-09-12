@@ -176,20 +176,6 @@ class _CommandBarState extends State<CommandBar> {
                 ),
               ToolbarControl(
                 width: 40,
-                icon: Icons.account_tree_outlined,
-                label: 'Links & backlinks',
-                selected: app.showLinksPanel,
-                onPressed: app.toggleLinksPanel,
-                inline: IconButton(
-                  icon: const Icon(Icons.account_tree_outlined, size: 18),
-                  tooltip: tr(context, 'Links & backlinks'),
-                  isSelected: app.showLinksPanel,
-                  visualDensity: VisualDensity.compact,
-                  onPressed: app.toggleLinksPanel,
-                ),
-              ),
-              ToolbarControl(
-                width: 40,
                 icon: Icons.search,
                 label: 'Find on page',
                 selected: app.findOpen,
@@ -299,11 +285,26 @@ class _CommandBarState extends State<CommandBar> {
     if (widget.titlebarOnly) {
       final window = WindowsWindowFrame.of(context);
       return Material(
-        color: context.surfaces.chrome2,
+        color: scheme.surface,
         child: SizedBox(
           height: 36,
-          child: Row(
-            children: [
+          child: Stack(children: [
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: app.navSectionsW + app.navPagesW + 5,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: context.surfaces.chrome2,
+                  border: Border(
+                    right: BorderSide(color: context.surfaces.border),
+                  ),
+                ),
+                child: const SizedBox.expand(),
+              ),
+            ),
+            Row(children: [
               Expanded(
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
@@ -325,8 +326,8 @@ class _CommandBarState extends State<CommandBar> {
                 onPressed: () => showSettingsDialog(context, app),
               ),
               const WindowsCaptionButtons(),
-            ],
-          ),
+            ]),
+          ]),
         ),
       );
     }

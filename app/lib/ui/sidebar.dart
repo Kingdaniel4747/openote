@@ -1099,6 +1099,7 @@ class _SectionHeader extends StatefulWidget {
 
 class _SectionHeaderState extends State<_SectionHeader> {
   bool _renaming = false;
+  _DropZone _sectionDropZone = _DropZone.none;
   final _taps = _DoubleTapGate();
   Offset _downPos = Offset.zero; // last pointer-down, for long-press menus
 
@@ -1127,16 +1128,49 @@ class _SectionHeaderState extends State<_SectionHeader> {
         return moving?.kind == NodeKind.page ||
             (moving?.kind == NodeKind.section && moving!.id != section.id);
       },
+      onMove: (d) {
+        if (app.node(d.data)?.kind != NodeKind.section) return;
+        final box = context.findRenderObject() as RenderBox?;
+        if (box == null || !box.hasSize) return;
+        final local = box.globalToLocal(d.offset);
+        final zone =
+            local.dy < box.size.height / 2 ? _DropZone.before : _DropZone.after;
+        if (zone != _sectionDropZone) {
+          setState(() => _sectionDropZone = zone);
+        }
+      },
+      onLeave: (_) => setState(() => _sectionDropZone = _DropZone.none),
       onAcceptWithDetails: (d) {
         final moving = app.node(d.data);
         if (moving?.kind == NodeKind.page) {
           app.movePageToSection(d.data, section.id);
         } else if (moving?.kind == NodeKind.section) {
-          app.reorderNode(d.data, section.id, after: true);
+          app.reorderNode(
+            d.data,
+            section.id,
+            after: _sectionDropZone != _DropZone.before,
+          );
         }
+        setState(() => _sectionDropZone = _DropZone.none);
       },
       builder: (ctx, cand, rej) {
-        final header = _header(context, pageTarget: cand.isNotEmpty);
+        final pageTarget =
+            cand.any((id) => app.node(id)?.kind == NodeKind.page);
+        final header = _header(context, pageTarget: pageTarget);
+        final sectionTarget = cand.any(
+          (id) => app.node(id)?.kind == NodeKind.section,
+        );
+        if (sectionTarget && _sectionDropZone != _DropZone.none) {
+          final line = Container(
+            height: 2,
+            color: Theme.of(context).colorScheme.primary,
+          );
+          return Column(mainAxisSize: MainAxisSize.min, children: [
+            if (_sectionDropZone == _DropZone.before) line,
+            header,
+            if (_sectionDropZone == _DropZone.after) line,
+          ]);
+        }
         if (_renaming) return header;
         // Section itself is draggable into groups.
         return Draggable<String>(
