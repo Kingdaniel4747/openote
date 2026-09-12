@@ -1136,7 +1136,7 @@ class AppState extends ChangeNotifier
   void scheduleGitSync() {
     if (!_gitEnabled) return;
     _gitDebounce?.cancel();
-    _gitDebounce = Timer(const Duration(seconds: 60), syncGitNow);
+    _gitDebounce = Timer(const Duration(seconds: 10), syncGitNow);
   }
 
   // ── Operation log (ADR-0006, shadow mode) ────────────────────────────
@@ -2676,8 +2676,8 @@ class AppState extends ChangeNotifier
 
   /// Automatic backups are deliberately conservative: they are background
   /// safety nets, never work that competes with drawing or navigation.
-  static const _webDavIdleDelay = Duration(minutes: 5);
-  static const _webDavAutomaticMinGap = Duration(hours: 1);
+  static const _webDavIdleDelay = Duration(seconds: 15);
+  static const _webDavAutomaticMinGap = Duration(minutes: 1);
 
   /// Tell the backup scheduler that the person is actively using the canvas.
   /// Pointer handlers call this for writing and scrolling; it does no rebuild
@@ -4677,7 +4677,7 @@ class AppState extends ChangeNotifier
 
   double inkSizeFor(Tool value) => _inkToolSizes[value] ?? penSize;
 
-  double minInkSizeFor(Tool value) => value == Tool.highlighter ? 0.0 : 1.0;
+  double minInkSizeFor(Tool value) => 0.1;
 
   double maxInkSizeFor(Tool value) => 10.0;
 
@@ -9873,8 +9873,25 @@ class AppState extends ChangeNotifier
       // flushSave recorded the problem and left _dirty set. The lifecycle
       // handler keeps the app open so unsaved notes can still be recovered.
     }
-    // No VACUUM or new network sync on close. Persist local work first;
-    // cloud syncing resumes during the next session.
+    // A short close must not discard a just-armed remote backup. Local saving
+    // still comes first, but a pending Git/WebDAV upload is now completed
+    // before exit instead of being cancelled with its debounce timer.
+    if (_gitEnabled && !gitBusy) {
+      try {
+        await syncGitNow();
+      } catch (_) {
+        // The durable local save above remains authoritative on an offline
+        // machine; the next session will retry the remote route.
+      }
+    }
+    if (webDavConfigured && _webDavBackupPending && !webDavBusy) {
+      _webDavBackupPending = false;
+      try {
+        await uploadAllToWebDav();
+      } catch (_) {
+        // As for Git, do not turn an unreachable server into lost local work.
+      }
+    }
     // A successful dirty-page flush already persisted the session. Avoid
     // scheduling the same workspace write twice on the hottest exit path.
     if (!neededPageSave || _dirty) {

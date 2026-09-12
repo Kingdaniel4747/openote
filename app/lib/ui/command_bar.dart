@@ -288,58 +288,28 @@ class _CommandBarState extends State<CommandBar> {
         color: scheme.surface,
         child: SizedBox(
           height: 36,
-          child: Stack(children: [
-            Positioned(
-              left: 0,
-              top: 0,
-              bottom: 0,
-              width: app.navSectionsW + app.navPagesW,
-              child: ColoredBox(color: context.surfaces.chrome2),
-            ),
-            // Continue both of the navigator's existing boundary strokes:
-            // the centre line inside its 5px resize grip and the divider
-            // immediately after it. This is a vertical continuation, not a
-            // new full-width titlebar colour.
-            Positioned(
-              left: app.navSectionsW + app.navPagesW,
-              top: 0,
-              bottom: 0,
-              width: 5,
-              child: Center(
-                child:
-                    Container(width: 1, color: Theme.of(context).dividerColor),
-              ),
-            ),
-            Positioned(
-              left: app.navSectionsW + app.navPagesW + 5,
-              top: 0,
-              bottom: 0,
-              width: 1,
-              child: ColoredBox(color: Theme.of(context).dividerColor),
-            ),
-            Row(children: [
-              Expanded(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onPanStart: (_) => window?.beginDrag(),
-                  onDoubleTap: window?.maximize,
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 12),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: AppText('Openote'),
-                    ),
+          child: Row(children: [
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onPanStart: (_) => window?.beginDrag(),
+                onDoubleTap: window?.maximize,
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: AppText('Openote'),
                   ),
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.settings_outlined, size: 18),
-                tooltip: tr(context, 'Settings…'),
-                visualDensity: VisualDensity.compact,
-                onPressed: () => showSettingsDialog(context, app),
-              ),
-              const WindowsCaptionButtons(),
-            ]),
+            ),
+            IconButton(
+              icon: const Icon(Icons.settings_outlined, size: 18),
+              tooltip: tr(context, 'Settings…'),
+              visualDensity: VisualDensity.compact,
+              onPressed: () => showSettingsDialog(context, app),
+            ),
+            const WindowsCaptionButtons(),
           ]),
         ),
       );
@@ -1055,7 +1025,7 @@ class _CommandBarState extends State<CommandBar> {
         max: app.maxInkSizeFor(app.tool),
         // One-pixel increments: a pen width is a precision control, not a
         // five-pixel preset.
-        divisions: app.tool == Tool.highlighter ? 10 : 9,
+        divisions: 99,
         label: '${app.penSize.toStringAsFixed(1)} px',
         onChanged: app.setInkSize,
       );

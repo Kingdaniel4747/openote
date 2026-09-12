@@ -47,7 +47,6 @@ class _HandwritingSpellLayerState extends State<HandwritingSpellLayer> {
     _signature = signature;
     final revision = ++_revision;
     _timer?.cancel();
-    if (_marks.isNotEmpty) setState(() => _marks = const []);
     if (!Platform.isWindows ||
         !app.spellCheckEnabled ||
         !app.handwritingSpellCheck) return;
@@ -59,7 +58,7 @@ class _HandwritingSpellLayerState extends State<HandwritingSpellLayer> {
               {'x': List.of(raw['x'] as List), 'y': List.of(raw['y'] as List)},
     ];
     if (strokes.isEmpty) return;
-    _timer = Timer(const Duration(milliseconds: 1200), () async {
+    _timer = Timer(const Duration(milliseconds: 350), () async {
       bool current() => mounted && revision == _revision;
       try {
         final marks = <_HandwritingMark>[];
@@ -124,9 +123,11 @@ class _HandwritingSpellLayerState extends State<HandwritingSpellLayer> {
     Offset position,
   ) async {
     setState(() => _selectedMarkKey = mark.key);
+    final box = context.findRenderObject() as RenderBox?;
+    final anchor = box?.localToGlobal(mark.rect.bottomRight) ?? position;
     final action = await showMenu<String>(
       context: context,
-      position: RelativeRect.fromLTRB(position.dx, position.dy, 0, 0),
+      position: RelativeRect.fromLTRB(anchor.dx, anchor.dy, 0, 0),
       items: [
         for (final suggestion in mark.suggestions)
           PopupMenuItem(value: 'suggest:$suggestion', child: Text(suggestion)),
