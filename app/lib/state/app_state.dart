@@ -4677,7 +4677,7 @@ class AppState extends ChangeNotifier
 
   double inkSizeFor(Tool value) => _inkToolSizes[value] ?? penSize;
 
-  double minInkSizeFor(Tool value) => value == Tool.highlighter ? 0.0 : 0.5;
+  double minInkSizeFor(Tool value) => value == Tool.highlighter ? 0.0 : 1.0;
 
   double maxInkSizeFor(Tool value) => 10.0;
 

@@ -375,10 +375,6 @@ class _NotebookManagerState extends State<_NotebookManager> {
               label: const AppText('Sync'),
               onPressed: () => showSyncDialog(context, app),
             ),
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const AppText('Done'),
-            ),
           ],
         ),
       ],

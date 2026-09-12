@@ -1053,7 +1053,9 @@ class _CommandBarState extends State<CommandBar> {
         value: app.penSize,
         min: app.minInkSizeFor(app.tool),
         max: app.maxInkSizeFor(app.tool),
-        divisions: app.tool == Tool.highlighter ? 20 : 19,
+        // One-pixel increments: a pen width is a precision control, not a
+        // five-pixel preset.
+        divisions: app.tool == Tool.highlighter ? 10 : 9,
         label: '${app.penSize.toStringAsFixed(1)} px',
         onChanged: app.setInkSize,
       );

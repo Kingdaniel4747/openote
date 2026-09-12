@@ -98,6 +98,7 @@ class _PageCanvasState extends State<PageCanvas> {
   final ValueNotifier<int> _wetTick = ValueNotifier(0);
   final GlobalKey _eyedropperCaptureKey = GlobalKey();
   int? _eyedropperPointer;
+  PointerDeviceKind? _eyedropperPointerKind;
   Offset? _eyedropperPosition;
   Color? _eyedropperPreview;
   bool _eyedropperSampling = false;
@@ -165,6 +166,7 @@ class _PageCanvasState extends State<PageCanvas> {
 
   void _eyedropperDown(PointerDownEvent event) {
     _eyedropperPointer = event.pointer;
+    _eyedropperPointerKind = event.kind;
     _eyedropperPosition = event.localPosition;
     _eyedropperPreview = null;
     setState(() {});
@@ -233,6 +235,7 @@ class _PageCanvasState extends State<PageCanvas> {
     app.setInkEyedropperActive(false);
     setState(() {
       _eyedropperPosition = null;
+      _eyedropperPointerKind = null;
       _eyedropperPreview = null;
     });
   }
@@ -2075,6 +2078,7 @@ class _PageCanvasState extends State<PageCanvas> {
             if (_eyedropperPointer == event.pointer) {
               _eyedropperPointer = null;
               _eyedropperPosition = null;
+              _eyedropperPointerKind = null;
               _eyedropperPreview = null;
               app.setInkEyedropperActive(false);
             }
@@ -2085,10 +2089,17 @@ class _PageCanvasState extends State<PageCanvas> {
               AbsorbPointer(child: canvas),
               if (_eyedropperPosition case final position?)
                 Positioned(
-                  left: position.dx - 12,
-                  top: position.dy - 12,
+                  // The crosshair's centre, rather than its top-left, is the
+                  // sampled pixel. Mouse users already have a native precise
+                  // cursor, so only the pen/touch route draws a second cross.
+                  left: position.dx - 23,
+                  top: position.dy - 23,
                   child: IgnorePointer(
-                    child: _EyedropperCursor(color: _eyedropperPreview),
+                    child: _EyedropperCursor(
+                      color: _eyedropperPreview,
+                      showCrosshair:
+                          _eyedropperPointerKind != PointerDeviceKind.mouse,
+                    ),
                   ),
                 ),
             ],
@@ -2283,8 +2294,9 @@ class _PageCanvasState extends State<PageCanvas> {
 /// offset above-right of the sampling point, so it never hides the pixel being
 /// inspected with a pen tip or mouse cursor.
 class _EyedropperCursor extends StatelessWidget {
-  const _EyedropperCursor({this.color});
+  const _EyedropperCursor({this.color, required this.showCrosshair});
   final Color? color;
+  final bool showCrosshair;
 
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -2293,10 +2305,11 @@ class _EyedropperCursor extends StatelessWidget {
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            const Positioned.fill(
-              child:
-                  Center(child: Icon(Icons.add, size: 30, color: Colors.white)),
-            ),
+            if (showCrosshair)
+              const Positioned.fill(
+                child: Center(
+                    child: Icon(Icons.add, size: 30, color: Colors.white)),
+              ),
             Positioned(
               left: 25,
               bottom: 25,

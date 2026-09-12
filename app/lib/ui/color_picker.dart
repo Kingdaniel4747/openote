@@ -127,23 +127,23 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
   @override
   Widget build(BuildContext context) {
     Widget swatch(Color c, {double size = 24}) => InkWell(
-      onTap: () => _setColor(c),
-      borderRadius: BorderRadius.circular(4),
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: c,
+          onTap: () => _setColor(c),
           borderRadius: BorderRadius.circular(4),
-          border: Border.all(
-            color: _color.toARGB32() == c.toARGB32()
-                ? Theme.of(context).colorScheme.primary
-                : OnoteColors.paper300,
-            width: _color.toARGB32() == c.toARGB32() ? 2 : 1,
+          child: Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              color: c,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(
+                color: _color.toARGB32() == c.toARGB32()
+                    ? Theme.of(context).colorScheme.primary
+                    : OnoteColors.paper300,
+                width: _color.toARGB32() == c.toARGB32() ? 2 : 1,
+              ),
+            ),
           ),
-        ),
-      ),
-    );
+        );
 
     return AlertDialog(
       title: Text(widget.title),
@@ -310,7 +310,6 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
             label: const AppText('Add to toolbar'),
             onPressed: () => widget.onAddToToolbar!.call(_toHex(_color)),
           ),
-        FilledButton(onPressed: _done, child: const Text('Done')),
       ],
     );
   }

@@ -19,6 +19,7 @@ class _HandwritingSpellLayerState extends State<HandwritingSpellLayer> {
   String _signature = '';
   int _revision = 0;
   List<_HandwritingMark> _marks = const [];
+  String? _selectedMarkKey;
   @override
   void initState() {
     super.initState();
@@ -49,8 +50,7 @@ class _HandwritingSpellLayerState extends State<HandwritingSpellLayer> {
     if (_marks.isNotEmpty) setState(() => _marks = const []);
     if (!Platform.isWindows ||
         !app.spellCheckEnabled ||
-        !app.handwritingSpellCheck)
-      return;
+        !app.handwritingSpellCheck) return;
     final strokes = [
       for (final b in app.blocks)
         if (b.type == BlockType.ink)
@@ -85,8 +85,7 @@ class _HandwritingSpellLayerState extends State<HandwritingSpellLayer> {
               (m['w'] as num).toDouble(),
               (m['h'] as num).toDouble(),
             );
-            final key =
-                '${app.pageId}|$text|${rect.left.round()}|'
+            final key = '${app.pageId}|$text|${rect.left.round()}|'
                 '${rect.top.round()}|${rect.width.round()}|${rect.height.round()}';
             if (!app.isHandwritingMarkIgnored(key)) {
               marks.add(
@@ -124,6 +123,7 @@ class _HandwritingSpellLayerState extends State<HandwritingSpellLayer> {
     _HandwritingMark mark,
     Offset position,
   ) async {
+    setState(() => _selectedMarkKey = mark.key);
     final action = await showMenu<String>(
       context: context,
       position: RelativeRect.fromLTRB(position.dx, position.dy, 0, 0),
@@ -144,7 +144,8 @@ class _HandwritingSpellLayerState extends State<HandwritingSpellLayer> {
         const PopupMenuItem(value: 'ignore', child: AppText('Ignore')),
       ],
     );
-    if (action == 'ignore' && mounted) {
+    if (!mounted) return;
+    if (action == 'ignore') {
       widget.app.ignoreHandwritingMark(mark.key);
       setState(() => _marks = _marks.where((m) => m.key != mark.key).toList());
     }
@@ -152,21 +153,27 @@ class _HandwritingSpellLayerState extends State<HandwritingSpellLayer> {
 
   @override
   Widget build(BuildContext context) => Stack(
-    children: [
-      IgnorePointer(child: CustomPaint(painter: _SpellingPainter(_marks))),
-      for (final mark in _marks)
-        Positioned.fromRect(
-          rect: mark.rect.inflate(7),
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onLongPressStart: (details) =>
-                _showMarkMenu(context, mark, details.globalPosition),
-            onSecondaryTapUp: (details) =>
-                _showMarkMenu(context, mark, details.globalPosition),
+        children: [
+          IgnorePointer(
+            child: CustomPaint(
+              painter: _SpellingPainter(_marks, selectedKey: _selectedMarkKey),
+            ),
           ),
-        ),
-    ],
-  );
+          for (final mark in _marks)
+            Positioned.fromRect(
+              rect: mark.rect.inflate(7),
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTapUp: (details) =>
+                    _showMarkMenu(context, mark, details.globalPosition),
+                onLongPressStart: (details) =>
+                    _showMarkMenu(context, mark, details.globalPosition),
+                onSecondaryTapUp: (details) =>
+                    _showMarkMenu(context, mark, details.globalPosition),
+              ),
+            ),
+        ],
+      );
 }
 
 class _HandwritingMark {
@@ -183,8 +190,9 @@ class _HandwritingMark {
 }
 
 class _SpellingPainter extends CustomPainter {
-  _SpellingPainter(this.marks);
+  _SpellingPainter(this.marks, {this.selectedKey});
   final List<_HandwritingMark> marks;
+  final String? selectedKey;
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
@@ -193,6 +201,12 @@ class _SpellingPainter extends CustomPainter {
       ..style = PaintingStyle.stroke;
     for (final mark in marks) {
       final rect = mark.rect;
+      if (mark.key == selectedKey) {
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(rect.inflate(3), const Radius.circular(3)),
+          Paint()..color = const Color(0x3342A5F5),
+        );
+      }
       final path = Path()..moveTo(rect.left, rect.bottom + 3);
       for (var x = rect.left; x < rect.right; x += 6) {
         path.relativeLineTo(3, 2);
@@ -203,5 +217,6 @@ class _SpellingPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_SpellingPainter old) => old.marks != marks;
+  bool shouldRepaint(_SpellingPainter old) =>
+      old.marks != marks || old.selectedKey != selectedKey;
 }
