@@ -877,14 +877,10 @@ class _PageCanvasState extends State<PageCanvas> {
         selected.every((b) => b.type == BlockType.ink);
   }
 
-  bool get _selectionToolbarCanShow {
-    final editingId = app.editingBlockId;
-    if (editingId == null) return true;
-    // A table's short tap edits a cell, but it is still an inserted object and
-    // must keep the same duplicate/cut/delete toolbar as boards and files.
-    final editing = app.blocks.where((b) => b.id == editingId).firstOrNull;
-    return editing?.type == BlockType.table;
-  }
+  // The object toolbar belongs to the selected container, not to a particular
+  // editor. It remains available for text, equations and code while their
+  // content is active, exactly as it already is for media and tables.
+  bool get _selectionToolbarCanShow => true;
 
   void _moveLassoFingerSelection(PointerMoveEvent e) {
     if (_lassoMovePointer != e.pointer) return;

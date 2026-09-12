@@ -76,7 +76,7 @@ const double _kChromePad = 8;
 /// a drag moves the container. OneNote's model, and the reason for it is that
 /// a click-drag inside a text box means "select this text" to everyone who has
 /// ever used a text box.
-const double _kBarH = 34;
+const double _kBarH = _kChromePad;
 
 class _BlockViewState extends State<BlockView> {
   bool _hoverBody = false;
@@ -470,36 +470,6 @@ class _BlockViewState extends State<BlockView> {
       child: const SizedBox.expand(),
     );
   }
-
-  /// The same compact object actions for every floating block. Keeping this
-  /// on the selection wrapper rather than in each editor means text, tables,
-  /// code, boards, equations, files and media cannot drift apart again.
-  Widget _selectionToolbar(BuildContext context, Color primaryColor) =>
-      Material(
-        color: Theme.of(context).colorScheme.surface,
-        elevation: 3,
-        borderRadius: BorderRadius.circular(6),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          IconButton(
-            icon: const Icon(Icons.content_copy_outlined, size: 16),
-            tooltip: 'Duplicate',
-            visualDensity: VisualDensity.compact,
-            onPressed: () => app.duplicateBlock(b.id),
-          ),
-          IconButton(
-            icon: const Icon(Icons.close, size: 16),
-            tooltip: 'Close selection',
-            visualDensity: VisualDensity.compact,
-            onPressed: () => app.select(null),
-          ),
-          IconButton(
-            icon: Icon(Icons.delete_outline, size: 16, color: primaryColor),
-            tooltip: 'Delete',
-            visualDensity: VisualDensity.compact,
-            onPressed: () => app.removeBlock(b.id),
-          ),
-        ]),
-      );
 
   String _a11yLabel() {
     final t = switch (b.type) {
@@ -985,13 +955,6 @@ class _BlockViewState extends State<BlockView> {
                           onExit: (_) => setState(() => _hoverChrome = false),
                           child: const SizedBox.expand(),
                         ),
-                ),
-              if (primary && !_locked && !_pendingEmpty)
-                Positioned(
-                  right: _kChromePad,
-                  top: 0,
-                  height: _kBarH,
-                  child: _selectionToolbar(context, primaryColor),
                 ),
               // Resize handles. Now that the chrome sits INSIDE the render
               // box, each handle's full visual extent is grabbable instead of

@@ -293,16 +293,29 @@ class _CommandBarState extends State<CommandBar> {
               left: 0,
               top: 0,
               bottom: 0,
-              width: app.navSectionsW + app.navPagesW + 5,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: context.surfaces.chrome2,
-                  border: Border(
-                    right: BorderSide(color: context.surfaces.border),
-                  ),
-                ),
-                child: const SizedBox.expand(),
+              width: app.navSectionsW + app.navPagesW,
+              child: ColoredBox(color: context.surfaces.chrome2),
+            ),
+            // Continue both of the navigator's existing boundary strokes:
+            // the centre line inside its 5px resize grip and the divider
+            // immediately after it. This is a vertical continuation, not a
+            // new full-width titlebar colour.
+            Positioned(
+              left: app.navSectionsW + app.navPagesW,
+              top: 0,
+              bottom: 0,
+              width: 5,
+              child: Center(
+                child:
+                    Container(width: 1, color: Theme.of(context).dividerColor),
               ),
+            ),
+            Positioned(
+              left: app.navSectionsW + app.navPagesW + 5,
+              top: 0,
+              bottom: 0,
+              width: 1,
+              child: ColoredBox(color: Theme.of(context).dividerColor),
             ),
             Row(children: [
               Expanded(
