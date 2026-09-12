@@ -14,6 +14,7 @@ import '../editor/list_editing.dart';
 import '../canvas/media_drop.dart';
 import '../markdown/md_syntax.dart';
 import '../model/tags.dart';
+import '../planner/agenda.dart';
 import '../state/app_state.dart';
 import '../platform/screen_capture.dart';
 import '../theme/onote_theme.dart';
