@@ -48,7 +48,11 @@ bool FlutterWindow::OnCreate() {
                              0, sizeof(feedback_off), &feedback_off);
     SetWindowFeedbackSetting(target, FEEDBACK_PEN_TAP,
                              0, sizeof(feedback_off), &feedback_off);
+    SetWindowFeedbackSetting(target, FEEDBACK_PEN_DOUBLETAP,
+                             0, sizeof(feedback_off), &feedback_off);
     SetWindowFeedbackSetting(target, FEEDBACK_PEN_PRESSANDHOLD,
+                             0, sizeof(feedback_off), &feedback_off);
+    SetWindowFeedbackSetting(target, FEEDBACK_PEN_RIGHTTAP,
                              0, sizeof(feedback_off), &feedback_off);
   };
   suppress_feedback(flutter_view);

@@ -56,7 +56,7 @@ an Apache-2.0 core:
 | `super_clipboard`, `super_native_extensions`, `irondash_*` | MIT |
 | `pdfrx`, `pdfrx_engine`, `pdfium_dart`, `pdfium_flutter`, `synchronized` | MIT |
 | **pdfium** (the bundled PDF engine binary, ~5.6 MB) | BSD-3-Clause (Google) |
-| `path`, `path_provider`, `ffi`, `file_selector`, `flutter_lints`, `win32`, `win32_registry` | BSD-3-Clause |
+| `path`, `path_provider`, `ffi`, `file_selector`, `flutter_lints`, `win32`, `win32_registry`, `webview_windows` | BSD-3-Clause |
 | `qr_flutter`, `mobile_scanner`, `http` | BSD-3-Clause |
 | `google_mlkit_document_scanner` | MIT |
 | `flutter_math_fork`, `pdf`, `printing`, `desktop_drop`, `rxdart` | Apache-2.0 |
