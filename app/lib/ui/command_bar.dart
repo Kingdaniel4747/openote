@@ -12,6 +12,7 @@ import '../export/pdf_vector_export.dart';
 import '../export/print_page.dart';
 import '../editor/list_editing.dart';
 import '../canvas/media_drop.dart';
+import '../core/anki_launcher.dart';
 import '../markdown/md_syntax.dart';
 import '../model/tags.dart';
 import '../planner/agenda.dart';
@@ -260,6 +261,13 @@ class _CommandBarState extends State<CommandBar> {
             ],
           ),
         ),
+        if (app.ankiShortcutEnabled)
+          IconButton(
+            icon: const Icon(Icons.style_outlined, size: 18),
+            tooltip: 'Open Anki',
+            visualDensity: VisualDensity.compact,
+            onPressed: () => _openAnki(context, app),
+          ),
         IconButton(
           icon: const Icon(Icons.settings_outlined, size: 18),
           tooltip: tr(context, 'Settings…'),
@@ -303,6 +311,13 @@ class _CommandBarState extends State<CommandBar> {
                 ),
               ),
             ),
+            if (app.ankiShortcutEnabled)
+              IconButton(
+                icon: const Icon(Icons.style_outlined, size: 18),
+                tooltip: 'Open Anki',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => _openAnki(context, app),
+              ),
             IconButton(
               icon: const Icon(Icons.settings_outlined, size: 18),
               tooltip: tr(context, 'Settings…'),
@@ -1645,6 +1660,15 @@ class _PlannerButton extends StatelessWidget {
 /// Fast capture for a homework task while the student is already on the page
 /// it belongs to. The planner remains the place to review everything; this is
 /// deliberately only the three decisions needed to avoid losing a task.
+Future<void> _openAnki(BuildContext context, AppState app) async {
+  final opened = await AnkiLauncher.open(app.ankiExecutablePath);
+  if (!opened && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('Anki was not found. Choose its app file in Settings.'),
+    ));
+  }
+}
+
 Future<void> _addQuickHomework(BuildContext context, AppState app) async {
   final result =
       await showOnoteDialog<({String subject, String task, DateTime due})>(

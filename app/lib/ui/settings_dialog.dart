@@ -1,3 +1,4 @@
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../core/platform_open.dart';
@@ -36,6 +37,12 @@ class _SettingsDialogState extends State<_SettingsDialog> {
 
   bool _checking = false;
   bool _checkingLanguage = false;
+
+  Future<void> _chooseAnkiApp() async {
+    final file = await openFile();
+    if (file != null) app.setAnkiExecutablePath(file.path);
+  }
+
   String? _updateNote;
 
   Future<void> _checkLanguage() async {
@@ -272,6 +279,23 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 AppText(
                   app.writingServiceProblem!,
                   style: const TextStyle(fontSize: 11),
+                ),
+              _section('Integrations'),
+              _row(
+                'Show Anki shortcut',
+                _toggle(app.ankiShortcutEnabled, app.setAnkiShortcutEnabled),
+              ),
+              const AppText(
+                'Opens your local Anki app. Openote never reads or changes Anki cards.',
+                style: TextStyle(fontSize: 11),
+              ),
+              if (app.ankiShortcutEnabled)
+                TextButton.icon(
+                  icon: const Icon(Icons.folder_open_outlined, size: 16),
+                  label: Text(app.ankiExecutablePath == null
+                      ? 'Choose Anki app (optional)'
+                      : 'Change Anki app'),
+                  onPressed: _chooseAnkiApp,
                 ),
               /* _section('Connections'),
               _door(

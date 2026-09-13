@@ -4415,6 +4415,23 @@ class AppState extends ChangeNotifier
   String writingLanguage = 'en-US';
   bool handwritingSpellCheck = true;
 
+  bool get ankiShortcutEnabled =>
+      _repo.getSetting('ankiShortcutEnabled') == true;
+  String? get ankiExecutablePath =>
+      _repo.getSetting('ankiExecutablePath') as String?;
+
+  void setAnkiShortcutEnabled(bool value) {
+    _repo.setSetting('ankiShortcutEnabled', value);
+    notifyListeners();
+  }
+
+  void setAnkiExecutablePath(String? path) {
+    final value = path?.trim();
+    _repo.setSetting(
+        'ankiExecutablePath', value == null || value.isEmpty ? null : value);
+    notifyListeners();
+  }
+
   /// Dismissed handwriting-recognition warnings. The key includes the page,
   /// recognised word and its local bounds, so ignoring one occurrence does not
   /// hide every identical word in every notebook.
