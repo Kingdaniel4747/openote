@@ -1,9 +1,11 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
+import 'package:xml/xml.dart';
 
 import '../core/platform_open.dart';
 import '../export/md_common.dart' show safeFilename;
@@ -265,12 +267,18 @@ class FileBlockView extends StatelessWidget {
     final name = (block.content['name'] as String?)?.trim();
     final file = File(path);
     final exists = path.isNotEmpty && file.existsSync();
-    final ext = p.extension(path).toLowerCase();
-    final previewable = exists && ext == '.png';
+    final previewable = exists;
     final scheme = Theme.of(context).colorScheme;
     return InkWell(
-      onTap:
-          previewable ? () => _showDiagramPreview(context, file, name) : null,
+      onTap: exists
+          ? () {
+              final box = context.findRenderObject() as RenderBox?;
+              _showDiagramPreview(context, file, name,
+                  growFrom: box != null && box.hasSize
+                      ? box.localToGlobal(box.size.center(Offset.zero))
+                      : null);
+            }
+          : null,
       borderRadius: BorderRadius.circular(10),
       child: Container(
         decoration: BoxDecoration(
@@ -284,10 +292,8 @@ class FileBlockView extends StatelessWidget {
               child: ClipRRect(
                 borderRadius:
                     const BorderRadius.vertical(top: Radius.circular(9)),
-                child: previewable
-                    ? Image.file(file,
-                        fit: BoxFit.contain,
-                        errorBuilder: (_, __, ___) => _diagramPlaceholder())
+                child: exists
+                    ? _diagramPreview(file, compact: true)
                     : _diagramPlaceholder(),
               ),
             ),
@@ -336,24 +342,63 @@ class FileBlockView extends StatelessWidget {
             size: 46, color: OnoteColors.graphite400),
       );
 
+  /// A PNG can use Flutter's normal image decoder. Native draw.io files are
+  /// XML, so their diagram model is drawn locally for a useful read-only
+  /// preview; editing stays in draw.io.
+  Widget _diagramPreview(File file, {bool compact = false}) {
+    final ext = p.extension(file.path).toLowerCase();
+    if (ext == '.png') {
+      return Image.file(file,
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => _diagramPlaceholder());
+    }
+    if (ext == '.drawio' || ext == '.xml') {
+      return FutureBuilder<_DrawioPreview?>(
+        future: _DrawioPreview.read(file),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final preview = snapshot.data;
+          if (preview == null) return _diagramPlaceholder();
+          return CustomPaint(
+              painter: _DrawioPreviewPainter(preview),
+              child: const SizedBox.expand());
+        },
+      );
+    }
+    return _diagramPlaceholder();
+  }
+
   Future<void> _openDiagram(BuildContext context, String path) async {
     if (!await PlatformOpen.file(path) && context.mounted) {
       _toast(context, 'No app is registered to open this diagram.');
     }
   }
 
-  void _showDiagramPreview(BuildContext context, File file, String? name) {
-    showDialog<void>(
+  void _showDiagramPreview(BuildContext context, File file, String? name,
+      {Offset? growFrom}) {
+    showOnoteDialog<void>(
       context: context,
+      growFrom: growFrom,
       builder: (ctx) => Dialog(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 980, maxHeight: 760),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
+        child: SizedBox(
+          width: 980,
+          height: 760,
+          child: Column(children: [
             AppBar(
                 title: Text(
                     name == null || name.isEmpty ? 'Diagram preview' : name),
                 automaticallyImplyLeading: false,
                 actions: [
+                  IconButton(
+                      icon: const Icon(Icons.download_outlined),
+                      tooltip: 'Save a copy',
+                      onPressed: () => _saveDiagramCopy(ctx, file, name)),
+                  IconButton(
+                      icon: const Icon(Icons.open_in_new),
+                      tooltip: 'Open in draw.io',
+                      onPressed: () => _openDiagram(ctx, file.path)),
                   IconButton(
                       icon: const Icon(Icons.close),
                       onPressed: () => Navigator.pop(ctx))
@@ -362,12 +407,28 @@ class FileBlockView extends StatelessWidget {
                 child: InteractiveViewer(
                     minScale: .3,
                     maxScale: 5,
-                    child:
-                        Center(child: Image.file(file, fit: BoxFit.contain)))),
+                    child: SizedBox(
+                        width: 900,
+                        height: 650,
+                        child: _diagramPreview(file)))),
           ]),
         ),
       ),
     );
+  }
+
+  Future<void> _saveDiagramCopy(
+      BuildContext context, File source, String? name) async {
+    final suggested = safeFilename(
+        name == null || name.trim().isEmpty ? 'diagram.drawio' : name);
+    final loc = await getSaveLocation(suggestedName: suggested);
+    if (loc == null) return;
+    try {
+      await source.copy(loc.path);
+      if (context.mounted) _toast(context, 'Saved to ${loc.path}');
+    } catch (e) {
+      if (context.mounted) _toast(context, "That copy didn't save: $e");
+    }
   }
 
   Future<void> _openLink(BuildContext context, String url) async {
@@ -492,4 +553,168 @@ class FileBlockView extends StatelessWidget {
       : b < 1024 * 1024
           ? '${(b / 1024).toStringAsFixed(1)} KB'
           : '${(b / 1024 / 1024).toStringAsFixed(1)} MB';
+}
+
+/// A small, dependency-free renderer for the useful core of draw.io's mxGraph
+/// XML: vertices, labels and connectors. It deliberately does not edit or
+/// reinterpret the diagram; draw.io remains the editor of record.
+class _DrawioPreview {
+  const _DrawioPreview(this.cells, this.edges, this.bounds);
+
+  final List<_DrawioCell> cells;
+  final List<_DrawioEdge> edges;
+  final Rect bounds;
+
+  static Future<_DrawioPreview?> read(File file) async {
+    try {
+      final raw = await file.readAsString();
+      final source = _diagramXml(raw);
+      if (source == null) return null;
+      final document = XmlDocument.parse(source);
+      final cells = <_DrawioCell>[];
+      final byId = <String, _DrawioCell>{};
+      for (final element in document.findAllElements('mxCell')) {
+        if (element.getAttribute('vertex') != '1') continue;
+        final geometry = element.getElement('mxGeometry');
+        if (geometry == null) continue;
+        final width = double.tryParse(geometry.getAttribute('width') ?? '');
+        final height = double.tryParse(geometry.getAttribute('height') ?? '');
+        if (width == null || height == null || width <= 0 || height <= 0) {
+          continue;
+        }
+        final cell = _DrawioCell(
+          id: element.getAttribute('id') ?? '',
+          rect: Rect.fromLTWH(
+            double.tryParse(geometry.getAttribute('x') ?? '') ?? 0,
+            double.tryParse(geometry.getAttribute('y') ?? '') ?? 0,
+            width,
+            height,
+          ),
+          label: _plainText(element.getAttribute('value') ?? ''),
+          color: _styleColor(element.getAttribute('style') ?? ''),
+        );
+        cells.add(cell);
+        if (cell.id.isNotEmpty) byId[cell.id] = cell;
+      }
+      if (cells.isEmpty) return null;
+      final edges = <_DrawioEdge>[];
+      for (final element in document.findAllElements('mxCell')) {
+        if (element.getAttribute('edge') != '1') continue;
+        final from = byId[element.getAttribute('source')];
+        final to = byId[element.getAttribute('target')];
+        if (from != null && to != null) edges.add(_DrawioEdge(from, to));
+      }
+      var bounds = cells.first.rect;
+      for (final cell in cells.skip(1)) {
+        bounds = bounds.expandToInclude(cell.rect);
+      }
+      return _DrawioPreview(cells, edges, bounds.inflate(20));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static String? _diagramXml(String raw) {
+    try {
+      final doc = XmlDocument.parse(raw);
+      if (doc.findAllElements('mxGraphModel').isNotEmpty) return raw;
+      final diagrams = doc.findAllElements('diagram');
+      if (diagrams.isEmpty) return null;
+      final encoded = diagrams.first.innerText.trim();
+      if (encoded.isEmpty) return null;
+      final inflated = ZLibDecoder(raw: true)
+          .convert(base64.decode(base64.normalize(encoded)));
+      return Uri.decodeComponent(utf8.decode(inflated));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static String _plainText(String value) => value
+      .replaceAll(RegExp(r'<[^>]*>'), ' ')
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll('&amp;', '&')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+
+  static Color _styleColor(String style) {
+    final m = RegExp(r'fillColor=(#[0-9A-Fa-f]{6})').firstMatch(style);
+    if (m == null) return const Color(0xffeef3ff);
+    return Color(int.parse(m.group(1)!.substring(1), radix: 16) | 0xff000000);
+  }
+}
+
+class _DrawioCell {
+  const _DrawioCell(
+      {required this.id,
+      required this.rect,
+      required this.label,
+      required this.color});
+  final String id;
+  final Rect rect;
+  final String label;
+  final Color color;
+}
+
+class _DrawioEdge {
+  const _DrawioEdge(this.from, this.to);
+  final _DrawioCell from;
+  final _DrawioCell to;
+}
+
+class _DrawioPreviewPainter extends CustomPainter {
+  const _DrawioPreviewPainter(this.preview);
+  final _DrawioPreview preview;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final scale = [
+          size.width / preview.bounds.width,
+          size.height / preview.bounds.height
+        ].reduce((a, b) => a < b ? a : b) *
+        .92;
+    final dx = (size.width - preview.bounds.width * scale) / 2 -
+        preview.bounds.left * scale;
+    final dy = (size.height - preview.bounds.height * scale) / 2 -
+        preview.bounds.top * scale;
+    canvas.save();
+    canvas.translate(dx, dy);
+    canvas.scale(scale);
+    final line = Paint()
+      ..color = OnoteColors.graphite400
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+    for (final edge in preview.edges) {
+      canvas.drawLine(edge.from.rect.center, edge.to.rect.center, line);
+    }
+    for (final cell in preview.cells) {
+      canvas.drawRRect(
+          RRect.fromRectAndRadius(cell.rect, const Radius.circular(5)),
+          Paint()..color = cell.color);
+      canvas.drawRRect(
+          RRect.fromRectAndRadius(cell.rect, const Radius.circular(5)), line);
+      if (cell.label.isEmpty) continue;
+      final text = TextPainter(
+          text: TextSpan(
+              text: cell.label,
+              style: const TextStyle(
+                  fontSize: 12, color: OnoteColors.graphite900)),
+          textAlign: TextAlign.center,
+          textDirection: TextDirection.ltr,
+          maxLines: 3,
+          ellipsis: '…')
+        ..layout(
+            maxWidth:
+                (cell.rect.width - 12).clamp(1, double.infinity).toDouble());
+      text.paint(
+          canvas,
+          Offset(cell.rect.center.dx - text.width / 2,
+              cell.rect.center.dy - text.height / 2));
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _DrawioPreviewPainter oldDelegate) =>
+      oldDelegate.preview != preview;
 }

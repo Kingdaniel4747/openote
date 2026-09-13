@@ -648,6 +648,17 @@ failed.
 
 ## 7h. Setup, onboarding and management dialogs *(added 2026-08-05 — normative)*
 
+### Shared popup rule
+
+Every floating Openote popup — including media previews such as images, PDFs
+and linked draw.io diagrams — must use `showOnoteDialog`. It provides the
+single fade-and-scale transition and, when a source card is known, accepts its
+screen position through `growFrom` so the popup visibly opens from that card.
+Do not introduce a direct `showDialog` animation for one file type. A preview
+may add actions appropriate to its source; a linked file may offer **Open**
+and **Save a copy**, while content that is not a file does not pretend to be
+downloadable.
+
 The dialogs a user meets once (first run, import, sync setup) and the ones they
 return to (notebook manager, recycle bin, version history). They carry more
 copy than any other surface, which is exactly why they need rules.
