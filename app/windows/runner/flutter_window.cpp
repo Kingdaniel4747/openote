@@ -33,16 +33,26 @@ bool FlutterWindow::OnCreate() {
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
   // Windows' pen/touch rings cover the first pixels of a stroke. Openote draws
   // its own ink feedback, so suppress the duplicate system visualization.
+  //
+  // The Flutter view is a child HWND.  On some pen drivers Windows draws the
+  // feedback on its top-level parent instead, which is why a fast pen tap
+  // could still leave a little circle and briefly interrupt the next stroke.
+  // Apply the setting to both HWNDs; this is harmless when the driver only
+  // consults one of them.
   const BOOL feedback_off = FALSE;
   const auto flutter_view = flutter_controller_->view()->GetNativeWindow();
-  SetWindowFeedbackSetting(flutter_view, FEEDBACK_TOUCH_CONTACTVISUALIZATION,
-                           0, sizeof(feedback_off), &feedback_off);
-  SetWindowFeedbackSetting(flutter_view, FEEDBACK_PEN_BARRELVISUALIZATION,
-                           0, sizeof(feedback_off), &feedback_off);
-  SetWindowFeedbackSetting(flutter_view, FEEDBACK_PEN_TAP,
-                           0, sizeof(feedback_off), &feedback_off);
-  SetWindowFeedbackSetting(flutter_view, FEEDBACK_PEN_PRESSANDHOLD,
-                           0, sizeof(feedback_off), &feedback_off);
+  const auto suppress_feedback = [&](HWND target) {
+    SetWindowFeedbackSetting(target, FEEDBACK_TOUCH_CONTACTVISUALIZATION,
+                             0, sizeof(feedback_off), &feedback_off);
+    SetWindowFeedbackSetting(target, FEEDBACK_PEN_BARRELVISUALIZATION,
+                             0, sizeof(feedback_off), &feedback_off);
+    SetWindowFeedbackSetting(target, FEEDBACK_PEN_TAP,
+                             0, sizeof(feedback_off), &feedback_off);
+    SetWindowFeedbackSetting(target, FEEDBACK_PEN_PRESSANDHOLD,
+                             0, sizeof(feedback_off), &feedback_off);
+  };
+  suppress_feedback(flutter_view);
+  if (flutter_view != GetHandle()) suppress_feedback(GetHandle());
   window_controls_ = std::make_unique<WindowControls>(
       GetHandle(), flutter_controller_->engine()->messenger());
   pen_buttons_ = std::make_unique<PenButtons>(

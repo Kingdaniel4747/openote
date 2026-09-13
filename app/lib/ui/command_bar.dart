@@ -28,6 +28,7 @@ import 'insert_catalog.dart';
 import 'object_face.dart';
 import 'object_row.dart';
 import 'settings_dialog.dart';
+import 'research_palette.dart';
 import 'scanner_pairing_dialog.dart';
 import 'update_dialog.dart';
 import '../theme/tokens.dart';
@@ -269,6 +270,12 @@ class _CommandBarState extends State<CommandBar> {
             onPressed: () => _openAnki(context, app),
           ),
         IconButton(
+          icon: const Icon(Icons.ondemand_video_outlined, size: 18),
+          tooltip: 'Recherche und YouTube',
+          visualDensity: VisualDensity.compact,
+          onPressed: () => showResearchPalette(context),
+        ),
+        IconButton(
           icon: const Icon(Icons.settings_outlined, size: 18),
           tooltip: tr(context, 'Settings…'),
           visualDensity: VisualDensity.compact,
@@ -318,6 +325,12 @@ class _CommandBarState extends State<CommandBar> {
                 visualDensity: VisualDensity.compact,
                 onPressed: () => _openAnki(context, app),
               ),
+            IconButton(
+              icon: const Icon(Icons.ondemand_video_outlined, size: 18),
+              tooltip: 'Recherche und YouTube',
+              visualDensity: VisualDensity.compact,
+              onPressed: () => showResearchPalette(context),
+            ),
             IconButton(
               icon: const Icon(Icons.settings_outlined, size: 18),
               tooltip: tr(context, 'Settings…'),
