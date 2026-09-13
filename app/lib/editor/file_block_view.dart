@@ -270,15 +270,7 @@ class FileBlockView extends StatelessWidget {
     final previewable = exists;
     final scheme = Theme.of(context).colorScheme;
     return InkWell(
-      onTap: exists
-          ? () {
-              final box = context.findRenderObject() as RenderBox?;
-              _showDiagramPreview(context, file, name,
-                  growFrom: box != null && box.hasSize
-                      ? box.localToGlobal(box.size.center(Offset.zero))
-                      : null);
-            }
-          : null,
+      onTap: exists ? () => _selectOrOpenDiagram(context, file, name) : null,
       borderRadius: BorderRadius.circular(10),
       child: Container(
         decoration: BoxDecoration(
@@ -361,6 +353,9 @@ class FileBlockView extends StatelessWidget {
           }
           final preview = snapshot.data;
           if (preview == null) return _diagramPlaceholder();
+          if (preview.image != null) {
+            return Image.memory(preview.image!, fit: BoxFit.contain);
+          }
           return CustomPaint(
               painter: _DrawioPreviewPainter(preview),
               child: const SizedBox.expand());
@@ -374,6 +369,20 @@ class FileBlockView extends StatelessWidget {
     if (!await PlatformOpen.file(path) && context.mounted) {
       _toast(context, 'No app is registered to open this diagram.');
     }
+  }
+
+  /// Object cards follow the rest of the canvas: one click selects and shows
+  /// its common action bar; clicking an already-selected card opens its viewer.
+  void _selectOrOpenDiagram(BuildContext context, File file, String? name) {
+    if (!app.selectedIds.contains(block.id)) {
+      app.select(block.id);
+      return;
+    }
+    final box = context.findRenderObject() as RenderBox?;
+    _showDiagramPreview(context, file, name,
+        growFrom: box != null && box.hasSize
+            ? box.localToGlobal(box.size.center(Offset.zero))
+            : null);
   }
 
   void _showDiagramPreview(BuildContext context, File file, String? name,
@@ -392,14 +401,6 @@ class FileBlockView extends StatelessWidget {
                 automaticallyImplyLeading: false,
                 actions: [
                   IconButton(
-                      icon: const Icon(Icons.download_outlined),
-                      tooltip: 'Save a copy',
-                      onPressed: () => _saveDiagramCopy(ctx, file, name)),
-                  IconButton(
-                      icon: const Icon(Icons.open_in_new),
-                      tooltip: 'Open in draw.io',
-                      onPressed: () => _openDiagram(ctx, file.path)),
-                  IconButton(
                       icon: const Icon(Icons.close),
                       onPressed: () => Navigator.pop(ctx))
                 ]),
@@ -415,20 +416,6 @@ class FileBlockView extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  Future<void> _saveDiagramCopy(
-      BuildContext context, File source, String? name) async {
-    final suggested = safeFilename(
-        name == null || name.trim().isEmpty ? 'diagram.drawio' : name);
-    final loc = await getSaveLocation(suggestedName: suggested);
-    if (loc == null) return;
-    try {
-      await source.copy(loc.path);
-      if (context.mounted) _toast(context, 'Saved to ${loc.path}');
-    } catch (e) {
-      if (context.mounted) _toast(context, "That copy didn't save: $e");
-    }
   }
 
   Future<void> _openLink(BuildContext context, String url) async {
@@ -559,14 +546,37 @@ class FileBlockView extends StatelessWidget {
 /// XML: vertices, labels and connectors. It deliberately does not edit or
 /// reinterpret the diagram; draw.io remains the editor of record.
 class _DrawioPreview {
-  const _DrawioPreview(this.cells, this.edges, this.bounds);
+  const _DrawioPreview(this.cells, this.edges, this.bounds) : image = null;
+  const _DrawioPreview.image(this.image)
+      : cells = const [],
+        edges = const [],
+        bounds = Rect.zero;
 
   final List<_DrawioCell> cells;
   final List<_DrawioEdge> edges;
   final Rect bounds;
+  final Uint8List? image;
 
-  static Future<_DrawioPreview?> read(File file) async {
+  /// Rebuilding selection chrome must not restart XML parsing and briefly
+  /// replace a diagram with its loading spinner. The source's timestamp and
+  /// size make this cache refresh automatically after it is edited in draw.io.
+  static final _reads = <String, Future<_DrawioPreview?>>{};
+
+  static Future<_DrawioPreview?> read(File file) {
+    final stat = file.statSync();
+    final key =
+        '${file.path}:${stat.modified.microsecondsSinceEpoch}:${stat.size}';
+    return _reads.putIfAbsent(key, () => _read(file));
+  }
+
+  static Future<_DrawioPreview?> _read(File file) async {
     try {
+      // draw.io itself is the only renderer that knows every library shape,
+      // icon and custom style. When its desktop app is installed, ask it for
+      // a temporary PNG first so the preview is pixel-faithful, not an
+      // approximation made from the graph's rectangles.
+      final rendered = await _exportWithDrawio(file);
+      if (rendered != null) return _DrawioPreview.image(rendered);
       final raw = await file.readAsString();
       final source = _diagramXml(raw);
       if (source == null) return null;
@@ -611,6 +621,46 @@ class _DrawioPreview {
       return _DrawioPreview(cells, edges, bounds.inflate(20));
     } catch (_) {
       return null;
+    }
+  }
+
+  static Future<Uint8List?> _exportWithDrawio(File source) async {
+    if (!Platform.isWindows) return null;
+    final programFiles =
+        Platform.environment['ProgramFiles'] ?? r'C:\Program Files';
+    final localAppData = Platform.environment['LOCALAPPDATA'];
+    final candidates = [
+      p.join(programFiles, 'draw.io', 'draw.io.exe'),
+      p.join(programFiles, 'diagrams.net', 'diagrams.net.exe'),
+      if (localAppData != null)
+        p.join(localAppData, 'Programs', 'draw.io', 'draw.io.exe'),
+    ];
+    final executable = candidates.firstWhere(
+        (candidate) => File(candidate).existsSync(),
+        orElse: () => '');
+    if (executable.isEmpty) return null;
+    Directory? temp;
+    try {
+      temp = await Directory.systemTemp.createTemp('openote_drawio_preview_');
+      final output = File(p.join(temp.path, 'preview.png'));
+      final result = await Process.run(executable, [
+        '--export',
+        '--format',
+        'png',
+        '--output',
+        output.path,
+        source.path,
+      ]).timeout(const Duration(seconds: 12));
+      if (result.exitCode != 0 || !output.existsSync()) return null;
+      return await output.readAsBytes();
+    } catch (_) {
+      return null;
+    } finally {
+      if (temp != null) {
+        try {
+          await temp.delete(recursive: true);
+        } catch (_) {}
+      }
     }
   }
 

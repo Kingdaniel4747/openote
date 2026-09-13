@@ -17,10 +17,11 @@ class SelectionToolbar extends StatelessWidget {
   Widget build(BuildContext context) {
     final selected =
         app.blocks.where((b) => app.selectedIds.contains(b.id)).toList();
-    final downloadable =
-        selected.length == 1 && selected.single.type == BlockType.image
-            ? selected.single
-            : null;
+    final downloadable = selected.length == 1 &&
+            (selected.single.type == BlockType.image ||
+                selected.single.content['kind'] == 'drawio')
+        ? selected.single
+        : null;
     return Listener(
       onPointerDown: (e) => app.claimedPointers.add(e.pointer),
       child: Material(
@@ -50,6 +51,10 @@ class SelectionToolbar extends StatelessWidget {
   }
 
   Future<void> _saveOriginal(BuildContext context, Block block) async {
+    if (block.content['kind'] == 'drawio') {
+      await _saveLinkedDiagram(context, block);
+      return;
+    }
     final pdf = block.content['pdf'] as String?;
     final blob = pdf ?? block.content['blob'] as String?;
     if (blob == null) return;
@@ -79,6 +84,40 @@ class SelectionToolbar extends StatelessWidget {
     var destination = location.path;
     if (p.extension(destination).isEmpty) destination += '.$extension';
     await File(destination).writeAsBytes(bytes, flush: true);
+  }
+
+  Future<void> _saveLinkedDiagram(BuildContext context, Block block) async {
+    final sourcePath = (block.content['path'] as String?)?.trim() ?? '';
+    final source = File(sourcePath);
+    if (sourcePath.isEmpty || !source.existsSync()) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('The original file is unavailable.')));
+      }
+      return;
+    }
+    final name = (block.content['name'] as String?)?.trim();
+    final suggested = name == null || name.isEmpty ? 'diagram.drawio' : name;
+    final extension = p.extension(suggested).replaceFirst('.', '').isEmpty
+        ? 'drawio'
+        : p.extension(suggested).replaceFirst('.', '');
+    final location =
+        await getSaveLocation(suggestedName: suggested, acceptedTypeGroups: [
+      XTypeGroup(label: extension.toUpperCase(), extensions: [extension])
+    ]);
+    if (location == null) return;
+    var destination = location.path;
+    if (p.extension(destination).isEmpty && extension.isNotEmpty) {
+      destination += '.$extension';
+    }
+    try {
+      await source.copy(destination);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text("That copy didn't save: $e")));
+      }
+    }
   }
 
   Widget _button(BuildContext context, String label, IconData icon,
