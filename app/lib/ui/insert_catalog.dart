@@ -13,7 +13,7 @@
 /// file is the single list they now both render, so "the menu matches Insert"
 /// is true by construction rather than by anyone remembering.
 ///
-/// **The ribbon is one row of thirteen; the menu shows ten of them.**
+/// **The ribbon is one row of eleven; the menu shows ten of them.**
 ///
 /// The ribbon went to three groups with four wordless icons for one release,
 /// and came back: *"i dont love the new menu stuff though, i think we go back
@@ -22,7 +22,7 @@
 /// they are what the right-click menu shows as three short columns, which is
 /// a shape a menu can carry and a row cannot.
 ///
-/// Three entries are on the ribbon and NOT in the menu, each because the
+/// Text is on the ribbon and NOT in the menu because the
 /// right-click gesture already does the thing, or because the command is not
 /// about a point on the page at all — see [InsertItem.onMenu], which is where
 /// the reason is written beside the item that has it.
@@ -125,11 +125,8 @@ class InsertItem {
 
   /// **Is this on the right-click menu as well as the ribbon?**
   ///
-  /// Three are not, and each has the same reason: the gesture that opens the
-  /// menu already does the thing. A right click on the page is a click on the
-  /// page, which makes a text box; a flashcard is made from the line you are
-  /// on, which a right click on empty canvas is not; and applying a template
-  /// lays out a whole PAGE, which is not "put this here".
+  /// Text is not: the gesture that opens the menu is already a click on the
+  /// page, which makes a text box. Repeating it in the menu is clutter.
   ///
   /// A field rather than a second list, so the difference is one word beside
   /// the item that has it, and the test can read it.
@@ -188,6 +185,7 @@ const List<String> kRibbonOrder = [
   'board',
   'image',
   'pdf',
+  'diagram',
   'file',
   'video',
   'pagelink',
@@ -373,6 +371,15 @@ final List<InsertGroup> kInsertGroups = [
       run: insertVideoOrLink,
     ),
     InsertItem(
+      id: 'diagram',
+      icon: Icons.account_tree_outlined,
+      label: 'Draw.io',
+      tooltip: 'Keep a linked diagram file on this page',
+      opensPicker: true,
+      size: const Size(360, 220),
+      run: insertDrawioDiagram,
+    ),
+    InsertItem(
       id: 'file',
       icon: Icons.attach_file,
       label: 'File',
@@ -483,6 +490,30 @@ Future<void> insertPickedFile(
     'mime': 'application/octet-stream',
     'size': bytes.length,
   }));
+  app.select(b.id);
+}
+
+/// Link a draw.io file without copying it into the notebook. The source stays
+/// in the user's synchronised folder and is opened by their draw.io install.
+Future<void> insertDrawioDiagram(
+    BuildContext context, AppState app, Offset at) async {
+  final file = await _pick(context, groups: const [
+    XTypeGroup(
+        label: 'draw.io diagrams', extensions: ['drawio', 'xml', 'png', 'svg'])
+  ]);
+  if (file == null) return;
+  final b = app.addBlock(Block(
+    type: BlockType.file,
+    x: at.dx,
+    y: at.dy,
+    w: 360,
+    h: 220,
+    content: {
+      'kind': 'drawio',
+      'path': file.path,
+      'name': file.name,
+    },
+  ));
   app.select(b.id);
 }
 

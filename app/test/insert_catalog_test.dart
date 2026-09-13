@@ -60,10 +60,10 @@ void main() {
   }
 
   group('the catalog itself', () {
-    test('is thirteen things, grouped for the menu', () {
+    test('is eleven things, grouped for the menu', () {
       expect(kInsertGroups.map((g) => g.title).toList(),
           ['Write', 'Bring in', 'Link up']);
-      expect(kInsertItems.length, 13);
+      expect(kInsertItems.length, 11);
     });
 
     test('the ribbon is one row, in the order it has always been', () {
@@ -71,8 +71,17 @@ void main() {
       // the words off four of them: "i dont love the new menu stuff though, i
       // think we go back to what we had before."
       expect(kInsertRibbon.map((i) => i.id).toList(), [
-        'text', 'equation', 'code', 'table', 'board', 'image', 'pdf',
-        'file', 'video', 'flashcard', 'pagelink', 'portal', 'template',
+        'text',
+        'equation',
+        'code',
+        'table',
+        'board',
+        'image',
+        'pdf',
+        'diagram',
+        'file',
+        'video',
+        'pagelink',
       ]);
     });
 
@@ -92,11 +101,9 @@ void main() {
       }
     });
 
-    test('three of them are on the ribbon only, and say why', () {
-      // Each is a command the right-click GESTURE already performs, or one
-      // that is not about a point on the page at all.
+    test('text is on the ribbon only, because the click already adds it', () {
       final menu = kMenuGroups.expand((g) => g.items).map((i) => i.id).toSet();
-      for (final id in ['text', 'flashcard', 'template']) {
+      for (final id in ['text']) {
         expect(kInsertItems.map((i) => i.id), contains(id), reason: id);
         expect(menu.contains(id), isFalse, reason: id);
       }
@@ -110,8 +117,7 @@ void main() {
         expect(i.label.length, lessThan(14), reason: i.id);
       }
       // The renames, explicitly.
-      expect(
-          kInsertItems.firstWhere((i) => i.id == 'image').label, 'Pictures');
+      expect(kInsertItems.firstWhere((i) => i.id == 'image').label, 'Pictures');
       expect(kInsertItems.firstWhere((i) => i.id == 'board').label, 'Board');
       expect(kInsertItems.firstWhere((i) => i.id == 'video').label, 'Video');
     });
@@ -205,9 +211,8 @@ void main() {
           // one hover away.
           expect(find.byIcon(i.icon), findsOneWidget, reason: i.id);
           expect(
-              find.byTooltip(i.tooltip == null
-                  ? i.label
-                  : '${i.label} — ${i.tooltip}'),
+              find.byTooltip(
+                  i.tooltip == null ? i.label : '${i.label} — ${i.tooltip}'),
               findsOneWidget,
               reason: i.id);
         }
@@ -219,7 +224,8 @@ void main() {
       app.cancelPendingSave();
     });
 
-    testWidgets('fits the smallest window the app opens, wide open', (tester) async {
+    testWidgets('fits the smallest window the app opens, wide open',
+        (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       widen(tester);
       await tester.pumpWidget(MaterialApp(
@@ -392,5 +398,4 @@ void main() {
       }
     });
   });
-
 }

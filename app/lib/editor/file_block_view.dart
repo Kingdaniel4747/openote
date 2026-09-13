@@ -55,6 +55,7 @@ class FileBlockView extends StatelessWidget {
     if (media != null && media.isNotEmpty) {
       return VideoBlockView(block: block, app: app);
     }
+    if (block.content['kind'] == 'drawio') return _drawioCard(context);
     final url = (block.content['url'] as String?)?.trim();
     if (url != null && url.isNotEmpty) return _linkCard(context, url);
     // A PDF card: the deck behind a click, with a thumbnail so the page
@@ -257,9 +258,122 @@ class FileBlockView extends StatelessWidget {
     );
   }
 
+  /// A local reference rather than an attachment: diagrams commonly live in a
+  /// separately synchronised folder and must remain editable there.
+  Widget _drawioCard(BuildContext context) {
+    final path = (block.content['path'] as String?)?.trim() ?? '';
+    final name = (block.content['name'] as String?)?.trim();
+    final file = File(path);
+    final exists = path.isNotEmpty && file.existsSync();
+    final ext = p.extension(path).toLowerCase();
+    final previewable = exists && ext == '.png';
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap:
+          previewable ? () => _showDiagramPreview(context, file, name) : null,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: scheme.outlineVariant),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(9)),
+                child: previewable
+                    ? Image.file(file,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => _diagramPlaceholder())
+                    : _diagramPlaceholder(),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 7, 5, 7),
+              child: Row(children: [
+                Icon(Icons.account_tree_outlined,
+                    size: 18, color: scheme.primary),
+                const SizedBox(width: 7),
+                Expanded(
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                      Text(
+                          name == null || name.isEmpty
+                              ? 'draw.io diagram'
+                              : name,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w500, fontSize: 13)),
+                      Text(
+                          exists
+                              ? (previewable
+                                  ? 'Tap to preview · open to edit'
+                                  : 'Open in draw.io to view or edit')
+                              : 'Original file is unavailable',
+                          style: const TextStyle(
+                              fontSize: 11, color: OnoteColors.graphite400)),
+                    ])),
+                IconButton(
+                    icon: const Icon(Icons.open_in_new, size: 17),
+                    tooltip: 'Open in draw.io',
+                    onPressed:
+                        exists ? () => _openDiagram(context, path) : null),
+              ]),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _diagramPlaceholder() => const Center(
+        child: Icon(Icons.account_tree_outlined,
+            size: 46, color: OnoteColors.graphite400),
+      );
+
+  Future<void> _openDiagram(BuildContext context, String path) async {
+    if (!await PlatformOpen.file(path) && context.mounted) {
+      _toast(context, 'No app is registered to open this diagram.');
+    }
+  }
+
+  void _showDiagramPreview(BuildContext context, File file, String? name) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 980, maxHeight: 760),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            AppBar(
+                title: Text(
+                    name == null || name.isEmpty ? 'Diagram preview' : name),
+                automaticallyImplyLeading: false,
+                actions: [
+                  IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(ctx))
+                ]),
+            Expanded(
+                child: InteractiveViewer(
+                    minScale: .3,
+                    maxScale: 5,
+                    child:
+                        Center(child: Image.file(file, fit: BoxFit.contain)))),
+          ]),
+        ),
+      ),
+    );
+  }
+
   Future<void> _openLink(BuildContext context, String url) async {
     final ok = await PlatformOpen.url(url);
-    if (!ok && context.mounted) _toast(context, "That link couldn't be opened.");
+    if (!ok && context.mounted)
+      _toast(context, "That link couldn't be opened.");
   }
 
   /// MEDIA-2: open the attachment in whatever application owns its type.
@@ -276,7 +390,8 @@ class FileBlockView extends StatelessWidget {
       return;
     }
     final name = (block.content['name'] as String?)?.trim();
-    final safe = safeFilename(name == null || name.isEmpty ? 'attachment' : name);
+    final safe =
+        safeFilename(name == null || name.isEmpty ? 'attachment' : name);
     // A notebook can arrive from an import or a shared folder, so an
     // attachment is not necessarily something this user chose to put here.
     // Opening a document is safe; opening a program is a decision, and it

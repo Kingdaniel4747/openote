@@ -6,7 +6,6 @@ import '../spell/writing_services.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../update/app_update.dart';
-import 'mcp_dialog.dart';
 import 'onote_dialog.dart';
 import 'shortcut_overlay.dart';
 import 'update_dialog.dart';
@@ -43,12 +42,10 @@ class _SettingsDialogState extends State<_SettingsDialog> {
     setState(() => _checkingLanguage = true);
     String note;
     try {
-      final result =
-          await WritingServices.run({
-                'kind': 'status',
-                'language': app.writingLanguage,
-              })
-              as Map;
+      final result = await WritingServices.run({
+        'kind': 'status',
+        'language': app.writingLanguage,
+      }) as Map;
       note = result['handwriting'] == true
           ? 'Language support is ready.'
           : 'Install the selected handwriting language in Windows Settings.';
@@ -82,26 +79,27 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   }
 
   Widget _section(String title) => Padding(
-    padding: const EdgeInsets.only(top: 14, bottom: 4),
-    child: AppText(
-      title,
-      style: TextStyle(
-        fontSize: 12,
-        fontWeight: FontWeight.w600,
-        color: Theme.of(context).colorScheme.primary,
-      ),
-    ),
-  );
+        padding: const EdgeInsets.only(top: 14, bottom: 4),
+        child: AppText(
+          title,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
+      );
 
   Widget _row(String label, Widget control) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 2),
-    child: Row(
-      children: [
-        Expanded(child: AppText(label, style: const TextStyle(fontSize: 13))),
-        control,
-      ],
-    ),
-  );
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          children: [
+            Expanded(
+                child: AppText(label, style: const TextStyle(fontSize: 13))),
+            control,
+          ],
+        ),
+      );
 
   /// An on/off preference, shown the same way as the Theme row above it — a
   /// highlighted segment, not a switch. One visual language for "this is
@@ -275,7 +273,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   app.writingServiceProblem!,
                   style: const TextStyle(fontSize: 11),
                 ),
-              _section('Connections'),
+              /* _section('Connections'),
               _door(
                 Icons.smart_toy_outlined,
                 'AI access',
@@ -284,6 +282,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                     : 'Off — connect Claude or other AI helpers.',
                 () => showMcpDialog(context, app),
               ),
+              */
               _section('Keyboard'),
               _door(
                 Icons.keyboard_outlined,

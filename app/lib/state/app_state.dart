@@ -38,8 +38,6 @@ import '../ink/ink_storage.dart';
 import '../sync/materializer.dart';
 import '../editor/list_editing.dart';
 import '../markdown/md_syntax.dart';
-import '../api/mcp_connect.dart';
-import '../api/mcp_server.dart';
 import '../update/app_update.dart';
 import '../store/repository.dart';
 import '../math/math_editor.dart';
@@ -420,7 +418,7 @@ class AppState extends ChangeNotifier
 
   // ── The MCP server (spec 14): AI tools reading and writing notes ──────
 
-  McpServer? _mcpServer;
+  /* McpServer? _mcpServer;
   bool mcpEnabled = false;
   String? mcpToken;
   int? mcpPort;
@@ -465,6 +463,7 @@ class AppState extends ChangeNotifier
   /// Update-through-app: set when launch found a newer release. The
   /// command bar shows its button off this; null means current or the
   /// check failed (offline etc.), which deliberately look identical.
+  */
   UpdateInfo? updateAvailable;
 
   Future<void> checkForAppUpdate() async {
@@ -475,7 +474,7 @@ class AppState extends ChangeNotifier
   }
 
   /// Restore the server on launch when the user left it on.
-  Future<void> _restoreMcp() async {
+  /* Future<void> _restoreMcp() async {
     final s = _repo.getSetting('mcp');
     if (s is! Map) return;
     mcpToken = s['token'] as String?;
@@ -489,6 +488,7 @@ class AppState extends ChangeNotifier
   // what that does and does not mean; the wording there is the wording the
   // user is shown.
 
+  */
   String _protectKey(String nodeId) => 'protect:${notebookId ?? ''}:$nodeId';
 
   /// Cheap "is anything protected at all" check, so the common notebook pays
@@ -6000,7 +6000,6 @@ class AppState extends ChangeNotifier
       if (_hasInkSize(tool)) penSize = inkSizeFor(tool);
     }
     // Detached: binding a port must never gate the app opening.
-    unawaited(_restoreMcp());
     unawaited(checkForAppUpdate());
     final cc = _repo.getSetting('customColors');
     if (cc is List) customColors.addAll(cc.cast<String>());
@@ -8981,7 +8980,6 @@ class AppState extends ChangeNotifier
     _watchedEditor?.removeListener(_onEditorChanged);
     _watchedEditor = null;
     _stopWatching();
-    unawaited(_mcpServer?.stop());
     _housekeepingTimer?.cancel();
     _housekeepingNoteClear?.cancel();
     _syncStatusPoll?.cancel();
