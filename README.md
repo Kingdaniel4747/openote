@@ -1,146 +1,75 @@
-<div align="center">
-
 # Openote
 
-**An open-source, natively cross-platform alternative to Microsoft OneNote.**
+Openote is a local-first, freeform note-taking app for Windows. It is built
+for schoolwork: write anywhere on a page, work with a pen or touchpad, keep
+homework and dates together, and keep every notebook in files you control.
 
-*Your notes. Your format. Every platform.*
+## What it does
 
-`Freeform canvas` · `Handwriting & math` · `Open file format` · `Local-first` · `Windows · Linux`
+- **Freeform pages** with text, handwriting, equations, tables, code, images,
+  PDFs, videos and file attachments.
+- **Handwriting and spell checking**: write naturally with a pen; misspelled
+  words can be corrected directly where they appear.
+- **Planner** for homework, reminders, exam dates and a subscribed read-only
+  iCalendar timetable.
+- **draw.io links**: add a diagram file to a page without copying it into the
+  notebook. The original remains editable in draw.io; PNG exports can also be
+  previewed and zoomed in Openote.
+- **Open local storage**: notebooks live on your device and can be kept in a
+  folder synchronised by the service you already use.
+- **Import and export** for Markdown, PDFs and common note material.
 
-</div>
+## Deliberately not part of this project
 
-This Windows-first fork adds live pen-button handling, permanent window controls,
-touch context menus and handwriting above page objects. Every pushed change
-automatically builds a Windows installer and Android Scanner APK as a public
-GitHub release. See [build and release instructions](docs/WINDOWS-FORK.md).
-The Apple target is removed; historical upstream design notes and third-party
-licences remain unchanged.
+Openote is a notes and planning app, not an all-in-one learning platform.
+There is no built-in flashcard workflow and no AI or MCP integration. For
+spaced repetition, use a dedicated app such as Anki; for AI, an external tool
+or a future self-hosted service can work alongside your notes without being a
+dependency of the editor.
 
----
+## Platforms
 
-> 🚧 **Usable today — and still under active development.** Openote is a real,
-> working app: freeform canvas, ink, math, Markdown, an open format, sync
-> through any folder you already have, a OneNote importer that handles real
-> notebooks, flashcards from your own notes, and a planner. But it is still
-> receiving **major updates, and an update may break a feature** until the
-> next one fixes it — and it is **largely untested on many platforms**:
-> development happens on Windows and Linux is tested occasionally. Your notes
-> live on your own machine, in an open, documented format
-> that stays readable without Openote — nothing is locked in. What is and
-> isn't verified is tracked honestly in [TESTING.md](TESTING.md); design and
-> specification documents are in the [documentation index](docs/README.md);
-> build instructions in [`app/README.md`](app/README.md).
+The current project is Windows-first. Linux source support is retained.
+`scanner/` contains the separate Android companion app for scanning documents.
 
-## Install
+## Run locally
 
-Download published packages from this fork's GitHub **Releases** page. Every push
-builds and publishes the EXE and APK automatically. The original project's
-releases do not include these changes.
+Install Flutter with Windows desktop support, then run:
 
-| | Download | Then |
-|---|---|---|
-| **Windows** | `openote-*-windows-x64-setup.exe` | Run it. Per-user install; C++ runtime and video libraries are included. |
-| **Android Scanner** | `openote-scanner-*.apk` | Install the APK once; later updates come from the Scanner app when its signature matches. |
-| **Linux** | Source build | Linux packaging remains in the repository but is not part of the current release workflow. |
+```powershell
+cd app
+flutter pub get
+flutter run -d windows
+```
 
-Your notes are written to your own machine in an open, documented format. There
-is no account, and nothing is uploaded anywhere.
+Run the application tests with:
 
-On Windows and Linux, the installer also teaches your file manager what a
-notebook is. A notebook is a folder — `Physics.onotebook` — and inside it there
-is a file called **Open this notebook**. Double-click that and your notebook
-opens, in the Openote you already have running if there is one. On some Linux
-desktops you can double-click the folder itself. From a terminal,
-`openote path/to/Physics.onotebook` does the same thing.
+```powershell
+cd app
+flutter test
+```
 
-### Your operating system will warn you. Here's why, honestly.
+The optional Rust core is built automatically when Rust is available. The app
+falls back to its Dart implementation if the native library is unavailable.
+Further platform and release details are in [app/README.md](app/README.md)
+and [docs/WINDOWS-FORK.md](docs/WINDOWS-FORK.md).
 
-These installers are unsigned. Only run an installer from a build you trust;
-an unsigned warning is not a safety guarantee either way. The
-[build workflow](.github/workflows/release.yml) and source commit are visible
-in each Actions run.
+## Project layout
 
-- **Windows** — *"Windows protected your PC"*: click **More info** ▸ **Run anyway**.
-- **Linux** — no warning; the `.deb` and `.rpm` install like any other package.
+```text
+app/                 Flutter desktop application
+scanner/             Android document-scanner companion
+rust/onote_core/     Optional native Rust core
+docs/                Technical notes and file-format documentation
+```
 
-## What is Openote?
+## Data and privacy
 
-Microsoft OneNote is, for many people, the best freeform note-taking tool ever made — an infinite canvas where you click anywhere, drop a text box, draw with a pen, and write complex equations, all inside a familiar notebook/section/page structure. Nothing open has matched it.
-
-But OneNote traps your notes in a proprietary format, defaults to a mandatory cloud, has **no native Linux client**, gates core features (like solving math) behind subscriptions, and has ignored years of requests for Markdown, an open format, and backlinks.
-
-**Openote aims to match OneNote's experience with open technology, and fix its structural failings by construction:**
-
-- 🎨 **A genuine freeform infinite canvas** — click anywhere, place anything, pan and zoom in every direction, with free-form *or* snap-to-grid placement.
-- 🗂️ **The notebook hierarchy you know** — notebooks, section groups, sections, pages, subpages.
-- ✍️ **Rich text with inline-rendered Markdown** — formatting appears where you type it.
-- 🪟 **Live page embeds (transclusion)** — render a block, range, or region of another page inside the current one, always up to date, read-only, click-through to the source. OneNote's links only navigate; ours show you the content.
-- ➗ **Beautiful math entry** — type linearly and watch it build into 2-D notation (summations with limits, integrals, matrices, fractions), OneNote-style.
-- 🖊️ **First-class pen & handwriting** — low-latency, pressure-sensitive ink you can write and draw with anywhere.
-- 📦 **An open, documented file format** — local-first, no lock-in, no size limits, readable without us.
-- ☁️ **Cloud-optional sync** — work across your devices; bring your own backend; real-time collaboration on the roadmap.
-- 🐧 **Windows and Linux** — Windows first, with Linux sources and manual packaging retained.
-
-Read the full argument in the [Product Vision](docs/00-product-vision.md).
-
-## Why "Openote"?
-
-**Open** + **note.** It's open, and it's for notes. It's also an invitation.
-
-## Documentation
-
-Start here → **[docs/README.md](docs/README.md)** (the index). In reading order:
-
-| # | Document | What it covers |
-|---|----------|----------------|
-| 00 | [Product Vision](docs/00-product-vision.md) | Why we're building this, principles, positioning, non-goals |
-| 01 | [OneNote Teardown & Gap Analysis](docs/01-onenote-teardown.md) | What OneNote does well, its weaknesses, and the competitive landscape |
-| 02 | [Product Requirements (PRD)](docs/02-product-requirements.md) | The full feature spec, prioritized, with the MVP definition |
-| 03 | [Technology & Framework Evaluation](docs/03-technology-evaluation.md) | Balanced Flutter-vs-alternatives analysis; the core decision |
-| 04 | [Architecture Overview](docs/04-architecture-overview.md) | Layers, document model, open file format, canvas/math/ink/sync |
-| 05 | [Style Guide & Design System](docs/05-style-guide.md) | Brand, color, type, components, canvas UX, accessibility, voice |
-| 10 | [File Format Spec](docs/specs/10-file-format-spec.md) | The `.onote` container — schema, encodings, versioning, open export |
-| 11 | [Data Model Spec](docs/specs/11-data-model-spec.md) | Concrete block structures, identity rules, live-embed references |
-| 12 | [Math Input Spec](docs/specs/12-math-input-spec.md) | The linear math grammar and LaTeX/MathML canonicalization |
-| 13 | [Ink Data Spec](docs/specs/13-ink-data-spec.md) | Stroke encoding, brushes, InkML interchange |
-| — | [ADRs](docs/adr/README.md) | Framework, CRDT, storage, editor-engine, licensing decisions |
-| — | [Roadmap](ROADMAP.md) | Phased plan from MVP to real-time collaboration |
-| — | [Contributing](CONTRIBUTING.md) | How to get involved (once code begins) |
-
-## Guiding principles
-
-1. **Your data is yours** — open format, documented and versioned from day one.
-2. **Local-first, cloud-optional** — fully usable offline, no account required.
-3. **The canvas is sacred** — freeform placement, fast startup, and responsive ink are first-class (and we don't trade startup or consistency for micro-latency).
-4. **Interpret, don't interrupt** — formatting happens where you type it.
-5. **Native feel on every platform** — cross-platform, not lowest-common-denominator.
-6. **Open by construction** — an open license, a published format spec, an extensible core.
-
-## Project status & roadmap at a glance
-
-- **Now (2026-08):** a **working desktop app** for Windows, macOS and Linux — freeform canvas, notebook/section/page navigator, live-Markdown text, math blocks, pressure ink, images, tables, code, tags, notebook-wide search, spell check, the open `.onote` format with Markdown/PDF/folder export, and a **native Rust core** linked over `dart:ffi`. Stack decided: **Flutter/Dart UI + Rust core, SQLite `.onote` container** ([ADRs](docs/adr/README.md)).
-- **Sync between your own devices** works, with no account and no sign-in: a notebook is a `.onotebook` folder of append-only per-device op logs plus content-addressed blobs, and you put it in a folder your cloud already keeps in step ([ADR-0006](docs/adr/ADR-0006-sync-transport-and-text-model.md)). One writer per file, so two devices cannot produce conflicting logs. Mirrors and dated backups are configurable per notebook.
-- **For students specifically:** the **OneNote `.one`/`.onepkg` importer** (reverse-engineered MS-ONESTORE — text boxes at true positions, styling, images, equations, ink, hyperlinks, whole-notebook packages), **PDF lecture slides** imported as an annotatable printout you write on with the pen, and **flashcards** generated from the lines you tagged Question or Definition, with spaced repetition and Anki export.
-- **Next:** vector (searchable) PDF export and printing — export is a raster capture today; and reclaiming space from deleted images.
-- See the [Roadmap](ROADMAP.md) for exactly what is and isn't done.
+There is no account requirement and no mandatory cloud. Your notebooks remain
+your files. If you choose to synchronise them, you choose the folder and the
+sync provider.
 
 ## License
 
-Ratified ([ADR-0005](docs/adr/ADR-0005-licensing.md), 2026-07-27) — three tiers, mapped in full in [LICENSING.md](LICENSING.md):
-
-- **[AGPL-3.0-or-later](LICENSE)** — the application. Fork it, self-host it, modify it; improvements stay open, including for hosted forks.
-- **[Apache-2.0](rust/onote_core/LICENSE)** — `onote_core`, the `.onote` reader/writer, hashing and importers. **Build anything you like on it, including closed commercial software.**
-- **[CC0-1.0](docs/specs/LICENSE)** — the file-format specification. Implement it freely, no attribution required.
-
-The asymmetry is the point: the app resists closed forks, while reading and writing your notes is legally frictionless for everyone. Openness is a constraint we design under, not an afterthought. Contributions are inbound = outbound with a [DCO](https://developercertificate.org/) sign-off (`git commit -s`) and no CLA.
-
-## Contributing
-
-Openote is being planned in the open. Ideas, critiques, and expertise (especially on cross-platform ink, rich-text editing, CRDTs, and math input) are very welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
-
----
-
-<div align="center">
-<sub>Openote is not affiliated with or endorsed by Microsoft. "OneNote" and "Microsoft" are trademarks of Microsoft Corporation, referenced here for comparison and interoperability only.</sub>
-</div>
+See [LICENSING.md](LICENSING.md) for the licensing model and the individual
+component licences.
