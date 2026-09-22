@@ -3349,6 +3349,10 @@ class AppState extends ChangeNotifier
       eraserMode =
           EraserMode.values.asNameMap()[storedEraserMode] ?? eraserMode;
     }
+    final retention = _repo.getSetting('recycleRetentionDays');
+    if (retention is num) {
+      _recycleRetentionDays = retention.toInt().clamp(1, 3650).toInt();
+    }
     final storedInkSizes = _repo.getSetting('inkToolSizes');
     if (storedInkSizes is Map) {
       for (final entry in storedInkSizes.entries) {
@@ -3454,8 +3458,8 @@ class AppState extends ChangeNotifier
             ? lastNb!
             : _repo.notebooks.first.id);
     // Clear out anything that has outlived the recycle-bin retention window.
-    await _repo.purgeExpiredNotebooks();
-    _repo.purgeExpiredNodes(notebookId!);
+    await _repo.purgeExpiredNotebooks(retentionDays: _recycleRetentionDays);
+    _repo.purgeExpiredNodes(notebookId!, retentionDays: _recycleRetentionDays);
     reloadNodes();
     // Startup does NOT go through _loadNotebook — it opens the last notebook
     // inline — so the gate has to be rehydrated here as well. Both paths, or
@@ -3702,6 +3706,7 @@ class AppState extends ChangeNotifier
   }
 
   Future<void> renameNotebook(String id, String title) async {
+    await flushSave();
     final saving = _repo.renameNotebook(id, title);
     navRevision++;
     notifyListeners();
@@ -3730,13 +3735,25 @@ class AppState extends ChangeNotifier
   List<NotebookRef> get trashedNotebooks => _repo.trashedNotebooks;
 
   /// How long trashed items live before auto-deletion (recycle-bin retention).
-  int get recycleRetentionDays => Repository.recycleRetentionDays;
+  int _recycleRetentionDays = Repository.recycleRetentionDays;
+  int get recycleRetentionDays => _recycleRetentionDays;
+
+  void setRecycleRetentionDays(int days) {
+    final value = days.clamp(1, 3650).toInt();
+    if (value == _recycleRetentionDays) return;
+    _recycleRetentionDays = value;
+    _repo.setSetting('recycleRetentionDays', value);
+    notifyListeners();
+  }
 
   /// Sweep expired recycle-bin entries (notebooks + the current notebook's
   /// nodes). Runs at startup and whenever the recycle bin is opened.
   Future<void> purgeExpiredTrash() async {
-    await _repo.purgeExpiredNotebooks();
-    if (notebookId != null) _repo.purgeExpiredNodes(notebookId!);
+    await _repo.purgeExpiredNotebooks(retentionDays: _recycleRetentionDays);
+    if (notebookId != null) {
+      _repo.purgeExpiredNodes(notebookId!,
+          retentionDays: _recycleRetentionDays);
+    }
     notifyListeners();
   }
 

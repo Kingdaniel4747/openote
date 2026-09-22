@@ -26,9 +26,10 @@ import '../state/app_state.dart';
 /// content-addressed blob store, so they won't render until image import lands.
 /// [onProgress] is called with the running count, so a caller can show it.
 Future<int?> importMarkdownFolder(AppState app,
-    {void Function(int done)? onProgress}) async {
+    {void Function(int done)? onProgress, String? sourceDirectory}) async {
   if (app.notebookId == null) return null;
-  final dir = await getDirectoryPath(confirmButtonText: 'Import this folder');
+  final dir = sourceDirectory ??
+      await getDirectoryPath(confirmButtonText: 'Import this folder');
   if (dir == null) return null;
 
   final root = Directory(dir);
@@ -136,8 +137,10 @@ int _byTypeThenName(FileSystemEntity a, FileSystemEntity b) {
   final ad = a is Directory ? 0 : 1;
   final bd = b is Directory ? 0 : 1;
   if (ad != bd) return ad.compareTo(bd);
-  return p.basename(a.path).toLowerCase().compareTo(
-      p.basename(b.path).toLowerCase());
+  return p
+      .basename(a.path)
+      .toLowerCase()
+      .compareTo(p.basename(b.path).toLowerCase());
 }
 
 bool _isMarkdown(String path) {
@@ -197,4 +200,3 @@ Future<void> _breathe(int done) async {
   if (done % 8 != 0) return;
   await Future<void>.delayed(Duration.zero);
 }
-

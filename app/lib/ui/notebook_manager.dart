@@ -1,5 +1,5 @@
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:file_selector/file_selector.dart';
 import '../l10n/app_strings.dart';
 import 'package:path/path.dart' as p;
 
@@ -154,19 +154,45 @@ class _NotebookManagerState extends State<_NotebookManager> {
     }
   }
 
-  Future<void> _restoreBackup() async {
+  /// One entry point for files users reasonably call an import. The extension
+  /// is enough to select the existing importer; there is no intermediate menu
+  /// to make the user classify a backup before opening it.
+  Future<void> _importFile() async {
     final file = await openFile(
       acceptedTypeGroups: const [
-        XTypeGroup(label: 'Openote backup', extensions: ['zip']),
+        XTypeGroup(
+          label: 'Notebook or backup',
+          extensions: ['zip', 'onote', 'one', 'onepkg', 'md'],
+        ),
       ],
     );
     if (file == null || !mounted) return;
-    setState(() => _busyId = '__restore__');
+    final extension = p.extension(file.path).toLowerCase();
+    setState(() => _busyId = '__import__');
     try {
-      final count = await app.restoreWorkspaceBackup(file.path);
-      if (mounted) _toast('Restored $count notebooks.');
+      if (extension == '.zip') {
+        final count = await app.restoreWorkspaceBackup(file.path);
+        if (mounted) _toast('Imported $count notebooks from the backup.');
+      } else if (extension == '.onote') {
+        await app.openExistingNotebook(file.path);
+      } else if (extension == '.onepkg') {
+        final job = ImportJob.start(app, p.basename(file.name), file.path);
+        if (job == null && mounted) _toast('An import is already running.');
+      } else if (extension == '.one') {
+        final count = await importOneNoteFile(app,
+            progressContext: context, source: file);
+        if (mounted && count != null) {
+          _toast('Imported $count page${count == 1 ? '' : 's'} from OneNote.');
+        }
+      } else if (extension == '.md') {
+        final count = await importMarkdownFolder(app,
+            sourceDirectory: p.dirname(file.path));
+        if (mounted && count != null) {
+          _toast('Imported $count Markdown page${count == 1 ? '' : 's'}.');
+        }
+      }
     } catch (e) {
-      if (mounted) _toast('Restore failed: $e');
+      if (mounted) _toast('Import failed: $e');
     } finally {
       if (mounted) setState(() => _busyId = null);
     }
@@ -220,11 +246,6 @@ class _NotebookManagerState extends State<_NotebookManager> {
                     RepaintBoundary(child: _coverCard(nb, scheme)),
                 ],
               ),
-              if (_importOpen) ...[
-                const SizedBox(height: 6),
-                _sectionLabel('Import into a new notebook'),
-                _importRow(),
-              ],
               // Repeated imports of the same notebook. Shown here rather than
               // behind a button because the whole problem is that nothing ever
               // pointed them out: a real workspace was holding 586 MB, of which
@@ -277,15 +298,10 @@ class _NotebookManagerState extends State<_NotebookManager> {
                 }
               },
             ),
-            // Import expands INLINE rather than opening a popup menu: a popup here
-            // would be the second kind of menu this panel exists to remove.
             TextButton.icon(
-              icon: Icon(
-                _importOpen ? Icons.expand_less : Icons.download_outlined,
-                size: 18,
-              ),
+              icon: const Icon(Icons.download_outlined, size: 18),
               label: const AppText('Import'),
-              onPressed: () => setState(() => _importOpen = !_importOpen),
+              onPressed: _busyId == null ? _importFile : null,
             ),
             PopupMenuButton<String>(
               tooltip: 'Create a portable ZIP backup',
@@ -315,18 +331,13 @@ class _NotebookManagerState extends State<_NotebookManager> {
                 ]),
               ),
             ),
-            TextButton.icon(
-              icon: const Icon(Icons.restore, size: 18),
-              label: const AppText('Restore'),
-              onPressed: _busyId == null ? _restoreBackup : null,
-            ),
           ],
         ),
       ],
     );
   }
 
-  /// The inline import choices, shown under the list when Import is expanded.
+  /// The former inline import chooser was removed in favour of [_importFile].
   ///
   /// **Everything an import needs is captured BEFORE this dialog is popped.**
   /// The obvious spelling — pop, then call `importX(context, app)` — hands the
@@ -338,70 +349,6 @@ class _NotebookManagerState extends State<_NotebookManager> {
   ///
   /// A `ScaffoldMessengerState` and the ROOT navigator's context both outlive
   /// this route, so neither can go stale under an import that takes a minute.
-  Widget _importRow() {
-    Widget choice(
-      IconData icon,
-      String label,
-      Future<void> Function(ScaffoldMessengerState, BuildContext) run,
-    ) =>
-        Padding(
-          padding: const EdgeInsets.only(right: 6, top: 6),
-          child: OutlinedButton.icon(
-            icon: Icon(icon, size: 16),
-            label: AppText(label, style: const TextStyle(fontSize: 13)),
-            onPressed: () async {
-              final messenger = ScaffoldMessenger.of(context);
-              final rootContext = Navigator.of(
-                context,
-                rootNavigator: true,
-              ).context;
-              setState(() => _importOpen = false);
-              // Close the panel first: the imports that still show a modal put
-              // it over the shell, not over a list the user has finished with.
-              Navigator.pop(context);
-              await run(messenger, rootContext);
-            },
-          ),
-        );
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
-      child: Wrap(
-        children: [
-          choice(
-            Icons.library_books_outlined,
-            'OneNote notebook (.onepkg)',
-            (m, _) => importOneNotePackageWithFeedback(m, app),
-          ),
-          choice(
-            Icons.upload_file_outlined,
-            'OneNote section (.one)',
-            (m, c) => importOneNoteSectionWithFeedback(c, app, messenger: m),
-          ),
-          choice(
-            Icons.drive_folder_upload_outlined,
-            'Markdown folder',
-            (m, _) => importMarkdownWithFeedback(m, app),
-          ),
-        ],
-      ),
-    );
-  }
-
-  bool _importOpen = false;
-
-  Widget _sectionLabel(String text) => Padding(
-        padding: const EdgeInsets.fromLTRB(6, 8, 6, 4),
-        child: Text(
-          text.toUpperCase(),
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            letterSpacing: .6,
-            color: context.surfaces.textSecondary,
-          ),
-        ),
-      );
-
   Widget _coverCard(NotebookRef nb, ColorScheme scheme) {
     final current = nb.id == app.notebookId;
     final counts = _counts[nb.id] ?? (sections: 0, pages: 0);

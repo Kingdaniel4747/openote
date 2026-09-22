@@ -477,14 +477,15 @@ double _textHeight(
 /// Import a single `.one` section into the CURRENT notebook as a new section.
 /// Pass [progressContext] to show a busy dialog while parsing.
 Future<int?> importOneNoteFile(AppState app,
-    {BuildContext? progressContext}) async {
+    {BuildContext? progressContext, XFile? source}) async {
   if (app.notebookId == null) return null;
   final core = OnoteCore.instance;
   if (core == null) throw OneNoteUnavailable();
 
-  final file = await openFile(acceptedTypeGroups: const [
-    XTypeGroup(label: 'OneNote section', extensions: ['one'])
-  ]);
+  final file = source ??
+      await openFile(acceptedTypeGroups: const [
+        XTypeGroup(label: 'OneNote section', extensions: ['one'])
+      ]);
   if (file == null) return null;
 
   final Uint8List bytes = await file.readAsBytes();

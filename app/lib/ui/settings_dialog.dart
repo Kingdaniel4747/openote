@@ -221,6 +221,28 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   style: TextStyle(fontSize: 11),
                 ),
               ],
+              _section('Storage'),
+              _row(
+                'Recycle bin retention',
+                DropdownButton<int>(
+                  value: app.recycleRetentionDays,
+                  items: const [
+                    DropdownMenuItem(value: 7, child: Text('7 days')),
+                    DropdownMenuItem(value: 14, child: Text('14 days')),
+                    DropdownMenuItem(value: 30, child: Text('30 days')),
+                    DropdownMenuItem(value: 60, child: Text('60 days')),
+                    DropdownMenuItem(value: 90, child: Text('90 days')),
+                    DropdownMenuItem(value: 365, child: Text('1 year')),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) app.setRecycleRetentionDays(value);
+                  },
+                ),
+              ),
+              const AppText(
+                'Deleted notebooks, sections and pages can be restored until this time expires.',
+                style: TextStyle(fontSize: 11),
+              ),
               _section('Writing and drawing'),
               _row(
                 'Draw with finger',

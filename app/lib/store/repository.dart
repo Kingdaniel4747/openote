@@ -234,6 +234,30 @@ class Repository {
             ref, m['legacyAssets'] as String? ?? m['logDir'] as String?);
       }
     }
+    // A manually copied `.onote` is a deliberate local import. Discovering
+    // direct workspace files costs one directory listing, not a notebook scan,
+    // and means it appears on the next launch without creating a placeholder
+    // notebook with the same name first.
+    final known = {
+      for (final ref in [...notebooks, ...trashedNotebooks])
+        p.normalize(p.absolute(ref.file)),
+    };
+    var adopted = false;
+    for (final file in workspaceDir.listSync().whereType<File>()) {
+      if (p.extension(file.path).toLowerCase() != '.onote' ||
+          known.contains(p.normalize(p.absolute(file.path)))) {
+        continue;
+      }
+      final ref = NotebookRef(
+        id: newId(),
+        file: file.path,
+        title: p.basenameWithoutExtension(file.path),
+      );
+      notebooks.add(ref);
+      _rememberLegacyAssetFolder(ref, null);
+      adopted = true;
+    }
+    if (adopted && registryReadOnly == null) await _saveNow();
   }
 
   void _rememberLegacyAssetFolder(NotebookRef ref, String? registeredFolder) {
@@ -744,8 +768,34 @@ class Repository {
 
   Future<void> renameNotebook(String id, String title) async {
     final ref = notebooks.firstWhere((n) => n.id == id);
+    final stem = title.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_').trim();
+    if (stem.isEmpty) throw ArgumentError.value(title, 'title', 'is empty');
+    final destination = p.join(p.dirname(ref.file), '$stem.onote');
+    if (p.normalize(destination) != p.normalize(ref.file)) {
+      if (File(destination).existsSync()) {
+        throw StateError('A notebook named “$title” already exists.');
+      }
+      // SQLite can keep the main database open on Windows. Close the cached
+      // handle after the caller has flushed edits, then move its companion
+      // files and local media as one notebook identity.
+      _open.remove(id)?.dispose();
+      _decodedPages.remove(id);
+      _renameIfPresent(ref.file, destination);
+      _renameIfPresent('${ref.file}-wal', '$destination-wal');
+      _renameIfPresent('${ref.file}-shm', '$destination-shm');
+      final oldMedia = MediaStore.dirFor(ref);
+      final moved = NotebookRef(id: ref.id, file: destination, title: title);
+      final newMedia = MediaStore.dirFor(moved);
+      if (oldMedia.existsSync()) oldMedia.renameSync(newMedia.path);
+      ref.file = destination;
+    }
     ref.title = title;
     await _saveNow();
+  }
+
+  static void _renameIfPresent(String source, String destination) {
+    final file = File(source);
+    if (file.existsSync()) file.renameSync(destination);
   }
 
   ({int sections, int pages}) notebookCounts(String id) {
@@ -837,12 +887,13 @@ class Repository {
   /// were trashed, so the recycle bin doesn't grow without bound.
   static const int recycleRetentionDays = 30;
 
-  int _retentionCutoff() =>
-      nowMs() - const Duration(days: recycleRetentionDays).inMilliseconds;
+  int _retentionCutoff(int retentionDays) =>
+      nowMs() - Duration(days: retentionDays.clamp(1, 3650)).inMilliseconds;
 
   /// Purge trashed notebooks past their retention window. Returns how many.
-  Future<int> purgeExpiredNotebooks() async {
-    final cutoff = _retentionCutoff();
+  Future<int> purgeExpiredNotebooks(
+      {int retentionDays = recycleRetentionDays}) async {
+    final cutoff = _retentionCutoff(retentionDays);
     final expired = trashedNotebooks
         .where((n) => (n.deletedAt ?? 0) < cutoff)
         .map((n) => n.id)
@@ -854,11 +905,12 @@ class Repository {
   }
 
   /// Purge soft-deleted nodes in [notebookId] past their retention window.
-  void purgeExpiredNodes(String notebookId) {
+  void purgeExpiredNodes(String notebookId,
+      {int retentionDays = recycleRetentionDays}) {
     final db = _db(notebookId);
     db.execute(
         'DELETE FROM nodes WHERE deleted_at IS NOT NULL AND deleted_at < ?',
-        [_retentionCutoff()]);
+        [_retentionCutoff(retentionDays)]);
     // **There is no `page_versions` sweep here any more** (plan decision 1).
     // This used to be the other half of the hole [NotebookWriter.purgeNode]
     // closed — the table declared no foreign key onto `nodes`, so an expired

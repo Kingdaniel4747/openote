@@ -839,26 +839,26 @@ class _CommandBarState extends State<CommandBar> {
       // laptop-width ribbon before lower-frequency catalogue commands fold.
       ToolbarControl(
         id: 'screen-clip',
-        width: 40,
+        width: 92,
         icon: Icons.screenshot_monitor_outlined,
         label: 'Screen clip',
-        inline: IconButton(
+        inline: TextButton.icon(
           icon: const Icon(Icons.screenshot_monitor_outlined, size: 18),
-          tooltip: tr(context, 'Screen clip'),
-          visualDensity: VisualDensity.compact,
+          label: const Text('Screen'),
+          style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
           onPressed: () => _insertScreenRegion(context),
         ),
         onPressed: () => _insertScreenRegion(context),
       ),
       ToolbarControl(
         id: 'scan-from-phone',
-        width: 40,
+        width: 88,
         icon: Icons.document_scanner_outlined,
         label: 'Scan from phone',
-        inline: IconButton(
+        inline: TextButton.icon(
           icon: const Icon(Icons.document_scanner_outlined, size: 18),
-          tooltip: tr(context, 'Scan from phone'),
-          visualDensity: VisualDensity.compact,
+          label: const Text('Phone'),
+          style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
           onPressed: () => showScannerPairingDialog(context, app),
         ),
         onPressed: () => showScannerPairingDialog(context, app),

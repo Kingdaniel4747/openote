@@ -176,8 +176,6 @@ class _SidebarState extends State<Sidebar> {
                     ? _searchResults(context)
                     : _twoColumnBody(context),
               ),
-              const Divider(height: 1),
-              _footer(context),
             ],
           ),
         ),
@@ -381,6 +379,8 @@ class _SidebarState extends State<Sidebar> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              _sectionActions(context),
+              const Divider(height: 1),
               Expanded(child: _sectionsColumn(context)),
             ],
           ),
@@ -529,26 +529,22 @@ class _SidebarState extends State<Sidebar> {
 
   // ── Footer toolbar ────────────────────────────────────────────────────
 
-  Widget _footer(BuildContext context) => Padding(
-        padding: const EdgeInsets.all(6),
+  Widget _sectionActions(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
         child: Row(
           children: [
-            Expanded(
-              child: TextButton.icon(
-                icon: const Icon(Icons.create_new_folder_outlined, size: 16),
-                label: const AppText('Section', style: TextStyle(fontSize: 12)),
-                onPressed: app.addSection,
-              ),
-            ),
             IconButton(
-              icon: const Icon(Icons.topic_outlined, size: 16),
+              icon: const Icon(Icons.add, size: 18),
+              tooltip: 'New section',
+              visualDensity: VisualDensity.compact,
+              onPressed: app.addSection,
+            ),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.topic_outlined, size: 18),
               tooltip: 'New section group',
+              visualDensity: VisualDensity.compact,
               onPressed: app.addSectionGroup,
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete_outline, size: 16),
-              tooltip: 'Recycle bin',
-              onPressed: () => showRecycleBin(context, app),
             ),
           ],
         ),
@@ -1053,6 +1049,12 @@ class _NotebookHeader extends StatelessWidget {
                 ),
                 const Icon(Icons.unfold_more, size: 16),
                 IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 16),
+                  tooltip: 'Recycle bin',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => showRecycleBin(context, app),
+                ),
+                IconButton(
                   icon: const Icon(Icons.keyboard_double_arrow_left, size: 16),
                   tooltip: 'Collapse the navigator  (Ctrl+)',
                   visualDensity: VisualDensity.compact,
@@ -1373,9 +1375,15 @@ Future<void> showRecycleBin(BuildContext context, AppState app) async {
                                   icon: const Icon(Icons.delete_forever,
                                       size: 16, color: OnoteColors.danger),
                                   tooltip: 'Delete permanently',
-                                  onPressed: () {
-                                    app.purgeDeleted(it.id);
-                                    setLocal(() {});
+                                  onPressed: () async {
+                                    final ok = await _confirmPurgeDeleted(
+                                      ctx,
+                                      it.title,
+                                    );
+                                    if (ok) {
+                                      app.purgeDeleted(it.id);
+                                      setLocal(() {});
+                                    }
                                   },
                                 ),
                               ],
@@ -1408,6 +1416,29 @@ Future<bool> _confirmPurgeNotebook(BuildContext context, NotebookRef nb) async {
         TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const AppText('Cancel')),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: OnoteColors.danger),
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const AppText('Delete forever'),
+        ),
+      ],
+    ),
+  );
+  return ok == true;
+}
+
+Future<bool> _confirmPurgeDeleted(BuildContext context, String title) async {
+  final ok = await showOnoteDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const AppText('Delete permanently?'),
+      content:
+          Text('“$title” will be removed for good. This can\'t be undone.'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const AppText('Cancel'),
+        ),
         FilledButton(
           style: FilledButton.styleFrom(backgroundColor: OnoteColors.danger),
           onPressed: () => Navigator.pop(ctx, true),

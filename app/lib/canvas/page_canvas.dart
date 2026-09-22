@@ -646,10 +646,14 @@ class _PageCanvasState extends State<PageCanvas> {
       if (_windowsInkPointer != e.pointer) return;
       _windowsInkPointer = null;
     }
+    final erased = _contactTool == Tool.eraser || _gestureErase;
     _eraseUndoPushed = false;
     _gestureErase = false;
     if (_eraserScreen != null) setState(() => _eraserScreen = null);
     _finishWetStroke();
+    // Erasing is a one-gesture correction. Returning immediately to the pen
+    // makes the toolbar ready for the next colour or width selection.
+    if (erased) app.setTool(Tool.pen, temporary: true);
     if (e.kind == PointerDeviceKind.stylus ||
         e.kind == PointerDeviceKind.invertedStylus) {
       _showPenButtonTool(_pendingErase);
