@@ -2,8 +2,6 @@
 /// Page JSON schema exactly, so `toJson` output IS the mirror format.
 library;
 
-import 'package:path/path.dart' as p;
-
 import '../core/ids.dart';
 
 int nowMs() => DateTime.now().millisecondsSinceEpoch;
@@ -78,57 +76,11 @@ class NotebookRef {
       {required this.id,
       required this.file,
       required this.title,
-      this.logDir,
       this.deletedAt});
   final String id;
 
-  /// Absolute path to the `.onote`. Mutable because a notebook can be moved
-  /// into a synced folder (`Repository.moveNotebookTo`) without becoming a
-  /// different notebook — the id is the identity, the path is just where it
-  /// happens to live.
+  /// Absolute path to the local `.onote` container.
   String file;
-
-  /// Where this notebook's `.onotebook` op logs live, when that is NOT the
-  /// sibling of [file].
-  ///
-  /// **This is what keeps two devices off one SQLite file.** The container is
-  /// a WAL database rewritten on every save; two machines writing one copy of
-  /// it through a cloud client is the corruption case ADR-0006 §3 designs
-  /// against ("cache.onote ← local-only SQLite; never synced"). The op logs
-  /// are the opposite — append-only, one file per device — so they are safe to
-  /// share by construction.
-  ///
-  /// So a device that joins an existing notebook keeps its OWN container in
-  /// the workspace and points this at the shared folder. Null means the
-  /// default: `<file without extension>.onotebook`.
-  ///
-  /// **After v0.17 Step 8's migration this is not optional.** A demoted
-  /// notebook's container is `<workspace>/.cache/<id>/cache.onote`, and the
-  /// default below would derive `<workspace>/.cache/<id>/cache.onotebook` from
-  /// it — a log directory inside the very folder that exists to be disposable,
-  /// which is the notes themselves written somewhere a rebuild deletes. So
-  /// `Repository.demoteContainerToCache` records the notes folder explicitly
-  /// before it moves anything, and refuses outright if it cannot find one.
-  String? logDir;
-
-  /// Where the op logs actually are — [logDir] when set, otherwise the
-  /// sibling of [file].
-  ///
-  /// One accessor rather than the default spelled out at each call site: the
-  /// sites that missed it went subtly wrong rather than failing (the sync chip
-  /// read "not synced" for a device that had just joined, and moving a joined
-  /// notebook looked for a log directory that was never there).
-  ///
-  /// The sibling default is for a notebook in the classic layout — a
-  /// `Physics.onote` with a `Physics.onotebook` beside it — and stays for as
-  /// long as un-migrated notebooks exist, which is for ever, because the
-  /// migration is opt-in.
-  String get logDirPath {
-    final o = logDir;
-    return (o != null && o.isNotEmpty)
-        ? o
-        : '${p.withoutExtension(file)}.onotebook';
-  }
 
   String title;
   int? deletedAt; // set while the notebook sits in the recycle bin (ORG-7)
@@ -237,7 +189,7 @@ class PageProps {
         // overwhelming majority and its JSON is byte-identical to what every
         // previous build wrote — which matters beyond tidiness: emitting three
         // new keys unconditionally would rewrite every page in every notebook
-        // on the next save, and hand the sync log a diff for all of them.
+        // on the next save.
         if (isPaged || pdfOnly) 'layout': layout,
         if (pdfOnly) 'pdfPageHeight': pdfPageHeight,
         if (isPaged) 'paperSize': paperSize,
@@ -316,7 +268,6 @@ class Block {
     this.frameId,
     Map<String, dynamic>? content,
     List<String>? absorbedIds,
-    this.access,
     this.rawType,
     Map<String, dynamic>? unknownFields,
     int? createdAt,
@@ -344,7 +295,6 @@ class Block {
   String? frameId;
   Map<String, dynamic> content;
   final List<String> absorbedIds;
-  Map<String, dynamic>? access; // reserved (SYNC-9); v1 writes null
   final Map<String, dynamic> unknownFields; // forward-compat round-trip
 
   /// The on-the-wire `type` string when [type] is [BlockType.unknown], so
@@ -367,8 +317,20 @@ class Block {
   int updatedAt;
 
   static const _known = {
-    'id', 'type', 'x', 'y', 'w', 'h', 'rotation', 'z', 'placement', 'frameId',
-    'absorbedIds', 'access', 'createdAt', 'updatedAt', 'content',
+    'id',
+    'type',
+    'x',
+    'y',
+    'w',
+    'h',
+    'rotation',
+    'z',
+    'placement',
+    'frameId',
+    'absorbedIds',
+    'createdAt',
+    'updatedAt',
+    'content',
   };
 
   Map<String, dynamic> toJson() => {
@@ -381,7 +343,6 @@ class Block {
         'placement': placement,
         'frameId': frameId,
         'absorbedIds': absorbedIds,
-        'access': access,
         'createdAt': createdAt,
         'updatedAt': updatedAt,
         'content': content,
@@ -402,7 +363,6 @@ class Block {
         frameId: j['frameId'] as String?,
         content: (j['content'] as Map?)?.cast<String, dynamic>() ?? {},
         absorbedIds: (j['absorbedIds'] as List?)?.cast<String>() ?? [],
-        access: (j['access'] as Map?)?.cast<String, dynamic>(),
         createdAt: (j['createdAt'] as num?)?.toInt(),
         unknownFields: {
           for (final e in j.entries)
@@ -468,9 +428,19 @@ class Stroke {
 
   Map<String, dynamic> toJson() => {
         'id': id,
-        'brush': {'tool': tool, 'color': colorHex, 'size': size, 'opacity': opacity},
-        'x': x, 'y': y, 'p': p, 'tx': tx, 'ty': ty,
-        't': t, 'strokeStart': strokeStart,
+        'brush': {
+          'tool': tool,
+          'color': colorHex,
+          'size': size,
+          'opacity': opacity
+        },
+        'x': x,
+        'y': y,
+        'p': p,
+        'tx': tx,
+        'ty': ty,
+        't': t,
+        'strokeStart': strokeStart,
       };
 
   factory Stroke.fromJson(Map<String, dynamic> j) {
@@ -483,10 +453,18 @@ class Stroke {
       opacity: (b['opacity'] as num?)?.toDouble() ?? 1.0,
       x: (j['x'] as List).map((e) => (e as num).toDouble()).toList(),
       y: (j['y'] as List).map((e) => (e as num).toDouble()).toList(),
-      p: ((j['p'] as List?) ?? const []).map((e) => (e as num).toDouble()).toList(),
-      tx: ((j['tx'] as List?) ?? const []).map((e) => (e as num).toDouble()).toList(),
-      ty: ((j['ty'] as List?) ?? const []).map((e) => (e as num).toDouble()).toList(),
-      t: ((j['t'] as List?) ?? const []).map((e) => (e as num).toInt()).toList(),
+      p: ((j['p'] as List?) ?? const [])
+          .map((e) => (e as num).toDouble())
+          .toList(),
+      tx: ((j['tx'] as List?) ?? const [])
+          .map((e) => (e as num).toDouble())
+          .toList(),
+      ty: ((j['ty'] as List?) ?? const [])
+          .map((e) => (e as num).toDouble())
+          .toList(),
+      t: ((j['t'] as List?) ?? const [])
+          .map((e) => (e as num).toInt())
+          .toList(),
       strokeStart: (j['strokeStart'] as num?)?.toInt(),
     );
   }

@@ -47,7 +47,6 @@ void main() {
     } finally {
       lock.unlockSync();
       lock.closeSync();
-      await app.settleBackgroundWork();
       app.dispose();
       try {
         temporary.deleteSync(recursive: true);
@@ -74,13 +73,19 @@ void main() {
       final backup = File(p.join(temporary.path, 'backup.zip'));
       await app.createWorkspaceBackup(backup.path);
 
-      final entry = ZipDecoder().decodeBytes(backup.readAsBytesSync())
-          .firstWhere((item) =>
-              item.isFile &&
-              item.name.replaceAll('\\', '/').endsWith('/blobs/$hash'));
-      expect(entry.content, bytes);
+      final restoredWorkspace = Directory(
+        p.join(temporary.path, 'restored-workspace'),
+      )..createSync();
+      final restoredRepository = await Repository.openAt(restoredWorkspace);
+      final restoredApp = AppState(restoredRepository)
+        ..spellCheckEnabled = false;
+      try {
+        expect(await restoredApp.restoreWorkspaceBackup(backup.path), 1);
+        expect(restoredRepository.getBlob(restoredApp.notebookId!, hash), bytes);
+      } finally {
+        restoredApp.dispose();
+      }
     } finally {
-      await app.settleBackgroundWork();
       app.dispose();
       try {
         temporary.deleteSync(recursive: true);

@@ -60,7 +60,6 @@ void main() {
 
   test('a received scan is stored inside the selected notebook page', () async {
     if (!initSqliteForTests()) return markTestSkipped('sqlite unavailable');
-    AppState.syncLogEnabled = false;
     final temporary = Directory.systemTemp.createTempSync('onote_phone_scan_');
     final repository = await Repository.openAt(temporary);
     final notebook = await repository.createNotebook('School');
@@ -85,9 +84,7 @@ void main() {
       final hash = (inserted.content['blob'] as String).substring(7);
       expect(repository.getBlob(notebook.id, hash), const [10, 20, 30]);
     } finally {
-      await app.settleBackgroundWork();
       app.dispose();
-      AppState.syncLogEnabled = true;
       try {
         temporary.deleteSync(recursive: true);
       } catch (_) {}
@@ -96,7 +93,6 @@ void main() {
 
   test('phone pages form one aligned stack with equal gaps', () async {
     if (!initSqliteForTests()) return markTestSkipped('sqlite unavailable');
-    AppState.syncLogEnabled = false;
     final temporary = Directory.systemTemp.createTempSync('onote_scan_stack_');
     final repository = await Repository.openAt(temporary);
     final notebook = await repository.createNotebook('Stack');
@@ -129,9 +125,7 @@ void main() {
       expect(second.w, first.w);
       expect(second.y, closeTo(first.y + first.h! + 36, .01));
     } finally {
-      await app.settleBackgroundWork();
       app.dispose();
-      AppState.syncLogEnabled = true;
       try {
         temporary.deleteSync(recursive: true);
       } catch (_) {}

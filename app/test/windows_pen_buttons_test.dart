@@ -155,7 +155,6 @@ void main() {
         reason: 'Build Windows first so its bundled SQLite DLL is available.'));
 
     Future<AppState> makeApp() async {
-      AppState.syncLogEnabled = false;
       final dir =
           Directory.systemTemp.createTempSync('openote-windows-pen-test-');
       final repo = await Repository.openAt(dir);
@@ -175,7 +174,6 @@ void main() {
         app.cancelPendingSave();
         app.dispose();
         repo.dispose();
-        AppState.syncLogEnabled = true;
         dir.deleteSync(recursive: true);
       });
       return app;

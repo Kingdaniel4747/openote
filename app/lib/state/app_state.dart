@@ -16,26 +16,17 @@ import '../canvas/canvas_controller.dart';
 import '../core/engine.dart';
 import '../core/ids.dart';
 import '../core/onote_ffi.dart';
-import '../core/open_target.dart'
-    show isOpenoteWorkingCopy, notebookFolderNamedBy;
 import '../editor/onote_text_editor.dart';
 import '../export/md_common.dart' show plainLine;
 import '../export/onenote_import.dart' show oneNoteLineHeight;
-import '../model/history.dart';
 import '../math/active_math.dart';
 import '../math/evaluate.dart';
 import '../math/linear_math.dart';
 import '../model/models.dart';
-import '../store/database.dart'
-    show NotebookFileMissing, NotebookFileProblem, notebookFileProblem;
-import '../store/notebook_writer.dart' show sha256Hex;
-import '../store/history_store.dart';
-import '../sync/device_label.dart';
-import '../store/media_gc.dart';
+import '../store/database.dart' show NotebookFileProblem, notebookFileProblem;
 import '../store/media_store.dart';
 import '../ink/ink_codec.dart';
 import '../ink/ink_storage.dart';
-import '../sync/materializer.dart';
 import '../editor/list_editing.dart';
 import '../markdown/md_syntax.dart';
 import '../update/app_update.dart';
@@ -48,13 +39,6 @@ import '../spell/spell_checker.dart';
 import '../study/flashcards.dart';
 import 'planner_state.dart';
 import 'study_state.dart';
-import '../sync/device_identity.dart';
-import '../sync/folder_watch.dart';
-import '../sync/op.dart';
-import '../sync/op_log.dart';
-import '../sync/cloud_folders.dart';
-import '../sync/mirrors.dart';
-import '../sync/sync_recorder.dart';
 
 /// Archive encoding reads every snapshot byte. It must not share the UI
 /// isolate with drawing and scrolling just because the resulting ZIP is local.
@@ -244,8 +228,7 @@ class AppState extends ChangeNotifier
   final DocumentEngine engine;
 
   // Split editors own their selection, undo stack and camera, but share one
-  // repository and recorder owner. Two recorders for this device would issue
-  // duplicate operation sequence numbers.
+  // repository.
   AppState? _editorOwner;
   final List<AppState> _editors = [];
   VoidCallback? activateEditor;
@@ -258,7 +241,6 @@ class AppState extends ChangeNotifier
     final editor = AppState(_repo)
       .._editorOwner = owner
       ..spellCheckEnabled = spellCheckEnabled
-      ..onboardingSeen = true
       ..tool = tool
       ..penColor = penColor
       ..highlighterColor = highlighterColor
@@ -359,20 +341,20 @@ class AppState extends ChangeNotifier
   NotebookRef get currentNotebook =>
       _repo.notebooks.firstWhere((n) => n.id == notebookId);
 
+  /// Imports temporarily own their target file; ordinary notebooks are local
+  /// and writable whenever the filesystem permits it.
+  bool notebookIsReadOnly(String id) => false;
+
   /// Read a page of the current notebook without making it the active page —
   /// used by exporters, which walk every page in turn.
-  @override
   PageData readPage(String id) => _repo.readPage(notebookId!, id);
 
-  @override
   PageData readPageShared(String id) => _repo.readPageShared(notebookId!, id);
 
-  @override
   Set<String> pageIdsWithTags() => notebookId == null
       ? const {}
       : _repo.pageIdsWithTags(notebookId!).toSet();
 
-  @override
   Set<String> allBlockIds() =>
       notebookId == null ? const {} : _repo.allBlockIds(notebookId!);
 
@@ -504,10 +486,8 @@ class AppState extends ChangeNotifier
   /// before the lock.
   int _gateRevision = 0;
 
-  @override
   int get gateRevision => _gateRevision;
 
-  @override
   bool isPageLocked(String pageId) => isLocked(pageId);
 
   /// Re-read which nodes are protected, for the notebook that is open now.
@@ -654,1486 +634,17 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
-  // ── Operation log (ADR-0006, shadow mode) ────────────────────────────
-  //
-  // Every mutation below also records an op into
-  // `<Notebook>.onotebook/ops/<device>.oplog`, beside the `.onote`. The
-  // container stays authoritative; the log is written alongside so that
-  // "rebuild from the log and compare" is a check we can run today. When the
-  // two agree consistently, the container can be demoted to a rebuildable
-  // cache and the log becomes the synced artifact — at which point none of the
-  // call sites below change.
+  // ── Import ownership and manual backups ──────────────────────────────
 
-  /// One recorder per notebook touched this session. Keyed because **imports
-  /// write into a notebook that isn't the open one**, and a log that misses
-  /// imported content is exactly the kind of quiet incompleteness this whole
-  /// arrangement exists to catch.
-  final Map<String, SyncRecorder> _recorders = {};
+  /// The import worker owns the target database while it runs. Closing our
+  /// cached handle before and after the job keeps SQLite single-writer.
+  void beginExclusiveImport(String notebookId) =>
+      _repo.closeNotebook(notebookId);
 
-  /// Set false by tests that don't want log files written beside their fixture.
-  static bool syncLogEnabled = true;
+  void endExclusiveImport(String notebookId) => _repo.closeNotebook(notebookId);
 
-  /// Notebooks whose files another isolate currently owns.
-  ///
-  /// While the import writer isolate is running, it holds the notebook's
-  /// container **and** appends to this device's op log inside its `.onotebook`.
-  /// A recorder opened here would be a second writer on that same log file —
-  /// which is the one thing ADR-0006's whole correctness argument forbids, and
-  /// it is not hypothetical: the notebook manager draws a sync dot per row, and
-  /// a sync dot asks for the device count, and the device count opens a
-  /// recorder. Merely *listing* notebooks during an import would have done it.
-  final Set<String> _importingNotebooks = {};
-
-  /// Hand [nb]'s files to another isolate. Idempotent.
-  void beginExclusiveImport(String nb) {
-    _importingNotebooks.add(nb);
-    _recorders.remove(nb);
-    _repo.closeNotebook(nb);
-  }
-
-  /// Take them back after a **successful** import. The next read reopens the
-  /// container; the log the writer wrote replays in the background so the first
-  /// edit doesn't pay for it.
-  void endExclusiveImport(String nb) {
-    _importingNotebooks.remove(nb);
-    _repo.closeNotebook(nb);
-    _invalidateSyncStatus();
-    // The import just wrote the biggest log this notebook will ever gain in
-    // one sitting. Start its replay now, off-thread, so the recorder is ready
-    // before the user's first edit — the alternative is a multi-second hitch
-    // on the first keystroke into their freshly imported notes.
-    unawaited(warmRecorder(nb));
-  }
-
-  /// Take them back after a **cancelled or failed** import, where the notebook
-  /// is about to be discarded.
-  ///
-  /// Identical to [endExclusiveImport] except that it does not start a replay.
-  /// Warming here raced the teardown: the replay's `announceDevice` rewrites
-  /// `.onotebook/manifest.json`, and landing after the purge had deleted the
-  /// directory recreated it — an orphaned `.onotebook` that no registry entry
-  /// claims, which is exactly what the free-name search downstream trips over.
-  void abandonExclusiveImport(String nb) {
-    _importingNotebooks.remove(nb);
-    _repo.closeNotebook(nb);
-    _invalidateSyncStatus();
-  }
-
-  /// This installation's device id, minted on first use.
-  ///
-  /// The same value `DeviceIdentity.resolve` would settle on for a notebook with
-  /// no log — which a brand-new import target always is, so the fork check has
-  /// nothing to compare against and cannot fire. Public because the import
-  /// writer isolate has no access to workspace settings and must be told, and
-  /// because the folder watcher needs to know which log is its own without
-  /// opening a recorder to ask.
-  String localDeviceId() {
-    final existing = _repo.getSetting(DeviceIdentity.settingsKey) as String?;
-    if (existing != null && existing.isNotEmpty) return existing;
-    final id = newId();
-    _repo.setSetting(DeviceIdentity.settingsKey, id);
-    return id;
-  }
-
-  /// Record how far the writer isolate got in [nb]'s log.
-  ///
-  /// Not optional. The seq lives in workspace settings, the isolate cannot write
-  /// there, and a log that runs ahead of the remembered seq is precisely the
-  /// signal `DeviceIdentity.resolve` reads as "another installation has been
-  /// writing as us" — so skipping this would fork the device id on the next
-  /// open of every imported notebook.
-  void rememberImportedSeq(String nb, int seq) {
-    if (seq <= 0) return;
-    _repo.setSetting(DeviceIdentity.seqKey(nb), seq);
-  }
-
-  /// The recorder for [nb], opening one **synchronously** if none exists.
-  ///
-  /// The synchronous open replays the whole log on the calling thread — half a
-  /// second for a big imported notebook, and that is what froze the app at
-  /// launch and at the end of every import. So the rules are now:
-  ///
-  /// - **Mutations** call this. They cannot wait, and an op that isn't recorded
-  ///   is a hole in the log, so the hitch is the price of correctness — paid
-  ///   almost never, because [warmRecorder] runs the replay in a background
-  ///   isolate the moment a notebook is opened, imported or selected, and a
-  ///   cache hit here is free.
-  /// - **Status reads never call this.** [syncDeviceCount] lists log files with
-  ///   a bare [OpLogStore]; the watcher takes paths, not a recorder. A read
-  ///   that opened a recorder was the launch freeze.
-  SyncRecorder? _recorderFor(String nb) {
-    if (_editorOwner != null) return _editorOwner!._recorderFor(nb);
-    if (!syncLogEnabled) return null;
-    if (_importingNotebooks.contains(nb)) return null;
-    final existing = _recorders[nb];
-    if (existing != null) return existing;
-    final ref = _repo.notebooks.where((n) => n.id == nb).firstOrNull;
-    if (ref == null) return null;
-    try {
-      final r = SyncRecorder.open(
-        notebookId: nb,
-        notebookPath: ref.file,
-        title: ref.title,
-        logDir: ref.logDir,
-        readSetting: _repo.getSetting,
-        writeSetting: _repo.setSetting,
-        // **Always, not only when the notebook looks shared** (v0.17 plan,
-        // Step 5). `notebookIsShared` was a disk trade that quietly made the
-        // log unable to rebuild the notebook it describes: measured on the
-        // owner's real import, 378 of the 488 blobs its log names — 26.3 MB,
-        // every one of them a PNG — had no bytes in `blobs/`, so a rebuild
-        // produced a structurally perfect notebook (same=329 differing=0) with
-        // 271 of 271 image blocks broken across 44 pages. Nothing on screen
-        // said so, because a page that references a picture by hash is
-        // byte-identical to the same page with its bytes intact.
-        materialiseBlobs: true,
-      );
-      _recorders[nb] = r;
-      _backfillTree(nb, r);
-      // Copy the container's blobs into `blobs/` — for a shared notebook that
-      // is the whole point, and it is a no-op for a local-only one. In the
-      // background either way: on a real imported notebook this is hundreds of
-      // images, and doing it inline would stall the open.
-      _startBlobBackfill(nb, r);
-      _logError = null; // the log is reachable again
-      _noteLogAhead(nb, r);
-      return r;
-    } catch (e) {
-      // Shadow mode must never be able to break saving. The container is still
-      // authoritative, so a log we cannot write is a degraded check, not lost
-      // data — and failing the user's save to protect a shadow would be an
-      // absurd trade. That half of the reasoning still holds; the SILENCE does
-      // not, and never did.
-      //
-      // This is the first of three reachable ways a save stops being recorded
-      // with nothing whatever on screen (v0.17 plan, Step 1): a full disk, a
-      // permission error, a cloud client holding the file, or an `.oplog`
-      // truncated inside a multi-byte character. Today the container catches
-      // the fall. After the demotion it does not, and every one of them becomes
-      // permanent loss the user was never told about. So: still never throw,
-      // but always say so.
-      _noteLogProblem('log unavailable for $nb', e);
-      return null;
-    }
-  }
-
-  /// Record that a notebook's change history could not be kept up to date.
-  ///
-  /// Never throws and never fails a save: the container is still authoritative,
-  /// so the notes themselves are on disk. What they are not is *recorded* — so
-  /// the message describes that consequence (other devices and backups fall
-  /// behind) rather than reciting the exception, which is [SaveProblem.details]'
-  /// job.
-  ///
-  /// Safe to call from a synchronous mutation path: `_recorderFor` already
-  /// carries a "nothing that runs during a build may call it" invariant, so
-  /// this notification can never land mid-frame.
-  void _noteLogProblem(String where, Object e) {
-    debugPrint('[openote/sync] $where: $e');
-    _logError = SaveProblem(
-      short: 'Saved, but not recorded',
-      message: 'Openote saved your notes on this computer, but it could not '
-          "add the change to this notebook's history.\n\n"
-          'The history is the copy your other devices, your backups and your '
-          'shared folders read from, so those may fall behind until this '
-          'works again. Nothing you have written has been lost.\n\n'
-          "Check that the disk is not full, that the notebook's folder is not "
-          'set to read-only, and that a cloud app such as OneDrive or Google '
-          'Drive has finished with it. Openote tries again every time you '
-          'save.',
-      details: '$where\n$e',
-    );
-    if (!_disposed) notifyListeners();
-  }
-
-  /// A page save that could not be written to the notebook file at all.
-  static SaveProblem _pageSaveFailed(Object e) => SaveProblem(
-        short: "Couldn't save — changes kept in memory",
-        message: 'Openote could not save this page to your computer.\n\n'
-            'Your changes are still on screen and Openote will try again the '
-            'next time you type, so nothing is lost yet — but close the app '
-            'now and they would be.\n\n'
-            'Check that the disk is not full and that the notebook is not '
-            'open in another program.',
-        details: '$e',
-      );
-
-  /// In-flight background opens, so two callers don't replay the same log
-  /// twice.
-  final Map<String, Future<SyncRecorder?>> _recorderWarms = {};
-
-  /// Open [nb]'s recorder with the replay in a background isolate, and install
-  /// it when it lands. Safe to call eagerly and repeatedly.
-  ///
-  /// **The race, and why the loser is discarded.** A mutation can arrive while
-  /// the background replay runs; `_recorderFor` then opens synchronously and
-  /// *writes* (a seq, maybe ops). The warmed recorder's replayed state predates
-  /// those writes, so installing it over the live one would re-issue sequence
-  /// numbers the log already contains — two ops claiming one (device, seq) is
-  /// the corruption the whole one-writer design exists to prevent. Hence: if a
-  /// recorder exists by the time the warm lands, the warm is thrown away, and
-  /// [SyncRecorder.openAsync] guarantees a discarded recorder has written
-  /// nothing (its title seeding is deferred to the installer).
-  Future<SyncRecorder?> warmRecorder(String nb) {
-    if (_editorOwner != null) return _editorOwner!.warmRecorder(nb);
-    if (_disposed || !syncLogEnabled || _importingNotebooks.contains(nb)) {
-      return Future.value(null);
-    }
-    final existing = _recorders[nb];
-    if (existing != null) return Future.value(existing);
-    final inFlight = _recorderWarms[nb];
-    if (inFlight != null) return inFlight;
-    final ref = _repo.notebooks.where((n) => n.id == nb).firstOrNull;
-    if (ref == null) return Future.value(null);
-    final f = _warmAndInstall(nb, ref);
-    _recorderWarms[nb] = f;
-    return f;
-  }
-
-  Future<SyncRecorder?> _warmAndInstall(String nb, NotebookRef ref) async {
-    try {
-      final r = await SyncRecorder.openAsync(
-        notebookId: nb,
-        notebookPath: ref.file,
-        title: ref.title,
-        logDir: ref.logDir,
-        readSetting: _repo.getSetting,
-        writeSetting: _repo.setSetting,
-        // Unconditional, exactly as in `_recorderFor` — see the note there.
-        materialiseBlobs: true,
-      );
-      final lostTheRace = _disposed ||
-          _recorders.containsKey(nb) ||
-          _importingNotebooks.contains(nb) ||
-          !syncLogEnabled;
-      final SyncRecorder? winner;
-      if (lostTheRace) {
-        winner = _recorders[nb]; // discard the unwritten warm
-      } else {
-        winner = r;
-        _recorders[nb] = r;
-        r.seedTitle(ref.title);
-        _backfillTree(nb, r);
-        _startBlobBackfill(nb, r);
-        _logError = null; // the log is reachable again
-        _noteLogAhead(nb, r);
-      }
-      // Either way: a notebook with no ops directory when `_startWatching` ran
-      // left the watcher unstarted, and opening a recorder — this one or the
-      // synchronous one that beat it — created that directory. Retry, or a
-      // notebook shared in its first session would not auto-pull until the
-      // next launch.
-      if (winner != null && nb == notebookId && _watcher == null) {
-        _startWatching();
-      }
-      return winner;
-    } catch (e) {
-      // Second of Step 1's three silent paths, and the one that swallows most
-      // of them in practice: `flushSave` warms the recorder before it does
-      // anything else, so this is where a log that cannot be opened is first
-      // met on the save path.
-      _noteLogProblem('background log open for $nb failed', e);
-      return null;
-    } finally {
-      _recorderWarms.remove(nb);
-    }
-  }
-
-  /// Whether this notebook's bytes need to exist anywhere but the container.
-  ///
-  /// True when it lives in a folder something else keeps in step, or when it has
-  /// a mirror. Mirrors count because a plain mirror (`keepVersions == 0`) copies
-  /// the `.onotebook` directory and **not** the container — so a mirror of a
-  /// notebook with an empty `blobs/` would be a backup of a notebook with no
-  /// images in it, which is worse than no backup because it looks like one.
-  ///
-  /// This is deliberately the same rule the sync dot draws, minus the device
-  /// count — `SyncState.local` on screen means exactly "stored once on disk",
-  /// so the user has a way to see which notebooks are paying for sync. It is
-  /// recomputed rather than read from [syncStatus] because `syncStatus` asks how
-  /// many devices have written here, which opens a recorder, which asks this.
-  bool notebookIsShared(String nb) {
-    if (mirrorsFor(nb).isNotEmpty) return true;
-    final path = notebookLogDir(nb);
-    if (path == null) return false;
-    return cloudFolderContaining(path, also: _syncRoots) != null;
-  }
-
-  /// Make sure this notebook's blob bytes are on their way into `blobs/` now
-  /// that it is shared.
-  ///
-  /// **Since Step 5 of the v0.17 plan the flag is unconditional**, so the
-  /// flip below is a no-op on any recorder this build opened, and what remains
-  /// is the *warm*: a notebook that has never had a recorder opened has never
-  /// run a backfill either, and a mirror configured seconds later would copy
-  /// out a `blobs/` that is still empty. The flip is kept rather than deleted
-  /// because a recorder can still be constructed with the flag off — the
-  /// import writer's config default, and the fixture shape the plan's matrix
-  /// row B6 exists to test.
-  ///
-  /// Call after anything that can change [notebookIsShared] — moving a notebook
-  /// into a sync folder, adding a mirror, remembering a sync root.
-  ///
-  /// The reverse transition is deliberately not handled: nothing here deletes
-  /// bytes. Moving a notebook back out of a sync folder stops *new* blobs being
-  /// written on the next open and leaves the existing ones, which is wave 1b's
-  /// job (blob GC) and not something to do as a side effect of a move.
-  void materialiseBlobsIfShared(String nb) {
-    if (!syncLogEnabled || !notebookIsShared(nb)) return;
-    final existing = _recorders[nb];
-    if (existing == null) {
-      // No recorder yet — a background open reads the new shared state and
-      // backfills on install. Background, because this is called from sync
-      // *UI actions* (add a mirror, choose a folder) and a synchronous open
-      // of a big notebook's log would freeze the click that asked for it.
-      unawaited(warmRecorder(nb));
-      return;
-    }
-    if (existing.materialiseBlobs) return;
-    existing.materialiseBlobs = true;
-    _startBlobBackfill(nb, existing);
-  }
-
-  /// Record any node the container has and the log does not.
-  ///
-  /// **The log has to be able to rebuild the notebook, and it could not.**
-  /// `Repository.createNotebook` seeds a first section and page straight into
-  /// SQLite — no ops — so from the log's point of view every notebook has ever
-  /// begun with a page that has no parent and a section that does not exist.
-  /// The same is true of any notebook that predates the log entirely.
-  ///
-  /// Nothing noticed, because every existing way of reaching a second device
-  /// byte-copies the container first, and the missing rows were always already
-  /// there. Restoring an operation-log directory is the first path where the log is the ONLY
-  /// copy — and its first pull failed on the foreign key from the page to a
-  /// section that had never been mentioned.
-  ///
-  /// Idempotent by construction: `SyncRecorder.node` diffs against replayed
-  /// state, so a node the log already knows produces nothing. That makes this
-  /// safe to run on every open, which is what heals notebooks made before this
-  /// existed rather than only new ones.
-  void _backfillTree(String nb, SyncRecorder r) {
-    if (_disposed) return;
-    try {
-      final known = {for (final n in r.materialisedNodes()) n.id};
-      // Parents first, so the ops replay into a tree rather than a pile.
-      final missing = [
-        for (final n in _repo.loadNodes(nb))
-          if (!known.contains(n.id)) n,
-      ]..sort((a, b) => a.level.compareTo(b.level));
-      if (missing.isEmpty) return;
-      for (final n in missing) {
-        r.node(n);
-      }
-      debugPrint(
-        '[openote/sync] recorded ${missing.length} node(s) the log '
-        'had never been told about in $nb',
-      );
-    } catch (e) {
-      // Same rule as everywhere else in shadow mode: the container is
-      // authoritative and a log we cannot write is a degraded check, never a
-      // reason to fail what the user asked for.
-      debugPrint('[openote/sync] tree backfill failed for $nb: $e');
-    }
-  }
-
-  void _startBlobBackfill(String nb, SyncRecorder r) {
-    if (_disposed || !r.materialiseBlobs) return;
-    final f = r
-        .backfillBlobs(
-      // `containerBlob`, not `getBlob`: this is the copy OUT of the container,
-      // and the ordinary read path now answers from `blobs/` first (v0.17
-      // Step 6). Handed that, the backfill would read each file it is meant to
-      // be creating and write it back over itself, and a blob the container
-      // alone holds — the entire 378-of-488 hole this exists to close — would
-      // never be seen.
-      index: _repo.blobIndex(nb),
-      read: (h) => _repo.containerBlob(nb, h),
-    )
-        .catchError((Object e) {
-      // Third of Step 1's three silent paths, and the most expensive one.
-      // `backfillBlobs` is what puts image BYTES into `blobs/`; a failure here
-      // leaves a log that names pictures the folder does not contain, which on
-      // another device is a notebook whose images are all missing, and after
-      // the demotion is the only copy of those bytes. A spike stopped this at
-      // 100 of 488 blobs and the migration still printed MIGRATION COMPLETE —
-      // 193 image blocks across 40 pages destroyed, `integrity_check` ok.
-      // Returning 0 to a `debugPrint` made that indistinguishable from
-      // "nothing to copy".
-      _noteLogProblem('blob backfill for $nb stopped', e);
-      return 0;
-    }).then((copied) async {
-      // **The backfill's completion is asserted, not inferred** (v0.17 plan,
-      // Step 5). Returning without throwing proves nothing: `backfillBlobs`
-      // returns 0 when it was not allowed to look, skips any hash that already
-      // has a file whatever that file contains, and a container row it cannot
-      // read is a `continue`. The only honest answer comes from re-reading
-      // `blobs/` and re-hashing it.
-      if (_disposed) return copied;
-      try {
-        _noteBlobProof(
-          nb,
-          await r.proveBlobs(read: (h) => _repo.containerBlob(nb, h)),
-        );
-      } catch (e) {
-        // This proof half had no handler of its own, and the chain is awaited
-        // by nobody unless a mirror is waiting on it — so a throw here was an
-        // UNHANDLED async error. Under `flutter test` that fails whichever
-        // test happens to be running when it lands (the Windows CI runner is
-        // slow enough to lose the race against teardown on most pushes; six
-        // unrelated tests went red for it), and in the app it is a crash
-        // report for background work nobody asked to keep.
-        //
-        // The common cause is the notebook legitimately LEAVING mid-proof —
-        // purged, moved in Explorer, its workspace torn down — which makes
-        // the proof moot, not failed: there is nothing left to prove ABOUT.
-        // Only a notebook still present and readable gets the "Saved, but not
-        // recorded" report the backfill half above already uses.
-        bool gone;
-        try {
-          final refs = _repo.notebooks.where((n) => n.id == nb).toList();
-          gone = _disposed ||
-              e is NotebookFileMissing ||
-              refs.isEmpty ||
-              !File(refs.single.file).existsSync();
-        } catch (_) {
-          gone = true; // the check itself failing is the strongest "gone"
-        }
-        if (gone) {
-          debugPrint('[openote/sync] blob proof for $nb stopped: $e');
-        } else {
-          _noteLogProblem('blob proof for $nb stopped', e);
-        }
-      }
-      return copied;
-    });
-    // Kept so a mirror run can wait for it. Without that, configuring a backup
-    // on a notebook whose blobs have never been materialised would copy out a
-    // `blobs/` that is still filling — a backup with most of the images missing,
-    // taken at the exact moment the user is watching to see that it worked.
-    _blobBackfills[nb] = f;
-    unawaited(
-      f.whenComplete(() {
-        if (identical(_blobBackfills[nb], f)) _blobBackfills.remove(nb);
-      }),
-    );
-  }
-
-  final Map<String, Future<int>> _blobBackfills = {};
-
-  /// Record what [SyncRecorder.proveBlobs] found, and tell the user if the
-  /// notebook's second copy of its pictures is not complete.
-  ///
-  /// Per notebook, like [_logAhead] rather than like [_logError]: a clean proof
-  /// of one notebook must not clear a hole reported in another, and the user
-  /// can only act on the one they are looking at.
-  void _noteBlobProof(String nb, BlobProof proof) {
-    if (proof.repaired.isNotEmpty) {
-      // Worth a line even though nothing is wrong any more: Openote's own
-      // writes are temp+rename and cannot tear, so a wrong-bytes or missing
-      // file means something ELSE touched the folder — a cloud client, a
-      // bad disk, an antivirus quarantine, a restore from a broken backup,
-      // a person tidying it by hand — and that tends to recur.
-      debugPrint(
-        '[openote/sync] ${proof.repaired.length} blob file(s) in $nb '
-        'were missing or held bytes that were not what their name said, '
-        'and were rewritten from the notebook file',
-      );
-    }
-    if (proof.ok) {
-      _blobHole.remove(nb);
-    } else {
-      // **Not "still fine on this computer."** That reassurance used to be
-      // unconditional, but by the time either set here is non-empty, the
-      // container has ALREADY been asked for good bytes and could not
-      // supply them either — `missing` is only reported once `backfillBlobs`
-      // has tried the container and failed (see [SyncRecorder.proveBlobs]'s
-      // own doc comment), and `damaged` means the container's own copy was
-      // tried as a repair source and was no better. Either way this
-      // computer's own copy of the picture is the one that's gone; a
-      // reassurance that named the wrong copy was worse than none, because
-      // it told someone with a genuinely lost picture not to worry about it.
-      _blobHole[nb] = SaveProblem(
-        short: 'Some pictures may be missing',
-        message: 'Openote keeps a second copy of every picture and drawing '
-            "inside this notebook's own folder, so your other devices and your "
-            'backups can show them too.\n\n'
-            'For ${proof.holes} of them, Openote could not find good bytes '
-            "anywhere on this computer — not in that second copy, and not in "
-            "the notebook's own working file either. Until they turn up "
-            '(from another device, a backup, or by adding the picture '
-            'again), it will show blank wherever it is used, on this '
-            'computer as well as any other.\n\n'
-            'Check that the disk is not full and that the folder is not set to '
-            'read-only, then close the notebook and open it again. Openote '
-            'tries again every time you open it.',
-        details: '$nb\n$proof\n'
-            'missing: ${_someHashes(proof.missing)}\n'
-            'unrepairable: ${_someHashes(proof.damaged)}',
-      );
-    }
-    if (!_disposed) notifyListeners();
-  }
-
-  /// A few hashes for the Advanced fold — enough to look one up, never the
-  /// whole list, which on a broken import is hundreds of lines.
-  static String _someHashes(Set<String> hashes) =>
-      hashes.isEmpty ? 'none' : hashes.take(5).join(', ');
-
-  /// Notebooks whose blob bytes are not fully materialised, with the sentence
-  /// to say about each. Empty is the invariant Steps 6 and 7 are gated on.
-  final Map<String, SaveProblem> _blobHole = {};
-
-  /// Prove that every blob this notebook's log names has bytes on disk **whose
-  /// content really is what the name claims**, repairing from the container
-  /// where it can.
-  ///
-  /// The gate for the rest of the v0.17 storage work, exposed so a migration —
-  /// and the tests that stand in for one — can refuse rather than proceed.
-  /// Forces a synchronous log replay if no recorder is open; see
-  /// [_recorderFor], and never call it during a build.
-  Future<BlobProof> proveBlobBytes(String nb) async {
-    final r = _recorderFor(nb);
-    if (r == null) {
-      return const BlobProof(
-        checked: 0,
-        missing: {},
-        repaired: {},
-        damaged: {},
-      );
-    }
-    // `containerBlob`: the repair replaces a blob file whose bytes are wrong,
-    // and the ordinary read path would hand it that same wrong file to check
-    // against itself — reporting an unrepairable blob while the container held
-    // a perfect copy (v0.17 Step 6).
-    final proof = await r.proveBlobs(read: (h) => _repo.containerBlob(nb, h));
-    _noteBlobProof(nb, proof);
-    return proof;
-  }
-
-  /// Wait for any in-flight blob materialisation for [nb]. Cheap when there is
-  /// none, which is the common case.
-  ///
-  /// Waits through a recorder warm first: since materialisation rides the
-  /// background open, the backfill a caller is asking about may not have
-  /// STARTED yet — it starts when the warm installs. Without this, a mirror
-  /// run right after "move to sync folder" saw nothing in flight and copied
-  /// out a `blobs/` that was still empty.
-  Future<void> awaitBlobBackfill(String nb) async {
-    final w = _recorderWarms[nb];
-    if (w != null) await w;
-    final f = _blobBackfills[nb];
-    if (f != null) await f;
-  }
-
-  /// Pull another device's changes into this notebook (ADR-0006 step 3).
-  ///
-  /// This is the moment sync exists: the transport is whatever put the other
-  /// device's `.oplog` next to ours — a synced folder, a USB stick, rsync — and
-  /// because each device only ever appends to its OWN log, there is nothing to
-  /// resolve. Merging is reading: sort the union, apply, write the result.
-  ///
-  /// Returns the number of ops folded in.
-  /// True while a pull is in flight.
-  ///
-  /// Guards re-entrancy: the watcher can fire again mid-pull (a cloud client
-  /// writing a second log while we read the first), and two overlapping pulls
-  /// would both read the same pending ops, both write them, and both advance
-  /// the watermark — applying remote edits twice.
-  bool _pulling = false;
-
-  /// Set when a pull is requested while one is already running.
-  ///
-  /// Returning early on re-entrancy would **drop** that request: the watcher's
-  /// debounce has already fired, so nothing else is going to ask again, and the
-  /// other device's edits would sit unapplied until some later unrelated change
-  /// happened to fire the watcher — possibly never, if they stopped typing.
-  /// Auto-pull would then be "auto-pull, usually", which is worse than manual
-  /// because nothing tells you it didn't happen.
-  bool _pullAgain = false;
-
-  /// [nodes], reordered so every node follows its parent.
-  ///
-  /// A stable topological sort: roots (and any node whose parent is not in the
-  /// set — an orphan, which delete-wins can produce) come first, then each
-  /// generation below. Cycles cannot happen through the app, but a hand-edited
-  /// or truncated log could produce one, so anything still unplaced after the
-  /// tree is exhausted is appended rather than dropped. Losing a node here
-  /// would be worse than a foreign-key error: the error rolls back and retries,
-  /// a silent drop does not.
-  static List<MatNode> _parentsFirst(List<MatNode> nodes) {
-    final byId = {for (final n in nodes) n.id: n};
-    final out = <MatNode>[];
-    final placed = <String>{};
-
-    void place(MatNode n, int depth) {
-      if (!placed.add(n.id)) return;
-      final parent = n.parentId;
-      // `depth` bounds the recursion in the presence of a cycle; the length of
-      // the list is the deepest a valid tree can be.
-      if (parent != null && byId.containsKey(parent) && depth < nodes.length) {
-        place(byId[parent]!, depth + 1);
-      }
-      out.add(n);
-    }
-
-    for (final n in nodes) {
-      place(n, 0);
-    }
-    return out;
-  }
-
-  // ── Housekeeping nobody has to know about ────────────────────────────
-  //
-  // "Realistically no one will notice any of this nor will they think about
-  // running it."
-  //
-  // Correct, and it is the whole problem with a maintenance button: the people
-  // whose notebooks need it are exactly the people who will never press it.
-  // A notebook imported before handwriting became binary carries ~80 MB it
-  // does not need, and its owner has no way to know.
-  //
-  // **Only work that is reversible in effect happens on its own.** Converting
-  // ink rewrites a representation and loses nothing — the strokes come back
-  // identically, which `ink_storage_test` asserts point by point. DELETING
-  // anything does not qualify: leftover files and duplicate notebooks stay a
-  // human decision, because the cost of being wrong is somebody's notes and
-  // the cost of asking is one click.
-
-  /// Notebooks this session has already finished with — completed a pass, or
-  /// found nothing to do — so switching back and forth does not re-run
-  /// anything. A DEFERRAL does not land here: the notebooks most in need of
-  /// tidying are the actively used ones, which are exactly the ones where the
-  /// user is mid-sentence when the timer fires. Marking them done on that
-  /// evidence would disable the feature precisely on its target population.
-  final Set<String> _housekept = {};
-
-  Timer? _housekeepingTimer;
-  Timer? _housekeepingNoteClear;
-
-  /// The run in flight, so [settleBackgroundWork] can drain it — otherwise its
-  /// late I/O lands charged to whichever test runs next.
-  Future<void>? _housekeepingRun;
-
-  /// When [nb] was last tidied, so a notebook with nothing to do is not
-  /// examined on every single open.
-  static String _housekeepingKey(String nb) => 'tidiedAt:$nb';
-
-  void _scheduleHousekeeping(
-    String nb, {
-    Duration delay = const Duration(seconds: 20),
-  }) {
-    if (_disposed || _housekept.contains(nb)) return;
-    _housekeepingTimer?.cancel();
-    // Well after the notebook has finished opening. The open path already
-    // costs a replay and a fold; adding a scan to it would make the thing
-    // meant to be invisible the slowest part of launching.
-    _housekeepingTimer = Timer(delay, () {
-      final f = _runHousekeeping(nb);
-      _housekeepingRun = f;
-      unawaited(
-        f.whenComplete(() {
-          if (identical(_housekeepingRun, f)) _housekeepingRun = null;
-        }),
-      );
-    });
-  }
-
-  /// Try again in a few minutes: the fire moment was busy, not wrong.
-  void _deferHousekeeping(String nb) {
-    if (_disposed || notebookId != nb) return;
-    _scheduleHousekeeping(nb, delay: const Duration(minutes: 3));
-  }
-
-  @visibleForTesting
-  Future<void> runHousekeepingForTest(String nb) => _runHousekeeping(nb);
-
-  Future<void> _runHousekeeping(String nb) async {
-    if (_disposed || notebookId != nb || _housekept.contains(nb)) return;
-    // Not while there are unsaved edits, not while a sync is mid-flight, not
-    // while an import owns the log: the conversion rewrites pages, and a pull
-    // rewrites pages from the log. Those two racing is exactly the bug that
-    // made a manual conversion silently revert. Busy is a DEFERRAL — come
-    // back when the typing stops — never a verdict on the notebook.
-    if (_dirty || _pulling || _importingNotebooks.contains(nb)) {
-      _deferHousekeeping(nb);
-      return;
-    }
-
-    try {
-      final last = (_repo.getSetting(_housekeepingKey(nb)) as num?)?.toInt();
-      final now = nowMs();
-      // A notebook with nothing to do is re-examined weekly, not hourly. The
-      // check itself is one indexed LIKE query, but it is not free on a big
-      // container and there is no reason to pay it every launch.
-      if (last != null && now - last < const Duration(days: 7).inMilliseconds) {
-        _housekept.add(nb);
-        return;
-      }
-
-      final pages = inlineInkPageCount(nb);
-      if (pages == 0) {
-        _repo.setSetting(_housekeepingKey(nb), now);
-        _housekept.add(nb);
-        return;
-      }
-
-      // Announced, not silent. "Without requiring direct input" is not the
-      // same as "without telling them": a notebook quietly rewriting itself is
-      // alarming if you notice, and this is a change the user might reasonably
-      // want to know happened.
-      housekeepingNote = 'Making handwriting smaller on $pages pages…';
-      notifyListeners();
-
-      final r = await convertInkToBinary(nb, unattended: true);
-      if (_disposed) return;
-      if (r.deferred) {
-        // It stepped aside — the user typed, or another device's changes were
-        // still folding. What it converted is durable; the clock is NOT
-        // stamped and the session slot is NOT consumed, so the rest happens
-        // once things go quiet.
-        housekeepingNote = null;
-        notifyListeners();
-        _deferHousekeeping(nb);
-        return;
-      }
-      _housekept.add(nb);
-      _repo.setSetting(_housekeepingKey(nb), nowMs());
-      // Only announced on the notebook it happened to: the note is app-global,
-      // and a user who switched notebooks mid-run should not read another
-      // notebook's result under this one's pages.
-      housekeepingNote = r.converted > 0 && notebookId == nb
-          ? 'Handwriting made smaller on ${r.converted} pages.'
-          : null;
-      notifyListeners();
-      // The note is information, not a task. It clears itself.
-      if (housekeepingNote != null) {
-        _housekeepingNoteClear?.cancel();
-        _housekeepingNoteClear = Timer(const Duration(seconds: 12), () {
-          if (_disposed) return;
-          housekeepingNote = null;
-          notifyListeners();
-        });
-      }
-    } catch (e) {
-      // Housekeeping must never be able to break using the app. An error is a
-      // verdict (unlike busy): consume the slot rather than retry-looping all
-      // session against the same failure.
-      _housekept.add(nb);
-      debugPrint('[openote/tidy] $nb: $e');
-      housekeepingNote = null;
-      if (!_disposed) notifyListeners();
-    }
-  }
-
-  /// What background housekeeping is doing, for the status bar. Null when
-  /// nothing is happening, which is almost always.
-  String? housekeepingNote;
-
-  /// Pull once the background replay has finished, without blocking the open.
-  ///
-  /// Separate from [syncPull] because that one warms the recorder itself and
-  /// awaiting it here would reintroduce the startup stall. Failures are logged
-  /// rather than thrown: this runs detached from any user action, and a
-  /// notebook that cannot fold must still open.
-  void _foldWhenWarm(String nb) {
-    unawaited(
-      warmRecorder(nb).then<int>((r) async {
-        // The user may have moved on to another notebook while this replayed.
-        if (r == null || _disposed || notebookId != nb) return 0;
-        return syncPull(nb);
-      }).catchError((Object e) {
-        debugPrint('[openote/sync] open-time fold failed: $e');
-        return 0;
-      }),
-    );
-  }
-
-  Future<int> syncPull(String nb) async {
-    if (_editorOwner != null) return _editorOwner!.syncPull(nb);
-    if (_pulling) {
-      // Don't queue a second concurrent pull — two overlapping pulls would both
-      // read the same pending ops and both advance the watermark, applying
-      // remote edits twice. Record that another round is owed instead.
-      _pullAgain = true;
-      return 0;
-    }
-    _pulling = true;
-    try {
-      var total = 0;
-      // Loop rather than recurse: a device syncing a burst of logs can keep
-      // setting the flag, and each round must see the ops that landed during
-      // the previous one.
-      do {
-        _pullAgain = false;
-        // Warmed, not opened inline: a pull fires from the folder watcher on
-        // the UI thread's event loop, and the first pull for a big notebook
-        // would otherwise pay the whole replay right there. This path is
-        // already async, so it can simply wait for the background open.
-        final r = await warmRecorder(nb);
-        if (r == null) break;
-        // A blob file that landed AFTER its op folded is never named by any
-        // later op, so this sweep — running on every pull, including the one
-        // the folder watcher fires when the file itself arrives — is what
-        // verifies it close to arrival instead of leaving it to its first
-        // read. Free when nothing is held, which is the healthy steady state.
-        final verified = _repo.verifyHeldBlobs(nb);
-        if (verified > 0) {
-          debugPrint(
-            '[openote/sync] $verified late blob file(s) verified '
-            'against their name and released to the read path',
-          );
-        }
-        // Awaited: the parse is paced now (see `OpLogStore.readDeviceFrom`),
-        // so the ~1 s a first read of a 64.6 MB log costs is spent in ~8 ms
-        // slices the window can paint and type between instead of one block.
-        final pending = await r.pendingForeignOps(_repo.getSetting);
-        if (pending.isEmpty) continue;
-        total += await _syncPullLocked(nb, r, pending);
-      } while (_pullAgain);
-      return total;
-    } finally {
-      _pulling = false;
-    }
-  }
-
-  /// Check the bytes of every blob these ops name, and put any file whose
-  /// contents are not what its name says out of the read path's reach.
-  ///
-  /// **This used to copy those bytes into the container** — the two halves of a
-  /// blob travel separately (an op carries hash, mime and size; the bytes go
-  /// beside the log as `blobs/<sha256>`) and nothing re-joined them, so a page
-  /// arrived referencing bytes the container did not hold and `blob_refs`'
-  /// foreign key failed the whole pull. From v0.17 Step 6 there is nothing to
-  /// copy: the shared folder's `blobs/` **is** this device's blob store, the
-  /// read path answers from it directly, and the foreign key is gone.
-  ///
-  /// What is left is the check that copy was quietly performing. `putBlob`
-  /// re-derived the hash from the bytes, so a truncated download stored itself
-  /// under a different name and the page went on showing nothing. Reading
-  /// straight from the file would instead *serve* those bytes — a corrupted
-  /// picture rendered as if it were real.
-  ///
-  /// **Nothing here deletes — or renames — a file, and that is the decision
-  /// everything else hangs off.** `blobs/` sits inside the replicated folder,
-  /// so the cloud client mirrors whatever happens to it: this used to call
-  /// `discardBlob` on a mismatch, and the deletion of one device's
-  /// half-copied download replicated out and removed every other device's
-  /// GOOD copy under that name — after Step 7 empties the container, that is
-  /// permanent, all-device loss of the picture. (A rename is no better: it
-  /// replicates too, and takes the canonical name away from everyone.) Local
-  /// evidence gets local consequences only: the hash goes on the
-  /// repository's held register, `getBlob` treats the file as absent and
-  /// falls back to the container, and the file is put right by `proveBlobs`'
-  /// repair — the one caller that holds verified replacement bytes — or by
-  /// the cloud client finishing or re-delivering the copy, at which point the
-  /// register releases it.
-  ///
-  /// A file that is present but cannot be READ (a lock, a dehydrated
-  /// placeholder) is skipped outright: `blobBytesMatch` answers false for it,
-  /// so treating "failed the check" as "bad" condemned perfectly good files.
-  /// "Could not check" is not evidence of anything.
-  ///
-  /// A blob whose file has simply not arrived is **not** an error and must not
-  /// fail the pull: a cloud client syncs the log and the blobs independently,
-  /// so a reference routinely lands first. It IS put on the held register —
-  /// once this op folds, nothing ever names the hash again, so a file landing
-  /// later would be served all session without a single check. The register
-  /// is swept by every later pull (the folder watcher fires one when the file
-  /// lands) and consulted by `getBlob` before first serve.
-  ///
-  /// Returns how many files were found holding the wrong bytes.
-  int _rejectBadForeignBlobs(String nb, SyncRecorder r, List<Op> pending) {
-    var wrongBytes = 0;
-    for (final op in pending) {
-      if (op.kind != OpKind.blobPut) continue;
-      // `Op.data` is Object? — a hand-edited or future log can put anything
-      // here, and a malformed op must be skipped rather than crash the pull.
-      final d = op.data;
-      if (d is! Map) continue;
-      final hash = d['hash'];
-      if (hash is! String || hash.isEmpty) continue;
-      if (!r.store.hasBlob(hash)) {
-        _repo.holdBlobUntilVerified(nb, hash);
-        continue; // not arrived yet — not an error
-      }
-      // `readBlob`, not `blobBytesMatch`: the latter folds "unreadable" into
-      // its false, and this is the one caller that must tell them apart.
-      final bytes = r.store.readBlob(hash);
-      if (bytes == null) continue; // unreadable — could not check, not bad
-      if (sha256Hex(bytes) == hash.replaceFirst('sha256:', '')) continue;
-      _repo.holdBlobUntilVerified(nb, hash);
-      wrongBytes++;
-      debugPrint(
-        '[openote/sync] blob $hash does not match its bytes — '
-        'held out of the read path; probably still copying, and the good '
-        'copy stays safe on the device that wrote it',
-      );
-    }
-    return wrongBytes;
-  }
-
-  /// Pages written per transaction while a pull is applying.
-  ///
-  /// Measured at ~1.4 ms per `writePage` on a real fold, so eight is ~11 ms —
-  /// inside a frame, with room for the frame itself.
-  static const int _pullPageChunk = 8;
-
-  /// Nodes written per transaction. `upsertNode` measured ~0.3 ms, so forty is
-  /// the same ~12 ms budget.
-  static const int _pullNodeChunk = 40;
-
-  /// Run [work] over [items] in slices of [size], letting the app breathe
-  /// between them.
-  ///
-  /// **A REAL delay, not `Duration.zero`.** Same reason as
-  /// `SyncRecorder.backfillBlobs`: on Windows the UI isolate lives on the
-  /// Win32 message loop, where posted messages outrank hardware input, so a
-  /// zero-duration timer is work due immediately and the queue never goes idle
-  /// — the window would still not answer the mouse. One millisecond lets it
-  /// actually wait, which is when Win32 delivers input.
-  static Future<void> _inChunks<T>(
-    List<T> items,
-    int size,
-    void Function(List<T> slice) work,
-  ) async {
-    for (var i = 0; i < items.length; i += size) {
-      work(items.sublist(i, math.min(i + size, items.length)));
-      if (i + size < items.length) {
-        await Future<void>.delayed(const Duration(milliseconds: 1));
-      }
-    }
-  }
-
-  /// Non-null while a pull is writing materialised pages into the container.
-  ///
-  /// The pull now yields, so a save CAN land in the middle of one — and a save
-  /// writes the page as this device currently has it, which for a page the
-  /// pull is about to rewrite means the container keeps the stale copy while
-  /// the log keeps the remote's ops. The watermark advances anyway, so that
-  /// page would stay wrong on this device until something rebuilt it. Saves
-  /// wait for the gate instead of being dropped, so nothing is lost and
-  /// `shutdown`'s flush still lands.
-  Completer<void>? _applyingPull;
-
-  Future<int> _syncPullLocked(
-    String nb,
-    SyncRecorder r,
-    List<Op> pending,
-  ) async {
-    // Flush first: a local edit still sitting in the debounce would otherwise
-    // be overwritten by the materialised page we're about to write.
-    await flushSave();
-
-    final changed = r.applyForeign(pending);
-
-    // **Settle the bytes before the pages that reference them.**
-    //
-    // A blob op carries only hash/mime/size; the bytes travel as a
-    // content-addressed file in the shared folder. Nothing was reading them
-    // back, so an image made on another device arrived as a reference to
-    // nothing — and not merely as a broken picture: `blob_refs.hash` was a
-    // foreign key onto `blobs`, so `writePage` threw a constraint violation and
-    // took the WHOLE pull down with it. One shared notebook with one image in
-    // it stopped that device syncing at all.
-    //
-    // Both halves of that are now different. The bytes need no copying — from
-    // v0.17 Step 6 the shared folder's `blobs/` IS this device's blob store —
-    // and the foreign key is gone. What still has to happen before any page is
-    // written is rejecting a file whose bytes are not what its name claims,
-    // because the read path will otherwise hand those bytes to the screen.
-    final badBlobs = _rejectBadForeignBlobs(nb, r, pending);
-
-    // **Written in chunks, with the event loop let go between them.**
-    //
-    // "the app to fully lock up for 10-20s as it works". This was one
-    // `runInTransaction` over every changed page, on the UI thread. Measured
-    // on a 2,000-page fold from a 20 MB log: 2,842 ms in `writePage`, 588 ms
-    // in `upsertNode`, and an event loop blocked solid for 3.2 s — and the
-    // user's real log is three times that size, which is the reported 10-20 s
-    // almost exactly. Nothing here got FASTER; it now happens in slices the
-    // window can paint and type between.
-    //
-    // The order the single transaction enforced is kept by running the phases
-    // in sequence instead, and each phase is still atomic:
-    //
-    //   1. nodes, parents before children;
-    //   2. pages;
-    //   3. deletions.
-    //
-    // Splitting them is safe because the watermark still advances only at the
-    // very end, and every write here is idempotent (upsert, mirror replace,
-    // soft-delete) — so a crash between phases re-applies the whole pull next
-    // time rather than skipping it. That was already true of the blob copy
-    // above, which has always run outside the transaction.
-    _applyingPull = Completer<void>();
-    // **THE PHASES DO NOT AGREE ABOUT WHICH NODES EXIST, AND THREE FOREIGN
-    // KEYS POINT AT `nodes(id)`** — `nodes.parent_id`, `page_mirror.page_id`
-    // and `blob_refs.page_id`. The node phase writes only LIVE nodes, while
-    // both it and the page phase can carry rows naming a node it left out.
-    // That is `SqliteException(787)`, a rolled-back slice, and an exception
-    // that escapes the pull BEFORE the watermark moves — so the batch stays
-    // pending and the NEXT pull replays it and throws in the same place.
-    // Sync does not fail once, it fails for ever on that device, with nothing
-    // on screen to say so. [rooted] is the running answer to "will this id
-    // have a `nodes` row by the time the page phase runs", filled by the node
-    // phase and consulted by the page phase.
-    final rooted = <String>{};
-    var orphanNodes = 0;
-    var orphanPages = 0;
-    var unknownKinds = 0;
-    try {
-      // **Nodes before pages.** `page_mirror.page_id` is a foreign key onto
-      // `nodes(id)` and every container runs with `PRAGMA foreign_keys=ON`, so
-      // writing a page whose node row does not exist yet fails with SQLITE
-      // constraint 787 — and `runInTransaction` rolls back, discarding the
-      // whole phase rather than one row.
-      //
-      // It has never mattered because every existing way of getting a
-      // notebook onto a second device copies the container first, so the node
-      // rows are always already there and the tree ops are updates. A notebook
-      // restored from an operation-log directory has no container to copy — the log IS the
-      // notebook — so its very first pull creates every node and every page at
-      // once, and the order stops being an implementation detail.
-      if (changed.treeChanged) {
-        // PARENTS BEFORE CHILDREN. `nodes.parent_id` is a self-referencing
-        // foreign key, so a page written before its section fails the same way
-        // a page written before its node does — and rolls back the same whole
-        // transaction. The materialised nodes come out in map order, which is
-        // whatever order the ops happened to be replayed in.
-        //
-        // Same reason as the block above: on a container that already has the
-        // tree these are all updates and order is irrelevant. On the empty
-        // container an operation-log restore creates, every row is an insert.
-        //
-        // Chunked as one unit per slice rather than per node: a child whose
-        // parent is in the SAME slice is fine (same transaction), and a child
-        // whose parent was in an earlier slice is fine too (already
-        // committed), because `_parentsFirst` never puts a child before its
-        // parent in the list.
-        //
-        // **A LIVE NODE WHOSE PARENT IS NOT BEING WRITTEN CANNOT BE WRITTEN
-        // EITHER.** `nodeDelete` marks exactly the node it names — the
-        // materialiser does not cascade — so deleting a SECTION leaves that
-        // section's pages live in the log's state, pointing at a parent
-        // `liveNodes()` no longer returns. On a container that already holds
-        // the section that is harmless: the row is there, merely soft-deleted,
-        // and a foreign key does not care. A section created and deleted
-        // inside ONE fold has no row at all, and `upsertNode` then fails
-        // `nodes.parent_id` with SQLITE constraint 787 — observed on a batch
-        // of upsert(section), upsert(page under it), delete(section).
-        //
-        // Dropping the child is what the delete already meant: the deleting
-        // device soft-deletes the whole subtree (`softDeleteNode` walks the
-        // descendants), so a page whose section is gone must not appear here
-        // either. Nothing is stranded by it — this phase re-projects the
-        // WHOLE live tree on every pull, not a delta, so a node dropped
-        // because its parent had not arrived yet is written by the next pull
-        // that touches the tree.
-        final tree = <MatNode>[];
-        for (final n in _parentsFirst(r.materialisedNodes())) {
-          // **A KIND THIS BUILD DOES NOT KNOW IS LEFT ALONE, NOT MADE A PAGE.**
-          // This loop used to end in `orElse: () => NodeKind.page`, which is
-          // what turned the writer's `sectionGroup` into six pages per
-          // notebook — and would flatten any future kind the same way, into a
-          // row with a `page_mirror` foreign key and a `level`. Skipped here
-          // rather than at the write below so `rooted` never claims a row that
-          // was not written: the page phase reads `rooted` to decide whether a
-          // mirror has a node to hang off, and a lie there is SQLITE
-          // constraint 787, a rolled-back slice, and a device wedged for good.
-          // The node is not lost — nothing deletes it, and the pull re-projects
-          // the whole live tree every time, so a build that understands the
-          // kind writes it (v0.17 plan, Step 3).
-          if (nodeKindFromWire(n.kind) == null) {
-            unknownKinds++;
-            continue;
-          }
-          final parent = n.parentId;
-          if (parent == null ||
-              rooted.contains(parent) ||
-              _repo.hasNode(nb, parent)) {
-            rooted.add(n.id);
-            tree.add(n);
-          } else {
-            orphanNodes++;
-          }
-        }
-        await _inChunks(tree, _pullNodeChunk, (slice) {
-          _repo.runInTransaction(nb, () {
-            for (final n in slice) {
-              _repo.upsertNode(
-                nb,
-                TreeNode(
-                  id: n.id,
-                  // Non-null by construction: the filter above dropped every
-                  // node whose kind this build cannot name.
-                  kind: nodeKindFromWire(n.kind)!,
-                  parentId: n.parentId,
-                  title: n.title,
-                  position: n.position,
-                  color: n.color,
-                  level: n.level,
-                  createdAt: n.createdAt == 0 ? null : n.createdAt,
-                ),
-              );
-            }
-          });
-        });
-      }
-      await _inChunks(changed.pages.toList(), _pullPageChunk, (slice) {
-        _repo.runInTransaction(nb, () {
-          for (final pageId in slice) {
-            // **NO NODE ROW, NO MIRROR ROW.** `changed.pages` is every page an
-            // op touched, which includes one CREATED AND DELETED inside this
-            // same fold — and the phase above writes only live nodes, so that
-            // page has no row and never will. `page_mirror.page_id` is a
-            // foreign key onto `nodes(id)`, so the insert fails 787 and takes
-            // the whole slice — every other page in it — down with it, then
-            // wedges the device for good as described above. Observed on a
-            // batch of upsert(page), blockSet, delete(page).
-            //
-            // Skipped rather than fixed by writing the deleted node too. The
-            // end state is identical — the very next phase deletes it, and
-            // `page_mirror` goes with it by cascade — but writing it would put
-            // a node the log says is GONE into the tree, and the phases now
-            // yield the event loop between slices, so that is a window the
-            // user can see and anything failing after it makes the
-            // resurrection permanent. Delete-LOSES is exactly what
-            // `materialisedDeletedIds` exists to prevent, and a fix must not
-            // reintroduce it to dodge a constraint. A page that is NOT deleted
-            // is unaffected: its node is live, so it is in [rooted].
-            //
-            // Same shape and the same answer as `blob_refs` one level down in
-            // `NotebookWriter.writePage`, which likewise records only what the
-            // container actually holds.
-            if (!rooted.contains(pageId) && !_repo.hasNode(nb, pageId)) {
-              orphanPages++;
-              continue;
-            }
-            final mirror = r.materialisedPage(pageId);
-            final blocks = [
-              for (final b in (mirror['blocks'] as List? ?? const []))
-                Block.fromJson((b as Map).cast<String, dynamic>()),
-            ];
-            final props = PageProps.fromJson(
-              (mirror['page'] as Map?)?.cast<String, dynamic>(),
-            );
-            _repo.writePage(nb, pageId, blocks, props);
-          }
-        });
-      });
-      if (changed.treeChanged) {
-        // Deletions LAST, and this is the half that has to stay after the
-        // pages: a node the log says is gone must leave the container, or a
-        // remote delete would be silently ignored and "delete wins" would
-        // become "delete loses". Running it before the page writes would let a
-        // page write resurrect what the delete just removed. Soft-delete, so
-        // it lands in the recycle bin exactly as a local delete would.
-        // **Stamped with the log's instant, not this device's clock.** Writing
-        // `nowMs()` here made two devices disagree about when a page had been
-        // deleted — so its thirty-day retention expired at a different moment
-        // on each — and left the container disagreeing with the very log it
-        // was folded from.
-        await _inChunks(r.materialisedDeletions(), _pullNodeChunk, (slice) {
-          _repo.runInTransaction(nb, () {
-            for (final (id, at) in slice) {
-              _repo.softDeleteNode(nb, id, at: at);
-            }
-          });
-        });
-      }
-    } finally {
-      final gate = _applyingPull;
-      _applyingPull = null;
-      gate?.complete();
-    }
-
-    if (badBlobs > 0) {
-      debugPrint(
-        '[openote/sync] held $badBlobs blob file(s) whose bytes '
-        'were not what their name said out of the read path',
-      );
-    }
-    if (orphanNodes > 0 || orphanPages > 0) {
-      // Said out loud because it is the only trace either skip leaves: what
-      // used to happen here was a 787 that stopped this device syncing
-      // permanently, so a line in the log is the difference between "we
-      // deliberately left these out" and a silent hole.
-      debugPrint(
-        '[openote/sync] skipped $orphanNodes node(s) and '
-        '$orphanPages page(s) with no parent row in the container — '
-        'deleted in this same batch, or their parent has not arrived yet',
-      );
-    }
-    if (unknownKinds > 0) {
-      debugPrint(
-        '[openote/sync] left $unknownKinds node(s) alone — their kind '
-        'was written by a newer version of Openote, and guessing "page" is '
-        'how six section groups per notebook became pages',
-      );
-    }
-
-    // Watermark per device, only after the writes landed — a crash mid-pull
-    // must re-apply rather than skip.
-    final highest = <String, int>{};
-    for (final op in pending) {
-      if (op.seq > (highest[op.device] ?? 0)) highest[op.device] = op.seq;
-    }
-    highest.forEach(
-      (dev, seq) => r.markForeignSeen(dev, seq, _repo.setSetting),
-    );
-
-    // Re-read whatever the user is looking at.
-    reloadNodes();
-    if (pageId != null && changed.pages.contains(pageId)) {
-      final data = await engine.loadPage(nb, pageId!);
-      blocks = data.blocks;
-      pageProps = data.props;
-      docRevision++;
-    }
-    lastSyncPull = pending.length;
-    for (final editor in _editors.where((editor) => editor.notebookId == nb)) {
-      editor.reloadNodes();
-      if (editor.pageId != null && changed.pages.contains(editor.pageId)) {
-        final data = await editor.engine.loadPage(nb, editor.pageId!);
-        editor.blocks = data.blocks;
-        editor.pageProps = data.props;
-        editor.docRevision++;
-      }
-      editor.notifyListeners();
-    }
-    _invalidateSyncStatus();
-    notifyListeners();
-    return pending.length;
-  }
-
-  /// Ops folded in by the last [syncPull], for the status surface.
-  int lastSyncPull = 0;
-
-  // ── Cloud sync: a synced folder is the transport ─────────────────────
-
-  /// Move a notebook's shared half into [targetDir] (a
-  /// Drive/OneDrive/iCloud/Syncthing folder) so other devices see it. Returns
-  /// the new `.onotebook` path.
-  ///
-  /// The `.onote` stays on this computer — see [Repository.moveNotebookTo] for
-  /// why putting a WAL database in a replicated folder is the one thing this
-  /// design exists to avoid.
-  ///
-  /// No OAuth and no tokens by design: those providers' desktop clients
-  /// already present the cloud as a local folder, and one-writer-per-file
-  /// means they never have to merge anything — which is the thing they do
-  /// badly. See `sync/cloud_folders.dart` for the full reasoning.
-  Future<String> moveNotebookToFolder(String nb, String targetDir) async {
-    await flushSave();
-    // Drop the recorder: it holds the OLD path, and a stale log location would
-    // silently write this device's ops somewhere nobody is looking.
-    _recorders.remove(nb);
-    // AWAITED, unlike everywhere else this is called: `moveNotebookTo` deletes
-    // the old log directory, and on Windows that fails while the watcher still
-    // holds a handle on it. The failure is swallowed there, which would leave
-    // an orphaned `.onotebook` behind to collide with the next free-name
-    // search — a silent, cumulative mess rather than an error.
-    await _stopWatching();
-    final path = await _repo.moveNotebookTo(nb, targetDir);
-    // The user just told us this folder is where their notes sync. Remember
-    // it, rather than re-guessing later from a list of well-known provider
-    // paths that will not contain it.
-    rememberSyncRoot(targetDir);
-    _invalidateSyncStatus();
-    // This notebook's images have been living only in the container. They are
-    // about to be someone else's only copy, so write them out now rather than
-    // whenever this notebook next happens to be opened.
-    materialiseBlobsIfShared(nb);
-    if (nb == notebookId) {
-      await _loadNotebook();
-      _startWatching();
-    }
-    notifyListeners();
-    return path;
-  }
-
-  /// The cloud folder this notebook's **container** is sitting in, or null.
-  ///
-  /// Non-null only for notebooks an older build moved: until the v0.17 fix,
-  /// sharing a notebook copied the `.onote` into the folder along with the
-  /// logs, and a WAL SQLite database being replicated by a consumer sync client
-  /// is the torn-database hazard ADR-0006 §2 describes. Nothing acts on this
-  /// automatically — it is what the sync dialog offers a button for, and the
-  /// user decides.
-  CloudFolder? containerSyncFolder(String nb) {
-    final path = notebookPath(nb);
-    if (path == null) return null;
-    return cloudFolderContaining(p.dirname(path), also: _syncRoots);
-  }
-
-  /// Copy this notebook's container back onto this computer and remove it from
-  /// the cloud folder. The notes themselves — the `.onotebook` — do not move
-  /// and keep syncing.
-  Future<String> moveContainerOutOfSyncFolder(String nb) async {
-    await flushSave();
-    // The recorder holds the old container path, and `logDirPath` is about to
-    // stop being derivable from it. Dropping it means the next mutation opens a
-    // recorder that reads the registry fresh.
-    _recorders.remove(nb);
-    await _stopWatching();
-    final path = await _repo.moveContainerOutOfSyncFolder(nb);
-    _invalidateSyncStatus();
-    if (nb == notebookId) {
-      await _loadNotebook();
-      _startWatching();
-    }
-    notifyListeners();
-    return path;
-  }
-
-  // ── Mirrors and backups ──────────────────────────────────────────────
-
-  /// Extra one-way destinations per notebook id.
-  final Map<String, List<MirrorTarget>> _mirrors = {};
-
-  List<MirrorTarget> mirrorsFor(String nb) => _mirrors[nb] ?? const [];
-
-  void addMirror(String nb, MirrorTarget t) {
-    _mirrors.putIfAbsent(nb, () => []).add(t);
-    _saveMirrors();
-    _invalidateSyncStatus();
-    // BEFORE the first run: a mirror copies `.onotebook/`, so mirroring a
-    // notebook whose blobs were never materialised would produce a copy with no
-    // images in it. The backfill is async, so the first run can still beat it —
-    // mirrors are incremental and the next run picks up what landed late.
-    materialiseBlobsIfShared(nb);
-    // Run once immediately: a mirror you have to wait for is one you don't
-    // trust yet.
-    unawaited(runMirrors(nb));
-    notifyListeners();
-  }
-
-  void removeMirror(String nb, String path) {
-    _mirrors[nb]?.removeWhere((t) => t.path == path);
-    _saveMirrors();
-    _invalidateSyncStatus();
-    notifyListeners();
-  }
-
-  void _saveMirrors() => _repo.setSetting('mirrors', {
-        for (final e in _mirrors.entries)
-          e.key: [for (final t in e.value) t.toJson()],
-      });
-
-  /// When each notebook's mirrors last ran, so saves don't trigger a copy
-  /// storm. A mirror is a safety net, not a live replica.
-  final Map<String, int> _lastMirrorRun = {};
-  static const _mirrorMinGapMs = 60000;
-
-  /// Copy [nb] out to its mirrors, at most once a minute.
-  ///
-  /// Callers usually fire and forget, so the run is also parked in
-  /// [_mirrorRuns] where [awaitMirrorRun] can find it. Not bookkeeping for its
-  /// own sake: a mirror run is file I/O against two directories, and one still
-  /// in flight when a test's fixture is torn down throws a `PathNotFound` that
-  /// gets charged to whichever test is running next. That exact shape produced
-  /// an intermittent Windows CI failure once already.
-  Future<void> runMirrors(String nb, {bool force = false}) {
-    final f = _runMirrors(nb, force: force);
-    _mirrorRuns[nb] = f;
-    unawaited(
-      f.whenComplete(() {
-        if (identical(_mirrorRuns[nb], f)) _mirrorRuns.remove(nb);
-      }),
-    );
-    return f;
-  }
-
-  final Map<String, Future<void>> _mirrorRuns = {};
-
-  /// Wait for any mirror run in flight for [nb]. Cheap when there is none.
-  Future<void> awaitMirrorRun(String nb) async {
-    final f = _mirrorRuns[nb];
-    if (f != null) await f;
-  }
-
-  /// Wait for every background job this state has started — log replays, blob
-  /// materialisations, mirror runs — to finish.
-  ///
-  /// These are all fire-and-forget by design: the UI must never wait on them.
-  /// But "nobody waits" and "nobody can wait" are different, and the second is
-  /// how late file I/O ends up landing after the directory it wants is gone —
-  /// a log line at shutdown in the app, and in tests a failure charged to
-  /// whichever test runs next.
-  Future<void> settleBackgroundWork() async {
-    // Each pass can start more work (a warm installs, which starts a
-    // backfill), so drain until a pass finds nothing.
-    for (var pass = 0; pass < 8; pass++) {
-      final pending = <Future<void>>[
-        ..._recorderWarms.values,
-        ..._blobBackfills.values,
-        ..._mirrorRuns.values,
-        if (_housekeepingRun != null) _housekeepingRun!,
-      ];
-      if (pending.isEmpty) return;
-      await Future.wait(pending).catchError((_) => const <void>[]);
-    }
-  }
-
-  Future<void> _runMirrors(String nb, {bool force = false}) async {
-    final targets = mirrorsFor(nb);
-    if (targets.isEmpty) return;
-    final now = nowMs();
-    if (!force && now - (_lastMirrorRun[nb] ?? 0) < _mirrorMinGapMs) return;
-    _lastMirrorRun[nb] = now;
-    // A mirror copies `.onotebook/`, so it must not start while that directory
-    // is still being filled with the notebook's images.
-    await awaitBlobBackfill(nb);
-    final src = notebookLogDir(nb);
-    if (src == null) return;
-    final trouble = _mirrorTrouble.putIfAbsent(nb, () => <String, String>{});
-    for (final t in targets) {
-      try {
-        await mirrorNotebook(
-          src,
-          t,
-          containerPath: notebookPath(nb),
-          snapshot: (dest) => _repo.snapshotContainer(nb, dest),
-        );
-        trouble.remove(t.path);
-        _mirrorOkAt[t.path] = nowMs();
-      } catch (e) {
-        // A mirror is a convenience; a failing one (USB stick unplugged,
-        // network share down) must never interfere with editing. It must,
-        // however, be ADMITTED: this used to be a `debugPrint` and nothing
-        // else, and the notebook went on wearing a "Backed up" badge for a
-        // term of notes that were never copied anywhere.
-        debugPrint('[openote/mirror] ${t.path} failed: $e');
-        trouble[t.path] = '$e';
-      }
-    }
-    lastMirrorAt = nowMs();
-    // The badge is derived from this, and the status is cached.
-    _syncStatusCache.remove(nb);
-    notifyListeners();
-  }
-
-  /// What went wrong the last time each extra copy was made, by path.
-  ///
-  /// Empty for a target that worked, and for one that has not run yet —
-  /// "not tried" is not "failed", and a notebook must not lose its badge
-  /// between opening and the first run.
-  final Map<String, Map<String, String>> _mirrorTrouble = {};
-  final Map<String, int> _mirrorOkAt = {};
-
-  Map<String, String> mirrorTroubleFor(String nb) =>
-      _mirrorTrouble[nb] ?? const {};
-
-  /// When this target last succeeded, or 0.
-  int mirrorOkAt(String path) => _mirrorOkAt[path] ?? 0;
-
-  int lastMirrorAt = 0;
-
-  /// The `.onotebook` directory for a notebook, which is what gets mirrored.
-  String? notebookLogDir(String nb) =>
-      _repo.notebooks.where((n) => n.id == nb).firstOrNull?.logDirPath;
-
+  void abandonExclusiveImport(String notebookId) =>
+      _repo.closeNotebook(notebookId);
   Future<WorkspaceBackupResult> createWorkspaceBackup(
     String destination, {
     String? onlyNotebookId,
@@ -2162,7 +673,6 @@ class AppState extends ChangeNotifier
       final manifest = <Map<String, Object?>>[];
       final usedNames = <String>{};
       for (final ref in selected) {
-        await awaitBlobBackfill(ref.id);
         var stem = ref.title.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_').trim();
         if (stem.isEmpty) stem = 'Notebook';
         var uniqueStem = stem;
@@ -2182,23 +692,21 @@ class AppState extends ChangeNotifier
             ref.file,
           );
         }
-        final relativeLogs = p.isWithin(_repo.workspaceDir.path, ref.logDirPath)
-            ? p.relative(ref.logDirPath, from: _repo.workspaceDir.path)
-            : '$uniqueStem.onotebook';
-        final logs = Directory(ref.logDirPath);
-        if (logs.existsSync() &&
+        final media = MediaStore.dirFor(ref);
+        final relativeMedia = '${p.withoutExtension(relativeFile)}.media';
+        if (media.existsSync() &&
             (onlyNotebookId != null ||
-                !p.isWithin(_repo.workspaceDir.path, logs.path))) {
+                !p.isWithin(_repo.workspaceDir.path, media.path))) {
           await _copyBackupDirectory(
-            logs,
-            Directory(p.join(root.path, relativeLogs)),
+            media,
+            Directory(p.join(root.path, relativeMedia)),
           );
         }
         manifest.add({
           'id': ref.id,
           'title': ref.title,
           'file': 'Openote/$relativeFile',
-          'logs': 'Openote/$relativeLogs',
+          'media': 'Openote/$relativeMedia',
         });
       }
       await File(p.join(temporary.path, 'backup.json')).writeAsString(
@@ -2281,7 +789,7 @@ class AppState extends ChangeNotifier
         }
       }
       final manifestFile = File(p.join(temporary.path, 'backup.json'));
-      final candidates = <({String path, String? title, String? logs})>[];
+      final candidates = <({String path, String? title, String? media})>[];
       if (manifestFile.existsSync()) {
         final json = jsonDecode(await manifestFile.readAsString());
         if (json is Map && json['notebooks'] is List) {
@@ -2293,10 +801,10 @@ class AppState extends ChangeNotifier
                 (raw['file'] as String).replaceAll('/', p.separator),
               ),
               title: raw['title'] as String?,
-              logs: raw['logs'] is String
+              media: raw['media'] is String
                   ? p.join(
                       temporary.path,
-                      (raw['logs'] as String).replaceAll('/', p.separator),
+                      (raw['media'] as String).replaceAll('/', p.separator),
                     )
                   : null,
             ));
@@ -2309,7 +817,7 @@ class AppState extends ChangeNotifier
           followLinks: false,
         )) {
           if (entity is File && p.extension(entity.path) == '.onote') {
-            candidates.add((path: entity.path, title: null, logs: null));
+            candidates.add((path: entity.path, title: null, media: null));
           }
         }
       }
@@ -2328,12 +836,12 @@ class AppState extends ChangeNotifier
           suffix++;
         }
         await File(candidate.path).copy(destination);
-        final sourceLogs =
-            candidate.logs == null ? null : Directory(candidate.logs!);
-        if (sourceLogs != null && sourceLogs.existsSync()) {
+        final sourceMedia =
+            candidate.media == null ? null : Directory(candidate.media!);
+        if (sourceMedia != null && sourceMedia.existsSync()) {
           await _copyBackupDirectory(
-            sourceLogs,
-            Directory('${p.withoutExtension(destination)}.onotebook'),
+            sourceMedia,
+            Directory('${p.withoutExtension(destination)}.media'),
           );
         }
         final result = await _repo.adoptWorkspaceNotebook(
@@ -2356,1144 +864,9 @@ class AppState extends ChangeNotifier
     }
   }
 
-  /// Pull automatically when another device's log changes. On by default —
-  /// a sync you have to remember to click isn't sync.
-  bool autoSync = true;
-
-  void setAutoSync(bool v) {
-    autoSync = v;
-    _repo.setSetting('autoSync', v);
-    v ? _startWatching() : _stopWatching();
-    notifyListeners();
+  TreeNode _putNode(String notebookId, TreeNode node) {
+    return _repo.upsertNode(notebookId, node);
   }
-
-  OpFolderWatcher? _watcher;
-
-  // ── Is sync actually working? ────────────────────────────────────────
-  //
-  // Reported twice, and both times unanswerable from outside: "it seems like
-  // that change doesnt really ever get reflected on the other machine". The
-  // watcher either fires or it does not, the pull either finds ops or it does
-  // not, and NONE of that was visible — so the only available diagnosis was
-  // "press the button and see". These three fields turn that into a readout.
-
-  /// When the watcher (or its poll) last decided something had changed.
-  DateTime? lastForeignSignalAt;
-
-  /// When a pull last completed, and what it found.
-  DateTime? lastPullAt;
-
-  /// Whether the folder watcher is armed for the open notebook.
-  bool get watchingForChanges => _watcher?.isWatching ?? false;
-
-  /// Why it is not armed, in words, or null when it is.
-  ///
-  /// Each of these is a real reason it has been off in practice, and none of
-  /// them said anything to the user.
-  String? get notWatchingBecause {
-    if (watchingForChanges) return null;
-    if (!syncLogEnabled) return 'the operation log is disabled in this build';
-    if (!autoSync) return 'automatic pulling is switched off, below';
-    if (notebookId == null) return 'no notebook is open';
-    final store = _bareLog(notebookId!);
-    if (store == null) return 'this notebook has no sync log yet';
-    if (!store.opsDir.existsSync()) {
-      return 'this notebook has no ops folder yet — it appears on the first '
-          'save';
-    }
-    return 'the folder could not be watched';
-  }
-
-  void _startWatching() {
-    _stopWatching();
-    if (!autoSync || notebookId == null || !syncLogEnabled) return;
-    // Paths and a device id — NOT a recorder. Opening a recorder here replayed
-    // the whole log on the UI thread during startup's first frame, which was
-    // most of "the app is locked up for the first few seconds after
-    // launching". The watcher only needs to know where the logs live and which
-    // one is ours; the recorder is opened (in the background) when a foreign
-    // change actually arrives, which is the earliest moment its replayed state
-    // is needed.
-    final store = _bareLog(notebookId!);
-    if (store == null || !store.opsDir.existsSync()) return;
-    _watcher = OpFolderWatcher(
-      opsDir: store.opsDir,
-      ownDevice: localDeviceId(),
-      onForeignChange: () {
-        lastForeignSignalAt = DateTime.now();
-        debugPrint('[openote/sync] a foreign log changed — pulling');
-        // Fire-and-forget: a failed pull must not take down the watcher, and
-        // the next change (or the manual button) retries anyway.
-        syncPull(notebookId!).then((n) {
-          lastPullAt = DateTime.now();
-          debugPrint('[openote/sync] auto-pull folded $n op(s)');
-          notifyListeners();
-        }).catchError((Object e) {
-          debugPrint('[openote/sync] auto-pull failed: $e');
-        });
-      },
-    )..start();
-  }
-
-  /// Stop the folder watcher, and hand back the future that says when its
-  /// handle is actually released.
-  ///
-  /// Most callers do not care and drop it — a watcher that stops a few
-  /// milliseconds later is harmless when nothing is about to touch the
-  /// directory. The one caller that MUST wait is `moveNotebookToFolder`, which
-  /// goes on to delete the old log directory; see `FolderWatch.stop`.
-  Future<void> _stopWatching() {
-    final w = _watcher;
-    _watcher = null;
-    return w?.stop() ?? Future<void>.value();
-  }
-
-  /// Where this notebook lives, for the sync surface.
-  String? notebookPath(String nb) =>
-      _repo.notebooks.where((n) => n.id == nb).firstOrNull?.file;
-
-  /// Devices that have written to this notebook, for the status surface.
-  ///
-  /// **Cached with a short TTL.** This is a synchronous directory listing, and
-  /// the status bar that shows it rebuilds on every notify — i.e. every
-  /// keystroke. Worse, once the notebook is in a cloud folder that listing hits
-  /// a sync-client-backed (sometimes network) path, so uncached it cost
-  /// milliseconds *per character typed*. The count changes only when another
-  /// device appears, which is not a per-frame event.
-  int syncDeviceCount(String nb) {
-    final now = nowMs();
-    final hit = _deviceCountCache[nb];
-    if (hit != null && now - hit.at < 5000) return hit.count;
-    // A bare store, NOT `_recorderFor`. The count is a directory listing
-    // (0.24 ms); a recorder open replays the whole log (~0.5 s for a big
-    // imported notebook) — and this is called from every sync dot's first
-    // paint, which made launching the app and finishing an import freeze for
-    // as long as the replay took. A status read must never pay a writer's
-    // setup cost. (A side effect goes with it: painting a dot no longer
-    // *creates* `.onotebook` directories for notebooks that had none.)
-    final n = _bareLog(nb)?.deviceIds().length ?? 0;
-    _deviceCountCache[nb] = (count: n, at: now);
-    return n;
-  }
-
-  /// Read-only view of a notebook's log directory. No replay, no directory
-  /// creation, no identity check — safe to call from paint.
-  OpLogStore? _bareLog(String nb) {
-    final ref = _repo.notebooks.where((n) => n.id == nb).firstOrNull;
-    if (ref == null) return null;
-    return OpLogStore.forNotebook(ref.file, logDir: ref.logDir);
-  }
-
-  final Map<String, ({int count, int at})> _deviceCountCache = {};
-
-  /// Re-check sync status periodically, and notify only when it CHANGES.
-  ///
-  /// The second half of the grey-chip bug. Even with a folder remembered, the
-  /// answer depends on the filesystem — a mirror target appears, a provider
-  /// finishes mounting, a network share comes back — and none of those tell
-  /// the app anything. The status was only ever recomputed as a side effect of
-  /// something else calling `notifyListeners`, so a wrong answer could sit on
-  /// screen for a whole session.
-  ///
-  /// Cheap because it notifies on *change*: the common case is one directory
-  /// probe every 20 seconds that finds nothing new and repaints nothing. It
-  /// also means this is not a substitute for [_invalidateSyncStatus] — user
-  /// actions still update immediately; this is only for changes nobody told us
-  /// about.
-  Timer? _syncStatusPoll;
-
-  void _startSyncStatusPolling() {
-    _syncStatusPoll?.cancel();
-    _syncStatusPoll = Timer.periodic(
-      const Duration(seconds: 20),
-      (_) => _pollSyncStatus(),
-    );
-  }
-
-  /// Run one poll now — what the timer does, exposed so a test can drive it
-  /// without waiting twenty seconds.
-  @visibleForTesting
-  void debugPollSyncStatus() => _pollSyncStatus();
-
-  void _pollSyncStatus() {
-    final nb = notebookId;
-    if (nb == null) return;
-    final before = syncStatus(nb);
-    _invalidateSyncStatus();
-    final after = syncStatus(nb);
-    if (before.isSynced == after.isSynced &&
-        before.devices == after.devices &&
-        before.mirrors == after.mirrors &&
-        before.folder?.path == after.folder?.path) {
-      return;
-    }
-    notifyListeners();
-  }
-
-  /// Drop the cached count after something that can change it.
-  void _invalidateSyncStatus() {
-    _deviceCountCache.clear();
-    _syncStatusCache.clear();
-  }
-
-  final Map<String, ({SyncStatus status, int at})> _syncStatusCache = {};
-
-  // ── Remembered sync folders ──────────────────────────────────────────
-
-  /// Folders the user has told us are sync locations, by choosing one in
-  /// "Choose a folder…" or by joining a notebook from one.
-  ///
-  /// **Why this is stored rather than detected.** `detectCloudFolders` probes
-  /// ~15 well-known paths, which is a fine way to *offer* somewhere to sync and
-  /// a bad way to *report* whether syncing is on. It says no to any folder not
-  /// on the list — a self-hosted Nextcloud somewhere else, a relocated
-  /// OneDrive, a Google Drive on an unexpected drive letter — and it also says
-  /// no to a folder on the list that has not mounted yet, which is why the
-  /// chip could come up grey after a restart and stay grey for the session.
-  /// What the user chose is a fact; where a provider happens to have mounted
-  /// two seconds after launch is a guess.
-  final List<CloudFolder> _syncRoots = [];
-
-  List<CloudFolder> get syncRoots => List.unmodifiable(_syncRoots);
-
-  /// Record [dir] as a sync location. Idempotent.
-  void rememberSyncRoot(String dir) {
-    if (dir.trim().isEmpty) return;
-    if (_syncRoots.any((f) => p.equals(f.path, dir))) return;
-    _syncRoots.add(describeChosenFolder(dir));
-    _persistSyncRoots();
-    _invalidateSyncStatus();
-    // Calling a folder a sync location can make notebooks already inside it
-    // shared. Only the ones with a recorder open are re-checked here — the rest
-    // get the right answer when theirs is opened, which the notebook list does
-    // for all of them the moment it draws their sync dots.
-    for (final nb in _recorders.keys.toList()) {
-      materialiseBlobsIfShared(nb);
-    }
-    notifyListeners();
-  }
-
-  void _persistSyncRoots() => _repo.setSetting('syncRoots', [
-        for (final f in _syncRoots)
-          {'path': f.path, 'name': f.name, 'kind': f.kind.name},
-      ]);
-
-  /// Restore the remembered roots. Public and standalone, like `study.load()`
-  /// and `planner.load()` — `init()` needs a widgets binding, and a test of
-  /// what survives a restart should not need a whole application to ask.
-  void loadSyncRoots() {
-    final raw = _repo.getSetting('syncRoots');
-    if (raw is! List) return;
-    for (final e in raw) {
-      if (e is! Map) continue;
-      final path = e['path'];
-      if (path is! String || path.isEmpty) continue;
-      if (_syncRoots.any((f) => p.equals(f.path, path))) continue;
-      _syncRoots.add(
-        CloudFolder(
-          name: e['name'] as String? ?? p.basename(path),
-          path: path,
-          kind: CloudKind.values.asNameMap()[e['kind']] ?? CloudKind.other,
-        ),
-      );
-    }
-  }
-
-  /// What to show the user about this notebook's sync state.
-  ///
-  /// Answers "where does this notebook live", not "how many devices have
-  /// touched it" — those differ for the entire period between setting sync up
-  /// and a second device appearing, which is precisely when the user is
-  /// looking for confirmation that it worked.
-  SyncStatus syncStatus(String nb) {
-    final now = nowMs();
-    final hit = _syncStatusCache[nb];
-    if (hit != null && now - hit.at < 5000) return hit.status;
-
-    // The LOG directory, not the container: a device that joined a shared
-    // notebook keeps its container in the local workspace, so asking where the
-    // container is told that device it wasn't syncing — while it was.
-    final path = notebookLogDir(nb);
-    final folder =
-        path == null ? null : cloudFolderContaining(path, also: _syncRoots);
-    final devices = syncDeviceCount(nb);
-    final status = SyncStatus(
-      folder: folder,
-      devices: devices,
-      // **Copies that WORKED**, not copies that were configured. A backup
-      // pointed at an unplugged USB stick used to count here, and the dot,
-      // the notebook list and the status bar all said "Backed up".
-      mirrors: mirrorsFor(
-        nb,
-      ).where((t) => !mirrorTroubleFor(nb).containsKey(t.path)).length,
-    );
-    _syncStatusCache[nb] = (status: status, at: now);
-    return status;
-  }
-
-  /// Where this notebook's container and logs actually are, with sizes.
-  Future<NotebookStorage> storageFor(String nb) async {
-    final ref = _repo.notebooks.where((n) => n.id == nb).firstOrNull ??
-        _repo.trashedNotebooks.where((n) => n.id == nb).firstOrNull;
-    if (ref == null) {
-      return const NotebookStorage(
-        containerPath: '',
-        containerBytes: 0,
-        logPath: '',
-        logBytes: 0,
-        mediaBytes: 0,
-        logExists: false,
-        containerCloud: null,
-        logCloud: null,
-      );
-    }
-    final logPath = ref.logDirPath;
-    final logDir = Directory(logPath);
-    return NotebookStorage(
-      containerPath: ref.file,
-      containerBytes: _fileBytes(ref.file),
-      logPath: logPath,
-      logBytes: await _dirBytes(logDir),
-      mediaBytes: MediaStore.totalBytes(ref),
-      logExists: logDir.existsSync(),
-      containerCloud: cloudFolderContaining(ref.file, also: _syncRoots),
-      logCloud: cloudFolderContaining(logPath, also: _syncRoots),
-    );
-  }
-
-  /// How many of [nb]'s pages still hold handwriting as inline JSON.
-  ///
-  /// Zero for a notebook that has none, or one already converted — which is
-  /// what lets the UI offer the conversion only when there is something to
-  /// gain, and say how much.
-  int inlineInkPageCount(String nb) {
-    try {
-      return _repo.pageIdsWithInlineInk(nb).length;
-    } catch (_) {
-      return 0;
-    }
-  }
-
-  /// Convert a notebook's existing ink from JSON to binary blobs.
-  ///
-  /// New handwriting has been binary since the storage boundary landed; this is
-  /// for what is already on disk. On the real notebook that is 113 pages
-  /// holding 63 MB of stroke JSON, in the container AND again in the operation
-  /// log, and it comes out at 3.2 MB.
-  ///
-  /// **Page by page, each in its own transaction, and re-runnable.** A single
-  /// transaction over 113 pages would hold a write lock for the whole
-  /// conversion and roll the lot back on one bad page; this way an interrupted
-  /// run leaves a notebook that is partly converted and entirely working, and
-  /// running it again finishes the job. `toPersisted` is a no-op on a page that
-  /// is already done, so there is nothing to track.
-  ///
-  /// Reported through [onProgress] so the caller can show it, because on a big
-  /// notebook this is seconds rather than milliseconds.
-  ///
-  /// Returns the bytes reclaimed from the page mirror. The blobs themselves are
-  /// new bytes on disk, so the honest figure is what [Repository.storageFor]
-  /// says afterwards — this is the mirror's share, which is the large half.
-  /// When [unattended] — the automatic housekeeping path — the run behaves
-  /// like a guest rather than an owner: the open page is left alone (its ink
-  /// converts anyway on the user's next save, through `flushSave`'s
-  /// `persistAll`), the in-memory editor state is never touched, the VACUUM is
-  /// deferred to shutdown, and the first sign of the user doing anything —
-  /// typing, a pull, switching notebooks — stops the run where it stands.
-  /// Every page already converted is durable on its own; the rest is simply
-  /// still to do, reported as [InkConversionResult.deferred].
-  Future<InkConversionResult> convertInkToBinary(
-    String nb, {
-    void Function(int done, int total)? onProgress,
-    bool unattended = false,
-  }) async {
-    await flushSave();
-    // **Catch up with the other devices FIRST, or this work is undone.**
-    //
-    // Reported as "it seemed to do something for about 45s before the spinner
-    // just went away and the button returned back to saying 113 pages", with
-    // nothing in the console — and it reproduces only on a notebook that is
-    // actually syncing, which is why it worked perfectly on a copy.
-    //
-    // The mechanism: a pull rebuilds each changed page from the OP LOG
-    // (`materialisedPage`), and the log still holds the pre-conversion giant
-    // inline-ink `block.set` ops. Converting writes the small reference form
-    // into the container and records a new, later `block.set` so the two
-    // agree — EXCEPT that `SyncRecorder.page` refuses to record anything while
-    // `foreignPending` is true (the guard that stops a restart deleting the
-    // other device's work). So on a syncing notebook the conversion silently
-    // recorded nothing, and the very next pull materialised all 113 pages back
-    // to their inline form from the log. Forty-five seconds, perfectly undone.
-    //
-    // Folding first clears the flag, so the conversion is recorded and sticks.
-    await syncPull(nb);
-    final rec = await warmRecorder(nb);
-    if (rec != null && rec.foreignPending) {
-      // Still behind — another device's ops arrived during the fold. Refusing
-      // is right: converting now would be thrown away again, and doing 45
-      // seconds of work that silently reverts is the bug being fixed.
-      return const InkConversionResult(
-        candidates: 0,
-        converted: 0,
-        failed: 0,
-        freed: 0,
-        firstError: 'there are changes from another device still to fold in. '
-            'Try again in a moment.',
-        deferred: true,
-      );
-    }
-    // Only pages that actually contain inline strokes. A SQL prefilter, for
-    // the same reason `pageIdsWithTags` uses one: decoding 328 pages to
-    // discover that 215 have no ink is most of the work for none of the win.
-    // `"strokes":[{` excludes empty arrays and already-converted pages.
-    var candidates = _repo.pageIdsWithInlineInk(nb);
-    if (unattended && notebookId == nb && pageId != null) {
-      // **The page the user is looking at is not converted behind their back.**
-      //
-      // The manual path may rewrite it because the sync dialog is modal — no
-      // editable surface is live, so nothing can race the re-read at the end.
-      // Unattended, the editor IS live, and the only safe relationship to its
-      // page is not to touch it. No coverage is lost: the moment the user
-      // edits that page, `flushSave` converts its ink through `persistAll`
-      // like any other save, and a page never edited again is caught by the
-      // next weekly pass, by then no longer open.
-      candidates = [
-        for (final p in candidates)
-          if (p != pageId) p,
-      ];
-    }
-    if (candidates.isEmpty) {
-      return const InkConversionResult(
-        candidates: 0,
-        converted: 0,
-        failed: 0,
-        freed: 0,
-      );
-    }
-    // A pull landing mid-conversion would rewrite pages from the log behind
-    // us, exactly as above. The watcher is stopped for the duration and
-    // restarted after; anything that arrives meanwhile is picked up by the
-    // poll on the next tick. try/finally, because a run that escapes without
-    // restarting the watcher leaves auto-pull silently off for the session.
-    _stopWatching();
-
-    var freed = 0, converted = 0, failed = 0;
-    var aborted = false;
-    String? firstError;
-    try {
-      for (var i = 0; i < candidates.length; i++) {
-        if (unattended &&
-            (_dirty ||
-                _pulling ||
-                notebookId != nb ||
-                (rec?.foreignPending ?? false))) {
-          // The user did something — typed, pulled, switched notebooks. An
-          // unattended run yields to all of it immediately: each converted
-          // page is already durable (container write + recorded op), and the
-          // remainder is picked up when things go quiet again.
-          aborted = true;
-          break;
-        }
-        final pageId = candidates[i];
-        try {
-          final before = _repo.pageJsonBytes(nb, pageId);
-          final data = _repo.readPage(nb, pageId);
-          final out = InkStorage.persistAll(
-            data.blocks,
-            (bytes) => importBlob(nb, bytes, inkMimeType),
-          );
-          if (identical(out, data.blocks)) {
-            // Nothing to convert on a page the prefilter matched. That is not
-            // an error, but it IS the silent outcome the user saw — the run
-            // took 45 seconds and reported nothing — so it is counted, not
-            // shrugged off.
-            failed++;
-            firstError ??= 'a page matched the search but held no convertible '
-                'handwriting';
-            continue;
-          }
-          _repo.writePage(nb, pageId, out, data.props);
-          // The log has to learn the new shape too, or a rebuild would still
-          // produce the old giant blocks and the two would disagree.
-          _recorderFor(nb)?.page(pageId, out, data.props);
-          freed += before - _repo.pageJsonBytes(nb, pageId);
-          converted++;
-        } catch (e) {
-          // One unconvertible page must not stop the other 112. It keeps its
-          // inline strokes, which still render and still save — but a `catch`
-          // that only writes to a console nobody is watching is how this came
-          // back as "it did something for 45s and nothing happened".
-          failed++;
-          firstError ??= '$e';
-          debugPrint('[openote/ink] could not convert $pageId: $e');
-        }
-        onProgress?.call(i + 1, candidates.length);
-        // Yield between pages: the largest single block is ~40 ms of encode,
-        // and a tight loop over 113 of them is four seconds of frozen window.
-        // A REAL delay, not Duration.zero — a zero timer is itself posted work
-        // due immediately, so the queue never goes idle, and idle is when
-        // Windows lets mouse and keyboard through (same reasoning as the blob
-        // backfill and `repairWholeNotebook`).
-        await Future<void>.delayed(const Duration(milliseconds: 2));
-      }
-    } finally {
-      _startWatching(); // whatever arrived meanwhile is picked up next tick
-    }
-    if (unattended) {
-      // The mirror shrank but the file keeps its high-water mark until a
-      // VACUUM — seconds of synchronous IO that must not land on the UI
-      // isolate while someone is mid-sentence. Leave it for manual maintenance,
-      // not window close: exiting should only persist the student's work.
-      if (converted > 0) _repo.setSetting('vacuumPending:$nb', true);
-    } else {
-      // Manual runs VACUUM immediately: the user pressed the button and is
-      // watching a spinner in a modal dialog, so the cost is one they asked
-      // for and the shrink is visible the moment the dialog updates.
-      if (_repo.reclaimFreeSpace(nb).ran) {
-        _repo.setSetting('vacuumPending:$nb', null);
-      }
-    }
-    if (!unattended && pageId != null && notebookId == nb && !_dirty) {
-      // The open page's blocks are pre-conversion in memory; refresh them so
-      // the editor and the container agree. Manual-only (unattended excluded
-      // the open page above) and only while CLEAN: if a save failed earlier,
-      // `_dirty` is still true and `blocks` holds the user's unsaved work —
-      // overwriting it from disk here would discard edits without a trace.
-      // Skipping is safe either way: the next `flushSave` converts whatever
-      // it is handed through `persistAll`.
-      final data = await engine.loadPage(nb, pageId!);
-      blocks = data.blocks;
-      pageProps = data.props;
-      docRevision++;
-    }
-    _invalidateSyncStatus();
-    notifyListeners();
-    return InkConversionResult(
-      candidates: candidates.length,
-      converted: converted,
-      failed: failed,
-      freed: freed,
-      firstError: firstError,
-      deferred: aborted,
-    );
-  }
-
-  /// Compact a notebook's container and hand back the bytes. See
-  /// [Repository.reclaimFreeSpace].
-  ///
-  /// Saves are flushed first — VACUUM on a database with pending work in the
-  /// write-ahead log does that work twice.
-  Future<SpaceReclaim> reclaimFreeSpace(String nb) async {
-    await flushSave();
-    final r = _repo.reclaimFreeSpace(nb);
-    if (r.ran) _repo.setSetting('vacuumPending:$nb', null);
-    if (r.freed > 0) notifyListeners();
-    return r;
-  }
-
-  /// Remove the notebook file's second copy of every picture and drawing
-  /// (v0.17 Step 7), keeping the copy in the notebook's own folder.
-  ///
-  /// **The gate that has to be here rather than in [Repository].** Step 5's
-  /// proof is the log-side half, it lives on [SyncRecorder], and — this is the
-  /// part that decides the ordering — **its repair source is the container**.
-  /// A blob file holding the wrong bytes is discarded and rewritten from the
-  /// `blobs` table, which is precisely what the next paragraph deletes. So the
-  /// proof runs first, on a notebook that can still be repaired, and a notebook
-  /// that cannot be proved is never reclaimed.
-  ///
-  /// A missing recorder is a refusal, not a pass. [proveBlobBytes] answers
-  /// `checked: 0` with empty sets when the log will not open, and `ok` on that
-  /// is `true` — a notebook whose log is broken would otherwise sail through
-  /// the strictest gate in the plan by having nothing to check.
-  Future<BlobReclaim> reclaimContainerBlobs(String nb) async {
-    await flushSave();
-    if (notebookIsReadOnly(nb)) {
-      return const BlobReclaim(
-        refusal: 'This notebook was written by a newer version of Openote, '
-            'so this one is only showing it to you. Nothing will be changed.',
-      );
-    }
-    // The backfill is what puts the bytes in `blobs/` in the first place;
-    // reclaiming while it is still running would be measuring a hole it is in
-    // the middle of filling.
-    await awaitBlobBackfill(nb);
-    final r = await warmRecorder(nb);
-    if (r == null) {
-      return const BlobReclaim(
-        refusal: "Openote could not open this notebook's own folder, so it "
-            'cannot check that your pictures are safely copied there. '
-            'Nothing has been changed.',
-        details: 'no SyncRecorder for the notebook; see the save problem '
-            'reported separately',
-      );
-    }
-    final proof = await proveBlobBytes(nb);
-    if (!proof.ok) {
-      return BlobReclaim(
-        refusal: 'Openote will not do this yet. ${proof.holes} of this '
-            "notebook's pictures and drawings are missing or damaged in the "
-            "notebook's own folder, and that is the copy this would leave "
-            'you with. Nothing has been changed.',
-        details: '$proof\n'
-            'missing: ${_someHashes(proof.missing)}\n'
-            'unrepairable: ${_someHashes(proof.damaged)}',
-      );
-    }
-    final out = await _repo.reclaimContainerBlobs(nb);
-    if (out.done) notifyListeners();
-    return out;
-  }
-
-  /// Put the notebook file's copies back — Step 7's inverse, and the answer for
-  /// anyone who hits a problem in the field.
-  Future<BlobRefill> refillContainerBlobs(String nb) async {
-    await flushSave();
-    final out = await _repo.refillContainerBlobs(nb);
-    notifyListeners();
-    return out;
-  }
-
-  /// Build this notebook's working file again from its saved history
-  /// (v0.17 Step 8 item 1) — *"rebuild this notebook from its history"*.
-  ///
-  /// **The gates that have to be here rather than in [Repository].** The
-  /// repository can see the container and the folder; only this layer can make
-  /// the log-side proof run *first*, and the ordering is the whole safety
-  /// argument, exactly as it is for [reclaimContainerBlobs]:
-  ///
-  ///  * [proveBlobBytes] repairs a damaged blob file **from the container**,
-  ///    and the container is what this replaces. After the swap there is
-  ///    nothing left to repair from, so the proof has to happen while the
-  ///    notebook can still be mended.
-  ///  * A missing recorder is a refusal, not a pass. [proveBlobBytes] answers
-  ///    `checked: 0` with empty sets when the log will not open and `ok` on that
-  ///    is `true` — so a notebook whose folder is broken would otherwise clear
-  ///    the strictest gate in the plan by having nothing to check, and be
-  ///    rebuilt from a history nobody could read.
-  ///
-  /// On success the derived history index is thrown away rather than migrated.
-  /// `block_authors` and `recent_deletions` live in the container this call has
-  /// just replaced, and both are folds of the log — so the honest repair is to
-  /// forget how far the fold got and let the next [refreshHistory] re-derive
-  /// them, which is the same recovery `_catchUpHistory` already takes when it
-  /// cannot trust an offset.
-  Future<ContainerRebuild> rebuildContainerFromLog(String nb) async {
-    await flushSave();
-    if (notebookIsReadOnly(nb)) {
-      return const ContainerRebuild(
-        refusal: 'This notebook was written by a newer version of Openote, '
-            'so this one is only showing it to you. Nothing will be changed.',
-      );
-    }
-    // The backfill is what puts the bytes in `blobs/`; rebuilding while it is
-    // still running would measure a hole it is in the middle of filling.
-    await awaitBlobBackfill(nb);
-    final r = await warmRecorder(nb);
-    if (r == null) {
-      return const ContainerRebuild(
-        refusal: "Openote could not open this notebook's own folder, so it "
-            'has no history to rebuild from. Nothing has been changed.',
-        details: 'no SyncRecorder for the notebook; see the save problem '
-            'reported separately',
-      );
-    }
-    final proof = await proveBlobBytes(nb);
-    if (!proof.ok) {
-      return ContainerRebuild(
-        refusal: 'Openote will not do this yet. ${proof.holes} of this '
-            "notebook's pictures and drawings are missing or damaged in the "
-            "notebook's own folder, and that folder is what a rebuilt "
-            'notebook reads them from. Nothing has been changed.',
-        details: '$proof\n'
-            'missing: ${_someHashes(proof.missing)}\n'
-            'unrepairable: ${_someHashes(proof.damaged)}',
-      );
-    }
-    final out = await _repo.rebuildContainerFromLog(nb);
-    if (!out.done) return out;
-
-    // The container the index lived in is gone. Forget the offsets so the fold
-    // starts from the beginning of every log, and drop the in-memory copy so
-    // nothing serves rows that no longer have a table under them.
-    final store = _bareLog(nb);
-    if (store != null) {
-      for (final dev in store.deviceIds()) {
-        _repo.setSetting(_historyOffsetKey(nb, dev), null);
-      }
-    }
-    _histories.remove(nb);
-
-    reloadNodes();
-    final pid = pageId;
-    if (nb == notebookId && pid != null) {
-      final data = await engine.loadPage(nb, pid);
-      blocks = data.blocks;
-      pageProps = data.props;
-      docRevision++;
-    }
-    notifyListeners();
-    return out;
-  }
-
-  /// Whether this notebook has already been changed over to the new storage
-  /// (v0.17 Step 8), so the dialog can offer the right one of two buttons.
-  bool notebookIsDemoted(String nb) {
-    final ref = _repo.notebooks.where((n) => n.id == nb).firstOrNull;
-    return ref != null && _repo.isDemoted(ref);
-  }
-
-  /// Change this notebook over to the new storage — v0.17 Step 8's rename.
-  ///
-  /// **The gates that have to live here rather than in [Repository]**, the same
-  /// two as [rebuildContainerFromLog] and for the same reason: only this layer
-  /// can make the log-side proof run *first*, while the notebook can still be
-  /// mended from the container.
-  ///
-  ///  * [proveBlobBytes] repairs a damaged blob file **from the container**, and
-  ///    after this the container is a cache whose whole justification is that
-  ///    the folder beside it holds the real bytes.
-  ///  * A missing recorder is a refusal, not a pass. [proveBlobBytes] answers
-  ///    `checked: 0` with empty sets when the log will not open, and `ok` on that
-  ///    is `true` — so a notebook whose folder is broken would otherwise clear
-  ///    the strictest gate by having nothing to check.
-  Future<ContainerDemotion> demoteContainerToCache(String nb) async {
-    await flushSave();
-    if (notebookIsReadOnly(nb)) {
-      return const ContainerDemotion(
-        refusal: 'This notebook was written by a newer version of Openote, '
-            'so this one is only showing it to you. Nothing will be changed.',
-      );
-    }
-    await awaitBlobBackfill(nb);
-    final r = await warmRecorder(nb);
-    if (r == null) {
-      return const ContainerDemotion(
-        refusal: "Openote could not open this notebook's own folder, so "
-            'there would be nothing left to rebuild it from. Nothing has '
-            'been changed.',
-        details: 'no SyncRecorder for the notebook; see the save problem '
-            'reported separately',
-      );
-    }
-    final proof = await proveBlobBytes(nb);
-    if (!proof.ok) {
-      return ContainerDemotion(
-        refusal: 'Openote will not do this yet. ${proof.holes} of this '
-            "notebook's pictures and drawings are missing or damaged in the "
-            "notebook's own folder, and that folder is where they would be "
-            'read from. Nothing has been changed.',
-        details: '$proof\n'
-            'missing: ${_someHashes(proof.missing)}\n'
-            'unrepairable: ${_someHashes(proof.damaged)}',
-      );
-    }
-    // Drop the recorder BEFORE the move: it holds the old container path, and
-    // `logDirPath` is about to stop being derivable from it, so a stale one
-    // would write this device's ops somewhere nobody is looking. Same reasoning
-    // as [moveContainerOutOfSyncFolder].
-    _recorders.remove(nb);
-    await _stopWatching();
-    // **And wait for background work already in flight.** Observed on a copy of
-    // the owner's real 329-page notebook: a recorder warm started by an earlier
-    // load was still running, its `_backfillTree` wrote to the container the
-    // move had just replaced, and SQLite answered *"attempt to write a readonly
-    // database"* — which Step 1 routes to the save-problem dialog, so a
-    // successful migration would have shown the student an error about a file
-    // that was fine.
-    await settleBackgroundWork();
-    final out = await _repo.demoteContainerToCache(nb);
-    if (out.done && nb == notebookId) {
-      await _loadNotebook();
-      _startWatching();
-    } else if (nb == notebookId) {
-      _startWatching();
-    }
-    _invalidateSyncStatus();
-    notifyListeners();
-    return out;
-  }
-
-  /// Put a migrated notebook back the way it was — Step 8's inverse.
-  Future<ContainerDemotion> undemoteContainerFromCache(String nb) async {
-    await flushSave();
-    _recorders.remove(nb);
-    await _stopWatching();
-    // See [demoteContainerToCache]: a warm still in flight would write to the
-    // container this is about to replace.
-    await settleBackgroundWork();
-    final out = await _repo.undemoteContainerFromCache(nb);
-    if (nb == notebookId) {
-      await _loadNotebook();
-      _startWatching();
-    }
-    _invalidateSyncStatus();
-    notifyListeners();
-    return out;
-  }
-
-  /// Notebooks that look like repeated imports of the same source.
-  ///
-  /// **Why this exists.** A real workspace held 586 MB, of which ~380 MB was
-  /// FOUR copies of one OneNote notebook — imported repeatedly while getting
-  /// the importer working. Nothing could have deduplicated them automatically:
-  /// each import correctly mints fresh ids, so to the registry they are four
-  /// unrelated notebooks. Only a person can say they are the same thing, and
-  /// they cannot say it if nothing shows them.
-  ///
-  /// **The heuristic is deliberately narrow**, because the cost of a false
-  /// positive is offering to delete someone's distinct notebook. A group
-  /// requires the SAME page count, the SAME section count and a title that
-  /// normalises to the same string — a real second term's notes will differ in
-  /// page count almost immediately. Size is not part of the test (an import
-  /// interrupted halfway would differ) and neither is creation time.
-  ///
-  /// Nothing here deletes anything. It returns groups; the manager shows them
-  /// with sizes and lets the user choose, which is the only safe shape.
-  List<DuplicateGroup> findDuplicateNotebooks() {
-    /// Titles as a person compares them: "Eric - Computing Science
-    /// Honoursonepkg-2" and "Eric - Computing Science Honours-2" are the same
-    /// import twice, because the importer appends its own suffixes and the
-    /// workspace appends `-2`, `-3` for name collisions.
-    String key(NotebookRef n) {
-      final counts = _repo.notebookCounts(n.id);
-      var t = n.title.toLowerCase().trim();
-      t = t.replaceAll(RegExp(r'(onepkg|\.one|\.onepkg)'), '');
-      t = t.replaceAll(RegExp(r'[\s_-]*\(?copy\)?'), '');
-      t = t.replaceAll(RegExp(r'[\s_-]*\d+$'), ''); // trailing -2, -3, " 2"
-      t = t.replaceAll(RegExp(r'[^a-z0-9]+'), '');
-      return '$t|${counts.sections}|${counts.pages}';
-    }
-
-    final groups = <String, List<NotebookRef>>{};
-    for (final n in _repo.notebooks) {
-      // A notebook with no pages is a fresh empty one, and every fresh empty
-      // notebook would otherwise match every other.
-      if (_repo.notebookCounts(n.id).pages == 0) continue;
-      groups.putIfAbsent(key(n), () => []).add(n);
-    }
-
-    final out = <DuplicateGroup>[];
-    for (final e in groups.entries) {
-      if (e.value.length < 2) continue;
-      final members = [
-        for (final n in e.value)
-          (
-            ref: n,
-            bytes: _fileBytes(n.file) + _dirBytesSync(Directory(n.logDirPath)),
-          ),
-      ]..sort((a, b) => b.bytes.compareTo(a.bytes));
-      out.add(
-        DuplicateGroup(
-          title: members.first.ref.title,
-          pages: _repo.notebookCounts(members.first.ref.id).pages,
-          members: [
-            for (final m in members)
-              DuplicateMember(
-                id: m.ref.id,
-                title: m.ref.title,
-                bytes: m.bytes,
-                // The one currently open is never the suggested casualty, and
-                // neither is the largest — the biggest is the most likely to
-                // be the complete import.
-                isOpen: m.ref.id == notebookId,
-              ),
-          ],
-        ),
-      );
-    }
-    out.sort((a, b) => b.reclaimable.compareTo(a.reclaimable));
-    return out;
-  }
-
-  /// Notebook files on disk that no registry entry — live or trashed — claims.
-  ///
-  /// Looks in this workspace and one level into each detected cloud folder
-  /// (plus its `Openote` subfolder), which is where the app's own flows put
-  /// things. Deliberately not a whole-disk scan.
-  Future<List<OrphanFile>> findOrphanFiles() async {
-    // **Silent while a reclaim holds the workspace** (v0.17 Step 7). This scan
-    // marks an unclaimed workspace `.onote` `safeToDelete: true`, and treats a
-    // `-wal`/`-shm` whose `.onote` is absent as an orphan — which is exactly
-    // the state a migration creates for its own duration. Offering a student
-    // their own half-migrated notebook as a leftover to delete is the one way
-    // this feature could destroy a notebook, so it returns nothing at all
-    // rather than something filtered: a filter has to be right about every
-    // path, and "nothing" cannot be wrong.
-    if (_repo.reclaimInProgress) return const [];
-    final claimed = <String>{};
-    for (final n in [..._repo.notebooks, ..._repo.trashedNotebooks]) {
-      claimed
-        ..add(p.canonicalize(n.file))
-        ..add(p.canonicalize(n.logDirPath));
-    }
-
-    final roots = <(String, bool)>[(_repo.workspaceDir.path, true)];
-    for (final f in detectCloudFolders()) {
-      roots
-        ..add((f.path, false))
-        ..add((p.join(f.path, 'Openote'), false));
-    }
-
-    final out = <OrphanFile>[];
-    final seen = <String>{};
-    for (final (root, isWorkspace) in roots) {
-      final dir = Directory(root);
-      if (!dir.existsSync()) continue;
-      try {
-        for (final e in dir.listSync(followLinks: false)) {
-          final ext = p.extension(e.path).toLowerCase();
-          final isLog = e is Directory && ext == '.onotebook';
-          final isContainer = e is File && ext == '.onote';
-          // A `-wal` or `-shm` whose database is gone. SQLite leaves both
-          // behind if a container is deleted while they exist, and then
-          // nothing ever looks at them again — the real workspace had a 32 KB
-          // `-shm` and a `-wal` for a notebook that no longer exists. They are
-          // only ever orphans when the `.onote` is absent; a live pair belongs
-          // to a working database and deleting it would be destructive.
-          final isStrayWal = e is File &&
-              (ext == '.onote-wal' || ext == '.onote-shm') &&
-              !File('${p.withoutExtension(e.path)}.onote').existsSync();
-          if (!isLog && !isContainer && !isStrayWal) continue;
-          final canon = p.canonicalize(e.path);
-          if (claimed.contains(canon) || !seen.add(canon)) continue;
-          out.add(
-            OrphanFile(
-              path: e.path,
-              bytes: isLog
-                  ? await _dirBytes(Directory(e.path))
-                  : _fileBytes(e.path),
-              isLog: isLog,
-              safeToDelete: isWorkspace,
-            ),
-          );
-        }
-      } catch (_) {
-        // An unreadable folder (offline placeholders, permissions) must not
-        // break the scan of the others.
-      }
-    }
-    out.sort((a, b) => b.bytes.compareTo(a.bytes));
-    return out;
-  }
-
-  /// Delete orphans, and ONLY ones marked safe. Returns the bytes reclaimed.
-  Future<int> deleteOrphans(Iterable<OrphanFile> files) async {
-    var freed = 0;
-    for (final f in files) {
-      if (!f.safeToDelete) continue; // never a shared folder; see [OrphanFile]
-      try {
-        if (f.isLog) {
-          Directory(f.path).deleteSync(recursive: true);
-        } else {
-          File(f.path).deleteSync();
-        }
-        freed += f.bytes;
-      } catch (_) {
-        /* locked or gone; report what actually went */
-      }
-    }
-    return freed;
-  }
-
-  /// Videos and recordings in [nb] that nothing points at any more.
-  ///
-  /// **User-initiated, never automatic, and that is a rule rather than a
-  /// preference.** The housekeeping note above states it: only work that is
-  /// reversible in effect happens on its own, and deleting does not qualify —
-  /// "the cost of being wrong is somebody's notes and the cost of asking is
-  /// one click". So this is a button, next to the two that already reclaim
-  /// space, and it shows what it found before anything goes.
-  ///
-  /// Refuses outright — reclaiming nothing and saying so — while the notebook
-  /// is in any state where the container and the log do not yet agree about
-  /// what exists:
-  ///
-  ///  * unsaved edits, where a block naming a video is in memory only;
-  ///  * a sync in flight or an import owning the log, either of which is
-  ///    actively rewriting the pages being scanned;
-  ///  * another device's operations still to fold in. This is the guard that
-  ///    matters most. `SyncRecorder.page` records nothing while
-  ///    `foreignPending` is true, so in that state the notebook's own recent
-  ///    edits are missing from the log — and a video whose only reference is
-  ///    an unfolded op is a video the scan would call unused. Folding first is
-  ///    the same fix the ink conversion needed for the same reason.
-  Future<VideoSweep> findUnusedVideos(String nb) async {
-    final ref = _repo.notebooks.where((n) => n.id == nb).firstOrNull;
-    if (ref == null) return const VideoSweep();
-    if (_dirty || _pulling || _importingNotebooks.contains(nb)) {
-      return const VideoSweep(
-        refusal: 'This notebook is still saving. Try again in a moment.',
-      );
-    }
-    final rec = await warmRecorder(nb);
-    if (rec != null && rec.foreignPending) {
-      return const VideoSweep(
-        refusal: 'There are changes from another device still to fold in. '
-            'Try again in a moment.',
-      );
-    }
-    // The ten notable deletions are a garbage-collection root (source 3 in
-    // [_volatileMediaText]) and they are read out of `_histories[nb]` — which
-    // in a fresh session has simply not been loaded yet. `?? const {}` there
-    // silently answered "no pins", so a pinned, recently-deleted video was
-    // reported reclaimable, and "Put it back" afterwards would have restored
-    // a block naming a file this sweep had already deleted. Load the real
-    // pins before the sweep consults them — and if the history cannot be
-    // loaded, refuse: sweeping with pins we could not read is sweeping with
-    // pins we invented.
-    if (syncLogEnabled && (_bareLog(nb)?.opsDir.existsSync() ?? false)) {
-      NotebookHistory? history;
-      try {
-        history = await refreshHistory(nb);
-      } catch (_) {
-        history = null; // loading threw; refused below for the same reason
-      }
-      if (history == null) {
-        return const VideoSweep(
-          refusal: "Openote couldn't read this notebook's list of recent "
-              'deletions, so it cannot tell which videos "Put it back" '
-              'still needs. Nothing has been removed.',
-        );
-      }
-    }
-    return MediaGc.sweep(
-      ref: ref,
-      containerText: () => _repo.everyStoredPageText(nb),
-      liveText: () => _volatileMediaText(nb),
-      // Our own log is the history of how this container got here, not a set
-      // of live references — see `MediaGc._eliminateInFiles`. Every other
-      // device's log is still read whole.
-      ownDevice: rec?.device.id,
-    );
-  }
-
-  /// Everything holding page content that is NOT in the container or the log.
-  ///
-  /// Each of these has been the whole of a video's existence at some moment:
-  /// the undo stack is how an accidental delete is taken back, the clipboard
-  /// survives switching notebook, [blocks] is the only copy during the save
-  /// debounce, and a template lives in the workspace rather than in any
-  /// notebook at all — so a template saved from THIS notebook's page is a
-  /// reference the container knows nothing about.
-  Iterable<String> _volatileMediaText(String nb) sync* {
-    if (notebookId == nb) {
-      yield _snapshot();
-      yield* _undo;
-      yield* _redo;
-    }
-    final clip = _blockClipboard;
-    if (clip != null) yield clip;
-    // Not scoped to this notebook: a template is appliable into any of them,
-    // and the name it carries only resolves in the one it was saved from.
-    // **The ten notable deletions are a garbage-collection root** (v0.17 plan,
-    // Step 8a). `blob_refs` is rebuilt from CURRENT page content on every save
-    // (`NotebookWriter.writePage`), so a deleted video's file becomes
-    // collectable the moment the page saves — and "put it back" would then
-    // return a page with a hole in it. Bounded and explicit at ten, where
-    // `page_versions` pinned media by accident and for ever.
-    final pinned = _histories[nb]?.pinnedNames ?? const <String>{};
-    if (pinned.isNotEmpty) yield pinned.join('\n');
-  }
-
-  /// Delete the videos [files] names. Returns the bytes actually recovered.
-  Future<int> deleteUnusedVideos(Iterable<UnusedVideo> files) async =>
-      MediaGc.reclaim(files);
-
-  int _fileBytes(String path) {
-    try {
-      final f = File(path);
-      return f.existsSync() ? f.lengthSync() : 0;
-    } catch (_) {
-      return 0;
-    }
-  }
-
-  /// [_dirBytes] without the await, for callers that are already synchronous.
-  ///
-  /// Only used by the duplicates scan, which walks a handful of directories in
-  /// response to a click. The async version stays the default for anything
-  /// that might touch a big tree while the user is typing.
-  int _dirBytesSync(Directory dir) {
-    if (!dir.existsSync()) return 0;
-    var total = 0;
-    try {
-      for (final e in dir.listSync(recursive: true, followLinks: false)) {
-        if (e is File) {
-          try {
-            total += e.lengthSync();
-          } catch (_) {
-            /* vanished mid-walk */
-          }
-        }
-      }
-    } catch (_) {
-      /* unreadable; report what we counted */
-    }
-    return total;
-  }
-
-  Future<int> _dirBytes(Directory dir) async {
-    if (!dir.existsSync()) return 0;
-    var total = 0;
-    try {
-      await for (final e in dir.list(recursive: true, followLinks: false)) {
-        if (e is File) {
-          try {
-            total += e.lengthSync();
-          } catch (_) {
-            /* vanished mid-walk */
-          }
-        }
-      }
-    } catch (_) {
-      /* unreadable; report what we counted */
-    }
-    return total;
-  }
-
-  /// Blobs the log references but whose bytes are not yet in `blobs/`.
-  ///
-  /// Empty means a rebuild from the log could reconstruct this notebook's
-  /// content in full, not merely its structure — the distinction that decides
-  /// whether the container is safe to demote to a cache.
-  /// **Forces a synchronous log replay** if no recorder is open — this is a
-  /// diagnostic, not a paint-path read. Nothing that runs during a build may
-  /// call it; see [_recorderFor].
-  Set<String> syncMissingBlobs(String nb) =>
-      _recorderFor(nb)?.missingBlobs() ?? const {};
-
-  /// Materialise this notebook's blob bytes into `blobs/`, and wait for it.
-  ///
-  /// This is "prepare this notebook for sync", stated outright: it turns
-  /// [SyncRecorder.materialiseBlobs] on whether or not the notebook looks
-  /// shared, because asking for it *is* the intent. The automatic paths
-  /// ([materialiseBlobsIfShared] and the recorder's own open) go through the
-  /// same machinery without the override.
-  Future<int> syncBackfillBlobs(String nb) async {
-    final r = _recorderFor(nb);
-    if (r == null) return 0;
-    r.materialiseBlobs = true;
-    return r.backfillBlobs(
-      // Container-only, for the reason given in [_startBlobBackfill].
-      index: _repo.blobIndex(nb),
-      read: (h) => _repo.containerBlob(nb, h),
-    );
-  }
-
-  /// Upsert a node and record it. Every tree mutation funnels through here.
-  ///
-  /// A read-only notebook gets [n] straight back, unwritten. Callers all
-  /// re-read the tree from the container afterwards ([reloadNodes]), so the
-  /// section or page they thought they added simply never appears — which is
-  /// what "Openote is showing you this notebook without changing it" means.
-  TreeNode _putNode(String nb, TreeNode n) {
-    if (notebookIsReadOnly(nb)) return n;
-    final saved = _repo.upsertNode(nb, n);
-    _recorderFor(nb)?.node(saved);
-    return saved;
-  }
-
   // ── Import write path ────────────────────────────────────────────────
   //
   // Importers write in bulk, into a notebook that may not be the open one, and
@@ -3506,27 +879,18 @@ class AppState extends ChangeNotifier
   TreeNode importNode(String nb, TreeNode n) => _putNode(nb, n);
 
   /// Write a page's blocks during import.
-  void importPage(String nb, String pageId, List<Block> blocks, PageProps p) {
-    _repo.writePage(nb, pageId, blocks, p);
-    _recorderFor(nb)?.page(pageId, blocks, p);
-  }
+  void importPage(String nb, String pageId, List<Block> blocks, PageProps p) =>
+      _repo.writePage(nb, pageId, blocks, p);
 
   /// Store a blob during import (images pulled out of a `.one` file).
   String importBlob(String nb, Uint8List bytes, String mime) {
-    final hash = _repo.putBlob(nb, bytes, mime);
-    // The op records only the hash, mime and size; the bytes are written to
-    // `blobs/<sha256>` — content-addressed and immutable, so they need no merge
-    // logic and can be fetched lazily (ADR-0006 §3). Putting megabytes of image
-    // into an append-only log would make it unbounded and unreadable.
-    _recorderFor(nb)?.blob(hash, mime, bytes.length, bytes);
-    return hash;
+    return _repo.putBlob(nb, bytes, mime);
   }
 
   /// Hard-delete a node during import — used to clear a partially seeded
   /// notebook before re-seeding it, never on user data.
   void importPurgeNode(String nb, String id) {
     _repo.purgeNode(nb, id);
-    _recorderFor(nb)?.nodePurged(id);
   }
 
   /// The tree of any notebook, open or not.
@@ -3575,7 +939,6 @@ class AppState extends ChangeNotifier
   /// replace the list, so the setter above wouldn't notice.
   void bumpNodes() => nodesRevision++;
 
-  @override
   String? pageId;
   final Set<String> collapsedGroups = {};
 
@@ -3683,7 +1046,6 @@ class AppState extends ChangeNotifier
   }
 
   // Page content
-  @override
   List<Block> blocks = [];
   PageProps pageProps = PageProps();
 
@@ -4320,8 +1682,7 @@ class AppState extends ChangeNotifier
   bool get showPlannerPanel => openPanel == SidePanelKind.planner;
   void togglePlannerPanel() => togglePanel(SidePanelKind.planner);
 
-  /// Open the planner (idempotent) — what a "see all your dates" affordance
-  /// elsewhere in the app should call.
+  /// Open the planner (idempotent) from its summary in the sidebar.
   void openPlanner() => showPanel(SidePanelKind.planner);
 
   // ── Favourites & recents (ORG-10) ────────────────────────────────────
@@ -4516,7 +1877,7 @@ class AppState extends ChangeNotifier
     // **A plain notify, and deliberately NOT `docRevision++`.**
     //
     // `docRevision` means "the stored content was replaced wholesale" —
-    // a page load, a sync pull, an undo. Every block on the canvas is keyed
+    // a page load or an undo. Every block on the canvas is keyed
     // by it (`page_canvas.dart`), so bumping it destroys and rebuilds the
     // whole page. Pressing DEG while writing an equation therefore disposed
     // the equation editor mid-edit and took the caret with it: the owner,
@@ -5925,8 +3286,8 @@ class AppState extends ChangeNotifier
   /// — `openote Physics.onote`, or a double-click on it in the file manager.
   /// It is resolved HERE, in front of the last-session restore, rather than by
   /// opening the last notebook and switching afterwards: switching would open
-  /// two notebooks' worth of pages and replay two op logs to show one of them,
-  /// and the user would watch the wrong notebook appear first.
+  /// two notebooks' worth of pages to show one of them, and the user would
+  /// watch the wrong notebook appear first.
   Future<void> init({String? notebookPath}) async {
     // Session restore (§7a.5): theme, custom colours, per-page views, last loc.
     final tm = _repo.getSetting('themeMode') as String?;
@@ -5943,8 +3304,6 @@ class AppState extends ChangeNotifier
         if (k is String && v is String) _sectionLastPage[k] = v;
       });
     }
-    final as = _repo.getSetting('autoSync');
-    if (as is bool) autoSync = as;
     final sc = _repo.getSetting('spellCheck');
     if (sc is bool) spellCheckEnabled = sc;
     interfaceLanguage =
@@ -5958,24 +3317,10 @@ class AppState extends ChangeNotifier
     }
     final am = _repo.getSetting('angleMode');
     mathAngleMode = am == 'rad' ? AngleMode.radians : AngleMode.degrees;
-    onboardingSeen = _repo.getSetting('onboardingSeen') == true;
-    // Personal dictionary: workspace-scoped and deliberately NOT synced — one
-    // person's jargon shouldn't become everyone's on a shared notebook.
+    // Personal dictionary: workspace-scoped.
     final lw = _repo.getSetting('learnedWords');
     if (lw is List) loadLearnedWords(lw.cast<String>());
     onLearnedChanged = (words) => _repo.setSetting('learnedWords', words);
-    final mi = _repo.getSetting('mirrors');
-    if (mi is Map) {
-      mi.forEach((k, v) {
-        if (v is! List) return;
-        _mirrors['$k'] = [
-          for (final t in v)
-            if (MirrorTarget.fromJson(t) case final m?) m,
-        ];
-      });
-    }
-    loadSyncRoots();
-    _startSyncStatusPolling();
     study.load();
     planner.load();
     // Armed only once state is restored: the scheduler's first act is to catch
@@ -6082,10 +3427,7 @@ class AppState extends ChangeNotifier
     // odd registry into a startup that shows only an error screen. Making one
     // is always better than refusing to start.
     if (_repo.notebooks.isEmpty) await _repo.createNotebook('My notebook');
-    // A notebook named on the command line beats the last session's. Placed
-    // after `loadSyncRoots` above, because adopting a notebook out of a synced
-    // folder records that folder — and before the choice below, because being
-    // handed a notebook IS the choice.
+    // A notebook named on the command line beats the last session's.
     String? asked;
     if (notebookPath != null && notebookPath.trim().isNotEmpty) {
       // Through [_resolveHandedPath], NOT [_resolveNotebookFile]: cold start
@@ -6117,14 +3459,6 @@ class AppState extends ChangeNotifier
     // inline — so the gate has to be rehydrated here as well. Both paths, or
     // the lock is only as good as which door you came in by.
     reloadProtection();
-    // Replay the open notebook's log in a background isolate, starting now.
-    // This used to happen synchronously inside `_startWatching` on the first
-    // frame — for a freshly imported notebook that is a multi-megabyte log,
-    // and it was most of "the app is locked up for the first few seconds
-    // after launching".
-    unawaited(warmRecorder(notebookId!));
-    // Watch for other devices once the notebook is open.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _startWatching());
     final lastPage = _repo.getSetting('lastPage') as String?;
     final target = nodes.any((n) => n.id == lastPage && n.kind == NodeKind.page)
         ? lastPage
@@ -6172,32 +3506,6 @@ class AppState extends ChangeNotifier
     // page's blocks, and it must not load a locked one into an app that has
     // forgotten the lock exists.
     reloadProtection();
-    // Fold in anything that arrived while this notebook was closed.
-    //
-    // Nothing did this before, on any path: the watcher only reports files
-    // that change while it is running, so another device's log that landed
-    // overnight was replayed into the recorder's memory at open and never
-    // written to the container. The page then rendered without it, and the
-    // next save was diffed against state the container did not have — see the
-    // guard in `SyncRecorder.page`, which stops that being destructive.
-    //
-    // NOT awaited, deliberately. The replay is documented at ~0.5s for a big
-    // imported notebook, and it was moved off this path precisely because it
-    // was most of "the app is locked up for the first few seconds after
-    // launching". `_syncPullLocked` bumps `docRevision` and reloads the open
-    // page when it lands, so the content appears a moment later rather than
-    // the whole window waiting for it.
-    _foldWhenWarm(notebookId!);
-    _scheduleHousekeeping(notebookId!);
-    // Re-point the folder watcher at THIS notebook's ops directory.
-    //
-    // It was armed once at startup and never moved. The retry that could have
-    // moved it is guarded on `_watcher == null`, so once startup had armed it
-    // on the first notebook it stayed there for the rest of the session —
-    // every other notebook's incoming changes went unnoticed until the app was
-    // restarted with that one open. `_startWatching` stops the old watcher
-    // first, so calling it unconditionally is safe.
-    _startWatching();
     // Reset the focused section for the new notebook (selectPage refines it).
     activeSectionId =
         nodes.where((n) => n.kind == NodeKind.section).firstOrNull?.id;
@@ -6212,9 +3520,6 @@ class AppState extends ChangeNotifier
   Future<void> selectNotebook(String id) async {
     await flushSave();
     notebookId = id;
-    // Replay this notebook's log in the background now, so the first edit
-    // finds a ready recorder instead of paying the replay synchronously.
-    unawaited(warmRecorder(id));
     await _loadNotebook();
     notifyListeners();
   }
@@ -6223,14 +3528,6 @@ class AppState extends ChangeNotifier
     await flushSave();
     final ref = await _repo.createNotebook(title);
     await selectNotebook(ref.id);
-  }
-
-  /// Whether the welcome flow has run for this workspace.
-  bool onboardingSeen = false;
-  void markOnboardingSeen() {
-    if (onboardingSeen) return;
-    onboardingSeen = true;
-    _repo.setSetting('onboardingSeen', true);
   }
 
   // ── Opening a notebook Openote was HANDED (task 43) ───────────────────
@@ -6300,85 +3597,12 @@ class AppState extends ChangeNotifier
         details: 'Opened: $from\nCopy: ${ref.file}',
       );
 
-  /// What a path Openote was handed MEANS — the one answer for both doors.
-  ///
-  /// Cold start (`init(notebookPath:)`) and hand-off ([openNotebookFile]) used
-  /// to answer this question separately, and only the hand-off knew about
-  /// notebook folders and working copies. So double-clicking
-  /// `Open this notebook.onotelink` with Openote closed said *"That file isn't
-  /// an Openote notebook"* — about the user's own notebook — because the cold
-  /// path fed the pointer file straight to the container sniff; and
-  /// `openote D:\backup\cache.onote` at cold start adopted a picture-less
-  /// clone of Openote's own working copy, bypassing the refusal the hand-off
-  /// path has always made. Resolution lives HERE, once; the callers keep only
-  /// what genuinely differs between them (switching notebooks and showing the
-  /// notice now, versus recording it for the shell to show after startup).
+  /// Resolve a notebook file handed in at startup or by a second process.
   Future<({NotebookRef? ref, OpenNotebookResult? problem, bool copied})>
-      _resolveHandedPath(String path) async {
-    // ── v0.17 Step 8b: what arrives here is no longer always a container ────
-    //
-    // Since decision 2 ("register the folder instead") the thing a student
-    // double-clicks is the `.onotebook` DIRECTORY, or the pointer file inside
-    // it. Without this branch the sniff below answers `notAFile` and the app
-    // says "That's a folder, not a notebook, so there is nothing to open" —
-    // about the notebook itself.
-    final folder = notebookFolderNamedBy(path);
-    if (folder != null) {
-      try {
-        // Idempotent: a folder already in the registry comes back as the
-        // entry it already has, and one in the recycle bin is restored rather
-        // than cloned. Nothing is ever `copiedIn` here — the folder they
-        // double-clicked IS the notebook and goes on receiving their edits,
-        // which is the whole reason the association moved onto it.
-        final ref = await _repo.adoptLogDirectory(
-          folder,
-          title: _titleOfLogDir(folder),
-        );
-        // Joining a notebook from a folder is a moment the user tells us
-        // where their sync lives — this device's logs go into that folder, so
-        // it is a sync root by definition.
-        rememberSyncRoot(p.dirname(folder));
-        // The container an adopt creates is EMPTY; only the pull makes it a
-        // notebook. Pulled here, before any caller switches to it, so that a
-        // cold start and a hand-off both deliver notes rather than a blank
-        // sidebar that looks exactly like a join that silently failed.
-        await syncPull(ref.id);
-        return (ref: ref, problem: null, copied: false);
-      } catch (e) {
-        return (
-          ref: null,
-          problem: OpenNotebookResult(
-            OpenNotebookOutcome.failed,
-            "Openote couldn't open that notebook.",
-            details: '$folder\n\n$e',
-          ),
-          copied: false,
-        );
-      }
-    }
-    // The container is a working copy nobody should be able to open by hand.
-    // After Step 7 its `blobs` table is empty, so a clone of one is a notebook
-    // with every picture missing that still passes `integrity_check` — and the
-    // sniff below would call it a notebook, because a cache satisfies the
-    // SQLite magic and the `application_id` exactly as a notebook does.
-    if (isOpenoteWorkingCopy(path)) {
-      return (
-        ref: null,
-        problem: OpenNotebookResult(
-          OpenNotebookOutcome.notANotebook,
-          "This is Openote's working copy, not your notebook. Open the "
-          'notebook folder instead.',
-          details: path,
-        ),
-        copied: false,
-      );
-    }
-    return _resolveNotebookFile(path);
-  }
+      _resolveHandedPath(String path) => _resolveNotebookFile(path);
 
   /// Turn a container path into a registry entry, registering or copying as
-  /// required. Callers want [_resolveHandedPath], which answers the folder,
-  /// pointer-file and working-copy shapes first — this is its final step.
+  /// required.
   ///
   /// `copied` says the notebook was taken INTO the workspace rather than found
   /// there, which is a fact the user has to be told: their edits stop going to
@@ -6426,16 +3650,6 @@ class AppState extends ChangeNotifier
         );
       }
       final ref = await _repo.openExistingNotebook(abs);
-      // Only when the shared log directory is really there. `openExistingNotebook`
-      // always POINTS `logDir` at a sibling `.onotebook`, and the onboarding
-      // flow — where the user has just browsed to their Drive folder — then
-      // records that folder as a sync location. Reaching the same call by
-      // double-clicking a notebook a friend emailed would record ~/Downloads
-      // as "where my notes sync", which is a lie the sync chip would then
-      // repeat every launch.
-      if (Directory('${p.withoutExtension(abs)}.onotebook').existsSync()) {
-        rememberSyncRoot(p.dirname(abs));
-      }
       return (ref: ref, problem: null, copied: true);
     } catch (e) {
       return (
@@ -6478,56 +3692,11 @@ class AppState extends ChangeNotifier
     return OpenNotebookResult(outcome, message, details: path);
   }
 
-  /// Open a `.onote` that already exists on disk — the second-device flow.
+  /// Import a `.onote` that already exists on disk.
   Future<void> openExistingNotebook(String path) async {
     await flushSave();
-    // **A `.onotebook` DIRECTORY IS THE NORMAL SHAPE FROM v0.17 ON.** Sharing a
-    // notebook now moves only the logs into the folder and leaves the container
-    // on the machine that made it (v0.17 plan, Step 4), so what the second
-    // device is handed is a directory, not a file. `openExistingNotebook` in
-    // the repository cannot serve it — it byte-copies a container — and
-    // `adoptLogDirectory` creates
-    // the container empty here and let the first pull fill it in.
-    final NotebookRef ref;
-    if (Directory(path).existsSync() && p.extension(path) == '.onotebook') {
-      ref = await _repo.adoptLogDirectory(path, title: _titleOfLogDir(path));
-    } else {
-      ref = await _repo.openExistingNotebook(path);
-    }
-    // Joining a notebook from a folder is the other moment the user tells us
-    // where their sync lives — this device's logs go into that folder, so it
-    // is a sync root by definition.
-    rememberSyncRoot(p.dirname(path));
+    final ref = await _repo.openExistingNotebook(path);
     await selectNotebook(ref.id);
-    // The container an adopt creates is EMPTY; only the pull makes it a
-    // notebook. `selectNotebook` alone would show a blank sidebar and look
-    // exactly like a join that silently failed.
-    await syncPull(ref.id);
-    reloadNodes();
-    await _loadNotebook();
-    notifyListeners();
-  }
-
-  /// The name a shared log directory gives itself, or its folder name.
-  ///
-  /// The manifest is the notebook's own name for itself and it is better than
-  /// the directory's: the same reasoning as an imported directory, where "Year
-  /// 12 — Physics" came back as "Year-12-Physics" from the repository name.
-  String _titleOfLogDir(String path) {
-    try {
-      final mf = File(p.join(path, 'manifest.json'));
-      if (mf.existsSync()) {
-        final j = jsonDecode(mf.readAsStringSync());
-        if (j is Map) {
-          final t = j['title'];
-          if (t is String && t.trim().isNotEmpty) return t.trim();
-        }
-      }
-    } catch (_) {
-      // A missing or unreadable manifest is not fatal — the logs are the
-      // notebook, and the name is cosmetic.
-    }
-    return p.basenameWithoutExtension(path);
   }
 
   Future<void> renameNotebook(String id, String title) async {
@@ -6535,17 +3704,7 @@ class AppState extends ChangeNotifier
     navRevision++;
     notifyListeners();
     await saving;
-    final recorder = await warmRecorder(id);
-    recorder?.notebookMeta({'title': title});
     notifyListeners();
-  }
-
-  /// Duplicate a notebook (contents included) without switching to it.
-  Future<NotebookRef> duplicateNotebook(String id) async {
-    await flushSave(); // the copy is a byte copy — settle pending writes first
-    final ref = await _repo.duplicateNotebook(id);
-    notifyListeners();
-    return ref;
   }
 
   ({int sections, int pages}) notebookCounts(String id) =>
@@ -6589,44 +3748,11 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
-  /// Whether deleting [id] for good leaves the shared folder alone, because
-  /// other devices keep their notes there too. Drives the wording of the
-  /// confirmation — see [Repository.purgeKeepsSharedFolder].
-  bool purgeKeepsSharedFolder(String id) => _repo.purgeKeepsSharedFolder(id);
-
-  /// The sentence a "delete permanently?" confirmation needs to add, or null
-  /// when its plain promise is the whole truth.
-  ///
-  /// "and all its pages will be removed for good" is what both recycle bins
-  /// say, and for a notebook joined from a shared folder it is wrong in the
-  /// direction that frightens people: the notes are still on the other
-  /// computer, and this only ever removed this machine's copy. Said before the
-  /// click, not discovered afterwards. No mention of logs, devices ids or
-  /// folders-with-a-dot — "your other devices" is the thing the user has.
-  String? purgeCaveat(String id) => purgeKeepsSharedFolder(id)
-      ? 'This notebook is in a folder you share, so your other devices keep '
-          'their copy. Deleting it here takes it off this computer.'
-      : null;
-
   /// Throw away a notebook that was never the user's — the half-built target of
   /// a cancelled or crashed import. Not the recycle bin: see
   /// [Repository.discardNotebook].
   Future<void> discardImportedNotebook(String id) async {
-    _importingNotebooks.remove(id);
-    // Settle any background replay FIRST. It writes the manifest on its way
-    // through, so deleting the directory out from under one leaves the
-    // recreated husk behind.
-    final warm = _recorderWarms[id];
-    if (warm != null) {
-      try {
-        await warm;
-      } catch (_) {
-        /* a failed warm is not this operation's problem */
-      }
-    }
-    _recorders.remove(id);
     await _repo.discardNotebook(id);
-    _invalidateSyncStatus();
     notifyListeners();
   }
 
@@ -6802,296 +3928,11 @@ class AppState extends ChangeNotifier
     // entry: one Ctrl+Z restores exactly what was on disk.
     pushUndo();
     _healBlocks(blocks, core);
-    // Save through the normal funnel so the op log records it and the change
-    // reaches other devices — a repair that only ever ran locally would have
-    // to run again on every one of them.
+    // Save through the normal funnel so cache invalidation and persistence use
+    // the same path as an ordinary edit.
     markDirty();
   }
 
-  // ── Simplified version history (v0.17 plan, Step 8a) ───────────────────
-  //
-  // `pageVersions()` and `restoreVersion()` used to live here, over the
-  // `page_versions` table. Decision 1 replaced them with what is below; see the
-  // note in `Repository` for why the reads went with the writes.
-  //
-  // Who last changed each block you can see, and the last ten notable
-  // deletions. Both are folds of ops the app already writes — no new op kind,
-  // not one new byte in any log, nothing new synced. See `model/history.dart`.
-
-  final Map<String, NotebookHistory> _histories = {};
-  final Map<String, Future<void>> _historyCatchUps = {};
-
-  static String _historyOffsetKey(String nb, String device) =>
-      'historyAt:$nb:$device';
-
-  /// The index as it stands, without going to disk. Null before the first
-  /// [refreshHistory] — a caller that needs it fresh awaits that instead.
-  NotebookHistory? historyOf(String nb) => _histories[nb];
-
-  /// Fold whatever has been appended to any log since this index last looked.
-  ///
-  /// Cheap by construction: [HistoryCatchUp] reads from a stored byte offset,
-  /// so an ordinary autosave costs the one line it just wrote. Coalesced,
-  /// because the save path and an open dialog can both ask at once.
-  /// Why the change list could not be read, or null when it could.
-  ///
-  /// Cleared on every successful fold, so a notebook that recovers stops
-  /// apologising.
-  final Map<String, String> _historyTrouble = {};
-
-  String? historyTroubleFor(String? nb) =>
-      nb == null ? null : _historyTrouble[nb];
-
-  Future<NotebookHistory?> refreshHistory(String nb) async {
-    if (!syncLogEnabled) return null;
-    final store = _bareLog(nb);
-    if (store == null || !store.opsDir.existsSync()) return null;
-    final inFlight = _historyCatchUps[nb];
-    if (inFlight != null) {
-      await inFlight;
-      return _histories[nb];
-    }
-    final f = _catchUpHistory(nb, store);
-    _historyCatchUps[nb] = f;
-    try {
-      await f;
-    } finally {
-      _historyCatchUps.remove(nb);
-    }
-    return _histories[nb];
-  }
-
-  Future<void> _catchUpHistory(String nb, OpLogStore store) async {
-    final h = _histories.putIfAbsent(nb, () => _repo.loadHistory(nb));
-    try {
-      _historyTrouble.remove(nb);
-      await HistoryCatchUp.run(
-        store: store,
-        history: h,
-        offsetOf: (dev) =>
-            (_repo.getSetting(_historyOffsetKey(nb, dev)) as num?)?.toInt() ??
-            0,
-        remember: (dev, at) => _repo.setSetting(_historyOffsetKey(nb, dev), at),
-      );
-      if (h.hasPendingWrites) _repo.flushHistory(nb, h);
-      // Free, and only here: the label is what turns a device id into a name,
-      // and doing it on the save path means a student never meets a question
-      // about it at first run.
-      DeviceLabels.ensureNamed(store, localDeviceId());
-    } catch (e) {
-      // **Start over rather than limp.** Both tables are derived, so the
-      // repair for "we do not know how far we got" is to forget the offsets
-      // and re-fold from the beginning — which costs one log read and cannot
-      // lose a note. Carrying on from a half-advanced offset is the one
-      // outcome that would leave the index permanently missing ops.
-      debugPrint('[openote/history] rebuilding the change list: $e');
-      for (final dev in store.deviceIds()) {
-        _repo.setSetting(_historyOffsetKey(nb, dev), null);
-      }
-      _histories.remove(nb);
-      // **Remembered, so the dialog does not call this "nothing".** With the
-      // tables dropped, `pageAuthors()` returns an empty map and
-      // `recentDeletions()` an empty list, and the change dialog then told a
-      // student "Nothing recorded for this page yet" and offered no way to
-      // put back the page they had just deleted. That dialog's own opening
-      // comment says an empty list reading as "nothing was recorded" is "the
-      // one thing this must never say wrongly", and this was the path that
-      // made it say exactly that.
-      _historyTrouble[nb] = '$e';
-    }
-  }
-
-  /// Who last changed each block on the open page, keyed by block id.
-  Map<String, BlockAuthor> pageAuthors() {
-    final nb = notebookId, pid = pageId;
-    if (nb == null || pid == null) return const {};
-    final h = _histories[nb];
-    if (h == null) return const {};
-    return {
-      for (final b in blocks)
-        if (h.authorOf(pid, b.id) != null) b.id: h.authorOf(pid, b.id)!,
-    };
-  }
-
-  /// The last ten notable deletions, newest first.
-  List<NotableDeletion> recentDeletions() => notebookId == null
-      ? const []
-      : (_histories[notebookId]?.deletions ?? const []);
-
-  /// The name each device goes by in [nb]'s manifest. Absent means unnamed,
-  /// which the interface renders as *"another computer"* and never as an id.
-  Map<String, String> deviceLabels(String nb) {
-    final store = _bareLog(nb);
-    return store == null ? const {} : DeviceLabels.read(store);
-  }
-
-  /// What other people in this notebook see this computer called.
-  String thisComputerLabel(String nb) {
-    final store = _bareLog(nb);
-    if (store == null) return DeviceLabels.defaultLabel();
-    return DeviceLabels.labelOf(store, localDeviceId()) ??
-        DeviceLabels.defaultLabel();
-  }
-
-  /// Rename this computer. False when the manifest could not be written.
-  bool setThisComputerLabel(String nb, String label) {
-    final store = _bareLog(nb);
-    if (store == null) return false;
-    final ok = DeviceLabels.set(store, localDeviceId(), label);
-    if (ok) notifyListeners();
-    return ok;
-  }
-
-  /// Put back something the deletions list remembers.
-  ///
-  /// **A query, not a stored copy.** §4.1 of the plan guarantees no log line is
-  /// ever rewritten, so a removed block's last content is still sitting in the
-  /// log as the last `block.set` naming it before the `block.remove`, and a
-  /// purged page's content is still every `block.set` for it. Nothing was
-  /// copied anywhere when it was deleted, and nothing needed to be.
-  ///
-  /// The restore itself is an **ordinary edit**: it goes through the same save
-  /// funnel as typing, so it reaches other devices and is itself undoable.
-  Future<bool> restoreDeletion(NotableDeletion d) async {
-    final nb = notebookId;
-    if (nb == null || notebookIsReadOnly(nb)) return false;
-    final store = _bareLog(nb);
-    if (store == null) return false;
-    final all = store.readAll();
-    final ok = d.isNode
-        ? _restoreDeletedNode(nb, d, all)
-        : await _restoreRemovedBlock(d, all);
-    if (ok) {
-      _histories[nb]?.forget(d.targetId);
-      final h = _histories[nb];
-      if (h != null && h.hasPendingWrites) _repo.flushHistory(nb, h);
-      notifyListeners();
-    }
-    return ok;
-  }
-
-  /// True when [op] happened strictly before the op that recorded [d] — the
-  /// same total order [Op.compare] defines, spelled against a stored row.
-  static bool _beforeDeletion(Op op, NotableDeletion d) {
-    if (op.lamport != d.lamport) return op.lamport < d.lamport;
-    final c = op.device.compareTo(d.device);
-    if (c != 0) return c < 0;
-    return op.seq < d.seq;
-  }
-
-  Future<bool> _restoreRemovedBlock(NotableDeletion d, List<Op> all) async {
-    final pid = d.pageId;
-    if (pid == null) return false;
-    Map<String, dynamic>? last;
-    // `readAll` is already in total order, so the last match wins — which is
-    // exactly "the newest content this block ever had before it went".
-    for (final op in all) {
-      if (op.kind != OpKind.blockSet || !_beforeDeletion(op, d)) continue;
-      if (op.map['pageId'] != pid) continue;
-      final b = op.map['block'];
-      if (b is Map && b['id'] == d.targetId) last = b.cast<String, dynamic>();
-    }
-    if (last == null) return false;
-    if (pageId != pid) await selectPage(pid);
-    if (pageId != pid) return false; // the page itself is gone
-    pushUndo();
-    blocks.add(Block.fromJson(last));
-    docRevision++;
-    markDirty();
-    return true;
-  }
-
-  bool _restoreDeletedNode(String nb, NotableDeletion d, List<Op> all) {
-    // Still in the recycle bin: the `nodes` row is there and only `deleted_at`
-    // is stamped, so the ordinary restore is the whole job.
-    if (_repo.loadDeletedNodes(nb).any((n) => n.id == d.targetId)) {
-      _repo.restoreNode(nb, d.targetId);
-      _recorderFor(nb)?.nodeRestored(d.targetId);
-      reloadNodes();
-      return true;
-    }
-    // Purged: there is no row to restore, so it is rebuilt from the log. The
-    // subtree is worked out from the `node.upsert` ops, then replayed with the
-    // delete and purge ops for that subtree left out.
-    final parents = <String, String?>{};
-    for (final op in all) {
-      if (op.kind != OpKind.nodeUpsert) continue;
-      final id = op.map['id'];
-      if (id is String) parents[id] = op.map['parentId'] as String?;
-    }
-    final subtree = <String>{d.targetId};
-    var grew = true;
-    while (grew) {
-      grew = false;
-      parents.forEach((id, parent) {
-        if (parent != null && subtree.contains(parent) && subtree.add(id)) {
-          grew = true;
-        }
-      });
-    }
-    final m = Materializer();
-    for (final op in all) {
-      final isRemoval =
-          op.kind == OpKind.nodeDelete || op.kind == OpKind.nodePurge;
-      if (isRemoval && subtree.contains(op.map['id'])) continue;
-      m.apply(op);
-    }
-    // Parents before children, or the foreign key on `nodes.parent_id` refuses
-    // the child and the page comes back detached from the section it was in.
-    final order = subtree.toList()
-      ..sort((a, b) => _depthOf(a, parents).compareTo(_depthOf(b, parents)));
-    var restored = 0;
-    for (final id in order) {
-      final n = m.nodes[id];
-      if (n == null) continue;
-      final kind = nodeKindFromWire(n.kind);
-      if (kind == null) continue; // a kind this build does not know: leave it
-      _putNode(
-        nb,
-        TreeNode(
-          id: id,
-          kind: kind,
-          parentId: n.parentId,
-          title: n.title,
-          position: n.position,
-          color: n.color,
-          level: n.level,
-          createdAt: n.createdAt,
-        ),
-      );
-      final page = m.pages[id];
-      if (page != null) {
-        final mirror = m.pageMirror(id);
-        importPage(
-          nb,
-          id,
-          [
-            for (final b in (mirror['blocks'] as List))
-              Block.fromJson((b as Map).cast<String, dynamic>()),
-          ],
-          PageProps.fromJson((mirror['page'] as Map?)?.cast<String, dynamic>()),
-        );
-      }
-      restored++;
-    }
-    reloadNodes();
-    return restored > 0;
-  }
-
-  static int _depthOf(String id, Map<String, String?> parents) {
-    var depth = 0;
-    var at = parents[id];
-    while (at != null && depth < 64) {
-      depth++;
-      at = parents[at];
-    }
-    return depth;
-  }
-
-  /// Shift an ink block's strokes with its box. Stroke coordinates are
-  /// page-absolute (Ink Spec §3), so moving the block alone leaves the drawing
-  /// where it was. The same arithmetic `moveSelectedBy` does, and it has to
-  /// stay the same: strokes are parallel `x` and `y` lists, not point pairs.
   void _translateInk(Block b, double dy) {
     for (final sj in (b.content['strokes'] as List? ?? const [])) {
       final m = sj as Map;
@@ -7676,20 +4517,13 @@ class AppState extends ChangeNotifier
       deletedNodes() => _repo.loadDeletedNodes(notebookId!);
 
   Future<void> restoreDeleted(String id) async {
-    if (notebookIsReadOnly(notebookId!)) return;
     _repo.restoreNode(notebookId!, id);
-    // Restore is the ONLY thing that clears a delete (ADR-0006 §6a.3). An edit
-    // must never resurrect a deleted node, or "delete wins" would silently
-    // become "whichever device wrote last wins".
-    _recorderFor(notebookId!)?.nodeRestored(id);
     reloadNodes();
     notifyListeners();
   }
 
   void purgeDeleted(String id) {
-    if (notebookIsReadOnly(notebookId!)) return;
     _repo.purgeNode(notebookId!, id);
-    _recorderFor(notebookId!)?.nodePurged(id);
     notifyListeners();
   }
 
@@ -7856,18 +4690,8 @@ class AppState extends ChangeNotifier
   }
 
   Future<void> deleteNode(String id) async {
-    // Deleting is a write like any other. A notebook we can only half read is
-    // the last place to be removing things from — see [notebookIsReadOnly].
-    if (notebookIsReadOnly(notebookId!)) return;
-    // **One clock reading, used twice.** The container and the log each used to
-    // take their own, so a delete that straddled a millisecond boundary was
-    // recorded at two different times — invisible until a rebuild compared
-    // them, and then it refused at random on any notebook with a page in the
-    // recycle bin. It also gave the thirty-day retention promise two different
-    // start instants for the same deletion.
     final at = nowMs();
     _repo.softDeleteNode(notebookId!, id, at: at);
-    _recorderFor(notebookId!)?.nodeDeleted(id, at: at);
     reloadNodes();
     if (pageId == id || !nodes.any((n) => n.id == pageId)) {
       await selectPage(
@@ -8195,7 +5019,7 @@ class AppState extends ChangeNotifier
   /// Both halves are in the condition: there must be a link, and one END of
   /// it must be selected. DERIVED, never stored — a tint written into
   /// `content['bg']` is the student's own chosen fill, and would be
-  /// permanent, would dirty the page and would sync.
+  /// permanent and would dirty the page.
   Color? graphLinkHighlight(Block b) {
     final selected = selectedIds;
     if (selected.isEmpty) return null;
@@ -8364,7 +5188,6 @@ class AppState extends ChangeNotifier
 
   void removeBlock(String id, {bool recordUndo = true}) {
     if (recordUndo) pushUndo();
-    _recordBlockRemovals([id]);
     blocks.removeWhere((b) => b.id == id);
     selectedIds.remove(id);
     if (selectedBlockId == id) selectedBlockId = selectedIds.firstOrNull;
@@ -8376,28 +5199,12 @@ class AppState extends ChangeNotifier
   void removeSelected() {
     if (selectedIds.isEmpty) return;
     pushUndo();
-    _recordBlockRemovals(selectedIds);
     blocks.removeWhere((b) => selectedIds.contains(b.id));
     selectedIds.clear();
     selectedBlockId = null;
     editingBlockId = null;
     markDirty();
     notifyListeners();
-  }
-
-  void _recordBlockRemovals(Iterable<String> ids) {
-    final nb = notebookId, page = pageId;
-    if (nb == null || page == null || !syncLogEnabled) return;
-    try {
-      // Materialise the ids before selection is cleared by the caller.
-      _recorderFor(nb)?.blocksRemoved(page, ids.toList(growable: false));
-      _logError = null;
-    } catch (e) {
-      // The container save below remains authoritative and retries normally;
-      // surface the degraded history/sync copy instead of losing the deletion
-      // silently on an older notebook.
-      _noteLogProblem('recording deleted blocks on $page failed', e);
-    }
   }
 
   /// Duplicate with FRESH ids (Data Model Spec §2 rule 3).
@@ -8710,40 +5517,11 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
-  /// The last save failure, or null when everything the app owes the disk has
-  /// landed. Surfaced in the status bar — a silent failed save used to read as
-  /// "Saved".
-  ///
-  /// **Several sources, one surface, in order of how much they cost the
-  /// user.** [_pageSaveError] is the container write, and means the notes on
-  /// screen are not on disk. [_blobWriteError] means a paste or drop's bytes
-  /// never landed anywhere — the thing just added is not in the notebook.
-  /// [_logError] is the operation log — the notes ARE on disk but the history
-  /// other devices and backups read from is behind. The registry lock means
-  /// the notebook *list* cannot be written, so a rename or a new notebook
-  /// will not survive a restart.
-  ///
-  /// They are separate fields rather than one because they are cleared by
-  /// different events: a successful page save must not wipe a log failure it
-  /// knows nothing about, which is what a single field did.
+  /// The last local write failure, surfaced in the status bar.
   SaveProblem? get saveError {
     final locked = _repo.registryReadOnly;
-    // The read-only notice comes FIRST. It is the only one of the four that
-    // says "nothing you type will be kept"; reporting a failed write underneath
-    // it would describe a symptom of it as if it were a separate problem.
-    final nb = notebookId;
-    return (nb == null ? null : _logAhead[nb]) ??
-        _pageSaveError ??
-        // A paste or drop whose bytes never landed anywhere. As costly as a
-        // failed page save — the thing the user just added is simply not in
-        // the notebook — and nothing else on screen would ever mention it.
+    return _pageSaveError ??
         _blobWriteError ??
-        _logError ??
-        // Below the two write failures and above the registry lock: the notes
-        // themselves are safe on this computer, so this is not a lost save —
-        // but it is the one that costs a picture on the OTHER device, silently,
-        // and nothing else on screen would ever mention it.
-        (nb == null ? null : _blobHole[nb]) ??
         (locked == null
             ? null
             : SaveProblem(
@@ -8754,177 +5532,40 @@ class AppState extends ChangeNotifier
   }
 
   SaveProblem? _pageSaveError;
-  SaveProblem? _logError;
 
-  /// Notebooks whose history has moved past what this build can read, with the
-  /// sentence to say about each. Populated the moment a recorder is installed;
-  /// see [_noteLogAhead].
-  final Map<String, SaveProblem> _logAhead = {};
-
-  /// Whether Openote is only *showing* [nb] rather than changing it.
-  ///
-  /// True when the notebook's log contains operations written under an
-  /// envelope this build cannot decode — a newer format version, or an
-  /// encrypted payload. Everything the user can already see stays on screen;
-  /// what stops is writing, because every op this device would append is a
-  /// diff against a replay that is missing whatever those operations did.
-  bool notebookIsReadOnly(String nb) =>
-      (_editorOwner?.notebookIsReadOnly(nb) ?? false) ||
-      _logAhead.containsKey(nb);
-
-  /// Look at a freshly opened recorder and decide whether its notebook is
-  /// readable but not writable.
-  ///
-  /// The message deliberately never says "envelope", "op", "v2" or
-  /// "encryption" — the audience is a year 10 student, and the version numbers
-  /// live in [SaveProblem.details] behind the Advanced fold, exactly as
-  /// `open_notice_dialog.dart` and `save_problem_dialog.dart` do it.
-  void _noteLogAhead(String nb, SyncRecorder r) {
-    final ahead = r.unsupportedOps;
-    if (ahead.isEmpty) {
-      if (_logAhead.remove(nb) != null && !_disposed) notifyListeners();
-      return;
-    }
-    final versions = {for (final op in ahead) op.version}.toList()..sort();
-    final encs = {
-      for (final op in ahead)
-        if (op.encryption != 'none') op.encryption,
-    }.toList()
-      ..sort();
-    _logAhead[nb] = SaveProblem(
-      short: 'Read-only — made by a newer Openote',
-      message: 'This notebook has changes in it that were made by a newer '
-          'version of Openote, and this version cannot read them.\n\n'
-          'So Openote is showing you this notebook without changing it. '
-          'Everything in it is safe, and nothing you do here can damage it — '
-          'but anything you type now will not be kept.\n\n'
-          'Updating Openote to the latest version lets you edit it again.',
-      details: 'the log holds ${ahead.length} operation(s) this build cannot '
-          'apply\n'
-          'envelope version(s): ${versions.join(', ')} — this build writes and '
-          'understands $opFormatVersion\n'
-          'payload encryption: ${encs.isEmpty ? 'none' : encs.join(', ')}',
-    );
-    if (!_disposed) notifyListeners();
-  }
+  SaveProblem _pageSaveFailed(Object error) => SaveProblem(
+        short: 'Changes not saved',
+        message: 'Openote could not save the latest changes. Check that the '
+            'disk is not full and try again.',
+        details: '$error',
+      );
 
   Future<void> flushSave({bool closing = false}) async {
     for (final editor in _editors.toList()) {
       if (!editor._disposed) await editor.flushSave(closing: closing);
     }
-    if (_editorOwner != null) await _editorOwner!._applyingPull?.future;
     final saveCancellationGeneration = _saveCancellationGeneration;
     _saveDebounce?.cancel();
     if (!_dirty || pageId == null || notebookId == null) return;
-    // Wait out a pull that is mid-write rather than racing it. See
-    // [_applyingPull]; the wait is bounded by the pull, which yields.
-    await _applyingPull?.future;
-    if (!_dirty || pageId == null || notebookId == null) return;
-    // Keep `_dirty` TRUE until the write actually lands: clearing it first meant
-    // a throwing save (disk full, DB locked) left the page marked clean and the
-    // status bar claiming "Saved" while the change was never persisted.
-    final id = pageId!, nb = notebookId!;
-    // Read-only: the container is a cache of the log, and writing this page
-    // into it while the log holds ops we cannot read would make the cache
-    // disagree with the only authority there is. `_dirty` stays true so the
-    // message keeps its "not kept" promise honest rather than the status bar
-    // quietly reading "Saved". See [notebookIsReadOnly].
-    if (notebookIsReadOnly(nb)) return;
+
+    final id = pageId!;
+    final notebook = notebookId!;
+    final savingRevision = _dirtyRevision;
     try {
-      // Warm the recorder BEFORE anything that would open it synchronously.
-      //
-      // Both the ink persist below (through `importBlob`) and the recording at
-      // the end reach for `_recorderFor`, which replays the whole operation log
-      // on the calling thread when none is installed — 1,936 ms on a real
-      // 64.6 MB log. Getting it here, off-thread, means neither of them ever
-      // triggers that. Null when the log is disabled or unavailable, which is
-      // exactly what those call sites already handle.
-      final rec = await warmRecorder(nb);
-      // A save can spend time opening/replaying the operation log. Remember
-      // precisely which edit generation the snapshot below contains; a newer
-      // keystroke must remain dirty even if this older disk write succeeds.
-      final savingRevision = _dirtyRevision;
-      // **Ink becomes bytes here, once, for both destinations.**
-      //
-      // The container and the op log must agree, and they only agree if they
-      // are handed the SAME blocks: the recorder diffs what it is given
-      // against its replayed state, so persisting the ref form to the
-      // container while recording the inline form would make every save look
-      // like a whole-page change and put the 3 MB straight back into the log.
-      //
-      // Through `importBlob`, not `_repo.putBlob` — the latter writes only the
-      // container's `blobs` table and emits no `blob.put`, which would leave
-      // the log holding refs it cannot resolve. That is invisible locally and
-      // total on another device.
       final toSave = InkStorage.persistAll(
         blocks,
-        (bytes) => importBlob(nb, bytes, inkMimeType),
+        (bytes) => importBlob(notebook, bytes, inkMimeType),
       );
-      // The engine owns persistence: version snapshot (throttled, SYNC-8) + the
-      // mirror write, plus content-hash change-detection on the Rust engine (a
-      // save whose hash is unchanged is skipped). See RustEngine/MirrorEngine.
-      await engine.savePage(nb, id, toSave, pageProps);
+      await engine.savePage(notebook, id, toSave, pageProps);
       _dirty = _dirtyRevision != savingRevision;
       _pageSaveError = null;
-      // Record AFTER the container write succeeds, so the log never claims a
-      // change the notebook doesn't have. The reverse order would be worse than
-      // useless: rebuild-from-log would then differ from the container on every
-      // failed save, and the divergence would look like a recording bug rather
-      // than the disk error it is.
-      //
-      // The recorder diffs against its replayed state, so an autosave that
-      // changed one block appends one op, not the whole page.
-      // **Awaited, not `_recorderFor`.** That opens the recorder
-      // SYNCHRONOUSLY when none is installed yet, which means reading and
-      // JSON-decoding the whole operation log on the calling thread — measured
-      // at **1,936 ms** on a real 64.6 MB log, paid by the first save after
-      // launch. Since a page is marked dirty simply by being opened (the
-      // title-band repair), that first save is usually the first page switch,
-      // and it froze the window for two seconds for no reason the user could
-      // see.
-      //
-      // `warmRecorder` does the same replay in a background isolate and hands
-      // the result over, so the wait is off the UI thread. It is safe to await
-      // here specifically because the container write above has already
-      // succeeded — the log is a shadow of it, and recording a moment later
-      // changes nothing about what is durable.
-      //
-      // Guarded separately from the container write above, because the two
-      // failures cost the user completely different things. The page is
-      // already durable by the time this runs, so an append that throws must
-      // NOT report "changes kept in memory" (they are not in memory, they are
-      // saved) and must not leave the page dirty for a retry that would rewrite
-      // a container that is already correct.
-      try {
-        rec?.page(id, toSave, pageProps);
-        // The recording landed, so whatever stopped the last one has cleared.
-        // Without this the message is sticky: a cloud client holding the file
-        // for one second would keep saying "not recorded" all session.
-        if (rec != null) _logError = null;
-      } catch (e) {
-        _noteLogProblem('recording the save of $id failed', e);
-      }
-      // Fold the line that save just appended into the change list (v0.17
-      // plan, Step 8a). It reads from a stored byte offset, so this is the
-      // ops that were written and nothing else — never a re-scan — and it is
-      // best-effort inside: a derived index must never fail a save.
-      // The change-history view is derived data. Rebuilding it can scan a
-      // large operation log, which is valuable while the app is open but is
-      // unrelated to making the page durable. Never make closing a notebook
-      // wait for that extra work.
-      if (!closing) await refreshHistory(nb);
-      // Throttled inside; a mirror is a safety net, not a live replica.
-      unawaited(runMirrors(nb));
     } catch (e) {
-      // Stay dirty so the next edit (or exit flush) retries, and tell the user.
       _pageSaveError = _pageSaveFailed(e);
       notifyListeners();
       return;
     }
-    // A test can cancel timers while this save awaits disk work. Do not arm a
-    // new workspace timer after that cancellation; normal saves are unchanged.
+
     if (saveCancellationGeneration != _saveCancellationGeneration) return;
-    // Keep session state fresh so closing the app never loses your place.
     _rememberView();
     _persistSession();
     notifyListeners();
@@ -8935,12 +5576,11 @@ class AppState extends ChangeNotifier
   /// interval of edits was silently lost on every close.
   Future<void> shutdown() async {
     _saveDebounce?.cancel();
-    _housekeepingTimer?.cancel();
     final neededPageSave = _dirty;
     try {
       await flushSave(closing: true);
-      // If an editor changed while the first flush was awaiting the recorder or
-      // disk, the revision guard deliberately left it dirty. Closing gets one
+      // If an editor changed while the first flush was awaiting the disk, the
+      // revision guard deliberately left it dirty. Closing gets one
       // immediate second pass instead of abandoning that last keystroke.
       if (_dirty) await flushSave(closing: true);
     } catch (_) {
@@ -8965,21 +5605,12 @@ class AppState extends ChangeNotifier
   void cancelPendingSave() {
     _saveCancellationGeneration++;
     _saveDebounce?.cancel();
-    // Housekeeping arms timers too (the post-open delay, the deferral retry,
-    // the note clear), and a fake-async widget test that loaded a notebook
-    // would otherwise end with one still pending.
-    _housekeepingTimer?.cancel();
-    _housekeepingNoteClear?.cancel();
     // And navigating (selectPage → _persistSession) arms the repository's
     // debounced workspace write, which is the same shape of pending timer.
     _repo.cancelPendingWorkspaceWrite();
   }
 
-  /// Set by [dispose]. Background work started before disposal checks this
-  /// before touching anything, because a replay or a backfill can land after
-  /// the repository it wants is closed — in the app that is a harmless log
-  /// line at shutdown, in tests it is late I/O charged to whichever test runs
-  /// next, which is the shape of an intermittent CI failure already fixed once.
+  /// Set by [dispose] so split editors cannot save after teardown.
   bool _disposed = false;
 
   @override
@@ -8996,10 +5627,6 @@ class AppState extends ChangeNotifier
     // one is a leak that only shows up as a confusing failure in the next.
     _watchedEditor?.removeListener(_onEditorChanged);
     _watchedEditor = null;
-    _stopWatching();
-    _housekeepingTimer?.cancel();
-    _housekeepingNoteClear?.cancel();
-    _syncStatusPoll?.cancel();
     _saveDebounce?.cancel();
     // The planner owns a Timer. A `late final` touched here is constructed
     // just to be torn down, which costs nothing; a live timer left behind
@@ -9008,233 +5635,5 @@ class AppState extends ChangeNotifier
     canvas.dispose();
     if (_editorOwner == null) _repo.dispose();
     super.dispose();
-  }
-}
-
-/// Where one notebook's bytes actually are.
-///
-/// Exists because "is this syncing?" was being answered by inference and the
-/// answer was wrong: a notebook can sit in the workspace with its logs beside
-/// it while copies of it sit in a cloud folder, and the app happily reported
-/// the copies' existence as sync. The only honest answer names the two paths
-/// and says which of them a cloud client can see.
-class NotebookStorage {
-  const NotebookStorage({
-    required this.containerPath,
-    required this.containerBytes,
-    required this.logPath,
-    required this.logBytes,
-    required this.mediaBytes,
-    required this.logExists,
-    required this.containerCloud,
-    required this.logCloud,
-  });
-
-  final String containerPath;
-  final int containerBytes;
-  final String logPath;
-  final int logBytes;
-
-  /// The part of [logBytes] that is video and recordings. Broken out because
-  /// it is the part that can be gigabytes, and a line labelled "sync log"
-  /// carrying three of them would be actively misleading.
-  final int mediaBytes;
-  final bool logExists;
-
-  /// The detected cloud folder each half lives in, if any.
-  final CloudFolder? containerCloud;
-  final CloudFolder? logCloud;
-
-  /// **The logs are what sync.** The container is a local cache by design
-  /// (ADR-0006 §3), so a container in Drive without its logs there is not
-  /// sync — it is a stray copy being re-uploaded on every save.
-  bool get syncs => logCloud != null;
-
-  int get totalBytes => containerBytes + logBytes;
-}
-
-/// A `.onote` or `.onotebook` on disk that no registry entry claims.
-/// What a run of [AppState.convertInkToBinary] actually did.
-///
-/// It used to return a byte count, and a byte count cannot distinguish "there
-/// was nothing to do" from "every page failed" — which is precisely the report
-/// this exists to answer: *"it seemed to do something for about 45s before the
-/// spinner just went away and the button returned back to saying 113 pages. No
-/// error in the console."*
-class InkConversionResult {
-  const InkConversionResult({
-    required this.candidates,
-    required this.converted,
-    required this.failed,
-    required this.freed,
-    this.firstError,
-    this.deferred = false,
-  });
-
-  /// Pages the search offered.
-  final int candidates;
-
-  /// Pages actually rewritten.
-  final int converted;
-
-  /// Pages that matched but produced nothing — an error, or no convertible
-  /// handwriting after all.
-  final int failed;
-
-  /// Bytes the page mirror lost.
-  final int freed;
-
-  /// The first thing that went wrong, for showing. Null when nothing did.
-  final String? firstError;
-
-  /// The run stepped aside rather than finishing — the notebook was behind
-  /// another device, or (unattended) the user started typing mid-run. Whatever
-  /// it did convert is durable; the rest is simply still to do. Distinct from
-  /// failure because the right response is "try again later", not "give up",
-  /// and distinct from success because the caller must NOT record the notebook
-  /// as tidied.
-  final bool deferred;
-
-  bool get didNothing => converted == 0 && candidates > 0 && !deferred;
-
-  /// A sentence for the user. Never silent: a run that changed nothing says so
-  /// and says what it hit.
-  String describe(String Function(int) bytes) {
-    if (deferred && converted == 0) {
-      // Declining used to fall through to "Nothing left to shrink." — the
-      // opposite of the truth, beside a button still saying 113 pages.
-      return 'Skipped — ${firstError ?? 'the notebook was busy'}';
-    }
-    if (candidates == 0) return 'Nothing left to shrink.';
-    if (converted == 0) {
-      return 'Could not shrink any of the $candidates pages'
-          '${firstError == null ? '.' : ' — $firstError'}';
-    }
-    final tail = failed == 0
-        ? ''
-        : ' $failed could not be converted'
-            '${firstError == null ? '.' : ' — $firstError'}';
-    return 'Shrank $converted of $candidates pages, '
-        '${bytes(freed)} smaller.$tail';
-  }
-}
-
-/// One notebook inside a [DuplicateGroup].
-class DuplicateMember {
-  const DuplicateMember({
-    required this.id,
-    required this.title,
-    required this.bytes,
-    required this.isOpen,
-  });
-
-  final String id;
-  final String title;
-
-  /// Container plus log directory — what deleting this would actually return.
-  final int bytes;
-
-  /// The notebook currently open. Never proposed as the one to delete.
-  final bool isOpen;
-}
-
-/// Notebooks that look like the same thing imported more than once.
-///
-/// See [AppState.findDuplicateNotebooks] for the heuristic and why it is
-/// deliberately narrow.
-class DuplicateGroup {
-  const DuplicateGroup({
-    required this.title,
-    required this.pages,
-    required this.members,
-  });
-
-  final String title;
-  final int pages;
-
-  /// Largest first, so `members.first` is the most likely complete import.
-  final List<DuplicateMember> members;
-
-  /// What would come back if every copy but the largest went.
-  ///
-  /// The largest, not the oldest or the open one: an import interrupted part
-  /// way through is smaller than a complete one, and keeping the biggest is
-  /// the choice that cannot lose pages.
-  int get reclaimable => members.skip(1).fold(0, (sum, m) => sum + m.bytes);
-}
-
-class OrphanFile {
-  const OrphanFile({
-    required this.path,
-    required this.bytes,
-    required this.isLog,
-    required this.safeToDelete,
-  });
-
-  final String path;
-  final int bytes;
-  final bool isLog;
-
-  /// True only inside this workspace, where nothing else can be using it.
-  ///
-  /// An orphan in a SHARED folder is never safe: it may be another device's
-  /// notebook that this machine has simply never joined, and deleting it
-  /// would destroy data this device never owned. Those are listed for the
-  /// user to judge, never deleted for them.
-  final bool safeToDelete;
-}
-
-/// What the UI needs to know about a notebook's sync state.
-class SyncStatus {
-  const SyncStatus({
-    required this.folder,
-    required this.devices,
-    required this.mirrors,
-  });
-
-  /// The detected cloud folder the notebook lives in, or null when it is only
-  /// on this machine.
-  final CloudFolder? folder;
-
-  /// How many devices have written a log here (this one included).
-  final int devices;
-
-  /// Configured one-way mirror/backup destinations.
-  final int mirrors;
-
-  /// Is a copy of these notes kept somewhere else, live?
-  ///
-  /// A cloud folder is a live second copy, so it also answers whether the
-  /// notebook would survive loss of this computer.
-  bool get isSynced => folder != null;
-
-  /// Synced through a cloud folder specifically. The chooser and the storage
-  /// rows still ask this, because those are about a FOLDER.
-  bool get isFolderSynced => folder != null;
-
-  bool get hasOtherDevices => devices > 1;
-
-  /// Where the notes live, in as few words as fit. Null when nowhere else.
-  String? get where => folder?.name;
-
-  /// The chip label.
-  ///
-  /// The folder's own **name**, not its kind: for a detected provider the two
-  /// are the same, but "OneDrive (work)" and a folder the user chose
-  /// themselves both lose their identity if this reports the kind — the second
-  /// would read "Folder", which tells the user nothing about where their notes
-  /// went.
-  String get label {
-    if (!isSynced) return mirrors > 0 ? 'Backed up' : 'Sync…';
-    if (hasOtherDevices) return '$devices devices';
-    return folder!.name;
-  }
-
-  IconData get icon {
-    if (!isSynced) {
-      return mirrors > 0 ? Icons.backup_outlined : Icons.cloud_off_outlined;
-    }
-    if (hasOtherDevices) return Icons.devices;
-    return Icons.cloud_done_outlined;
   }
 }

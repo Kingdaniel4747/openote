@@ -165,7 +165,7 @@ class _ImageBlockViewState extends State<ImageBlockView> {
       }
       setState(() {
         _rendering = false;
-        _pdfError = 'PDF page unavailable. Retry after syncing.';
+        _pdfError = 'PDF page unavailable. Re-import the PDF.';
         _provider = null;
       });
     }, onError: (Object error) {
@@ -270,8 +270,7 @@ class _ImageBlockViewState extends State<ImageBlockView> {
               color: OnoteColors.graphite400),
           const SizedBox(width: 8),
           Flexible(
-              child: Text(
-                  isPdf ? 'PDF not here yet — still syncing?' : 'Missing image',
+              child: Text(isPdf ? 'PDF page unavailable' : 'Missing image',
                   style: const TextStyle(color: OnoteColors.graphite400))),
         ]),
       );

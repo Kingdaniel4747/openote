@@ -78,8 +78,8 @@ void main() {
 
     test('an absolute path is left alone', () {
       final abs = p.join(cwd, 'Physics.onote');
-      expect(notebookPathFromArgs([abs], workingDirectory: cwd),
-          p.normalize(abs));
+      expect(
+          notebookPathFromArgs([abs], workingDirectory: cwd), p.normalize(abs));
     });
 
     // Explorer runs `openote.exe "C:\My Notes\Term 1.onote"` and
@@ -280,8 +280,7 @@ void main() {
       final (repo, app) = await workspace(dir);
       final alpha = repo.notebooks.firstWhere((n) => n.title == 'Alpha');
       Directory(p.join(dir.path, 'sub')).createSync();
-      final roundabout =
-          p.join(dir.path, 'sub', '..', p.basename(alpha.file));
+      final roundabout = p.join(dir.path, 'sub', '..', p.basename(alpha.file));
       final before = repo.notebooks.length;
 
       final result = await app.openNotebookFile(roundabout);
@@ -391,58 +390,6 @@ void main() {
     });
 
     // Opening a notebook a friend emailed you must not tell the app that
-    // ~/Downloads is "where my notes sync" — the sync chip would then repeat
-    // that claim on every launch. The onboarding flow reaches the same
-    // repository call and DOES record the folder, because there the user has
-    // just browsed to their Drive folder and said so.
-    test('a notebook with no shared log folder is not a sync location',
-        () async {
-      if (!haveSqlite) {
-        markTestSkipped('sqlite3.dll not built');
-        return;
-      }
-      final dir = tempDir('onote_open_');
-      final downloads = tempDir('onote_downloads_');
-      final (_, app) = await workspace(dir);
-
-      final other = await Repository.openAt(downloads);
-      final made = await other.createNotebook('Lectures');
-      other.dispose();
-      // Whatever the container's own log folder was, it is not beside the file
-      // the way a folder-synced notebook's would be.
-      final sibling = Directory('${p.withoutExtension(made.file)}.onotebook');
-      if (sibling.existsSync()) sibling.deleteSync(recursive: true);
-
-      await app.openNotebookFile(made.file);
-
-      expect(app.syncRoots.any((f) => p.equals(f.path, downloads.path)), isFalse,
-          reason: 'double-clicking a file is not choosing a sync folder');
-    });
-
-    test('a notebook that IS in a shared folder still records it', () async {
-      if (!haveSqlite) {
-        markTestSkipped('sqlite3.dll not built');
-        return;
-      }
-      final dir = tempDir('onote_open_');
-      final drive = tempDir('onote_drive_');
-      final (_, app) = await workspace(dir);
-
-      final other = await Repository.openAt(drive);
-      final made = await other.createNotebook('Lectures');
-      other.dispose();
-      // The mark of a folder-synced notebook: its op logs sit beside it.
-      Directory('${p.withoutExtension(made.file)}.onotebook')
-          .createSync(recursive: true);
-
-      await app.openNotebookFile(made.file);
-
-      expect(app.syncRoots.any((f) => p.equals(f.path, drive.path)), isTrue);
-    });
-
-    // Dropping a .onote into Documents/Openote by hand and double-clicking it
-    // must not produce `Physics-1.onote` beside `Physics.onote`, with the
-    // user's edits going to the one they did not open.
     test('a stray notebook inside the workspace is adopted where it lies',
         () async {
       if (!haveSqlite) {
@@ -465,8 +412,6 @@ void main() {
       expect(result.outcome, OpenNotebookOutcome.opened);
       expect(repo.notebooks.last.file, stray,
           reason: 'registered where it already is');
-      expect(repo.notebooks.last.logDir, isNull,
-          reason: 'the workspace folder must not become a sync location');
       expect(containers(dir), before,
           reason: 'no second container beside the one they double-clicked');
     });

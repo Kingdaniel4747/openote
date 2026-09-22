@@ -2,12 +2,8 @@
 ///
 /// **What was wrong, in order of harm.** Importing a real notebook locked the
 /// whole application for the duration — a minute or more on good hardware —
-/// and, from the onboarding path, did so with **no feedback at all**: the
-/// welcome dialog popped itself and then passed its own, now-defunct context
-/// as the progress dialog's parent, so the `mounted` check inside quietly
-/// dropped the dialog on the floor. A first-run user picked their `.onepkg`
-/// and watched a frozen app do apparently nothing for a minute. That is the
-/// single worst moment the product had.
+/// and could do so with too little feedback. A user could pick a `.onepkg` and
+/// watch a frozen app do apparently nothing for a minute.
 ///
 /// **Why it locked.** The parse itself was already off the UI thread — but
 /// nothing else was. `jsonDecode` of the parser's result (a string that can
@@ -30,9 +26,7 @@
 /// A modal dialog would be the wrong surface for something the user no longer
 /// has to wait for, so the job is a [ChangeNotifier] that a floating card
 /// observes: progress while it runs, a result and an **Open notebook** button
-/// when it lands, cancel at any point. Onboarding starts the job and carries
-/// on — which is the requested flow: *"get them to import at the start, then
-/// do the onboarding while that's working away in the background."*
+/// when it lands and cancel at any point.
 ///
 /// **One at a time.** [ImportJob.start] refuses to run two concurrently — two
 /// imports interleaving batches on one UI thread would halve each other's
@@ -216,18 +210,7 @@ class ImportJob extends ChangeNotifier {
           notebookPath: ref.file,
           notebookId: ref.id,
           title: ref.title,
-          logDir: ref.logDir,
-          deviceId: app.localDeviceId(),
-          // **Unconditional** (v0.17 plan, Step 5). This one line is where the
-          // owner's measured 378-of-488 hole came from: an import into the
-          // local workspace wrote 26.3 MB of PNGs into the container and none
-          // of them into `blobs/`, so the log named 488 blobs and could supply
-          // 110. Doing it here is also strictly cheaper than the backfill that
-          // would otherwise have to re-read all 26.3 MB back out at the next
-          // open — the bytes are already in hand.
-          materialiseBlobs: true,
           batchPages: _batchPages,
-          syncLogEnabled: AppState.syncLogEnabled,
           sqliteLibrary: o?.sqliteLibrary,
           preparsedJson: o?.preparsedJson,
         ),
@@ -255,14 +238,6 @@ class ImportJob extends ChangeNotifier {
         return _finish(ImportJobState.cancelled);
       }
 
-      // BEFORE handing the notebook back. `endExclusiveImport` starts a
-      // background replay of the log the writer just wrote, and the replay's
-      // identity check compares the log's highest seq against this setting. A
-      // log running ahead of it reads as "another installation has been writing
-      // as us" and forks the device id — on every imported notebook. The
-      // ordering held by luck before (nothing awaited in between); now it holds
-      // because it is written down.
-      app.rememberImportedSeq(nb, result.lastSeq);
       app.endExclusiveImport(nb);
       app.reloadNodes();
       app.refresh();

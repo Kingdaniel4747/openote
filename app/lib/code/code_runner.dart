@@ -3,7 +3,7 @@
 /// The rules this file exists to enforce, in the order they matter:
 ///
 ///  1. **Nothing here is ever called except by a click** (or Ctrl+Enter on
-///     the block being edited). Opening, syncing and importing pages never
+///     the block being edited). Opening and importing pages never
 ///     touch this file.
 ///  2. **The engines have no ambient authority.** SQL runs in a fresh
 ///     in-memory SQLite with nothing attached; JS runs in a bare QuickJS
@@ -13,7 +13,7 @@
 ///     installs: `tables`, `console.log`, `print`.
 ///  3. **Bounded**: a wall-clock timeout enforced by killing the run's
 ///     isolate, an output cap so a print loop cannot manufacture megabytes
-///     that would sync everywhere, and a row cap on result tables.
+///     that would persist everywhere, and a row cap on result tables.
 ///
 /// The honest residual: `Isolate.kill` takes effect at a Dart safepoint,
 /// and a single native call that never returns (a pathological recursive
@@ -345,7 +345,9 @@ List<String> _splitSql(String source) {
 
 bool _looksLikeSelect(String sql) {
   final s = sql.trimLeft().toLowerCase();
-  return s.startsWith('select') || s.startsWith('with') || s.startsWith('pragma');
+  return s.startsWith('select') ||
+      s.startsWith('with') ||
+      s.startsWith('pragma');
 }
 
 String _mountedNames(Map<String, Object?> p) {

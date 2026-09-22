@@ -128,20 +128,17 @@ void main() {
     late AppState app;
     setUp(() async {
       if (!haveSqlite) return;
-      AppState.syncLogEnabled = false;
       tmp = Directory.systemTemp.createTempSync('openote_drawing_regression_');
       repo = await Repository.openAt(tmp);
       final nb = await repo.createNotebook('Drawing');
       app = AppState(repo)
         ..notebookId = nb.id
         ..spellCheckEnabled = false;
-      app.markOnboardingSeen();
       app.reloadNodes();
       await app
           .selectPage(app.nodes.firstWhere((n) => n.kind == NodeKind.page).id);
     });
     tearDown(() {
-      AppState.syncLogEnabled = true;
       if (!haveSqlite) return;
       app.cancelPendingSave();
       repo.dispose();

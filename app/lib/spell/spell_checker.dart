@@ -37,9 +37,8 @@ const String kDictionaryAsset = 'assets/dict/en_us.txt.gz';
 /// Words the user taught us ("Add to dictionary").
 ///
 /// Workspace-scoped and persisted (see [loadLearnedWords] / [onLearnedChanged]).
-/// Deliberately NOT synced: a personal dictionary is about the words *this
-/// person* uses, and pushing it through the op log would make one device's
-/// jargon everyone's — including on a shared group notebook.
+/// A personal dictionary is local because it contains the words *this person*
+/// uses, not notebook content.
 final Set<String> learnedWords = <String>{};
 
 /// Called whenever [learnedWords] changes, so the host can persist it. Set once
@@ -320,5 +319,6 @@ class SpellChecker {
       c > 0x7F; // any non-ASCII letter (accented, Greek, …)
 
   static bool _isApostrophe(int c) => c == 0x27 || c == 0x2019;
-  static bool _isSpace(int c) => c == 0x20 || c == 0x09 || c == 0x0A || c == 0x0D;
+  static bool _isSpace(int c) =>
+      c == 0x20 || c == 0x09 || c == 0x0A || c == 0x0D;
 }

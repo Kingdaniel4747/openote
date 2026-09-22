@@ -56,7 +56,6 @@ void main() {
 
   setUp(() async {
     if (!haveSqlite) return;
-    AppState.syncLogEnabled = false;
     tmp = Directory.systemTemp.createTempSync('onote_pdf1c_');
     repo = await Repository.openAt(tmp);
     final nb = await repo.createNotebook('Slides');
@@ -70,7 +69,6 @@ void main() {
   });
 
   tearDown(() async {
-    AppState.syncLogEnabled = true;
     if (!haveSqlite) return;
     app.cancelPendingSave();
     await PdfPages.reset();

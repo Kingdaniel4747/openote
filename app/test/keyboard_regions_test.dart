@@ -53,7 +53,6 @@ void main() {
 
   setUp(() async {
     if (!haveSqlite) return;
-    AppState.syncLogEnabled = false;
     tmp = Directory.systemTemp.createTempSync('onote_regions_');
     repo = await Repository.openAt(tmp);
     final nb = await repo.createNotebook('Study');
@@ -76,11 +75,9 @@ void main() {
     app.importPage(nb.id, page.id, [a], PageProps());
     app.reloadNodes();
     await app.selectPage(page.id);
-    app.markOnboardingSeen();
   });
 
   tearDown(() {
-    AppState.syncLogEnabled = true;
     if (!haveSqlite) return;
     app.cancelPendingSave();
     repo.dispose();

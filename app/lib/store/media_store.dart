@@ -9,17 +9,15 @@ import '../model/models.dart';
 /// Files too big to live inside the container.
 ///
 /// The rest of the app is content-addressed and byte-oriented: images, PDFs
-/// and attachments go into the `blobs` table, get mirrored into
-/// `.onotebook/blobs/`, and are read back into memory whole. That is the right
+/// and attachments go into the `blobs` table and are read back into memory
+/// whole. That is the right
 /// shape for a 300 KB screenshot and the wrong shape for a 90-minute lecture.
 /// A 700 MB video in `blobs` would be one enormous SQLite row that has to be
 /// decoded into memory in full before a single frame plays, and it would be
 /// carried by every backup, every op-log backfill and every integrity scan.
 ///
-/// So video stays a FILE, at `<notebook>.onotebook/media/`, beside the op logs
-/// and the blob mirror — a directory that already travels with the notebook
-/// (`Repository.moveNotebook` copies it, `purgeNotebook` deletes it) and is
-/// already the agreed home for bytes that live outside the container. Being a
+/// So video stays a FILE, in a local `<notebook>.media/` directory beside the
+/// container. Backups copy that directory together with the notebook. Being a
 /// file is also the point: a media player wants a path, and handing it one
 /// means playback reads what it needs when it needs it instead of loading
 /// three quarters of a gigabyte to show the first frame.
@@ -40,12 +38,12 @@ abstract final class MediaStore {
 
   /// Where [ref]'s media lives. Not created until something is stored.
   static Directory dirFor(NotebookRef ref) =>
-      Directory(p.join(ref.logDirPath, 'media'));
+      Directory('${p.withoutExtension(ref.file)}.media');
 
   /// A stored name is a bare filename and nothing else.
   ///
   /// The reference comes out of page content, which comes out of a file that
-  /// may have been imported, synced or handed over by someone else. Without
+  /// may have been imported or handed over by someone else. Without
   /// this, `"media": "../../../../etc/passwd"` in a page is a read of any file
   /// the user can read, and "Save a copy…" is a way to get it back out.
   static final _validName = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$');
@@ -54,8 +52,7 @@ abstract final class MediaStore {
       _validName.hasMatch(name) && !name.contains('..');
 
   /// The file for a stored name, or null if the name is not one we wrote or
-  /// the bytes are not here — a notebook copied without its `.onotebook`, or a
-  /// sync that has not finished bringing the video across.
+  /// the bytes are not here.
   static File? resolve(NotebookRef ref, String name) {
     if (!isValidName(name)) return null;
     final f = File(p.join(dirFor(ref).path, name));
@@ -116,14 +113,14 @@ abstract final class MediaStore {
     return name;
   }
 
-  /// Total bytes held, for the storage line in the sync dialog.
+  /// Total bytes held by this notebook's external media.
   ///
   /// There is deliberately no sweep yet. Deleting a block does NOT delete its
   /// file — undo has to be able to bring the video back, and a page can be
   /// restored from the recycle bin days later — so files outlive their
   /// references on purpose and the space has to be reclaimed deliberately.
-  /// Doing that safely means enumerating every reference across live pages,
-  /// trashed pages and the op log, and getting that scan wrong deletes a
+  /// Doing that safely means enumerating every reference across live and
+  /// trashed pages, and getting that scan wrong deletes a
   /// lecture that undo cannot bring back. Showing the number is honest;
   /// acting on it without that scan would not be.
   static int totalBytes(NotebookRef ref) {
@@ -158,13 +155,30 @@ abstract final class MediaStore {
 /// Not a guarantee — the player decides what it can actually decode — just the
 /// filter on the picker and the "is this a video?" hint for the icon.
 const kVideoExtensions = <String>[
-  'mp4', 'm4v', 'mov', 'mkv', 'webm', 'avi', 'wmv', 'flv', 'mpg', 'mpeg', 'ts',
+  'mp4',
+  'm4v',
+  'mov',
+  'mkv',
+  'webm',
+  'avi',
+  'wmv',
+  'flv',
+  'mpg',
+  'mpeg',
+  'ts',
 ];
 
 /// Audio too: a recorded lecture is as often an .m4a as an .mp4, and the same
 /// player handles both.
 const kAudioExtensions = <String>[
-  'mp3', 'm4a', 'aac', 'wav', 'flac', 'ogg', 'opus', 'wma',
+  'mp3',
+  'm4a',
+  'aac',
+  'wav',
+  'flac',
+  'ogg',
+  'opus',
+  'wma',
 ];
 
 String? mimeForMediaExtension(String path) {

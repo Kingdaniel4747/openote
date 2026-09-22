@@ -9,8 +9,7 @@
 // Measured on the owner's notebook before the fix, importing the same two
 // sections twice: 82 blobs / 2,947,882 bytes, then 82 MORE blobs / 2,947,288
 // bytes with not one hash shared, for stroke geometry that decoded identically.
-// The duplicate lands in the container AND in the op log, which is append-only
-// and never compacted.
+// Each duplicate lands in the container and permanently consumes space.
 //
 // The parser gives ink no timing at all (`ImportedStroke {x, y, p, color, size,
 // opacity}`), so 0 — "no time known" — is what an import states, and it is what
@@ -65,7 +64,8 @@ void main() {
   var haveSqlite = false;
   setUpAll(() => haveSqlite = initSqliteForTests());
 
-  test('re-importing the same handwriting reuses its ink blob rather than '
+  test(
+      're-importing the same handwriting reuses its ink blob rather than '
       'storing a second copy', () async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final tmp = Directory.systemTemp.createTempSync('onote_ink_dedup_');
@@ -81,9 +81,11 @@ void main() {
     // Two notebooks rather than two imports into one: a second
     // `buildNotebookFromPackage` purges the sections that preceded it, which
     // would take the first import's pages (and their `blob_refs`) with it.
-    Future<({List<String> refs, List<int> starts})> importOnce(String name) async {
+    Future<({List<String> refs, List<int> starts})> importOnce(
+        String name) async {
       final nb = await repo.createNotebook(name);
-      await buildNotebookFromPackage(AppStateImportSink(app, nb.id), _sections());
+      await buildNotebookFromPackage(
+          AppStateImportSink(app, nb.id), _sections());
       final page = repo.loadNodes(nb.id).firstWhere(
           (n) => n.kind == NodeKind.page && n.title == 'Hasse Diagram');
       final ink = repo

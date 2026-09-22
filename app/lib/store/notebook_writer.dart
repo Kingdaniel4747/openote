@@ -85,7 +85,7 @@ class NotebookWriter {
 
   /// Hard-delete one node and everything under it. Callers that hold caches
   /// keyed by node id must evict alongside this — a page recreated later under
-  /// the same id (a restore, a sync replay) would otherwise read as its dead
+  /// the same id after a restore would otherwise read as its dead
   /// predecessor.
   ///
   /// **Returns every id deleted, not just [nodeId]**, so that eviction can
@@ -125,8 +125,8 @@ class NotebookWriter {
     final out = <String>[nodeId];
     final queue = <String>[nodeId];
     while (queue.isNotEmpty) {
-      final rows =
-          db.select('SELECT id FROM nodes WHERE parent_id=?', [queue.removeLast()]);
+      final rows = db.select(
+          'SELECT id FROM nodes WHERE parent_id=?', [queue.removeLast()]);
       for (final r in rows) {
         final id = r['id'] as String;
         out.add(id);
@@ -155,8 +155,8 @@ class NotebookWriter {
       RegExp(r'!\[[^\]]*\]\(sha256:([0-9a-fA-F]{64})(?:\s+=\d+x\d+)?\)');
   static final _linkRe = RegExp(r'\[\[([^\]|]+)(?:\|([^\]]+))?\]\]');
 
-  /// The single funnel every page change goes through — saves, imports, sync
-  /// pulls, restores. Callers holding a decoded-page cache evict here.
+  /// The single funnel every page change goes through — saves, imports and
+  /// restores. Callers holding a decoded-page cache evict here.
   void writePage(String pageId, List<Block> blocks, PageProps props) {
     final json = jsonEncode({
       'schema': 'onote-page/1',
@@ -175,28 +175,14 @@ class NotebookWriter {
           [pageId, json, nowMs()]);
       // (No CRDT placeholder row. This used to write a zero-byte blob into
       // `page_docs` on every single save to "keep the schema honest" for a
-      // CRDT layer that never arrived — and that ADR-0006 has now replaced with
-      // a file-based op log outside the container entirely. It was pure write
+      // CRDT layer that never arrived. It was pure write
       // amplification: an INSERT-or-UPDATE per save carrying no information.)
       // Maintain blob_refs projection: image/file blocks plus in-flow images
       // referenced from text markdown (`![alt](sha256:<hash>)`, Data Model §5.1).
       //
-      // **What this table means changed with v0.17 Step 6.** It used to say
-      // "blobs this page reaches that this container holds" — hence a
-      // `SELECT … FROM blobs` rather than VALUES, because `blob_refs.hash` was
-      // a foreign key onto `blobs` and a page referencing bytes we do not hold
-      // is a legitimate, ordinary state (a cloud client copies the op log and
-      // the content-addressed blob files independently, so the reference
-      // routinely lands first). A plain INSERT raised a constraint violation
-      // *inside the sync pull's transaction*, and one shared notebook with one
-      // image in it stopped that device syncing at all.
-      //
-      // From Step 6 the container holds no blob bytes, so that meaning names
-      // nothing at all — and this table is ADR-0007's garbage-collection root
-      // set. It now says "blobs this page reaches", full stop, which is the
-      // question a collector actually has to answer. The foreign key is gone
-      // (see `_dropBlobRefsBlobsFk`), and [_addBlobRef] carries the fallback
-      // for a container the rewrite could not reach.
+      // `blob_refs` is the set of blobs this page reaches. The hash deliberately
+      // has no foreign key so page content can be written in the same import
+      // batch before its blob bytes arrive.
       db.execute('DELETE FROM blob_refs WHERE page_id=?', [pageId]);
       for (final b in blocks) {
         // `blob` on images/files, `pdf` on on-demand slide references

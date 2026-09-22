@@ -165,7 +165,6 @@ void main() {
           reason: 'inserting lines must re-base every tag below the insert');
     });
 
-
     test('with nothing focused it declines, so the caller can fall back',
         () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
@@ -223,9 +222,7 @@ void main() {
       // `addBlob` records a `blob.put` op, which writes the device seq, which
       // arms Repository's 400 ms workspace debounce — a pending timer at
       // teardown, which `testWidgets` fails on, and which would start real disk
-      // I/O inside the fake-async zone if it were allowed to fire. The op log
-      // is not what this test is about.
-      AppState.syncLogEnabled = false;
+      // I/O inside the fake-async zone if it were allowed to fire.
       tmp = Directory.systemTemp.createTempSync('onote_insertimg_');
       repo = await Repository.openAt(tmp);
       final nb = await repo.createNotebook('Insert');
@@ -233,8 +230,8 @@ void main() {
         ..notebookId = nb.id
         ..spellCheckEnabled = false;
       app.reloadNodes();
-      await app.selectPage(
-          app.nodes.firstWhere((n) => n.kind == NodeKind.page).id);
+      await app
+          .selectPage(app.nodes.firstWhere((n) => n.kind == NodeKind.page).id);
       block = app.addBlock(Block(
         type: BlockType.text,
         x: 60,
@@ -246,7 +243,6 @@ void main() {
     });
 
     tearDown(() {
-      AppState.syncLogEnabled = true; // shared static — put it back
       if (!haveSqlite) return;
       app.cancelPendingSave();
       repo.dispose();
@@ -312,8 +308,8 @@ void main() {
         ..notebookId = nb.id
         ..spellCheckEnabled = false;
       app.reloadNodes();
-      await app.selectPage(
-          app.nodes.firstWhere((n) => n.kind == NodeKind.page).id);
+      await app
+          .selectPage(app.nodes.firstWhere((n) => n.kind == NodeKind.page).id);
       block = app.addBlock(Block(
         type: BlockType.text,
         x: 60,
@@ -369,8 +365,7 @@ void main() {
     /// The BlockView's own rect, chrome included — the bar strip is the top
     /// `_kBarH` of it and the handles live in its padding, so tests aim at
     /// points relative to this rather than at the content.
-    Rect blockRect(WidgetTester t) =>
-        t.getRect(find.byType(BlockView).first);
+    Rect blockRect(WidgetTester t) => t.getRect(find.byType(BlockView).first);
 
     /// The offset the live editor's caret currently sits at, or null if no
     /// editor is open.
@@ -449,8 +444,7 @@ void main() {
       await dragBy(
           t, Offset(box.right - 3, box.center.dy), const Offset(10, 0));
 
-      expect(app.editingBlockId, isNull,
-          reason: 'resizing opened the editor');
+      expect(app.editingBlockId, isNull, reason: 'resizing opened the editor');
     });
 
     testWidgets('a drag across the text still selects text', (t) async {

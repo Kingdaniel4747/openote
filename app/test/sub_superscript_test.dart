@@ -293,7 +293,6 @@ void main() {
 
     setUp(() async {
       if (!haveSqlite) return;
-      AppState.syncLogEnabled = false;
       tmp = Directory.systemTemp.createTempSync('onote_subsup_');
       repo = await Repository.openAt(tmp);
       final nb = await repo.createNotebook('T');
@@ -310,7 +309,6 @@ void main() {
     });
 
     tearDown(() {
-      AppState.syncLogEnabled = true;
       if (!haveSqlite) return;
       app.cancelPendingSave();
       repo.dispose();
@@ -433,7 +431,6 @@ void main() {
 
     setUp(() async {
       if (!haveSqlite) return;
-      AppState.syncLogEnabled = false;
       tmp = Directory.systemTemp.createTempSync('onote_subsup_md_');
       repo = await Repository.openAt(tmp);
       final nb = await repo.createNotebook('T');
@@ -441,7 +438,6 @@ void main() {
     });
 
     tearDown(() {
-      AppState.syncLogEnabled = true;
       if (!haveSqlite) return;
       app.cancelPendingSave();
       repo.dispose();
@@ -491,7 +487,6 @@ void main() {
 
     setUp(() async {
       if (!haveSqlite) return;
-      AppState.syncLogEnabled = false;
       tmp = Directory.systemTemp.createTempSync('onote_subsup_key_');
       repo = await Repository.openAt(tmp);
       final nb = await repo.createNotebook('Study');
@@ -510,11 +505,9 @@ void main() {
       app.importPage(nb.id, page.id, [para], PageProps());
       app.reloadNodes();
       await app.selectPage(page.id);
-      app.markOnboardingSeen();
     });
 
     tearDown(() {
-      AppState.syncLogEnabled = true;
       if (!haveSqlite) return;
       app.cancelPendingSave();
       repo.dispose();

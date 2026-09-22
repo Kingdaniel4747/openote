@@ -69,7 +69,7 @@ class AlertPopup extends StatelessWidget {
     return Positioned(
       right: OnoteSpace.x6,
       // Clear of the status bar rather than on top of it. The stack covers the
-      // whole shell, so a plain 16px inset parked the card over the save/sync
+      // whole shell, so a plain 16px inset parked the card over the save
       // state — hiding the one strip whose entire job is telling you the app
       // is fine while something new demands attention.
       bottom: OnoteSize.statusBar + OnoteSpace.x4,
@@ -193,20 +193,19 @@ class _AlertCard extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(alert.title,
-                        style: OnoteType.uiStrong
-                            .copyWith(color: s.textPrimary),
+                        style:
+                            OnoteType.uiStrong.copyWith(color: s.textPrimary),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis),
                     const SizedBox(height: OnoteSpace.x1),
                     Text(_when(alert, now),
                         style:
                             OnoteType.small.copyWith(color: s.textSecondary)),
-                    if (alert.subtitle case final sub?
-                        when sub.isNotEmpty) ...[
+                    if (alert.subtitle case final sub? when sub.isNotEmpty) ...[
                       const SizedBox(height: OnoteSpace.x1),
                       Text(sub,
-                          style: OnoteType.small
-                              .copyWith(color: s.textSecondary),
+                          style:
+                              OnoteType.small.copyWith(color: s.textSecondary),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis),
                     ],
@@ -230,8 +229,8 @@ class _AlertCard extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(right: OnoteSpace.x3),
                   child: FilledButton.icon(
-                    icon: const Icon(Icons.videocam_outlined,
-                        size: OnoteIcon.sm),
+                    icon:
+                        const Icon(Icons.videocam_outlined, size: OnoteIcon.sm),
                     label: Text('Join ${join.provider}'),
                     onPressed: () => _join(context, join),
                   ),
@@ -272,8 +271,8 @@ class _AlertCard extends StatelessWidget {
     } else {
       // Never silently do nothing. A Join button that appears to work and
       // does not is worse than no Join button, because you find out at 9:02.
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text("Couldn't open that link: ${join.url}")));
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Couldn't open that link: ${join.url}")));
     }
   }
 

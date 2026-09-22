@@ -38,7 +38,6 @@ void main() {
 
   setUp(() async {
     if (!haveSqlite) return;
-    AppState.syncLogEnabled = false;
     tmp = Directory.systemTemp.createTempSync('onote_angfocus_');
     repo = await Repository.openAt(tmp);
     final nb = await repo.createNotebook('T');
@@ -49,7 +48,6 @@ void main() {
   });
 
   tearDown(() {
-    AppState.syncLogEnabled = true;
     mathAngleMode = AngleMode.degrees;
     if (!haveSqlite) return;
     app.cancelPendingSave();

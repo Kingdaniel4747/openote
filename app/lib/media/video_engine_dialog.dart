@@ -3,7 +3,7 @@
 /// **The sentence this dialog exists to make impossible.** A student opens a
 /// notebook on a train, reaches the page with last week's lecture on it, and
 /// concludes the recording is gone. It is not gone — it is sitting in
-/// `<notebook>.onotebook/media/`, exactly where it was, and the only thing
+/// `<notebook>.media/`, exactly where it was, and the only thing
 /// missing is the code that decodes it. So the first line of this dialog says
 /// where the video is, before it says anything about a download, and the
 /// offline message says the same thing again.
@@ -80,7 +80,8 @@ class _GetVideoPlayerDialogState extends State<_GetVideoPlayerDialog> {
   Widget build(BuildContext context) {
     final failed = _failed;
     return AlertDialog(
-      icon: Icon(failed == null ? Icons.play_circle_outline : Icons.error_outline,
+      icon: Icon(
+          failed == null ? Icons.play_circle_outline : Icons.error_outline,
           color: failed == null ? null : OnoteColors.danger),
       title: Text(failed == null
           ? 'Play videos inside Openote'
@@ -105,8 +106,7 @@ class _GetVideoPlayerDialogState extends State<_GetVideoPlayerDialog> {
             ),
             if (_running) ...[
               const SizedBox(height: 16),
-              LinearProgressIndicator(
-                  value: _progress <= 0 ? null : _progress),
+              LinearProgressIndicator(value: _progress <= 0 ? null : _progress),
               const SizedBox(height: 6),
               Text(_step, style: const TextStyle(fontSize: 12)),
             ],
@@ -136,8 +136,7 @@ class _GetVideoPlayerDialogState extends State<_GetVideoPlayerDialog> {
       ),
       actions: [
         TextButton(
-          onPressed:
-              _running ? null : () => Navigator.pop(context, false),
+          onPressed: _running ? null : () => Navigator.pop(context, false),
           child: Text(failed == null ? 'Not now' : 'Close'),
         ),
         FilledButton(

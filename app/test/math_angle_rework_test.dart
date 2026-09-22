@@ -35,7 +35,6 @@ void main() {
 
   setUp(() async {
     if (!haveSqlite) return;
-    AppState.syncLogEnabled = false;
     mathAngleMode = AngleMode.degrees;
     tmp = Directory.systemTemp.createTempSync('onote_rework_');
     repo = await Repository.openAt(tmp);
@@ -47,7 +46,6 @@ void main() {
   });
 
   tearDown(() {
-    AppState.syncLogEnabled = true;
     mathAngleMode = AngleMode.degrees;
     if (!haveSqlite) return;
     app.cancelPendingSave();

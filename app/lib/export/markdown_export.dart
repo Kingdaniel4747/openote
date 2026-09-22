@@ -56,7 +56,7 @@ Future<String?> exportPageMarkdown(AppState app) async {
 /// again would undo that on the one operation where the user is already
 /// waiting. Same shape as "Save a copy…" in `video_block_view.dart`.
 ///
-/// Best-effort per file: a notebook synced without its `media/` yet, or a
+/// Best-effort per file: a notebook restored without its `media/` yet, or a
 /// video whose bytes never arrived, must still produce a `.md` with all its
 /// writing in it. The link is already in the Markdown either way — a missing
 /// file next to it is a broken link, which is recoverable; failing the whole
@@ -106,7 +106,8 @@ String pageMarkdownOf(AppState app, String title, List<Block> blocks,
   for (final b in ordered) {
     switch (b.type) {
       case BlockType.text:
-        buf.writeln(markdownInline(b.content['text'] as String? ?? '').trimRight());
+        buf.writeln(
+            markdownInline(b.content['text'] as String? ?? '').trimRight());
         buf.writeln();
       case BlockType.math:
         final latex = b.content['latex'] as String? ?? '';
@@ -115,7 +116,8 @@ String pageMarkdownOf(AppState app, String title, List<Block> blocks,
         final lang = b.content['language'] as String? ?? '';
         buf.writeln('```$lang\n${b.content['source'] ?? ''}\n```\n');
       case BlockType.image:
-        final hash = (b.content['blob'] as String? ?? '').replaceFirst('sha256:', '');
+        final hash =
+            (b.content['blob'] as String? ?? '').replaceFirst('sha256:', '');
         if (hash.isNotEmpty) {
           final mime = b.content['mime'] as String? ?? 'image/png';
           final ext = mime.split('/').last.replaceFirst('jpeg', 'jpg');
@@ -150,8 +152,7 @@ String pageMarkdownOf(AppState app, String title, List<Block> blocks,
           } else {
             final source = graphSourceFromLatex(latex);
             final outcome = substituteInto(source, value);
-            buf.writeln(
-                'Evaluate \$$latex\$ at ${outcome.variable} = $value: '
+            buf.writeln('Evaluate \$$latex\$ at ${outcome.variable} = $value: '
                 '${outcome.result.display}\n');
           }
         }
@@ -176,12 +177,9 @@ String pageMarkdownOf(AppState app, String title, List<Block> blocks,
         final ref = (b.content['ref'] as Map?)?.cast<String, dynamic>();
         final dst = ref?['pageId'] as String?;
         if (dst != null) {
-          final title = app.nodes
-                  .where((n) => n.id == dst)
-                  .firstOrNull
-                  ?.title
-                  .trim() ??
-              '';
+          final title =
+              app.nodes.where((n) => n.id == dst).firstOrNull?.title.trim() ??
+                  '';
           buf.writeln('> Window onto '
               '[${title.isEmpty ? 'another page' : title}](onote://page/$dst)'
               '\n');
@@ -206,8 +204,8 @@ String pageMarkdownOf(AppState app, String title, List<Block> blocks,
           // into a read of that file and a copy of it into the export folder.
           // Same guard, same reason, as `MediaStore.resolve`.
           if (MediaStore.isValidName(stored)) {
-            final name = media[stored] ??= _exportMediaName(
-                stored, label, media.values.toSet());
+            final name = media[stored] ??=
+                _exportMediaName(stored, label, media.values.toSet());
             buf.writeln('[${label?.isNotEmpty == true ? label : name}]'
                 '(${_mdPath(name)})\n');
           }
@@ -244,8 +242,7 @@ String pageMarkdownOf(AppState app, String title, List<Block> blocks,
 /// is really the second one.
 String _exportMediaName(String stored, String? label, Set<String> taken) {
   final ext = p.extension(stored);
-  final base = safeFilename(
-      p.basenameWithoutExtension(p.basename(label ?? '')),
+  final base = safeFilename(p.basenameWithoutExtension(p.basename(label ?? '')),
       fallback: p.basenameWithoutExtension(stored));
   var candidate = 'assets/$base$ext';
   var n = 2;

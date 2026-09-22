@@ -8,9 +8,8 @@
 /// **Open notebook** when done, Dismiss on failure.
 ///
 /// Deliberately NOT a modal. The entire point of the background import is
-/// that a first-run user picks their `.onepkg` and then explores the app —
-/// finishes onboarding, pokes at the starter notebook — while five years of
-/// notes stream in behind them. A modal would reintroduce the wait this
+/// that a user can keep working while years of notes stream in behind them. A
+/// modal would reintroduce the wait this
 /// removed; a card in the corner says "working on it" without charging rent.
 library;
 

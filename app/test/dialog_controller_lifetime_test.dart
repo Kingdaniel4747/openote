@@ -91,14 +91,12 @@ void main() {
 
     setUp(() async {
       if (!haveSqlite) return;
-      AppState.syncLogEnabled = false;
       tmp = Directory.systemTemp.createTempSync('onote_prompt_');
       repo = await Repository.openAt(tmp);
       final nb = await repo.createNotebook('First');
       app = AppState(repo)
         ..notebookId = nb.id
-        ..spellCheckEnabled = false
-        ..onboardingSeen = true;
+        ..spellCheckEnabled = false;
       app.reloadNodes();
       app.activeSectionId =
           app.nodes.firstWhere((n) => n.kind == NodeKind.section).id;
@@ -107,7 +105,6 @@ void main() {
     });
 
     tearDown(() {
-      AppState.syncLogEnabled = true;
       if (!haveSqlite) return;
       app.cancelPendingSave();
       repo.dispose();

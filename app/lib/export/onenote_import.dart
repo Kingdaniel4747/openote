@@ -1159,8 +1159,7 @@ String importOneParsedPage(ImportSink sink, String sectionId,
           // owner's notebook, importing the same two sections twice: 82 blobs /
           // 2,947,882 bytes, then 82 MORE blobs / 2,947,288 bytes, not one hash
           // shared, with identical stroke geometry. Every re-import stored the
-          // whole handwriting payload again — in the container, and in the
-          // append-only op log that carries ink blob bytes.
+          // whole handwriting payload again in the container.
           'strokeStart': 0,
         });
       }

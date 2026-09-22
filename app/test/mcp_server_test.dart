@@ -31,7 +31,6 @@ void main() {
 
   setUp(() async {
     if (!haveSqlite) return;
-    AppState.syncLogEnabled = false;
     tmp = Directory.systemTemp.createTempSync('onote_mcp_');
     repo = await Repository.openAt(tmp);
     final nb = await repo.createNotebook('Study');
@@ -46,7 +45,6 @@ void main() {
   });
 
   tearDown(() async {
-    AppState.syncLogEnabled = true;
     if (!haveSqlite) return;
     await server.stop();
     app.cancelPendingSave();

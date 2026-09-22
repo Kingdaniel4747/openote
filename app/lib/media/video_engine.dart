@@ -3,7 +3,7 @@
 /// **Why.** Measured on the v0.7.1 Windows Release bundle, libmpv and ANGLE
 /// are 48,580,342 B of 97,831,741 B — half the download, carried by every
 /// student whether or not they ever put a lecture in a notebook. They touch no
-/// byte of anybody's notes: a video lives in `<notebook>.onotebook/media/` as
+/// byte of anybody's notes: a video lives in `<notebook>.media/` as
 /// an ordinary file (see store/media_store.dart) and this is only the code
 /// that decodes it. So the bytes stay on the student's disk and the *player*
 /// becomes a download. See tool/split_video_engine.dart for the build half.
@@ -13,9 +13,7 @@
 /// the card is there with its name and its size, "Open in your usual player"
 /// and "Save a copy…" both work, and the only thing missing is the button
 /// that plays it *in the page*. Nothing here may make a video look lost, and
-/// nothing here touches `media/` — the reclamation sweep in
-/// store/media_gc.dart reads page content and op logs, neither of which this
-/// file can reach.
+/// nothing here changes stored media.
 ///
 /// **Integrity is a hash, not a length.** Every file is pinned by its
 /// SHA-256. A truncated download and a corrupted one have the same length far
@@ -110,15 +108,13 @@ abstract final class VideoEngine {
   /// smaller than the sum below; this is deliberately the *honest* number for
   /// what lands on their disk, because that is what they will see if they go
   /// looking for it later.
-  static int get installedBytes =>
-      files.fold(0, (sum, f) => sum + f.bytes);
+  static int get installedBytes => files.fold(0, (sum, f) => sum + f.bytes);
 
   /// Where a downloaded engine lives, once [prepare] has resolved it.
   ///
   /// Application support, NOT the workspace and NOT any notebook. Anything
-  /// under the workspace root is in reach of the leftovers scan
-  /// (`AppState.findOrphanFiles`) and of every backup and sync mechanism the
-  /// app has; a redownloadable cache belongs in none of them.
+  /// under the workspace root is included in backups; a redownloadable cache
+  /// does not belong there.
   static Directory? _root;
 
   static Directory get _dir => Directory('${_root!.path}/video-engine/$id');
@@ -227,7 +223,7 @@ abstract final class VideoEngine {
     if (_root == null) {
       throw const EngineInstallFailure(
         'Openote could not find anywhere on this computer to keep the video '
-        'player.',
+            'player.',
         'application support directory unavailable',
       );
     }
@@ -245,7 +241,7 @@ abstract final class VideoEngine {
     } catch (e) {
       throw EngineInstallFailure(
         'The video player did not finish downloading. Check your connection '
-        'and try again — nothing on this computer was changed.',
+            'and try again — nothing on this computer was changed.',
         'download failed: $e',
       );
     }
@@ -259,19 +255,18 @@ abstract final class VideoEngine {
         if (entry.isEmpty) {
           throw EngineInstallFailure(
             'The video player that arrived is not the one Openote expected. '
-            'Nothing on this computer was changed.',
+                'Nothing on this computer was changed.',
             'archive is missing ${want.name}',
           );
         }
-        final bytes = Uint8List.fromList(
-            entry.first.content as List<int>);
+        final bytes = Uint8List.fromList(entry.first.content as List<int>);
         // The hash, not the length. Two different 4,891,080-byte files are
         // exactly the case a length check waves through.
         final got = sha256Hex(bytes);
         if (got != want.sha256) {
           throw EngineInstallFailure(
             'The video player that arrived did not check out, so Openote has '
-            'not installed it. Nothing on this computer was changed.',
+                'not installed it. Nothing on this computer was changed.',
             'sha-256 mismatch on ${want.name}: expected ${want.sha256}, '
                 'got $got',
           );
@@ -294,7 +289,7 @@ abstract final class VideoEngine {
       _deleteQuietly(partial);
       throw EngineInstallFailure(
         'Openote could not save the video player. There may not be enough '
-        'room on this computer. Nothing else was changed.',
+            'room on this computer. Nothing else was changed.',
         'install failed: $e',
       );
     }
@@ -334,8 +329,7 @@ abstract final class VideoEngine {
     }
   }
 
-  static String _baseName(String path) =>
-      path.split(RegExp(r'[\\/]')).last;
+  static String _baseName(String path) => path.split(RegExp(r'[\\/]')).last;
 
   static void _deleteQuietly(Directory d) {
     try {

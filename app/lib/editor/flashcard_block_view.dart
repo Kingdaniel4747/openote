@@ -86,8 +86,8 @@ class _FlashcardBlockViewState extends State<FlashcardBlockView> {
       widget.block.content['front'] = f;
       widget.block.content['back'] = b;
       widget.block.updatedAt = nowMs();
-      // Through the normal funnel, so the op log records it and the card
-      // reaches the study deck on the next rebuild.
+      // Through the normal funnel, so the card reaches the study deck on the
+      // next rebuild.
       widget.app.updateBlock(widget.block);
       widget.app.markDirty();
     }
@@ -108,7 +108,8 @@ class _FlashcardBlockViewState extends State<FlashcardBlockView> {
     return FlipCard(
       front: _frontText,
       back: _backText,
-      trailing: _iconButton(Icons.edit_outlined, 'Edit this card', _startEditing),
+      trailing:
+          _iconButton(Icons.edit_outlined, 'Edit this card', _startEditing),
     );
   }
 
@@ -130,8 +131,8 @@ class _FlashcardBlockViewState extends State<FlashcardBlockView> {
         decoration: BoxDecoration(
           color: dark ? OnoteColors.night100 : Colors.white,
           borderRadius: OnoteRadius.xlAll,
-          border:
-              Border.all(color: OnoteColors.brass400.withValues(alpha: .8), width: 1.5),
+          border: Border.all(
+              color: OnoteColors.brass400.withValues(alpha: .8), width: 1.5),
         ),
         padding: const EdgeInsets.all(OnoteSpace.x5),
         // Scrollable, because the editor is genuinely taller than the face it
@@ -178,8 +179,7 @@ class _FlashcardBlockViewState extends State<FlashcardBlockView> {
                       autoCloseFences: false)
                 ],
                 decoration: const InputDecoration(
-                    isDense: true,
-                    hintText: 'The answer you want to recall'),
+                    isDense: true, hintText: 'The answer you want to recall'),
               ),
               const SizedBox(height: OnoteSpace.x5),
               Row(

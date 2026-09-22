@@ -75,7 +75,8 @@ class LiveMarkdownController extends TextEditingController {
   /// anchoring the editor, and `tapGlobal` is the click itself, also global —
   /// where the caret lands once the equation opens. Null leaves inline
   /// equations as plain drawings, which is what a read-only surface wants.
-  void Function(int start, int end, String latex, Rect anchor, Offset tapGlobal)?
+  void Function(
+          int start, int end, String latex, Rect anchor, Offset tapGlobal)?
       onMathTap;
 
   /// **Does this equation have a graph worth pointing at right now?**
@@ -148,12 +149,12 @@ class LiveMarkdownController extends TextEditingController {
     // emptied one must stay `$$` — removing the dollars would unmount the
     // very editor the student is typing into. The pair is swept on close.
     final wrap = r'$' * dollars;
-    final next = tidy.isEmpty
-        ? (keepEmptyPair ? '\$\$' : '')
-        : '${wrap}${tidy}${wrap}';
+    final next =
+        tidy.isEmpty ? (keepEmptyPair ? '\$\$' : '') : '${wrap}${tidy}${wrap}';
     value = TextEditingValue(
       text: text.replaceRange(start, end, next),
-      selection: TextSelection.collapsed(offset: caretAt ?? (start + next.length)),
+      selection:
+          TextSelection.collapsed(offset: caretAt ?? (start + next.length)),
       composing: TextRange.empty,
     );
     onSelfEdit?.call();
@@ -166,7 +167,7 @@ class LiveMarkdownController extends TextEditingController {
 
   /// Resolved blobs, so a repaint per keystroke is not a SQLite read per
   /// keystroke. A miss is never cached: the bytes may still be arriving from a
-  /// sync, and a notebook the user never leaves would remember the gap forever.
+  /// state, and a notebook the user never leaves would remember the gap forever.
   final Map<String, Uint8List> _blobCache = {};
 
   Uint8List? _resolveImage(String src) {
@@ -204,7 +205,8 @@ class LiveMarkdownController extends TextEditingController {
       text: text.replaceRange(lineStart, lineEnd, next),
       selection: sel.isValid
           ? TextSelection(
-              baseOffset: adj(sel.baseOffset), extentOffset: adj(sel.extentOffset))
+              baseOffset: adj(sel.baseOffset),
+              extentOffset: adj(sel.extentOffset))
           : sel,
       composing: TextRange.empty,
     );
@@ -526,12 +528,18 @@ class LiveMarkdownController extends TextEditingController {
     final full = text;
 
     // Don't interfere with IME composition — render raw while composing.
-    if (withComposing && value.composing.isValid && !value.composing.isCollapsed) {
+    if (withComposing &&
+        value.composing.isValid &&
+        !value.composing.isCollapsed) {
       return TextSpan(text: full, style: base);
     }
 
-    final lo = selection.isValid ? math.min(selection.baseOffset, selection.extentOffset) : -1;
-    final hi = selection.isValid ? math.max(selection.baseOffset, selection.extentOffset) : -1;
+    final lo = selection.isValid
+        ? math.min(selection.baseOffset, selection.extentOffset)
+        : -1;
+    final hi = selection.isValid
+        ? math.max(selection.baseOffset, selection.extentOffset)
+        : -1;
 
     try {
       final children = <InlineSpan>[];
@@ -652,8 +660,8 @@ class LiveMarkdownController extends TextEditingController {
       for (var i = 0; i < points.length - 1; i++) {
         final a = points[i], b = points[i + 1];
         if (a == b) continue;
-        final bad = overlapping
-            .any((r) => r.start <= start + a && r.end >= start + b);
+        final bad =
+            overlapping.any((r) => r.start <= start + a && r.end >= start + b);
         pieces.add(TextSpan(
           text: text.substring(a, b),
           style: bad
@@ -784,7 +792,8 @@ class LiveMarkdownController extends TextEditingController {
     final starts = <int>[];
     for (final m in tp.computeLineMetrics()) {
       final y = math.max(0.0, m.baseline - 1);
-      starts.add(tp.getLineBoundary(tp.getPositionForOffset(Offset(0, y))).start);
+      starts
+          .add(tp.getLineBoundary(tp.getPositionForOffset(Offset(0, y))).start);
     }
 
     final myGutters = <int, double>{};
@@ -860,11 +869,8 @@ class LiveMarkdownController extends TextEditingController {
   /// [_underlineMisspellings] and for the same reason: it consumes and re-emits
   /// the same characters in the same order, so the coverage invariant cannot be
   /// broken by a boundary bug here.
-  ({TextSpan tree, List<PlaceholderDimensions> dims}) _applyHangs(
-      TextSpan root,
-      Map<int, double> gutters,
-      Map<int, double> pads,
-      TextStyle base) {
+  ({TextSpan tree, List<PlaceholderDimensions> dims}) _applyHangs(TextSpan root,
+      Map<int, double> gutters, Map<int, double> pads, TextStyle base) {
     final dims = <PlaceholderDimensions>[];
     final fs = base.fontSize ?? 14;
     var off = 0;
@@ -987,7 +993,6 @@ class LiveMarkdownController extends TextEditingController {
     return out;
   }
 
-
   /// Text that is laid out but must occupy no space.
   ///
   /// `letterSpacing` and `wordSpacing` are added PER CHARACTER in logical
@@ -1015,7 +1020,8 @@ class LiveMarkdownController extends TextEditingController {
   static String? _markerGlyph(String marker) {
     if (marker.startsWith('>')) return null;
     final m = marker.trimRight();
-    if (m.endsWith(']')) return m.contains(RegExp('[xX]')) ? '\u2611' : '\u2610';
+    if (m.endsWith(']'))
+      return m.contains(RegExp('[xX]')) ? '\u2611' : '\u2610';
     if (RegExp(r'^\d').hasMatch(m)) return m; // `12.` keeps its number
     return '•';
   }
@@ -1042,8 +1048,8 @@ class LiveMarkdownController extends TextEditingController {
             front: card.group(1) ?? '',
             back: card.group(2) ?? '',
             selected: onLine,
-            onEdit: (f, b) => replaceCardLine(
-                lineStart, lineStart + line.length, line, f, b),
+            onEdit: (f, b) =>
+                replaceCardLine(lineStart, lineStart + line.length, line, f, b),
           ),
         ));
         out.add(TextSpan(text: line.substring(1), style: _hidden(base)));
@@ -1104,8 +1110,8 @@ class LiveMarkdownController extends TextEditingController {
         out.add(TextSpan(text: line.substring(1), style: _hidden(base)));
         return;
       }
-      // No bytes — a blob still syncing, or one that never arrived. The
-      // reference stays as text so it can be read, fixed or cut out.
+      // No bytes. The reference stays as text so it can be read, fixed or cut
+      // out.
       out.add(TextSpan(text: line, style: refStyle));
       return;
     }
@@ -1148,7 +1154,8 @@ class LiveMarkdownController extends TextEditingController {
           height: (size * baseH + extra) / size,
           color: dark ? OnoteColors.moon0 : OnoteColors.graphite900);
       final prefix = line.substring(0, h.end);
-      out.add(TextSpan(text: prefix, style: onLine ? _dim(base) : _hidden(base)));
+      out.add(
+          TextSpan(text: prefix, style: onLine ? _dim(base) : _hidden(base)));
       _inline(line.substring(h.end), lineStart + h.end, cStyle, out);
       return;
     }
@@ -1199,7 +1206,8 @@ class LiveMarkdownController extends TextEditingController {
             width: bodyStart,
             child: Padding(
               padding: EdgeInsets.only(
-                  left: (bodyStart - kBulletGutter).clamp(0.0, double.infinity)),
+                  left:
+                      (bodyStart - kBulletGutter).clamp(0.0, double.infinity)),
               child: Text(glyph,
                   maxLines: 1,
                   style: base.copyWith(color: OnoteColors.graphite500)),
@@ -1473,7 +1481,13 @@ class _SourceSpan extends WidgetSpan {
 enum MdRunKind { marker, math }
 
 /// One inline construct with hidden markers, in source offsets.
-typedef _MdRun = ({int start, int end, int openLen, int closeLen, MdRunKind kind});
+typedef _MdRun = ({
+  int start,
+  int end,
+  int openLen,
+  int closeLen,
+  MdRunKind kind
+});
 
 /// A list line's body region and the x its text should start on.
 typedef _ListBody = ({int from, int to, double hang});
@@ -1560,7 +1574,8 @@ class _EditImageState extends State<_EditImage> {
     final size = (box != null && box.hasSize) ? box.size : null;
     if (size == null || size.width <= 0 || size.height <= 0) return;
     final w = widget.width, h = widget.height;
-    _aspect = (w != null && h != null && h > 0) ? w / h : size.width / size.height;
+    _aspect =
+        (w != null && h != null && h > 0) ? w / h : size.width / size.height;
     // The drag starts from the STORED width when there is one, not from the
     // size on screen: a picture whose `=WxH` is wider than its box is drawn
     // clamped, and starting from the clamped size would shrink it the moment
@@ -1595,14 +1610,13 @@ class _EditImageState extends State<_EditImage> {
     // next one, and until it does, drawing wider than the box would mean
     // writing a `=WxH` the picture is not actually rendered at — the text and
     // the picture would disagree about a number the user can see.
-    final next =
-        wanted.clamp(_kMinImageWidth, math.max(_kMinImageWidth, avail)) as double;
+    final next = wanted.clamp(_kMinImageWidth, math.max(_kMinImageWidth, avail))
+        as double;
     setState(() {
       _dragW = next;
       _dragH = next / _aspect;
     });
   }
-
 
   void _endDrag() {
     final w = _dragW, h = _dragH;
@@ -1615,7 +1629,7 @@ class _EditImageState extends State<_EditImage> {
     if (w != null && h != null && h > 0) widget.onResize(w, h);
   }
 
-  /// Set when the bytes are not a picture at all — a truncated sync, a bad
+  /// Set when the bytes are not a picture at all — a truncated file, a bad
   /// import, a reference to something that was never an image.
   bool _undecodable = false;
 
@@ -1642,11 +1656,11 @@ class _EditImageState extends State<_EditImage> {
         // The decode fails asynchronously, so the swap has to wait for the
         // frame that is already building.
         errorBuilder: (_, __, ___) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) setState(() => _undecodable = true);
-          });
-          return const SizedBox.shrink();
-        });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _undecodable = true);
+      });
+      return const SizedBox.shrink();
+    });
     return Padding(
       padding: EdgeInsets.only(
           left: widget.indent, top: sized ? 0 : 4, bottom: sized ? 0 : 4),
@@ -1701,7 +1715,8 @@ class _EditImageState extends State<_EditImage> {
             height: 18,
             decoration: BoxDecoration(
               color: OnoteColors.brass400.withValues(alpha: .92),
-              borderRadius: const BorderRadius.only(topLeft: Radius.circular(6)),
+              borderRadius:
+                  const BorderRadius.only(topLeft: Radius.circular(6)),
             ),
             child: const Icon(Icons.south_east, size: 12, color: Colors.white),
           ),

@@ -11,8 +11,7 @@
 // cases are a byte-perfect length with wrong bytes, and an interruption. The
 // CARD half is the NEGATIVE CONTROL: with no engine anywhere on the machine, a
 // page with a video still opens, still renders, still says the video is here,
-// and the reclamation sweep in store/media_gc.dart still counts the file as
-// referenced. The player is optional. The video never is.
+// and still offers the stored file. The player is optional. The video never is.
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -26,7 +25,6 @@ import 'package:openote/media/video_engine.dart';
 import 'package:openote/media/video_playback.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
-import 'package:openote/store/media_gc.dart';
 import 'package:openote/store/media_store.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/store/notebook_writer.dart' show sha256Hex;
@@ -62,8 +60,8 @@ void main() {
     final a = Archive();
     for (final f in VideoEngine.files) {
       if (f.name == omit) continue;
-      final bytes = real?[f.name] ??
-          filler(f, fill: f.name == corrupt ? 0x42 : 0x41);
+      final bytes =
+          real?[f.name] ?? filler(f, fill: f.name == corrupt ? 0x42 : 0x41);
       a.addFile(ArchiveFile(f.name, bytes.length, bytes));
     }
     return Uint8List.fromList(ZipEncoder().encode(a));
@@ -94,8 +92,8 @@ void main() {
       // contents are wrong.
       await expectLater(
         VideoEngine.install(fetch: (_) async => archiveOf()),
-        throwsA(isA<EngineInstallFailure>().having(
-            (e) => e.details, 'details', contains('sha-256 mismatch'))),
+        throwsA(isA<EngineInstallFailure>()
+            .having((e) => e.details, 'details', contains('sha-256 mismatch'))),
       );
       expect(VideoEngine.isInstalled, isFalse,
           reason: 'a refused engine must not look installed');
@@ -142,7 +140,8 @@ void main() {
       addTearDown(() => VideoEngine.debugSetFiles(null));
       await expectLater(
         VideoEngine.install(
-            fetch: (_) async => archiveOf(real: {'one.bin': a}, omit: 'two.bin')),
+            fetch: (_) async =>
+                archiveOf(real: {'one.bin': a}, omit: 'two.bin')),
         throwsA(isA<EngineInstallFailure>()
             .having((e) => e.details, 'details', contains('missing two.bin'))),
       );
@@ -154,7 +153,8 @@ void main() {
       // a crash inside a graphics driver with no message attached.
       await expectLater(
         VideoEngine.install(
-            fetch: (_) async => throw const SocketException('connection reset')),
+            fetch: (_) async =>
+                throw const SocketException('connection reset')),
         throwsA(isA<EngineInstallFailure>()),
       );
       expect(VideoEngine.isInstalled, isFalse);
@@ -183,9 +183,11 @@ void main() {
       }
 
       final seen = <double>[];
-      await VideoEngine.install(fetch: fetch, onProgress: (f, _) => seen.add(f));
+      await VideoEngine.install(
+          fetch: fetch, onProgress: (f, _) => seen.add(f));
       expect(VideoEngine.isInstalled, isTrue);
-      expect(seen.last, 1.0, reason: 'a 46 MB download must not look like a hang');
+      expect(seen.last, 1.0,
+          reason: 'a 46 MB download must not look like a hang');
 
       final dir = Directory('${tmp.path}/video-engine/${VideoEngine.id}');
       expect(File('${dir.path}/one.bin').readAsBytesSync(), a);
@@ -211,7 +213,8 @@ void main() {
       // again, or a later version re-downloads. A refusal must leave the
       // engine they already have exactly as it was.
       final a = Uint8List.fromList(List.generate(64, (i) => i));
-      VideoEngine.debugSetFiles([EngineFile('one.bin', a.length, sha256Hex(a))]);
+      VideoEngine.debugSetFiles(
+          [EngineFile('one.bin', a.length, sha256Hex(a))]);
       addTearDown(() => VideoEngine.debugSetFiles(null));
 
       await VideoEngine.install(
@@ -335,8 +338,8 @@ void main() {
           reason: 'the machine under test genuinely has no engine');
 
       final (app, ref) = await newApp(t);
-      final stored = (await t.runAsync(
-          () => MediaStore.add(ref, source('l.mp4', 4096))))!;
+      final stored =
+          (await t.runAsync(() => MediaStore.add(ref, source('l.mp4', 4096))))!;
       await t.pumpWidget(MaterialApp(
         home: Scaffold(
           body: SizedBox(
@@ -367,61 +370,14 @@ void main() {
         (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final (app, ref) = await newApp(t);
-      final stored = (await t.runAsync(
-          () => MediaStore.add(ref, source('keep.mp4', 4096))))!;
+      final stored = (await t
+          .runAsync(() => MediaStore.add(ref, source('keep.mp4', 4096))))!;
       final onDisk = MediaStore.resolve(ref, stored);
       expect(onDisk, isNotNull);
       expect(onDisk!.existsSync(), isTrue);
       expect(onDisk.lengthSync(), 4096,
           reason: 'not one byte of the video depends on the player');
       expect(app.currentNotebook.id, isNotEmpty);
-    });
-
-    test('the reclamation sweep still sees a video as referenced', () async {
-      // media_gc.dart (commit 209ef72) decides what is safe to delete. It
-      // reads page content and op logs and knows nothing about the player —
-      // which is exactly the property to pin, because a change that made the
-      // sweep stop seeing a referenced video would delete a lecture.
-      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-      final dir = Directory.systemTemp.createTempSync('onote_gc_');
-      final repo = await Repository.openAt(dir);
-      addTearDown(() {
-        repo.dispose();
-        try {
-          dir.deleteSync(recursive: true);
-        } catch (_) {}
-      });
-      final nb = await repo.createNotebook('Lectures');
-      final ref = repo.notebooks.firstWhere((n) => n.id == nb.id);
-      final stored = await MediaStore.add(ref, source('lecture.mp4', 2048));
-
-      expect(VideoEngine.isInstalled, isFalse,
-          reason: 'the whole point: the sweep runs with no engine present');
-
-      final referenced = await MediaGc.sweep(
-        ref: ref,
-        containerText: () => ['{"media":"$stored"}'],
-        liveText: () => const [],
-        minimumAge: Duration.zero,
-      );
-      expect(referenced.refusal, isNull);
-      expect(referenced.unused, isEmpty,
-          reason: 'a referenced video is never a candidate for reclamation');
-      expect(MediaStore.resolve(ref, stored)!.existsSync(), isTrue);
-
-      // And the same sweep with the reference taken away DOES list it. Without
-      // this the assertion above passes just as well on a sweep that finds
-      // nothing at all, which is the shape a broken test takes.
-      final orphaned = await MediaGc.sweep(
-        ref: ref,
-        containerText: () => const [],
-        liveText: () => const [],
-        minimumAge: Duration.zero,
-      );
-      expect(orphaned.unused.map((u) => u.name), [stored],
-          reason: 'the scan is live, so "empty" above means something');
-      expect(MediaStore.resolve(ref, stored)!.existsSync(), isTrue,
-          reason: 'a sweep reports; it does not delete');
     });
   });
 }

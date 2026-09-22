@@ -34,7 +34,6 @@ void main() {
     late AppState created;
     addTearDown(() async {
       created.cancelPendingSave();
-      await created.settleBackgroundWork();
       await repo.flushWorkspace();
       repo.dispose();
       try {
@@ -51,7 +50,6 @@ void main() {
     app.reloadNodes();
     await app.selectPage(
         app.nodes.firstWhere((n) => n.kind == NodeKind.page).id);
-    await app.settleBackgroundWork();
     return app;
   }
 

@@ -110,20 +110,14 @@ code you are about to read:
 - **The structured rich-text model.** [ADR-0004](../docs/adr/ADR-0004-editor-engine.md)
   is decided (keep the engine we own, behind the `OnoteTextEditor` seam), but a
   block's text is still an interim Markdown **string** rather than the Data
-  Model §5.1 `{nodes:[…]}` model. The migration is driven by sync
-  ([ADR-0006](../docs/adr/ADR-0006-sync-transport-and-text-model.md)) rather
-  than by the editor: an opaque string makes the smallest representable edit
-  "the whole block is now this", which cannot merge per-character. Per-run
-  styling, paragraph collapse and in-flow-images-editable-as-images all wait on
-  it.
-- **Sync is real but half-migrated.** Two devices sharing a folder works
-  (`sync/`, ADR-0006 steps 1–3). The container has **not** been demoted to
-  `cache.onote`, blobs are stored twice and never garbage-collected, and Loro
-  and any network transport are absent.
-- **`AppState` is a god object** — ~3,200 lines across 27 sections, because
-  there is nowhere else for state to land. Splitting out `SyncCoordinator`,
-  `StudyState` and `TagOps` is item E3 of the v0.4 backlog and is meant to
-  happen before more features land in it.
+  Model §5.1 `{nodes:[…]}` model. Per-run styling, paragraph collapse and
+  in-flow-images-editable-as-images all wait on it.
+- **Backups are deliberately manual.** Openote keeps one local notebook
+  container and does not implement background or folder sync. Complete
+  workspace backups can be stored with a dedicated tool such as Nextcloud
+  Desktop and restored from the notebook manager.
+- **`AppState` is a god object.** Its remaining feature-specific state should
+  continue moving into small focused modules before more features land in it.
 
 ## Code map
 
@@ -147,15 +141,6 @@ lib/
 │   ├── app_state.dart            app-wide state + the storage facade — the one
 │   │                             funnel every persistent mutation passes through
 │   └── builtin_templates.dart    the six shipped page templates
-├── sync/                         ADR-0006 operation log (shadow mode)
-│   ├── op.dart                   envelope + deterministic total order
-│   ├── op_log.dart               Foo.onotebook/ops/<device>.oplog, append-only
-│   ├── device_identity.dart      per-install id, forks on conflict
-│   ├── materializer.dart         replay → state (delete-wins)
-│   ├── sync_recorder.dart        diffs a page save into block-level ops
-│   ├── cloud_folders.dart        detects Drive/OneDrive/… (and why no OAuth)
-│   ├── folder_watch.dart         auto-pull when another device writes
-│   └── mirrors.dart              per-notebook mirrors and dated backups
 ├── canvas/
 │   ├── canvas_controller.dart    pan/zoom matrix, screen↔page mapping, snap
 │   ├── page_canvas.dart          gestures, grid, ink capture, block layout
@@ -190,7 +175,7 @@ lib/
     ├── sidebar.dart              the stacked navigator (style guide §7b)
     ├── command_bar.dart          the tabbed command bar
     ├── study_panel.dart          review, progress and the exam countdown
-    ├── notebook_manager.dart, sync_dialog.dart, onboarding.dart
+    ├── notebook_manager.dart     notebook switching, backup and import
     ├── color_picker.dart, font_picker.dart, exam_date.dart
     └── context_menus.dart
 ```

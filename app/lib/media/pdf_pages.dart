@@ -2,7 +2,7 @@
 ///
 /// A newly imported PDF keeps the source once and stores durable 2× PNG page
 /// previews beside it. This renderer remains the fallback for legacy blocks,
-/// a preview blob that has not arrived from sync yet, PDF cards and exports.
+/// a missing preview blob, PDF cards and exports.
 /// The source PDF always survives, so text selection/search and lossless source
 /// access do not depend on the raster previews.
 library;

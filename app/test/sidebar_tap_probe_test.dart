@@ -25,7 +25,6 @@ void main() {
   testWidgets('a sidebar page click acts on pointer-up, not on a timeout',
       (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-    AppState.syncLogEnabled = false;
     late Directory tmp;
     late Repository repo;
     late AppState app;
@@ -55,8 +54,6 @@ void main() {
       app.reloadNodes();
       await app.selectPage(pageIds[0]);
     });
-    app.markOnboardingSeen();
-
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -127,6 +124,5 @@ void main() {
         tmp.deleteSync(recursive: true);
       } catch (_) {}
     });
-    AppState.syncLogEnabled = true;
   });
 }

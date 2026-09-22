@@ -288,7 +288,6 @@ void main() {
 
     setUp(() async {
       if (!haveSqlite) return;
-      AppState.syncLogEnabled = false;
       tmp = Directory.systemTemp.createTempSync('onote_hang_');
       repo = await Repository.openAt(tmp);
       final nb = await repo.createNotebook('Hang');
@@ -313,7 +312,6 @@ void main() {
     });
 
     tearDown(() {
-      AppState.syncLogEnabled = true;
       if (!haveSqlite) return;
       app.cancelPendingSave();
       repo.dispose();

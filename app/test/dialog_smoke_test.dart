@@ -1,7 +1,6 @@
-// Smoke tests for the three dialogs that had none.
+// Smoke tests for the notebook manager.
 //
-// The v0.3 plan lists `sync_dialog`, `onboarding` and the notebook manager
-// among "the surfaces with no tests", and the last review made the case for why
+// The last review made the case for why
 // that is worth more than it looks: BOTH bugs that shipped in the command bar
 // were layout failures — a `Spacer` under an unbounded constraint, and a `Row`
 // overflowing at 560px — and neither was visible to any state test or to
@@ -21,8 +20,6 @@ import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/ui/notebook_manager.dart';
-import 'package:openote/ui/onboarding.dart';
-import 'package:openote/ui/sync_dialog.dart';
 
 import 'support/sqlite.dart';
 
@@ -98,34 +95,9 @@ void main() {
       expect(find.text('Smoke'), findsWidgets,
           reason: 'the notebook is listed');
       // Every action it offers must be reachable, not clipped off the edge.
-      for (final label in ['New', 'Import', 'Get started', 'Done']) {
+      for (final label in ['New', 'Import']) {
         expect(find.text(label), findsOneWidget, reason: '"$label" is missing');
       }
-    });
-
-    testWidgets('the sync dialog opens ($label)', (tester) async {
-      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-      final app = await newApp(tester);
-      await openDialog(tester, app, (c, a) => showSyncDialog(c, a),
-          window: size);
-
-      expect(tester.takeException(), isNull,
-          reason: 'the sync dialog failed to lay out at $label');
-      expect(find.byType(AlertDialog), findsOneWidget);
-      // Reported as hard to find: this dialog is where people are thinking
-      // about where notebooks live, so adding one belongs here too.
-      expect(find.text('Add a notebook…'), findsOneWidget);
-    });
-
-    testWidgets('the welcome flow opens ($label)', (tester) async {
-      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-      final app = await newApp(tester);
-      await openDialog(tester, app, (c, a) => showOnboarding(c, a),
-          window: size);
-
-      expect(tester.takeException(), isNull,
-          reason: 'onboarding failed to lay out at $label');
-      expect(find.byType(Dialog), findsWidgets);
     });
   }
 }

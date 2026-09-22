@@ -25,7 +25,7 @@ Future<void> showPdfViewerDialog(
   final bytes = app.blob(hash);
   if (bytes == null) {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text("The PDF isn't on this computer yet — still syncing?")));
+        content: Text("The PDF is unavailable. Re-import it to restore it.")));
     return Future.value();
   }
   final controller = PdfViewerController();

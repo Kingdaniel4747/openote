@@ -14,8 +14,6 @@ import '../editor/list_editing.dart';
 import '../canvas/media_drop.dart';
 import '../core/anki_launcher.dart';
 import '../markdown/md_syntax.dart';
-import '../model/tags.dart';
-import '../planner/agenda.dart';
 import '../state/app_state.dart';
 import '../platform/screen_capture.dart';
 import '../theme/onote_theme.dart';
@@ -240,10 +238,8 @@ class _CommandBarState extends State<CommandBar> {
                     label: 'Just the drawing (.inkml)',
                     onPressed: () => _export(context, exportPageInkML),
                   ),
-                  // Say what lands on disk. "Materialize" is this
-                  // codebase's own architecture vocabulary
-                  // (`sync/materializer.dart`) and appears in no
-                  // other user-visible string in the app.
+                  // Say what lands on disk instead of exposing an internal
+                  // exporter name.
                   ToolbarSubmenuItem(
                     icon: Icons.folder_zip_outlined,
                     label: 'Save the whole notebook as folders and files…',
@@ -569,9 +565,8 @@ class _CommandBarState extends State<CommandBar> {
               onProgress: (done, total) => report('Page $done of $total…'),
             ),
           ),
-          // Say what lands on disk. "Materialize" is this codebase's own
-          // architecture vocabulary (`sync/materializer.dart`) and appears
-          // in no other user-visible string in the app.
+          // Say what lands on disk instead of exposing an internal exporter
+          // name.
           child: const AppText('Save the whole notebook as folders and files…'),
         ),
       ];
@@ -1488,191 +1483,6 @@ class _FontSizeField extends StatelessWidget {
   }
 }
 
-/// One button that turns the caret's line into a flashcard.
-///
-/// Tags remain the underlying mechanism — a card is a *view* of a tagged line,
-/// which is what makes editing the note edit the card. But "tag it Question or
-/// Definition, and remember which one, and get the shape right" is a rule the
-/// student has to learn before anything happens, and getting it wrong produced
-/// nothing with no explanation. This reads the line, picks the tag, and says
-/// what it did.
-class _MakeCardButton extends StatelessWidget {
-  const _MakeCardButton({required this.app});
-  final AppState app;
-
-  void _say(BuildContext context, String? msg) {
-    if (msg == null || !context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), duration: const Duration(seconds: 3)),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // **Never disabled.** With a caret on a line it turns THAT line into a
-    // card, which is the good form; with no caret it makes a new card in a
-    // box of its own. That second behaviour used to be a separate Insert
-    // ribbon entry with the same icon, on a different tab, doing a different
-    // thing — one button, two ways of arriving at it.
-    final onLine = app.canFormatText;
-    return MenuAnchor(
-      builder: (context, controller, _) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Tooltip(
-            message: onLine ? 'Make this line a flashcard' : 'New flashcard',
-            child: InkWell(
-              borderRadius: BorderRadius.circular(6),
-              onTap: () {
-                if (onLine) {
-                  _say(context, app.makeCardAtCaret());
-                } else {
-                  app.insertFlashcard();
-                }
-              },
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-                child: Icon(Icons.style_outlined, size: 18),
-              ),
-            ),
-          ),
-          InkWell(
-            borderRadius: BorderRadius.circular(6),
-            onTap: () =>
-                controller.isOpen ? controller.close() : controller.open(),
-            child: const Icon(Icons.arrow_drop_down, size: 16),
-          ),
-        ],
-      ),
-      menuChildren: [
-        MenuItemButton(
-          leadingIcon: Icon(
-            TagKind.question.icon,
-            size: 16,
-            color: TagKind.question.color,
-          ),
-          shortcut: const SingleActivator(
-            LogicalKeyboardKey.digit3,
-            control: true,
-          ),
-          onPressed: () => app.toggleTagOnSelection(TagKind.question),
-          child: const AppText('Question card'),
-        ),
-        MenuItemButton(
-          leadingIcon: Icon(
-            TagKind.definition.icon,
-            size: 16,
-            color: TagKind.definition.color,
-          ),
-          shortcut: const SingleActivator(
-            LogicalKeyboardKey.digit5,
-            control: true,
-          ),
-          onPressed: () => app.toggleTagOnSelection(TagKind.definition),
-          child: const AppText('Definition card'),
-        ),
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.format_underlined, size: 16),
-          onPressed: () {
-            if (!app.blankOutSelection()) {
-              _say(context, 'Select the words to blank out first.');
-            }
-          },
-          child: const AppText('Blank out selection'),
-        ),
-        const Divider(height: 8),
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.school_outlined, size: 16),
-          onPressed: () {
-            if (!app.showStudyPanel) app.toggleStudyPanel();
-          },
-          child: const AppText('Open study panel'),
-        ),
-      ],
-    );
-  }
-}
-
-/// Opens the planner and shows every unfinished homework item or reminder.
-/// The count is independent of the open notebook page, so it behaves like an
-/// app-wide notification badge rather than a property of the current note.
-class _PlannerButton extends StatelessWidget {
-  const _PlannerButton({required this.app});
-  final AppState app;
-
-  @override
-  Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final homework = app.planner
-        .agenda(now: now)
-        .where(
-          (item) =>
-              !item.done &&
-              (item.kind == DatedKind.task || item.kind == DatedKind.reminder),
-        )
-        .toList(growable: false);
-    final count = homework.length;
-    final overdue = homework.any(
-      (item) => item.when.isBefore(DateTime(now.year, now.month, now.day)),
-    );
-    return Tooltip(
-      message: count == 0
-          ? 'No homework or reminders waiting'
-          : overdue
-              ? '$count homework item${count == 1 ? '' : 's'} — some overdue'
-              : '$count homework item${count == 1 ? '' : 's'} waiting',
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.event_note_outlined, size: 18),
-            isSelected: app.showPlannerPanel,
-            visualDensity: VisualDensity.compact,
-            onPressed: app.togglePlannerPanel,
-          ),
-          if (count > 0)
-            Positioned(
-              right: 2,
-              top: 2,
-              child: IgnorePointer(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 4,
-                    vertical: 1,
-                  ),
-                  decoration: BoxDecoration(
-                    // Red only for something already late; a waiting reminder is
-                    // brass, and an ordinary "3 today" is the primary accent.
-                    // Colour never carries this alone (style guide §3.5) — the
-                    // tooltip says which it is.
-                    color: overdue
-                        ? OnoteColors.danger
-                        : Theme.of(context).colorScheme.primary,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: AppText(
-                    '$count',
-                    style: TextStyle(
-                      fontSize: 11,
-                      height: 1.2,
-                      fontWeight: FontWeight.w700,
-                      color: overdue
-                          ? Colors.white
-                          : Theme.of(context).colorScheme.onPrimary,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Fast capture for a homework task while the student is already on the page
-/// it belongs to. The planner remains the place to review everything; this is
-/// deliberately only the three decisions needed to avoid losing a task.
 Future<void> _openAnki(BuildContext context, AppState app) async {
   final opened = await AnkiLauncher.open(app.ankiExecutablePath);
   if (!opened && context.mounted) {
@@ -1682,149 +1492,6 @@ Future<void> _openAnki(BuildContext context, AppState app) async {
   }
 }
 
-Future<void> _addQuickHomework(BuildContext context, AppState app) async {
-  final result =
-      await showOnoteDialog<({String subject, String task, DateTime due})>(
-    context: context,
-    builder: (_) => const _QuickHomeworkDialog(),
-  );
-  if (result == null || !context.mounted) return;
-  final title = result.subject.trim().isEmpty
-      ? result.task.trim()
-      : '${result.subject.trim()} — ${result.task.trim()}';
-  app.planner.reminders.add(
-    text: title,
-    at: result.due,
-    notebookId: app.notebookId,
-    // A reminder with this page id becomes a direct jump back to the exact
-    // worksheet/note that created it in the Planner.
-    pageId: app.pageId,
-  );
-  if (!context.mounted) return;
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(content: Text('Homework added and linked to this page.')),
-  );
-}
-
-class _QuickHomeworkDialog extends StatefulWidget {
-  const _QuickHomeworkDialog();
-
-  @override
-  State<_QuickHomeworkDialog> createState() => _QuickHomeworkDialogState();
-}
-
-class _QuickHomeworkDialogState extends State<_QuickHomeworkDialog> {
-  final _subject = TextEditingController();
-  final _task = TextEditingController();
-  late DateTime _due;
-
-  @override
-  void initState() {
-    super.initState();
-    final now = DateTime.now();
-    _due = DateTime(now.year, now.month, now.day + 1, 17);
-  }
-
-  @override
-  void dispose() {
-    _subject.dispose();
-    _task.dispose();
-    super.dispose();
-  }
-
-  Future<void> _pickDay() async {
-    final chosen = await showDatePicker(
-      context: context,
-      initialDate: _due,
-      firstDate: DateTime(DateTime.now().year - 1),
-      lastDate: DateTime(DateTime.now().year + 5),
-      helpText: 'Homework due date',
-    );
-    if (chosen == null || !mounted) return;
-    setState(
-      () => _due = DateTime(
-        chosen.year,
-        chosen.month,
-        chosen.day,
-        _due.hour,
-        _due.minute,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-        title: const Text('Add homework'),
-        content: SizedBox(
-          width: 380,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: _subject,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  labelText: 'Subject',
-                  hintText: 'For example: Chemistry',
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: _task,
-                maxLines: 2,
-                onSubmitted: (_) => _submit(),
-                decoration: const InputDecoration(
-                  labelText: 'Homework',
-                  hintText: 'What needs to be done?',
-                ),
-              ),
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: OutlinedButton.icon(
-                  onPressed: _pickDay,
-                  icon: const Icon(Icons.event_outlined, size: 18),
-                  label: Text(
-                    MaterialLocalizations.of(context).formatMediumDate(_due),
-                  ),
-                ),
-              ),
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: Padding(
-                  padding: EdgeInsets.only(top: 6),
-                  child: Text(
-                    'Linked to the page currently open.',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(onPressed: _submit, child: const Text('Add')),
-        ],
-      );
-
-  void _submit() {
-    final task = _task.text.trim();
-    if (task.isEmpty) return;
-    Navigator.of(
-      context,
-    ).pop((subject: _subject.text.trim(), task: task, due: _due));
-  }
-}
-
-/// One entry on the Insert ribbon, and its arrow when it has one.
-///
-/// Generic, because the catalog is: the PDF import used to be a hand-built
-/// split button and everything else a plain one, so an item that grew a
-/// second choice needed a new widget. Now it needs a list entry.
 class _InsertButton extends StatelessWidget {
   const _InsertButton({required this.app, required this.item});
 

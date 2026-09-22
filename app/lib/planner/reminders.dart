@@ -222,8 +222,7 @@ DateTime? _decodeTime(Object? raw) {
 
 /// An empty string is not a usable target id, and treating it as one would give
 /// a row a click-through to a page that cannot exist.
-String? _decodeId(Object? raw) =>
-    raw is String && raw.isNotEmpty ? raw : null;
+String? _decodeId(Object? raw) => raw is String && raw.isNotEmpty ? raw : null;
 
 /// A line index that cannot address anything is dropped rather than stored — a
 /// caller that trusted it would index out of bounds.
@@ -251,14 +250,12 @@ int? _decodeLine(Object? raw) {
 /// The reminder store: the workspace's schedule, and the only thing that writes
 /// it.
 ///
-/// **Two callbacks rather than a `Repository`**, following `study_state.dart`,
-/// `sync_recorder.dart` and `device_identity.dart`. What this needs from the
+/// **Two callbacks rather than a `Repository`.** What this needs from the
 /// repository is "read a key, write a key" — passing the repository instead
 /// would drag SQLite and `dart:io` into a module that is otherwise pure, make
 /// every test require a database on disk, and give this class the ability to
 /// grow a dependency on notebook state that reminders must not have (they are
-/// personal and never synced: pushing them through the op log would make one
-/// person's alarm everyone's).
+/// local to the person using this installation).
 class ReminderStore {
   ReminderStore({
     required Object? Function(String key) readSetting,
@@ -452,8 +449,10 @@ class ReminderStore {
   /// Dismissed and already-fired ones are excluded, which is what stops the
   /// same nudge popping twice; see [markFired] for the contract that keeps that
   /// true across a restart.
-  List<Reminder> due(DateTime now) => _sorted(
-      [for (final r in _items) if (r.isDue(now)) r]);
+  List<Reminder> due(DateTime now) => _sorted([
+        for (final r in _items)
+          if (r.isDue(now)) r
+      ]);
 
   /// Mark reminders as surfaced, so they do not fire again.
   ///

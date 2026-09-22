@@ -58,7 +58,6 @@ const german = <String, String>{
   'Check language support': 'Sprachunterstützung prüfen',
   'Pen near the page switches to inking': 'Stiftkontakt aktiviert Schreiben',
   'Connections': 'Verbindungen',
-  'Sync': 'Synchronisierung',
   'AI access': 'KI-Zugriff',
   'Keyboard': 'Tastatur',
   'Keyboard shortcuts': 'Tastenkürzel',
@@ -106,7 +105,6 @@ const german = <String, String>{
   'Copy': 'Kopieren',
   'Cut': 'Ausschneiden',
   'Paste': 'Einfügen',
-  'Duplicate': 'Duplizieren',
   'Delete': 'Löschen',
   'Edit': 'Bearbeiten',
   'Select / move': 'Auswählen / verschieben',
@@ -133,8 +131,8 @@ const german = <String, String>{
       'Bitte warten. Deine Notizen werden gespeichert.',
   'Retry': 'Erneut versuchen',
   'Opening PDF…': 'PDF wird geöffnet…',
-  'PDF page unavailable. Retry after syncing.':
-      'PDF-Seite nicht verfügbar. Nach der Synchronisierung erneut versuchen.',
+  'PDF page unavailable. Re-import the PDF.':
+      'PDF-Seite nicht verfügbar. PDF erneut importieren.',
   'PDF loading failed or timed out. Please retry.':
       'PDF konnte nicht geladen werden. Bitte erneut versuchen.',
   'PDF editor (pages only)': 'PDF-Bearbeitung (nur Seiten)',
@@ -188,7 +186,6 @@ const german = <String, String>{
   'New': 'Neu',
   'Import': 'Importieren',
   'Repair': 'Reparieren',
-  'Get started': 'Erste Schritte',
   'Restore': 'Wiederherstellen',
   'Delete permanently?': 'Endgültig löschen?',
   'Delete forever': 'Endgültig löschen',

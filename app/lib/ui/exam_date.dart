@@ -216,7 +216,7 @@ class _ExamWhenDialogState extends State<_ExamWhenDialog> {
   }
 }
 
-/// A labelled, tappable value — the shape the sync and template dialogs already
+/// A labelled, tappable value — the shape the template dialogs already
 /// use, so the three read as the same app.
 class _Field extends StatelessWidget {
   const _Field({required this.label, required this.value, required this.onTap});

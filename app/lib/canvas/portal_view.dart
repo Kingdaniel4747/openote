@@ -26,8 +26,8 @@ import 'ink_painter.dart';
 /// **A portal is a pointer, never a copy.** The block stores `(pageId, target)`
 /// and nothing else; every render reads the source page through
 /// `readPageShared`, whose cache is invalidated per page on write. That is the
-/// whole liveness story: an edit to the source page — a local save, an undo, a
-/// sync pull — evicts the cached decode, the next rebuild reads fresh content,
+/// whole liveness story: an edit to the source page — a local save or an undo —
+/// evicts the cached decode, the next rebuild reads fresh content,
 /// and the host page rebuilds on exactly the notifications it already gets.
 /// Nothing subscribes, nothing polls, nothing is stored twice.
 ///
@@ -153,9 +153,9 @@ class PortalSource {
     if (_cache.length > 64) _cache.clear();
     final safe = [
       for (final b in raw.blocks)
-        Block.fromJson((jsonDecode(jsonEncode(b.toJson())) as Map)
-            .cast<String, dynamic>()
-          ..['id'] = 'portal:${b.id}'),
+        Block.fromJson(
+            (jsonDecode(jsonEncode(b.toJson())) as Map).cast<String, dynamic>()
+              ..['id'] = 'portal:${b.id}'),
     ];
     return _cache[key] = PortalSource._(raw, safe);
   }
@@ -168,7 +168,8 @@ class PortalSource {
 /// The union extent of [blocks], for whole-page targets and the region picker.
 /// Heights fall back to [AppState.estimatedHeight] — coarse, so callers pad.
 Rect portalExtentOf(AppState app, List<Block> blocks) {
-  var right = AppState.pageLeftMargin + 200.0, bottom = AppState.contentTop + 120.0;
+  var right = AppState.pageLeftMargin + 200.0,
+      bottom = AppState.contentTop + 120.0;
   for (final b in blocks) {
     final h = b.h ?? app.estimatedHeight(b);
     if (b.x + b.w > right) right = b.x + b.w;
@@ -320,13 +321,16 @@ class PortalContent extends StatelessWidget {
         return IgnorePointer(child: MathBlockView(block: b, app: app));
       case BlockType.image:
         return IgnorePointer(
-            child: SizedBox(width: b.w, child: ImageBlockView(block: b, app: app)));
+            child: SizedBox(
+                width: b.w, child: ImageBlockView(block: b, app: app)));
       case BlockType.code:
         return IgnorePointer(
-            child: SizedBox(width: b.w, child: CodeBlockView(block: b, app: app)));
+            child:
+                SizedBox(width: b.w, child: CodeBlockView(block: b, app: app)));
       case BlockType.table:
         return IgnorePointer(
-            child: SizedBox(width: b.w, child: TableBlockView(block: b, app: app)));
+            child: SizedBox(
+                width: b.w, child: TableBlockView(block: b, app: app)));
       case BlockType.file:
         // Interactive on purpose: playing a lecture recording or opening an
         // attachment READS the source page, and doing it in place is what the
@@ -352,7 +356,8 @@ class PortalContent extends StatelessWidget {
         // A picture of a board: dragging cards through a window would be a
         // write to the source page.
         return IgnorePointer(
-            child: SizedBox(width: b.w, child: BoardBlockView(block: b, app: app)));
+            child: SizedBox(
+                width: b.w, child: BoardBlockView(block: b, app: app)));
       case BlockType.embed:
         return _nested(context, b);
       default:
@@ -370,7 +375,8 @@ class PortalContent extends StatelessWidget {
       return _chip(context, Icons.all_inclusive, 'circular window');
     }
     if (chain.length >= maxDepth) {
-      return _chip(context, Icons.layers_outlined, portalTitle(app, ref.pageId));
+      return _chip(
+          context, Icons.layers_outlined, portalTitle(app, ref.pageId));
     }
     final src = PortalSource.of(app, ref.pageId);
     final rect = ref.wholePage ? portalExtentOf(app, src.blocks) : ref.rect!;
@@ -400,8 +406,8 @@ class PortalContent extends StatelessWidget {
           Icon(icon, size: 12, color: OnoteColors.graphite400),
           const SizedBox(width: 4),
           Text(label,
-              style:
-                  const TextStyle(fontSize: 11, color: OnoteColors.graphite400)),
+              style: const TextStyle(
+                  fontSize: 11, color: OnoteColors.graphite400)),
         ]),
       );
 }

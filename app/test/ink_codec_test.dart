@@ -1,8 +1,7 @@
 // The binary ink codec.
 //
 // This replaces JSON stroke arrays, which measured 36.2 bytes per point on a
-// real notebook — 63 MB of one notebook's op log, and the same JSON again in
-// the container. The codec has to be exactly lossless within a stated
+// real notebook — 63 MB in one notebook. The codec has to be exactly lossless within a stated
 // tolerance, deterministic (the blobs are content-addressed, so identical
 // strokes must produce identical bytes or a save would duplicate the object),
 // and it has to survive the shapes real data actually contains: coordinates
@@ -77,7 +76,8 @@ void main() {
       expect(d.colorHex.toUpperCase(), s.colorHex.toUpperCase(),
           reason: 'stroke $i colour');
       expect(d.size, closeTo(s.size, 1 / 64), reason: 'stroke $i size');
-      expect(d.opacity, closeTo(s.opacity, 1 / 255), reason: 'stroke $i opacity');
+      expect(d.opacity, closeTo(s.opacity, 1 / 255),
+          reason: 'stroke $i opacity');
       expect(d.strokeStart, s.strokeStart, reason: 'stroke $i start');
       expect(d.x.length, s.x.length, reason: 'stroke $i point count');
       for (var k = 0; k < s.x.length; k++) {
@@ -99,10 +99,8 @@ void main() {
   group('round trip', () {
     test('strokes survive with page-absolute coordinates', () {
       final strokes = sample();
-      final bytes =
-          InkCodec.encode(strokes, originX: 100, originY: 200);
-      final back =
-          InkCodec.decode(bytes, originX: 100, originY: 200);
+      final bytes = InkCodec.encode(strokes, originX: 100, originY: 200);
+      final back = InkCodec.decode(bytes, originX: 100, originY: 200);
       expectEquivalent(strokes, back);
     });
 
@@ -116,10 +114,8 @@ void main() {
       expect(a, equals(b));
       // And re-encoding what was decoded is byte-identical, which is what
       // makes a rebuild comparable to a container.
-      final c = InkCodec.encode(
-          InkCodec.decode(a, originX: 100, originY: 200),
-          originX: 100,
-          originY: 200);
+      final c = InkCodec.encode(InkCodec.decode(a, originX: 100, originY: 200),
+          originX: 100, originY: 200);
       expect(c, equals(a), reason: 'decode then encode must be a fixed point');
     });
 
@@ -129,8 +125,7 @@ void main() {
       // opening and saving the page.
       final strokes = sample(count: 6, time: true, tilt: true);
       final bytes = InkCodec.encode(strokes, originX: 0, originY: 0);
-      expectEquivalent(
-          strokes, InkCodec.decode(bytes, originX: 0, originY: 0));
+      expectEquivalent(strokes, InkCodec.decode(bytes, originX: 0, originY: 0));
     });
 
     test('a block with some pressure-less strokes keeps the distinction', () {
@@ -178,10 +173,9 @@ void main() {
       // Blob-local storage is what keeps the deltas small, and this proves the
       // varints do not overflow on the absolute first point either.
       final strokes = sample(count: 3, originX: 1312485, originY: 987654);
-      final bytes =
-          InkCodec.encode(strokes, originX: 1312485, originY: 987654);
-      expectEquivalent(strokes,
-          InkCodec.decode(bytes, originX: 1312485, originY: 987654));
+      final bytes = InkCodec.encode(strokes, originX: 1312485, originY: 987654);
+      expectEquivalent(
+          strokes, InkCodec.decode(bytes, originX: 1312485, originY: 987654));
     });
 
     test('an unusual colour string is not silently normalised away', () {
@@ -288,8 +282,7 @@ void main() {
       // above ~5 here means a regression in the encoding, which is otherwise
       // invisible: every other test would still pass.
       final strokes = sample(count: 400, seed: 99);
-      final points =
-          strokes.fold<int>(0, (sum, s) => sum + s.x.length);
+      final points = strokes.fold<int>(0, (sum, s) => sum + s.x.length);
       final bytes = InkCodec.encode(strokes, originX: 0, originY: 0);
       final perPoint = bytes.length / points;
       expect(perPoint, lessThan(5),
@@ -301,8 +294,13 @@ void main() {
       // A single erased fragment is a few dozen bytes and the zlib header
       // would be most of it.
       final tiny = [
-        Stroke(id: 'a', tool: 'pen', colorHex: '#000000', size: 2,
-            x: [1, 2], y: [1, 2])
+        Stroke(
+            id: 'a',
+            tool: 'pen',
+            colorHex: '#000000',
+            size: 2,
+            x: [1, 2],
+            y: [1, 2])
       ];
       final bytes = InkCodec.encode(tiny, originX: 0, originY: 0);
       expect(bytes[5], 0, reason: 'method 0 = stored');

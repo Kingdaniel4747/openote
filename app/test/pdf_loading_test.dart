@@ -41,7 +41,6 @@ void main() {
   late AppState app;
   late String hash;
   setUp(() async {
-    AppState.syncLogEnabled = false;
     dir = Directory.systemTemp.createTempSync('openote-pdf-loading-');
     repo = await Repository.openAt(dir);
     final nb = await repo.createNotebook('PDF tests');
@@ -61,7 +60,6 @@ void main() {
     app.dispose();
     repo.dispose();
     dir.deleteSync(recursive: true);
-    AppState.syncLogEnabled = true;
   });
 
   test(

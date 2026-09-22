@@ -1,13 +1,7 @@
 /// The .onote container — File Format Spec (docs/specs/10-file-format-spec.md).
 ///
-/// `page_mirror` holds page content and is **authoritative**, not a projection.
-/// The spec originally layered a CRDT (`page_docs`/`page_updates`) underneath it
-/// as the source of truth, with the mirror as the open-format window onto it;
-/// that layer was never implemented, and [ADR-0006] replaced it with an
-/// append-only operation log kept in files inside a `.onotebook` directory. So
-/// there is exactly one copy of a page in this container, and once the op log
-/// lands this whole container becomes a rebuildable local cache that is never
-/// synced.
+/// `page_mirror` is the authoritative page store. There is one durable copy of
+/// a page in its local `.onote` container.
 library;
 
 import 'dart:convert';
@@ -25,23 +19,8 @@ const onoteApplicationId = 0x4F4E4F54; // "ONOT"
 /// another computer is a v1 `.onote` and every build ever released reads one.
 const onoteFormatMajor = 1;
 
-/// What a container that is Openote's own **working copy** is stamped with
-/// (v0.17 plan, Step 8 — the rename to `cache.onote`).
-///
-/// **The stamp is the whole cross-version story, in one integer.** After the
-/// migration the container is a local, rebuildable cache: its `blobs` table is
-/// empty, it holds no `page_versions`, and it lives in a per-notebook cache
-/// directory that only `workspace.json` knows the way to. A build that predates
-/// v0.17 meeting one must refuse it rather than adopt it, and it already does —
-/// the gate below has thrown on `user_version > onoteFormatMajor` since the
-/// format existed, so the OLD build fails safe with *"Notebook format v2 is
-/// newer than this app supports"* without a line of new code in it.
-///
-/// This build accepts both: 1 for every notebook that has not been migrated
-/// (the migration is opt-in and an un-migrated notebook must open exactly as
-/// before) and 2 for a cache. `isOpenoteWorkingCopy` in `core/open_target.dart`
-/// reads the same number straight out of the file header, which is what stops a
-/// `cache.onote` copied onto a USB stick being adopted as a notebook.
+/// Version 2 existed in prerelease builds. It remains readable so removing the
+/// abandoned storage design does not strand notebooks created by those builds.
 const onoteWorkingCopyVersion = 2;
 
 /// Why a file handed to Openote from OUTSIDE the app — the command line, a
@@ -106,7 +85,8 @@ NotebookFileProblem? notebookFileProblem(String path) {
     if (head[i] != _sqliteMagic[i]) return NotebookFileProblem.notANotebook;
   }
   // Big-endian, like every multi-byte field in a SQLite header.
-  final appId = (head[68] << 24) | (head[69] << 16) | (head[70] << 8) | head[71];
+  final appId =
+      (head[68] << 24) | (head[69] << 16) | (head[70] << 8) | head[71];
   if (appId == onoteApplicationId) return null;
   if (appId == 0 && File('$path-wal').existsSync()) return null;
   return NotebookFileProblem.notANotebook;
@@ -158,10 +138,8 @@ class NotebookFileMissing implements Exception {
 /// became 73,728 bytes with `integrity_check` reporting `ok`.
 Database openExistingOnote(String path,
     {required String notebookId, required String title}) {
-  // `typeSync`, not `existsSync`: a *directory* where the container belongs is
-  // the state `reclaimFreeSpace`'s own test constructs deliberately, and
-  // `sqlite3.open` on one fails with a platform-dependent message rather than
-  // with the thing that is actually wrong.
+  // `typeSync`, not `existsSync`: a directory at this path should produce the
+  // same clear missing-file error on every platform.
   if (FileSystemEntity.typeSync(path, followLinks: true) !=
       FileSystemEntityType.file) {
     throw NotebookFileMissing(path);
@@ -169,19 +147,16 @@ Database openExistingOnote(String path,
   return openOnote(path, notebookId: notebookId, title: title);
 }
 
-Database openOnote(String path, {required String notebookId, required String title}) {
+Database openOnote(String path,
+    {required String notebookId, required String title}) {
   final db = sqlite3.open(path);
   // **Before `journal_mode`, and before any table exists.** `auto_vacuum` can
   // only be set on a database with no pages — after that it takes a full
   // `VACUUM` to change, which is why this line's position is load-bearing
   // rather than stylistic.
   //
-  // INCREMENTAL rather than FULL: FULL repacks on every commit, moving pages
-  // during ordinary saves. INCREMENTAL only records what is free, and
-  // [reclaimFreeSpace] spends it when the user asks. Without either, the file
-  // holds its high-water mark forever — a notebook that once contained a
-  // 60-slide deck stays that size after the deck is deleted, which is the
-  // shape of complaint that started this work.
+  // INCREMENTAL rather than FULL: FULL repacks on every commit. INCREMENTAL
+  // records reusable pages without adding that cost to ordinary saves.
   db.execute('PRAGMA auto_vacuum=INCREMENTAL;');
   db.execute('PRAGMA journal_mode=WAL;');
   // WAL's recommended durability level: commits don't each fsync (a power cut
@@ -204,7 +179,8 @@ Database openOnote(String path, {required String notebookId, required String tit
     // is the same sentence a pre-v0.17 build gives a `cache.onote`.
     if (ver > onoteWorkingCopyVersion) {
       db.dispose();
-      throw StateError('Notebook format v$ver is newer than this app supports.');
+      throw StateError(
+          'Notebook format v$ver is newer than this app supports.');
     }
   }
   // Every table/index is created idempotently on EVERY open, so a notebook made
@@ -227,9 +203,7 @@ Database openOnote(String path, {required String notebookId, required String tit
 /// now (it has to: `blob_refs` is ADR-0007's GC root set, and a root set that
 /// can only name bytes the container holds names nothing once the container
 /// holds nothing). With the key still present that INSERT raises a constraint
-/// violation *inside `writePage`'s savepoint*, which fails the whole page save
-/// — the same shape as the sync-pull failure `sync_blobs_test.dart` was
-/// written for, but on every save of every page with an image.
+/// violation *inside `writePage`'s savepoint*, which fails the whole page save.
 ///
 /// `CREATE TABLE IF NOT EXISTS` does not alter a table that already exists, so
 /// changing the DDL above fixes new notebooks only; every notebook already on
@@ -327,33 +301,14 @@ void _ensureSchema(Database db) {
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
       deleted_at INTEGER);
     CREATE INDEX IF NOT EXISTS idx_nodes_parent ON nodes(parent_id, position);
-    -- NOTE: `page_docs` and `page_updates` (the CRDT-in-SQLite layer of File
-    -- Format Spec §3/§5) are deliberately NOT created. They were never
-    -- populated — `page_docs` took a zero-byte placeholder on every save and
-    -- `page_updates` was never written at all — and ADR-0006 supersedes the
-    -- design: the operation log lives in FILES inside a `.onotebook` directory,
-    -- not in the container, precisely so that dumb file sync has one writer per
-    -- file. Creating empty tables shaped like a superseded plan misleads
-    -- third-party readers about where the data is. Existing notebooks keep
-    -- whatever tables they already have; nothing reads or writes them, and the
-    -- container is rebuildable from the log once that lands, so there is no
-    -- migration worth paying for now.
+    -- page_mirror is the authoritative page store.
     CREATE TABLE IF NOT EXISTS page_mirror (
       page_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
       json TEXT NOT NULL, mirror_rev INTEGER NOT NULL, updated_at INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS blobs (
       hash TEXT PRIMARY KEY, bytes BLOB NOT NULL, mime TEXT NOT NULL,
       size INTEGER NOT NULL, created_at INTEGER NOT NULL);
-    -- **No foreign key on `hash`.** It used to be
-    -- `REFERENCES blobs(hash)`, which made this table mean "blobs this page
-    -- reaches THAT THIS CONTAINER HOLDS". From v0.17 Step 6 the container
-    -- holds none: bytes go to `.onotebook/blobs/<sha256>` and the `blobs`
-    -- table is legacy-only. With the key still in place every page carrying a
-    -- picture would fail its INSERT — inside `writePage`'s savepoint, so the
-    -- whole save — and `blob_refs` would be permanently empty, which is
-    -- ADR-0007's garbage-collection root set. Existing containers are
-    -- rewritten by [_dropBlobRefsBlobsFk]; the meaning is now simply "blobs
-    -- this page reaches".
+    -- No hash foreign key is retained for compatibility with older notebooks.
     CREATE TABLE IF NOT EXISTS blob_refs (
       page_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
       hash TEXT NOT NULL,
@@ -364,66 +319,20 @@ void _ensureSchema(Database db) {
       dst_page_id TEXT NOT NULL, dst_notebook TEXT, dst_target TEXT,
       PRIMARY KEY (src_page_id, src_block_id, kind));
     CREATE INDEX IF NOT EXISTS idx_refs_dst ON refs(dst_page_id);
-    -- **`page_versions` is deliberately NOT created** (v0.17 plan, decision 1 /
-    -- Step 8a). It held up to thirty full copies of every page — bounded by how
-    -- long a notebook had been edited, i.e. by nothing — and the two tables
-    -- below replace it with what the owner actually asked for. Nothing in `lib/`
-    -- reads or writes it any more, so a table created here would be a table that
-    -- only ever grew. Notebooks already on disk keep their rows, inert, until
-    -- the opt-in migration in `Repository.demoteContainerToCache` drops them;
-    -- that is the one place the bytes go, so it is the one place that has to say
-    -- so out loud before it runs.
-    -- Simplified version history (v0.17 plan, Step 8a). Both tables are
-    -- DERIVED from the op log and neither is synced: dropping them costs a
-    -- rebuild, never a note. See `store/history_store.dart`.
-    --
-    -- `block_authors` holds ONE row per block that currently exists, which is
-    -- the whole difference from `page_versions` above — that table is bounded
-    -- by how long a notebook has been edited, i.e. by nothing, and this one by
-    -- how big the notebook is. It declares the `ON DELETE CASCADE` that
-    -- `page_versions` never did, so the orphan class commit 1be2d28 had to
-    -- sweep up cannot recur here; the need for that repair is designed out
-    -- rather than fixed again.
-    --
-    -- `block_kind`, `chars` and `pins` are not decoration. They are what makes
-    -- a LATER `block.remove` classifiable: without them, a lecture recording
-    -- deleted in a session after the one that added it is indistinguishable
-    -- from a deleted comma, and the ten-deep list would fill with editing.
-    CREATE TABLE IF NOT EXISTS block_authors (
-      page_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-      block_id TEXT NOT NULL,
-      device TEXT NOT NULL,
-      lamport INTEGER NOT NULL,
-      seq INTEGER NOT NULL,
-      changed_at INTEGER NOT NULL,
-      block_kind TEXT NOT NULL,
-      chars INTEGER NOT NULL,
-      pins TEXT NOT NULL,
-      PRIMARY KEY (page_id, block_id));
-    -- Deliberately NOT keyed on `nodes`: a purged page has no `nodes` row, and
-    -- that is precisely the entry a student most needs back. Its cap of ten is
-    -- its prune, so nothing here can leak the way `page_versions` did.
-    CREATE TABLE IF NOT EXISTS recent_deletions (
-      device TEXT NOT NULL,
-      seq INTEGER NOT NULL,
-      lamport INTEGER NOT NULL,
-      deleted_at INTEGER NOT NULL,
-      kind TEXT NOT NULL,
-      target_id TEXT NOT NULL,
-      page_id TEXT,
-      what TEXT NOT NULL,
-      pins TEXT NOT NULL,
-      PRIMARY KEY (device, seq));
   ''');
-  // `fts_pages` is likewise not created. It was created on every open and then
-  // never written to or queried — sidebar search is a Dart `contains()` scan —
-  // so its presence advertised a search index that held nothing. Notebook-wide
-  // search (TEXT-7) should build it deliberately, as a derived index of the
-  // materialised cache, at the point someone implements the feature.
+  db.execute('''
+    DROP TABLE IF EXISTS page_docs;
+    DROP TABLE IF EXISTS page_updates;
+    DROP TABLE IF EXISTS page_versions;
+    DROP TABLE IF EXISTS block_authors;
+    DROP TABLE IF EXISTS recent_deletions;
+    DROP TABLE IF EXISTS fts_pages;
+  ''');
 }
 
 /// First-create-only: stamp the format identity and seed notebook metadata.
-void _seedNotebook(Database db, {required String notebookId, required String title}) {
+void _seedNotebook(Database db,
+    {required String notebookId, required String title}) {
   db.execute('PRAGMA application_id = $onoteApplicationId;');
   db.execute('PRAGMA user_version = $onoteFormatMajor;');
   final now = DateTime.now().millisecondsSinceEpoch;
@@ -441,7 +350,8 @@ void _seedNotebook(Database db, {required String notebookId, required String tit
     // instead: a reader that understands SQLite + JSON has everything.
     'content': 'page_mirror',
   };
-  final stmt = db.prepare('INSERT OR REPLACE INTO notebook_meta(key,value) VALUES (?,?)');
+  final stmt = db
+      .prepare('INSERT OR REPLACE INTO notebook_meta(key,value) VALUES (?,?)');
   meta.forEach((k, v) => stmt.execute([k, jsonEncode(v)]));
   stmt.dispose();
 }

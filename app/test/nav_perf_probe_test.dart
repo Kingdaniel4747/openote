@@ -18,7 +18,6 @@ void main() {
 
   test('stage timings for page navigation', () async {
     if (!haveSqlite) return;
-    AppState.syncLogEnabled = false;
     final tmp = Directory.systemTemp.createTempSync('onote_perf_');
     final repo = await Repository.openAt(tmp);
     final nb = await repo.createNotebook('Perf');
@@ -96,6 +95,5 @@ void main() {
     try {
       tmp.deleteSync(recursive: true);
     } catch (_) {}
-    AppState.syncLogEnabled = true;
   }, timeout: const Timeout(Duration(minutes: 3)));
 }

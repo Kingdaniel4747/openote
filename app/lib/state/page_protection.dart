@@ -6,8 +6,7 @@
 /// person who picks up your unlocked laptop from reading a page. It does
 /// **nothing whatsoever** against anyone who has the `.onote` file: the notes
 /// stay in plaintext in a documented SQLite container that any SQLite browser
-/// opens in seconds, and in plaintext in the op log that syncs to your cloud
-/// folder. Copy the file to another machine and every "protected" page is
+/// opens in seconds. Copy the file to another machine and every "protected" page is
 /// readable with no passcode involved.
 ///
 /// That limitation is not hidden from the user. It is stated in the dialog
@@ -16,7 +15,7 @@
 /// because someone will trust it with something that matters.
 ///
 /// [ADR-0008](../../docs/adr/ADR-0008-page-protection.md) designs the real
-/// thing — encryption at rest, node-level, reaching the op log — and explains
+/// thing — node-level encryption at rest — and explains
 /// why a gate alone cannot be called security. This file is the interim answer
 /// to "just basic password protection in app at a minimum would be fine too
 /// for now", built deliberately and labelled honestly, not a substitute for
@@ -64,14 +63,13 @@ enum UnlockPolicy {
   /// Null for [always] (never cached) and [session] (cached with no expiry).
   final Duration? duration;
 
-  static UnlockPolicy fromId(String? id) =>
-      UnlockPolicy.values.firstWhere((p) => p.id == id,
-          orElse: () => UnlockPolicy.session);
+  static UnlockPolicy fromId(String? id) => UnlockPolicy.values
+      .firstWhere((p) => p.id == id, orElse: () => UnlockPolicy.session);
 }
 
 /// What is stored for one protected node.
 ///
-/// Lives in `workspace.json`, which is LOCAL and never synced — the same place
+/// Lives in local `workspace.json` — the same place
 /// the app keeps which page you had open. That is the honest home for it: the
 /// protection is a property of this installation's UI, not of the notebook, so
 /// it does not travel with a copied `.onote` and must not pretend to.

@@ -20,7 +20,7 @@ import 'dart:async';
 /// A video or recording kept in the notebook and played in the page.
 ///
 /// content: `{ kind: 'video', media: '<name>', name, mime, size }` — `media`
-/// is a filename inside `<notebook>.onotebook/media/` (see store/media_store.dart
+/// is a filename inside `<notebook>.media/` (see store/media_store.dart
 /// for why a lecture does not go in the container).
 ///
 /// **The player is not built until Play is pressed.** Every live player is an
@@ -51,7 +51,7 @@ class _VideoBlockViewState extends State<VideoBlockView> {
   int get _size => (widget.block.content['size'] as num?)?.toInt() ?? 0;
 
   /// The file itself, or null when it is not here: a notebook copied without
-  /// its `.onotebook`, a sync still bringing the bytes across, or a reference
+  /// its `.media` folder, or a reference
   /// that does not name something we wrote.
   File? get _file {
     final name = widget.block.content['media'] as String?;
@@ -343,8 +343,8 @@ class _VideoBlockViewState extends State<VideoBlockView> {
           title: const Text('Playing here needs one more package'),
           content: SizedBox(
             width: 460,
-            child: Text(VideoPlayback.missingLibraryAdvice,
-                style: OnoteType.ui),
+            child:
+                Text(VideoPlayback.missingLibraryAdvice, style: OnoteType.ui),
           ),
           actions: [
             TextButton(

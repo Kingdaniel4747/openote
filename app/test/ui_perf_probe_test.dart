@@ -21,7 +21,6 @@ void main() {
 
   testWidgets('shell interaction timings on a big notebook', (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-    AppState.syncLogEnabled = false;
     // Real disk I/O must run OUTSIDE the fake-async test zone.
     late Directory tmp;
     late Repository repo;
@@ -77,8 +76,6 @@ void main() {
     }
     app.reloadNodes();
     await tester.runAsync(() => app.selectPage(pageIds[0]));
-    app.markOnboardingSeen();
-
     tester.view.physicalSize = const Size(1500, 950);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -129,6 +126,5 @@ void main() {
         tmp.deleteSync(recursive: true);
       } catch (_) {}
     });
-    AppState.syncLogEnabled = true;
   }, timeout: const Timeout(Duration(minutes: 3)));
 }

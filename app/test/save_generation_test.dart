@@ -45,11 +45,9 @@ class _DelayedSnapshotEngine implements DocumentEngine {
 void main() {
   test('an older save cannot mark a newer text edit as saved', () async {
     if (!initSqliteForTests()) return markTestSkipped('sqlite unavailable');
-    AppState.syncLogEnabled = false;
     final tmp = Directory.systemTemp.createTempSync('onote_save_generation_');
     final repo = await Repository.openAt(tmp);
     addTearDown(() {
-      AppState.syncLogEnabled = true;
       repo.dispose();
       try {
         tmp.deleteSync(recursive: true);

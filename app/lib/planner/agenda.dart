@@ -37,16 +37,15 @@ import '../study/study_stats.dart' show daysBetween;
 /// the app stores or reads; there is no "other", because a free-standing dated
 /// thing belonging to no note is exactly the drift v0.5 §6 forbids.
 enum DatedKind {
-  /// A section's exam day, from workspace settings. Personal, never synced.
+  /// A section's exam day, from workspace settings.
   exam,
 
   /// A `TagKind.todo` line that has been given a due date. The date rides on
-  /// the tag inside block content, so it syncs — a shared notebook's deadline
-  /// is the same deadline for everyone reading it.
+  /// the tag inside block content.
   task,
 
-  /// A personal nudge at a time. Lives in workspace settings and does *not*
-  /// sync: when you want to be interrupted is yours, not the notebook's.
+  /// A personal nudge at a time. Lives in workspace settings rather than in
+  /// notebook content.
   reminder,
 
   /// Something from a subscribed calendar (ICS, stage 4). **Read-only** in
@@ -143,8 +142,8 @@ class DatedItem {
       other.subtitle == subtitle;
 
   @override
-  int get hashCode => Object.hash(
-      id, kind, title, when, allDay, notebookId, pageId, blockId, line, done, subtitle);
+  int get hashCode => Object.hash(id, kind, title, when, allDay, notebookId,
+      pageId, blockId, line, done, subtitle);
 
   @override
   String toString() =>

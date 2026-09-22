@@ -18,8 +18,6 @@ import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/state/page_protection.dart';
 import 'package:openote/store/repository.dart';
-import 'package:openote/sync/op.dart';
-import 'package:openote/sync/op_log.dart';
 import 'package:openote/theme/onote_theme.dart';
 import 'package:openote/ui/app_shell.dart';
 import 'package:openote/ui/sidebar.dart';
@@ -85,7 +83,6 @@ void main() {
 
     setUp(() async {
       if (!haveSqlite) return;
-      AppState.syncLogEnabled = false;
       tmp = Directory.systemTemp.createTempSync('onote_delkey_');
       repo = await Repository.openAt(tmp);
       final nb = await repo.createNotebook('T');
@@ -115,7 +112,6 @@ void main() {
     });
 
     tearDown(() {
-      AppState.syncLogEnabled = true;
       if (!haveSqlite) return;
       app.cancelPendingSave();
       repo.dispose();
@@ -288,8 +284,6 @@ void main() {
           content: {'text': 'the note that must survive'});
       app.importPage(app.notebookId!, chapter3.id, [block], PageProps());
       await app.selectPage(chapter3.id);
-      app.markOnboardingSeen();
-
       tester.view.physicalSize = const Size(1400, 900);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -314,70 +308,5 @@ void main() {
           reason: 'and the block on the page it left behind does NOT');
       await quiesce(tester);
     });
-  });
-
-  testWidgets('a read-only notebook loses nothing, and is not told that it did',
-      (tester) async {
-    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-    late Directory ws;
-    late Repository repo;
-    late AppState app;
-    late TreeNode page;
-    await tester.runAsync(() async {
-      // A notebook is read-only when its log holds operations written under an
-      // envelope this build cannot decode (AppState.notebookIsReadOnly), so the
-      // fixture plants one rather than faking the flag.
-      AppState.syncLogEnabled = true;
-      ws = Directory.systemTemp.createTempSync('onote_delkey_ro_');
-      repo = await Repository.openAt(ws);
-      final nb = await repo.createNotebook('Read only');
-      OpLogStore.forNotebook(nb.file)
-        ..ensureInitialised(notebookId: nb.id, title: 'Read only')
-        ..append('another-device', [
-          Op(
-            device: 'another-device',
-            seq: 1,
-            lamport: 1,
-            timestamp: 1,
-            kind: OpKind.nodeUpsert,
-            version: opFormatVersion + 1,
-            data: {
-              'id': 'planted',
-              'kind': 'page',
-              'title': 'Term 1',
-              'position': 'a0'
-            },
-          ),
-        ]);
-      app = AppState(repo)
-        ..notebookId = nb.id
-        ..spellCheckEnabled = false;
-      app.reloadNodes();
-      await app.warmRecorder(nb.id);
-      page = app.nodes.firstWhere((n) => n.kind == NodeKind.page);
-      await app.selectPage(page.id);
-    });
-    addTearDown(() {
-      app.cancelPendingSave();
-      repo.dispose();
-      try {
-        ws.deleteSync(recursive: true);
-      } catch (_) {}
-    });
-    expect(app.notebookIsReadOnly(app.notebookId!), isTrue,
-        reason: 'the fixture has to be genuinely read-only to prove anything');
-
-    await tester.pumpWidget(host(app));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(page.title));
-    await tester.pumpAndSettle();
-    await press(tester, LogicalKeyboardKey.delete);
-
-    expect(app.node(page.id), isNotNull,
-        reason: 'AppState.deleteNode declines on a read-only notebook');
-    // "Deleted X" with X still sitting in the list is worse than silence — the
-    // snackbar reports what the TREE says, not what the keypress asked for.
-    expect(find.byType(SnackBar), findsNothing);
-    await quiesce(tester);
   });
 }

@@ -9,8 +9,7 @@
 /// A tag lives in the block envelope's `tags` list as
 /// `{"kind": "todo", "line": 0, "checked": false, "label": "…"}` — `line` is
 /// the 0-based line index within that block's text, so a tag survives edits to
-/// other lines and travels with the block through the op log unchanged (tags
-/// ride inside block content, so they need no new op kind).
+/// other lines because tags live inside the block content.
 ///
 /// A tag may also carry a `"due"` day (v0.5 §2). That key is **additive**: it
 /// is written only when set, older readers ignore it, and the frozen v1 block
@@ -32,7 +31,8 @@ enum TagKind {
   important('important', 'Important', Icons.star, Color(0xFFE0A32E)),
   question('question', 'Question', Icons.help_outline, Color(0xFF7A4FD2)),
   remember('remember', 'Remember', Icons.push_pin_outlined, Color(0xFFD23B7A)),
-  definition('definition', 'Definition', Icons.menu_book_outlined, Color(0xFF2E8B72)),
+  definition(
+      'definition', 'Definition', Icons.menu_book_outlined, Color(0xFF2E8B72)),
   idea('idea', 'Idea', Icons.lightbulb_outline, Color(0xFFE07A2E)),
   critical('critical', 'Critical', Icons.priority_high, Color(0xFFD23B3B)),
   contact('contact', 'Contact', Icons.person_outline, Color(0xFF4F7A8B)),
@@ -158,8 +158,7 @@ class NoteTag {
     // come from a corrupted write or a future format, and a date the planner
     // cannot place would otherwise be invisible but permanent.
     final rawDue = j['due'];
-    final due =
-        rawDue is String && parseDayKey(rawDue) != null ? rawDue : null;
+    final due = rawDue is String && parseDayKey(rawDue) != null ? rawDue : null;
     return NoteTag(
       kind: TagKind.parse(j['kind'] as String?),
       line: line,
@@ -192,7 +191,7 @@ class NoteTag {
   /// Follow the tags when the text around them gains or loses lines.
   ///
   /// **A tag records a line INDEX**, which is what makes it survive edits to
-  /// other lines and travel through the op log with no new op kind — but it
+  /// other lines — but it
   /// also means pressing Enter above a tagged line silently moves the marker
   /// onto the wrong sentence. That is not cosmetic: `cardsFromBlock` reads
   /// `lines[tag.line]`, so a flashcard's question and answer quietly change
@@ -214,7 +213,8 @@ class NoteTag {
     final oldLines = before.split('\n');
     final newLines = after.split('\n');
     final delta = newLines.length - oldLines.length;
-    if (delta == 0) return const {}; // same shape: indices still point at themselves
+    if (delta == 0)
+      return const {}; // same shape: indices still point at themselves
 
     final tags = listFrom(content);
     if (tags.isEmpty) return const {};

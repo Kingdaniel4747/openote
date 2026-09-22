@@ -28,7 +28,6 @@ void main() {
 
   setUp(() async {
     if (!haveSqlite) return;
-    AppState.syncLogEnabled = false;
     tmp = Directory.systemTemp.createTempSync('onote_codeview_');
     repo = await Repository.openAt(tmp);
     final nb = await repo.createNotebook('T');
@@ -39,7 +38,6 @@ void main() {
   });
 
   tearDown(() {
-    AppState.syncLogEnabled = true;
     if (!haveSqlite) return;
     app.cancelPendingSave();
     repo.dispose();
@@ -156,7 +154,6 @@ void main() {
       app.importPage(nb, page.id, [code], PageProps());
       app.reloadNodes();
       await app.selectPage(page.id);
-      app.markOnboardingSeen();
       tester.view.physicalSize = const Size(1400, 900);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);

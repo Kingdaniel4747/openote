@@ -211,8 +211,7 @@ abstract final class InkStorage {
       final bytes = getBlob(base);
       if (bytes == null) {
         // Ref present, bytes absent. Leave the ref alone — a save must not
-        // then overwrite it with an empty stroke list, which is exactly how a
-        // half-synced notebook would lose its ink.
+        // then overwrite it with an empty stroke list and lose its ink.
         return content;
       }
       try {

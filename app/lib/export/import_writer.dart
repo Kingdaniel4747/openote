@@ -19,7 +19,7 @@
 ///
 /// One isolate owns the whole import: it reads the `.onepkg`, runs the Rust
 /// parse, opens its **own** SQLite connection on the brand-new `.onote`, and
-/// writes pages, blobs and the op log directly. The UI thread does nothing but
+/// writes pages and blobs directly. The UI thread does nothing but
 /// receive progress messages.
 ///
 /// The property that makes this safe is that the target is a **brand-new
@@ -72,8 +72,6 @@ import '../ink/ink_storage.dart';
 import '../model/models.dart';
 import '../store/database.dart';
 import '../store/notebook_writer.dart';
-import '../sync/op_log.dart';
-import '../sync/sync_recorder.dart';
 import 'import_sink.dart';
 import 'onenote_import.dart';
 
@@ -92,11 +90,7 @@ class ImportWriterConfig {
     required this.notebookPath,
     required this.notebookId,
     required this.title,
-    required this.deviceId,
-    this.logDir,
-    this.materialiseBlobs = false,
     this.batchPages = 4,
-    this.syncLogEnabled = true,
     this.sqliteLibrary,
     this.preparsedJson,
   });
@@ -109,23 +103,7 @@ class ImportWriterConfig {
   final String notebookId;
   final String title;
 
-  /// Resolved on the main isolate, because device identity lives in workspace
-  /// settings and those are Repository's. A brand-new notebook has no log, so
-  /// there is nothing for `DeviceIdentity.resolve` to fork away from.
-  final String deviceId;
-
-  final String? logDir;
-
-  /// Whether to write blob bytes into `blobs/` as well as the container
-  /// (storage wave 1a). False for the overwhelmingly common case — a notebook
-  /// imported into the local workspace.
-  final bool materialiseBlobs;
-
   final int batchPages;
-
-  /// Mirrors `AppState.syncLogEnabled`, so a test that doesn't want log files
-  /// beside its fixture gets the same behaviour here.
-  final bool syncLogEnabled;
 
   /// Explicit path to the SQLite native library.
   ///
@@ -156,11 +134,7 @@ class ImportWriterConfig {
         'notebookPath': notebookPath,
         'notebookId': notebookId,
         'title': title,
-        'deviceId': deviceId,
-        'logDir': logDir,
-        'materialiseBlobs': materialiseBlobs,
         'batchPages': batchPages,
-        'syncLogEnabled': syncLogEnabled,
         'sqliteLibrary': sqliteLibrary,
         'preparsedJson': preparsedJson,
       };
@@ -171,11 +145,7 @@ class ImportWriterConfig {
         notebookPath: m['notebookPath'] as String,
         notebookId: m['notebookId'] as String,
         title: m['title'] as String,
-        deviceId: m['deviceId'] as String,
-        logDir: m['logDir'] as String?,
-        materialiseBlobs: m['materialiseBlobs'] as bool? ?? false,
         batchPages: (m['batchPages'] as num?)?.toInt() ?? 4,
-        syncLogEnabled: m['syncLogEnabled'] as bool? ?? true,
         sqliteLibrary: m['sqliteLibrary'] as String?,
         preparsedJson: m['preparsedJson'] as String?,
       );
@@ -191,7 +161,6 @@ class ImportWriterResult {
     required this.tags,
     required this.droppedStrokes,
     required this.skippedSections,
-    required this.lastSeq,
   });
 
   final int pages;
@@ -207,12 +176,6 @@ class ImportWriterResult {
 
   final List<String> skippedSections;
 
-  /// The op-log sequence this device reached. The main isolate persists it into
-  /// workspace settings; without that, the next open would see a log ahead of
-  /// the remembered seq and correctly conclude another installation had been
-  /// writing as us — and fork the device id (ADR-0006 §6a.2).
-  final int lastSeq;
-
   static ImportWriterResult fromMap(Map<Object?, Object?> m) =>
       ImportWriterResult(
         pages: (m['pages'] as num).toInt(),
@@ -223,7 +186,6 @@ class ImportWriterResult {
         droppedStrokes: (m['dropped'] as num?)?.toInt() ?? 0,
         skippedSections:
             ((m['skipped'] as List?) ?? const []).cast<String>().toList(),
-        lastSeq: (m['seq'] as num?)?.toInt() ?? 0,
       );
 }
 
@@ -367,7 +329,6 @@ void importWriterMain((SendPort, Map<Object?, Object?>) message) {
         'tags': lastImportedTags,
         'dropped': lastDroppedStrokes,
         'skipped': skipped,
-        'seq': sink.lastSeq,
       };
     } catch (e, st) {
       terminal = {'t': 'error', 'message': '$e', 'stack': '$st'};
@@ -387,96 +348,35 @@ void importWriterMain((SendPort, Map<Object?, Object?>) message) {
   unawaited(run());
 }
 
-/// The [ImportSink] that writes straight into one container and one op log.
-///
-/// The counterpart of `AppStateImportSink`: same six methods, same ordering
-/// (container first, then the op — a log entry for a write that failed would
-/// make rebuild-from-log differ on every disk error, ADR-0006 §7).
+/// The [ImportSink] that writes directly into one notebook container.
 class IsolateImportSink implements ImportSink {
-  IsolateImportSink(this.writer, this.recorder, this.blobs);
+  IsolateImportSink(this.writer);
 
-  /// Open a sink over an already-open container, attaching an op-log recorder
-  /// unless logging is off.
-  factory IsolateImportSink.open(Database db, ImportWriterConfig config) {
-    final writer = NotebookWriter(db);
-    // **Built even with the log switched off.** From v0.17 Step 6 the
-    // container stores no blob bytes, so this store is the only place an
-    // imported picture's bytes can go; a sink without one would import a
-    // notebook of blocks that name hashes nothing on the machine holds.
-    final blobs =
-        OpLogStore.forNotebook(config.notebookPath, logDir: config.logDir);
-    if (!config.syncLogEnabled) {
-      return IsolateImportSink(writer, null, blobs);
-    }
-    // Settings are Repository's, and Repository is not here. A map is enough:
-    // the only setting `SyncRecorder.open` reads is the device id (passed in)
-    // and the only one it writes is this device's seq, which travels home in
-    // the result. A brand-new notebook has no log, so the fork check has
-    // nothing to compare against and cannot trigger.
-    final settings = <String, Object?>{'deviceId': config.deviceId};
-    final recorder = SyncRecorder.open(
-      notebookId: config.notebookId,
-      notebookPath: config.notebookPath,
-      title: config.title,
-      logDir: config.logDir,
-      readSetting: (k) => settings[k],
-      writeSetting: (k, v) => settings[k] = v,
-      materialiseBlobs: config.materialiseBlobs,
-    );
-    return IsolateImportSink(writer, recorder, blobs).._settings = settings;
-  }
+  factory IsolateImportSink.open(Database db, ImportWriterConfig config) =>
+      IsolateImportSink(NotebookWriter(db));
 
   final NotebookWriter writer;
-  final SyncRecorder? recorder;
-
-  /// Where imported blob bytes go now the container does not take them.
-  final OpLogStore blobs;
-
-  Map<String, Object?> _settings = const {};
-
-  /// The seq this device reached, for the main isolate to persist.
-  int get lastSeq {
-    final nb = recorder?.notebookId;
-    if (nb == null) return 0;
-    return (_settings['deviceSeq:$nb'] as num?)?.toInt() ?? 0;
-  }
 
   @override
   List<TreeNode> nodes() => writer.loadNodes();
 
   @override
-  TreeNode node(TreeNode n) {
-    final saved = writer.upsertNode(n);
-    recorder?.node(saved);
-    return saved;
-  }
+  TreeNode node(TreeNode n) => writer.upsertNode(n);
 
   @override
   void page(String pageId, List<Block> blocks, PageProps props) {
-    // Imported handwriting becomes bytes HERE rather than in the importer.
-    //
-    // The importer builds ink as JSON stroke maps because that is what the
-    // Rust parser hands back and what the model takes; converting it there
-    // would mean the same change in every importer. This is the one place
-    // every import route already funnels through, and it has `blob` beside it.
-    //
-    // On the real notebook this is the difference between an import writing
-    // 63 MB of stroke text and writing 3.2 MB — twice, since the log gets a
-    // copy too.
-    final toWrite = InkStorage.persistAll(blocks, (bytes) => blob(bytes, inkMimeType));
+    final toWrite =
+        InkStorage.persistAll(blocks, (bytes) => blob(bytes, inkMimeType));
     writer.writePage(pageId, toWrite, props);
-    recorder?.page(pageId, toWrite, props);
   }
 
   @override
   String blob(Uint8List bytes, String mime) {
-    // The hash comes from the bytes, never from a caller. `recorder.blob`
-    // writes the same file again, idempotently — content-addressed writes are
-    // temp+rename and skip a name that already exists — so the two orderings
-    // agree and a null recorder costs the op, not the picture.
     final hash = sha256Hex(bytes);
-    blobs.writeBlob(hash, bytes);
-    recorder?.blob(hash, mime, bytes.length, bytes);
+    writer.db.execute(
+        'INSERT OR IGNORE INTO blobs(hash,bytes,mime,size,created_at) '
+        'VALUES(?,?,?,?,?)',
+        [hash, bytes, mime, bytes.length, nowMs()]);
     return hash;
   }
 
@@ -484,12 +384,8 @@ class IsolateImportSink implements ImportSink {
   T batch<T>(T Function() body) => writer.runInTransaction(body);
 
   @override
-  void purgeNode(String id) {
-    writer.purgeNode(id);
-    recorder?.nodePurged(id);
-  }
+  void purgeNode(String id) => writer.purgeNode(id);
 }
-
 // ── The main-isolate driver ───────────────────────────────────────────────
 
 /// A running import. The future completes when the writer finishes, fails or

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/openote-logo-with-wordmark.png" alt="Openote" width="360">
+</p>
+
 # Openote
 
 Openote is a local-first, freeform note-taking app for Windows. It is built
@@ -15,8 +19,8 @@ homework and dates together, and keep every notebook in files you control.
 - **draw.io links**: add a diagram file to a page without copying it into the
   notebook. The original remains editable in draw.io; PNG exports can also be
   previewed and zoomed in Openote.
-- **Open local storage**: notebooks live on your device and can be kept in a
-  folder synchronised by the service you already use.
+- **Open local storage**: notebooks live on your device. Create and restore
+  complete backups from the notebook manager whenever you choose.
 - **Import and export** for Markdown, PDFs and common note material.
 
 ## Deliberately not part of this project
@@ -65,9 +69,9 @@ docs/                Technical notes and file-format documentation
 
 ## Data and privacy
 
-There is no account requirement and no mandatory cloud. Your notebooks remain
-your files. If you choose to synchronise them, you choose the folder and the
-sync provider.
+There is no account requirement, cloud connection or background sync. Your
+notebooks remain local files. The manual backup contains the complete workspace
+and can itself be stored with tools such as Nextcloud Desktop.
 
 ## License
 

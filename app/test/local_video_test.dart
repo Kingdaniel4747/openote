@@ -20,7 +20,8 @@ import 'package:media_kit_video/media_kit_video.dart' show Video;
 
 import 'package:openote/editor/file_block_view.dart';
 import 'package:openote/editor/video_block_view.dart';
-import 'package:openote/media/video_playback.dart' show VideoPlayback, VideoUnavailable;
+import 'package:openote/media/video_playback.dart'
+    show VideoPlayback, VideoUnavailable;
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/media_store.dart';
@@ -136,7 +137,8 @@ void main() {
 
     test('an odd extension is dropped rather than carried', () async {
       // The extension ends up in a filename we later hand to the OS.
-      final name = await MediaStore.add(ref, source('clip.this is not an ext', 8));
+      final name =
+          await MediaStore.add(ref, source('clip.this is not an ext', 8));
       expect(MediaStore.isValidName(name), isTrue);
     });
   });
@@ -184,13 +186,16 @@ void main() {
       await t.pumpWidget(MaterialApp(
         home: Scaffold(
           body: SizedBox(
-              width: 420, height: 240, child: FileBlockView(block: b, app: app)),
+              width: 420,
+              height: 240,
+              child: FileBlockView(block: b, app: app)),
         ),
       ));
       await t.pump();
     }
 
-    Block videoBlock(String media, {String name = 'Lecture 3.mp4', int size = 0}) =>
+    Block videoBlock(String media,
+            {String name = 'Lecture 3.mp4', int size = 0}) =>
         Block(type: BlockType.file, x: 0, y: 0, content: {
           'kind': 'video',
           'media': media,
@@ -267,124 +272,6 @@ void main() {
           }));
       expect(find.byType(VideoBlockView), findsNothing);
       expect(find.text('Lecture 4'), findsOneWidget);
-    });
-  });
-
-  group('the storage the user was told to expect', () {
-    var haveSqlite = false;
-    setUpAll(() => haveSqlite = initSqliteForTests());
-
-    test('video is counted separately from the sync log it sits in', () async {
-      // "even if it will chew through storage" — it does, and the dialog has
-      // to say so in those words rather than folding four gigabytes of
-      // lectures into a line labelled "sync log".
-      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-      final dir = Directory.systemTemp.createTempSync('onote_storage_');
-      final repo = await Repository.openAt(dir);
-      addTearDown(() {
-        repo.dispose();
-        try {
-          dir.deleteSync(recursive: true);
-        } catch (_) {}
-      });
-      final nb = await repo.createNotebook('Lectures');
-      final app = AppState(repo)..notebookId = nb.id;
-      addTearDown(app.cancelPendingSave);
-
-      expect((await app.storageFor(nb.id)).mediaBytes, 0);
-      await MediaStore.add(app.currentNotebook, source('l.mp4', 5000));
-      final after = await app.storageFor(nb.id);
-      expect(after.mediaBytes, 5000);
-      expect(after.logBytes, greaterThanOrEqualTo(after.mediaBytes),
-          reason: 'the video lives inside the log directory it is broken out of');
-    });
-  });
-
-  group('a video travels with its notebook', () {
-    var haveSqlite = false;
-    setUpAll(() => haveSqlite = initSqliteForTests());
-
-    test('duplicating a notebook copies its recordings too', () async {
-      // The container is a SQLite file and the video is not in it, so copying
-      // the container alone gives a duplicate whose lectures have quietly
-      // gone. Moving a notebook already carried the whole `.onotebook`;
-      // duplicating had no reason to think about it until now.
-      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-      final dir = Directory.systemTemp.createTempSync('onote_dup_');
-      final repo = await Repository.openAt(dir);
-      addTearDown(() {
-        repo.dispose();
-        try {
-          dir.deleteSync(recursive: true);
-        } catch (_) {}
-      });
-      final nb = await repo.createNotebook('Lectures');
-      final ref = repo.notebooks.firstWhere((n) => n.id == nb.id);
-      final stored = await MediaStore.add(ref, source('l.mp4', 1234));
-
-      final copy = await repo.duplicateNotebook(nb.id);
-      final carried = MediaStore.resolve(copy, stored);
-      expect(carried, isNotNull, reason: 'the copy kept the recording');
-      expect(carried!.lengthSync(), 1234);
-      expect(carried.path, isNot(MediaStore.resolve(ref, stored)!.path),
-          reason: 'and it is its own file, not a link back to the original');
-    });
-
-    test('duplicating a notebook copies its pictures too', () async {
-      // Recordings above are files beside the container; from v0.17 Step 6 a
-      // pasted PICTURE is the same shape — its bytes live only in `blobs/`
-      // beside the log, and the container's `blobs` table is empty. So the
-      // old container-plus-`media/` copy produced a duplicate whose every
-      // picture was blank: its ref (logDir: null) resolved `blobs/` to a
-      // directory that did not exist.
-      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-      final dir = Directory.systemTemp.createTempSync('onote_dup_blob_');
-      final repo = await Repository.openAt(dir);
-      addTearDown(() {
-        repo.dispose();
-        try {
-          dir.deleteSync(recursive: true);
-        } catch (_) {}
-      });
-      final nb = await repo.createNotebook('Lectures');
-      final bytes = Uint8List.fromList(List.generate(2048, (i) => i % 251));
-      final hash = repo.putBlob(nb.id, bytes, 'image/png');
-
-      final copy = await repo.duplicateNotebook(nb.id);
-
-      // MUTATION: remove the `blobs/` copy from `duplicateNotebook` and this
-      // reads null — the duplicate answers from its own, empty, blob store.
-      expect(repo.getBlob(copy.id, hash), bytes,
-          reason: 'the copy kept the picture');
-      expect(File('${copy.logDirPath}/blobs/$hash').existsSync(), isTrue,
-          reason: 'as its own file, not a read-through to the original');
-      expect(Directory('${copy.logDirPath}/ops').existsSync(), isFalse,
-          reason: "the logs are the source notebook's history, not the copy's");
-    });
-
-    test('a duplicate of a pre-Step-6 notebook still shows its pictures',
-        () async {
-      // NEGATIVE CONTROL: a classic notebook holds its picture bytes in the
-      // container's `blobs` table and has no `blobs/` directory to copy. The
-      // byte-copied container must go on serving them by itself, with the
-      // blobs copy finding nothing to do.
-      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-      final dir = Directory.systemTemp.createTempSync('onote_dup_classic_');
-      final repo = await Repository.openAt(dir);
-      addTearDown(() {
-        repo.dispose();
-        try {
-          dir.deleteSync(recursive: true);
-        } catch (_) {}
-      });
-      final nb = await repo.createNotebook('Lectures');
-      final bytes = Uint8List.fromList(List.generate(1024, (i) => 255 - i % 251));
-      final hash = repo.putContainerBlobForTest(nb.id, bytes, 'image/png');
-
-      final copy = await repo.duplicateNotebook(nb.id);
-
-      expect(repo.getBlob(copy.id, hash), bytes,
-          reason: 'the container row travelled with the byte copy');
     });
   });
 

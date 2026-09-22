@@ -9,11 +9,7 @@
 /// * [RustEngine] — used when the native `onote-core` library is linked (see
 ///   `core/onote_ffi.dart`). It routes persistence through the Rust core:
 ///   every page is content-hashed in Rust, and a save whose hash is unchanged
-///   is skipped entirely (no redundant write, no version-history churn). The
-///   Rust `merge` is linked and tested for the coming sync path but is
-///   deliberately NOT on the local save path — a single-device save is
-///   authoritative, and merging against the stored copy would resurrect blocks
-///   the user just deleted (the merge is add-wins by design).
+///   is skipped entirely (no redundant write). The local save is authoritative.
 library;
 
 import 'dart:convert';

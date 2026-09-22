@@ -2,7 +2,7 @@
 // end, against real files.
 //
 // **What these reach.** The isolate spawns for real, opens a real SQLite
-// container, writes a real op log, and answers the protocol. The one step
+// container, writes the imported data, and answers the protocol. The one step
 // stubbed is the Rust parse: a `.onepkg` is a CAB of binary OneNote sections,
 // there is no fixture in this repository (real ones are someone's actual notes),
 // and synthesising one would mean writing a second implementation of the format
@@ -25,8 +25,6 @@ import 'package:openote/export/import_writer.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
-import 'package:openote/sync/op.dart';
-import 'package:openote/sync/op_log.dart';
 
 import 'support/sqlite.dart';
 
@@ -92,34 +90,26 @@ void main() {
   Future<(Repository, AppState, NotebookRef)> fixture(String name) async {
     final tmp = Directory.systemTemp.createTempSync(name);
     final repo = await Repository.openAt(tmp);
-    late AppState created;
     addTearDown(() async {
-      // Background log replays and blob backfills are fire-and-forget. Join
-      // them before the fixture's directory goes, or one lands afterwards and
-      // its file I/O is charged to whichever test runs next.
-      await created.settleBackgroundWork();
       await repo.flushWorkspace();
       repo.dispose();
       try {
         tmp.deleteSync(recursive: true);
       } catch (_) {}
     });
-    final app = created = AppState(repo);
+    final app = AppState(repo);
     final ref = await app.importCreateNotebook('Imported');
     app.beginExclusiveImport(ref.id);
     return (repo, app, ref);
   }
 
   ImportWriterConfig config(NotebookRef ref, String json,
-          {bool materialiseBlobs = false, int batchPages = 4}) =>
+          {int batchPages = 4}) =>
       ImportWriterConfig(
         sourcePath: '/does/not/exist.onepkg', // preparsedJson wins
         notebookPath: ref.file,
         notebookId: ref.id,
         title: ref.title,
-        deviceId: 'test-device',
-        logDir: ref.logDir,
-        materialiseBlobs: materialiseBlobs,
         batchPages: batchPages,
         sqliteLibrary: sqliteLibraryPathForTests,
         preparsedJson: json,
@@ -259,100 +249,6 @@ void main() {
         .firstWhere((b) => b.type == BlockType.image);
     final hash = (img.content['blob'] as String).replaceFirst('sha256:', '');
     expect(repo.getBlob(ref.id, hash), bytes);
-  });
-
-  test('the op log is written, and its seq comes home', () async {
-    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-    final (repo, app, ref) = await fixture('onote_writer_log_');
-
-    final result = await startImportWriter(
-      config(
-          ref,
-          packageJson([
-            section('S', [page('P1'), page('P2')])
-          ])),
-      frameYield: tick,
-    ).result;
-
-    final store = OpLogStore.forNotebook(ref.file);
-    final ops = store.readAll();
-    expect(ops.where((o) => o.kind == OpKind.nodeUpsert), isNotEmpty);
-    expect(ops.where((o) => o.kind == OpKind.blockSet), isNotEmpty);
-    expect(ops.every((o) => o.device == 'test-device'), isTrue);
-
-    // The seq the isolate reached has to be persisted on this side. It lives in
-    // workspace settings, which the isolate cannot write — and a log running
-    // ahead of the remembered seq is exactly what DeviceIdentity reads as
-    // "another installation has been writing as us", which would fork the
-    // device id on the next open of every imported notebook.
-    expect(result!.lastSeq, greaterThan(0));
-    expect(result.lastSeq, ops.where((o) => o.device == 'test-device').length);
-
-    app.rememberImportedSeq(ref.id, result.lastSeq);
-    app.endExclusiveImport(ref.id);
-    expect(repo.getSetting('deviceSeq:${ref.id}'), result.lastSeq);
-  });
-
-  test('even a local-only import writes its blob bytes out (v0.17 Step 6)',
-      () async {
-    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-    final (repo, app, ref) = await fixture('onote_writer_hollow_');
-    final bytes =
-        Uint8List.fromList(List.generate(4096, (i) => (i * 7) & 0xFF));
-
-    await startImportWriter(
-      config(
-        ref,
-        packageJson([
-          section('S', [page('P', imageBase64: base64Encode(bytes))])
-        ]),
-        materialiseBlobs: false,
-      ),
-      frameYield: tick,
-    ).result;
-
-    // **The opposite of what this test used to assert.** Storage wave 1a
-    // deferred the bytes for a notebook nothing else reads, on the grounds
-    // that the container held them anyway; v0.17 Step 5 measured what that
-    // cost (378 of 488 pictures with no copy in the folder) and Step 6 stopped
-    // the container holding them at all. So `materialiseBlobs: false` can no
-    // longer mean "write them nowhere" — there is nowhere else.
-    final store = OpLogStore.forNotebook(ref.file);
-    expect(store.blobHashes(), hasLength(1),
-        reason: 'the container takes no blob bytes now, so a deferred write '
-            'would be a picture with no bytes anywhere on the machine');
-    expect(store.readBlob(store.blobHashes().single), bytes,
-        reason: 'the same bytes, not merely a file of the right name');
-    // ...and the op naming them is there too.
-    expect(
-        store.readAll().where((o) => o.kind == OpKind.blobPut), hasLength(1));
-
-    app.endExclusiveImport(ref.id);
-    final pageId =
-        repo.loadNodes(ref.id).firstWhere((n) => n.kind == NodeKind.page).id;
-    expect(repo.readPage(ref.id, pageId).blocks, isNotEmpty);
-  });
-
-  test('a shared import materialises them', () async {
-    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-    final (_, app, ref) = await fixture('onote_writer_shared_');
-    final bytes =
-        Uint8List.fromList(List.generate(4096, (i) => (i * 3) & 0xFF));
-
-    await startImportWriter(
-      config(
-        ref,
-        packageJson([
-          section('S', [page('P', imageBase64: base64Encode(bytes))])
-        ]),
-        materialiseBlobs: true,
-      ),
-      frameYield: tick,
-    ).result;
-    app.endExclusiveImport(ref.id);
-
-    final store = OpLogStore.forNotebook(ref.file);
-    expect(store.blobHashes(), hasLength(1));
   });
 
   test('cancel stops it, and stops it cleanly', () async {
@@ -547,8 +443,8 @@ void main() {
           ]),
           batchPages: 4),
       frameYield: tick,
-      onProgress: (_, __, ___) => measuresAtFirstProgress ??=
-          ImportWriterHandle.debugMeasureRequests,
+      onProgress: (_, __, ___) =>
+          measuresAtFirstProgress ??= ImportWriterHandle.debugMeasureRequests,
     );
     final result = await handle.result;
     final measuresTotal = ImportWriterHandle.debugMeasureRequests;
@@ -575,11 +471,9 @@ void main() {
             'round-trips — layout is being done up front again');
   });
 
-  test('a discarded import leaves nothing behind, not even a log directory',
-      () async {
+  test('a discarded import leaves no notebook behind', () async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (repo, app, ref) = await fixture('onote_writer_orphan_');
-    final logDir = Directory(ref.logDirPath);
 
     await startImportWriter(
       config(
@@ -590,18 +484,9 @@ void main() {
       frameYield: tick,
     ).result;
 
-    // The failure/cancel path. It must NOT start a background replay: the
-    // replay rewrites `.onotebook/manifest.json` on its way through, so one
-    // landing after the purge recreates the directory it just deleted — an
-    // orphaned `.onotebook` no registry entry claims, which is what the
-    // free-name search downstream then trips over.
     app.abandonExclusiveImport(ref.id);
     await app.discardImportedNotebook(ref.id);
-    await app.settleBackgroundWork();
-
     expect(File(ref.file).existsSync(), isFalse);
-    expect(logDir.existsSync(), isFalse,
-        reason: 'a discarded import must not leave an orphaned .onotebook');
     expect(repo.notebooks.where((n) => n.id == ref.id), isEmpty);
   });
 

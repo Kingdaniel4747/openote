@@ -26,8 +26,8 @@ void main() {
 
   group('the reference itself', () {
     test('round-trips through the spec shape', () {
-      final content =
-          PortalRef.contentFor('page-1', rect: const Rect.fromLTWH(10, 20, 300, 200));
+      final content = PortalRef.contentFor('page-1',
+          rect: const Rect.fromLTWH(10, 20, 300, 200));
       final ref = PortalRef.parse(content);
       expect(ref, isNotNull);
       expect(ref!.pageId, 'page-1');
@@ -75,9 +75,8 @@ void main() {
 
     setUp(() async {
       if (!haveSqlite) return;
-      // The op log's workspace debounce would be a pending timer inside
-      // testWidgets' fake-async zone; it is not what these tests are about.
-      AppState.syncLogEnabled = false;
+      // The workspace debounce would be a pending timer inside testWidgets'
+      // fake-async zone; it is not what these tests are about.
       tmp = Directory.systemTemp.createTempSync('onote_portal_');
       repo = await Repository.openAt(tmp);
       final nb = await repo.createNotebook('Portals');
@@ -88,15 +87,16 @@ void main() {
       hostId = app.nodes.firstWhere((n) => n.kind == NodeKind.page).id;
       final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section);
       srcId = repo
-          .upsertNode(app.notebookId!,
-              TreeNode(kind: NodeKind.page, parentId: section.id, title: 'Source'))
+          .upsertNode(
+              app.notebookId!,
+              TreeNode(
+                  kind: NodeKind.page, parentId: section.id, title: 'Source'))
           .id;
       app.reloadNodes();
       await app.selectPage(hostId);
     });
 
     tearDown(() {
-      AppState.syncLogEnabled = true;
       if (!haveSqlite) return;
       app.cancelPendingSave();
       PortalSource.resetCache();
@@ -172,13 +172,13 @@ void main() {
       await t.pumpWidget(host(embedBlock()));
       await t.pump();
 
-      expect(find.textContaining('mitochondria', findRichText: true),
-          findsWidgets,
+      expect(
+          find.textContaining('mitochondria', findRichText: true), findsWidgets,
           reason: 'the window renders the real page content');
       expect(find.textContaining('Source', findRichText: true), findsWidgets,
           reason: 'the badge names where the content comes from (EMBED-3)');
 
-      // The source page changes — a save, an undo, a sync pull all end in
+      // The source page changes — a save and an undo both end in
       // writePage, which evicts the decoded-page cache. The next host
       // rebuild reads fresh. That is the entire liveness mechanism.
       writeSource('actually it is the ribosome');
@@ -216,8 +216,7 @@ void main() {
           host(embedBlock(rect: const Rect.fromLTWH(60, 40, 360, 200))));
       await t.pump();
 
-      expect(
-          find.textContaining('inside the window', findRichText: true),
+      expect(find.textContaining('inside the window', findRichText: true),
           findsWidgets);
       expect(find.textContaining('far below', findRichText: true), findsNothing,
           reason: 'blocks outside the region are not even built');
@@ -247,7 +246,10 @@ void main() {
       expect(box, findsOneWidget);
       await t.tap(box, warnIfMissed: false);
       await t.pump();
-      final after = repo.readPage(app.notebookId!, srcId).blocks.single
+      final after = repo
+          .readPage(app.notebookId!, srcId)
+          .blocks
+          .single
           .content['text'] as String;
       expect(after, contains('[ ]'),
           reason: 'a window can never write to the page it shows');
@@ -315,7 +317,9 @@ void main() {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       // Host embeds Source; Source embeds Host. Rendering the first must not
       // recurse — EMBED-7, the Obsidian-PDF-infinite-loop class of bug.
-      repo.writePage(app.notebookId!, srcId,
+      repo.writePage(
+          app.notebookId!,
+          srcId,
           [embedBlock(page: hostId, rect: const Rect.fromLTWH(0, 0, 400, 300))],
           PageProps());
       repo.writePage(app.notebookId!, hostId,

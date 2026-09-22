@@ -1,7 +1,7 @@
 /// Handwriting as bytes instead of as decimal text.
 ///
-/// **The measurement that motivated this.** A real imported notebook's op log
-/// was 67.7 MB, and 63.1 MB of it was 113 ink blocks: 64,616 strokes,
+/// **The measurement that motivated this.** A real imported notebook used
+/// 63.1 MB for 113 ink blocks: 64,616 strokes,
 /// 1,828,431 points, at **36.2 bytes per point** — because a point was
 /// `[123.45678901234567,456.78901234567890]` in JSON, and the same JSON was
 /// stored a second time in the container's page mirror. Two thirds of the
@@ -253,7 +253,11 @@ abstract final class InkCodec {
 
     for (final k in brushKeys) {
       final parts = k.split('|');
-      body.u8(parts[0] == 'highlighter' ? 1 : parts[0] == 'ballpoint' ? 2 : 0);
+      body.u8(parts[0] == 'highlighter'
+          ? 1
+          : parts[0] == 'ballpoint'
+              ? 2
+              : 0);
       final hex = parts[1];
       // A colour outside `#RRGGBB` is round-tripped as a string rather than
       // dropped: the format spec's rule is that unknown data survives, and
@@ -336,8 +340,7 @@ abstract final class InkCodec {
         for (final list in [s.tx, s.ty]) {
           var prev = 0;
           for (var i = 0; i < s.x.length; i++) {
-            final q =
-                i < list.length ? (list[i] * _tiltScale).round() : prev;
+            final q = i < list.length ? (list[i] * _tiltScale).round() : prev;
             body.svar(q - prev);
             prev = q;
           }
@@ -365,7 +368,10 @@ abstract final class InkCodec {
     r.u8(); // flags
     final scale = r.uvar();
     final count = r.uvar();
-    final minQx = r.svar(), minQy = r.svar(), maxQx = r.svar(), maxQy = r.svar();
+    final minQx = r.svar(),
+        minQy = r.svar(),
+        maxQx = r.svar(),
+        maxQy = r.svar();
     return InkHeader(
       strokeCount: count,
       minX: minQx / scale,
@@ -419,7 +425,11 @@ abstract final class InkCodec {
     final anyTilt = flags & 4 != 0;
     final scale = r.uvar();
     final count = r.uvar();
-    r..svar()..svar()..svar()..svar(); // bounds — see decodeHeader
+    r
+      ..svar()
+      ..svar()
+      ..svar()
+      ..svar(); // bounds — see decodeHeader
 
     final brushCount = r.uvar();
     final tools = <String>[];
@@ -436,9 +446,9 @@ abstract final class InkCodec {
       if (kind == 1) {
         final rr = r.u8(), gg = r.u8(), bb = r.u8();
         colors.add('#'
-            '${rr.toRadixString(16).padLeft(2, '0')}'
-            '${gg.toRadixString(16).padLeft(2, '0')}'
-            '${bb.toRadixString(16).padLeft(2, '0')}'
+                '${rr.toRadixString(16).padLeft(2, '0')}'
+                '${gg.toRadixString(16).padLeft(2, '0')}'
+                '${bb.toRadixString(16).padLeft(2, '0')}'
             .toUpperCase()
             .replaceFirst('#', '#'));
       } else if (kind == 2) {

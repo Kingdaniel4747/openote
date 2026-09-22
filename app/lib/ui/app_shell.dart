@@ -17,16 +17,14 @@ import 'import_progress.dart';
 import 'command_bar.dart';
 import 'context_menus.dart';
 import 'object_row.dart';
-import 'onboarding.dart';
 import 'open_notice_dialog.dart';
+import 'planner_panel.dart';
 import 'side_panel.dart';
 import 'protect_dialog.dart';
 import 'save_problem_dialog.dart';
 import 'shortcut_overlay.dart';
 import 'sidebar.dart';
 import '../export/print_page.dart';
-import 'sync_dialog.dart';
-import 'sync_dot.dart';
 import 'windows_window_frame.dart';
 import '../theme/tokens.dart';
 
@@ -184,19 +182,11 @@ class _AppShellState extends State<AppShell> {
     // both, so the second case cannot quietly go unreported the way a
     // launch-only check would leave it.
     app.addListener(_openNoticeChanged);
-    // Post-frame: the welcome flow needs a Navigator, and there isn't one
-    // until this shell is mounted.
+    // A launch-time open notice needs a Navigator, which exists after the
+    // first frame.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      // The hand-off notice takes the slot when there is one. On a fresh
-      // install whose shortcut points at a moved notebook BOTH would fire, and
-      // two modal dialogs stacked on first run is a worse first minute than
-      // either alone.
-      if (app.pendingOpenNotice != null) {
-        _openNoticeChanged();
-      } else {
-        maybeShowOnboarding(context, app);
-      }
+      if (app.pendingOpenNotice != null) _openNoticeChanged();
     });
   }
 
@@ -973,10 +963,9 @@ class _AppShellState extends State<AppShell> {
   /// the Row so the F6 marker is applied in exactly one place — a panel that
   /// grew its own `if` would quietly drop out of the rotation.
   Widget? _openPanel(TreeNode? page) => switch (app.openPanel) {
-        // Kept as inactive enum values while existing workspace data is read;
-        // neither feature has a visible panel or command route any more.
+        // Study is retained only for compatibility with older saved UI state.
         SidePanelKind.study => null,
-        SidePanelKind.planner => null,
+        SidePanelKind.planner => PlannerPanel(app: app),
         SidePanelKind.outline => page == null ? null : _TocPanel(app: app),
         SidePanelKind.links => page == null ? null : _LinksPanel(app: app),
         null => null,
@@ -2038,28 +2027,13 @@ class _StatusBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          // Sync (ADR-0006). Shown only once a second device has touched this
-          // notebook — until then there is nothing to say, and a permanent
-          // "1 device" chip would be noise.
-          if (app.notebookId != null) _SyncChip(app: app),
-          // Background housekeeping, when there is any. Nothing to click and
-          // nothing to decide — it says what is happening and goes away.
-          // "Without requiring direct input" is not the same as "in secret":
-          // a notebook that quietly rewrites itself is alarming if you notice.
-          if (app.housekeepingNote != null) ...[
-            const SizedBox(width: 10),
-            Text(app.housekeepingNote!,
-                style: TextStyle(
-                    fontSize: 11, color: context.surfaces.textSecondary)),
-          ],
-          const SizedBox(width: 12),
           // Active compute engine (§ADR-0002): green chip when the Rust core
           // is linked, with the live page content-hash it computed on save.
           //
           // DEBUG BUILDS ONLY. The stale-library trap this chip exists for
           // is a developer problem; a student reading "Rust · a3f9c210"
           // learns nothing except that the app is talking to itself. The
-          // user-facing health signals (saved state, sync) stay.
+          // user-facing saved-state signal stays.
           if (kDebugMode)
             Tooltip(
               // The build stamp is here because the stale-library trap keeps
@@ -2188,65 +2162,6 @@ class _EmptyState extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Sync state in the status bar.
-///
-/// Driven by [SyncStatus] — where the notebook LIVES — rather than by how many
-/// devices have written logs. The old chip used the device count as a proxy,
-/// so a notebook correctly placed in Google Drive still read "Not synced yet"
-/// until a second machine appeared: the app disagreeing with what the user had
-/// just successfully done.
-class _SyncChip extends StatelessWidget {
-  const _SyncChip({required this.app});
-  final AppState app;
-
-  @override
-  Widget build(BuildContext context) {
-    final nb = app.notebookId!;
-    final s = app.syncStatus(nb);
-    final scheme = Theme.of(context).colorScheme;
-    // Green once it is actually somewhere that syncs; grey when it is only on
-    // this machine. The colour is the whole at-a-glance answer.
-    final color =
-        s.isSynced ? OnoteColors.success : context.surfaces.textSecondary;
-
-    return Tooltip(
-      message: syncChipTooltip(s),
-      child: InkWell(
-        onTap: () => showSyncDialog(context, app),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 2),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(s.icon, size: 16, color: color),
-            const SizedBox(width: 5),
-            Text(s.label, style: TextStyle(fontSize: 11, color: color)),
-            // "Check now" is available whenever this notebook is synced,
-            // including before another device has written to it.
-            if (s.isSynced) ...[
-              const SizedBox(width: 6),
-              InkWell(
-                onTap: () async {
-                  final messenger = ScaffoldMessenger.of(context);
-                  final n = await app.syncPull(nb);
-                  messenger.showSnackBar(SnackBar(
-                      content: Text(n == 0
-                          ? 'Already up to date.'
-                          : 'Pulled $n change${n == 1 ? '' : 's'}.')));
-                },
-                child: Icon(Icons.refresh, size: 16, color: scheme.primary),
-              ),
-            ],
-          ]),
-        ),
-      ),
-    );
-  }
-
-// The chip's tooltip lives in `sync_dot.dart` as `syncChipTooltip`. It was a
-// private method on this private widget, which is why nothing could reach it
-// — and it was the `folder!` that survived two rounds of fixing the same bug
-// elsewhere and took the status bar down on the first frame.
 }
 
 /// What stands in for a locked page's content.

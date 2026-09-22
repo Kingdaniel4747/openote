@@ -26,7 +26,6 @@ void main() {
   final boundaryKey = GlobalKey();
 
   setUp(() async {
-    AppState.syncLogEnabled = false;
     dir = Directory.systemTemp.createTempSync('openote-school-input-');
     repo = await Repository.openAt(dir);
     final nb = await repo.createNotebook('School');
@@ -47,7 +46,6 @@ void main() {
     app.dispose();
     repo.dispose();
     dir.deleteSync(recursive: true);
-    AppState.syncLogEnabled = true;
   });
 
   Future<void> mount(WidgetTester t,

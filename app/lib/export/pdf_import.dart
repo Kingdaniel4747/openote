@@ -13,8 +13,8 @@
 /// the slides are inserted. Only the visible images need decoding for display.
 ///
 /// This intentionally spends disk space for reliability. The blobs are
-/// content-addressed, so identical bytes are deduplicated, sync safely and can
-/// never become stale. Legacy slides retain their on-demand fallback.
+/// content-addressed, so identical bytes are deduplicated and cannot become
+/// stale. Legacy slides retain their on-demand fallback.
 ///
 /// Two deliberate choices survive from the raster era:
 ///
@@ -141,7 +141,6 @@ Future<PdfImportResult> importPdfFile(
   final doc = await PdfRuntime.open(bytes, displayName);
   try {
     if (doc.pages.isEmpty) throw StateError('The PDF contains no pages.');
-    await app.warmRecorder(nb);
     // Finish expensive rendering before publishing any slide blocks. Retain
     // only hashes, never a whole deck of PNGs or decoded images in memory.
     final previews = placement == PdfPlacement.card

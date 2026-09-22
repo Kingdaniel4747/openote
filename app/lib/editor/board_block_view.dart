@@ -15,9 +15,8 @@ import 'wrap_selection.dart';
 /// empty page IS a board page, while a board beside lecture notes is a thing
 /// a page mode could never give. Cards are plain strings — the unit of a
 /// board is a sentence, and anything richer belongs on a page a card can
-/// link to. Every mutation goes through the ordinary undo/save/sync path,
-/// so Ctrl+Z, autosave and the op log all treat a board edit like any other
-/// edit.
+/// link to. Every mutation goes through the ordinary undo/save path, so Ctrl+Z
+/// and autosave treat a board edit like any other edit.
 class BoardBlockView extends StatefulWidget {
   const BoardBlockView({super.key, required this.block, required this.app});
   final Block block;
@@ -229,7 +228,7 @@ class _BoardBlockViewState extends State<BoardBlockView> {
   List<String> _cards(Map<String, dynamic> col) =>
       [for (final c in (col['cards'] as List? ?? const [])) '$c'];
 
-  /// One undoable, saved, synced step. Everything the board does funnels
+  /// One undoable, saved step. Everything the board does funnels
   /// through here so no gesture can mutate without the full paper trail.
   void _mutate(void Function(List<Map<String, dynamic>> cols) fn) {
     final cols = _cols();
@@ -270,7 +269,8 @@ class _BoardBlockViewState extends State<BoardBlockView> {
   }
 
   void _moveCard(_CardRef from, int toCol, int toIndex) {
-    if (from.col == toCol && (from.card == toIndex || from.card == toIndex - 1)) {
+    if (from.col == toCol &&
+        (from.card == toIndex || from.card == toIndex - 1)) {
       return; // dropped where it already is
     }
     _mutate((cols) {
@@ -334,8 +334,8 @@ class _BoardBlockViewState extends State<BoardBlockView> {
                       cols.add({'title': 'New column', 'cards': <String>[]})),
                   child: const Padding(
                     padding: EdgeInsets.all(6),
-                    child:
-                        Icon(Icons.add, size: 16, color: OnoteColors.graphite400),
+                    child: Icon(Icons.add,
+                        size: 16, color: OnoteColors.graphite400),
                   ),
                 ),
               ),
@@ -427,28 +427,28 @@ class _BoardBlockViewState extends State<BoardBlockView> {
                               borderRadius: BorderRadius.circular(6))
                           : const BoxDecoration(),
                       child: InkWell(
-                      borderRadius: BorderRadius.circular(6),
-                      onTap: () {
-                        _commitEditor();
-                        setState(() {
-                          _addingTo = i;
-                          _editCtrl.clear();
-                        });
-                      },
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 4),
-                        child: Row(children: [
-                          SizedBox(width: 4),
-                          Icon(Icons.add,
-                              size: 13, color: OnoteColors.graphite400),
-                          SizedBox(width: 4),
-                          Text('Add a card',
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  color: OnoteColors.graphite400)),
-                        ]),
-                      ),
-                    ))),
+                        borderRadius: BorderRadius.circular(6),
+                        onTap: () {
+                          _commitEditor();
+                          setState(() {
+                            _addingTo = i;
+                            _editCtrl.clear();
+                          });
+                        },
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 4),
+                          child: Row(children: [
+                            SizedBox(width: 4),
+                            Icon(Icons.add,
+                                size: 13, color: OnoteColors.graphite400),
+                            SizedBox(width: 4),
+                            Text('Add a card',
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color: OnoteColors.graphite400)),
+                          ]),
+                        ),
+                      ))),
         ],
       ),
     );
@@ -484,8 +484,7 @@ class _BoardBlockViewState extends State<BoardBlockView> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(6),
         side: _onCursor(col, idx)
-            ? BorderSide(
-                color: Theme.of(context).colorScheme.primary, width: 2)
+            ? BorderSide(color: Theme.of(context).colorScheme.primary, width: 2)
             : BorderSide.none,
       ),
       elevation: 1,

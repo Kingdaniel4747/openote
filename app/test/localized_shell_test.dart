@@ -24,14 +24,12 @@ void main() {
   late AppState app;
   late List<MethodCall> calls;
   setUp(() async {
-    AppState.syncLogEnabled = false;
     dir = Directory.systemTemp.createTempSync('openote-localized-shell-');
     repo = await Repository.openAt(dir);
     final nb = await repo.createNotebook('School');
     app = AppState(repo)
       ..notebookId = nb.id
       ..spellCheckEnabled = false;
-    app.markOnboardingSeen();
     app.reloadNodes();
     await app
         .selectPage(app.nodes.firstWhere((n) => n.kind == NodeKind.page).id);
@@ -63,7 +61,6 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 100));
       }
     }
-    AppState.syncLogEnabled = true;
   });
 
   testWidgets(

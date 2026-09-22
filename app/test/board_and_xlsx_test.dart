@@ -1,4 +1,4 @@
-﻿// Items 4 and 5 of PLANNING.md, the shipped slices:
+// Items 4 and 5 of PLANNING.md, the shipped slices:
 //
 //   Tables — "import data (xlxs)": the minimal xlsx reader, tested against a
 //   file BUILT FROM RAW PARTS in the test, so every branch (shared strings,
@@ -104,7 +104,6 @@ void main() {
 
     setUp(() async {
       if (!haveSqlite) return;
-      AppState.syncLogEnabled = false;
       tmp = Directory.systemTemp.createTempSync('onote_board_');
       repo = await Repository.openAt(tmp);
       final nb = await repo.createNotebook('Board');
@@ -117,7 +116,6 @@ void main() {
     });
 
     tearDown(() {
-      AppState.syncLogEnabled = true;
       if (!haveSqlite) return;
       app.cancelPendingSave();
       repo.dispose();

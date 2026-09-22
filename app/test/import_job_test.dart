@@ -25,7 +25,6 @@ import 'package:openote/export/onenote_import.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
-import 'package:openote/sync/op_log.dart';
 
 import 'package:openote/export/import_writer.dart';
 
@@ -150,8 +149,8 @@ void main() {
           Timer.periodic(const Duration(milliseconds: 1), (_) => ticks++);
       addTearDown(timer.cancel);
 
-      final (count, first) = await importParsedSection(app, nb, 'Big',
-          [for (var i = 0; i < 60; i++) page('P$i', boxes: 3)]);
+      final (count, first) = await importParsedSection(
+          app, nb, 'Big', [for (var i = 0; i < 60; i++) page('P$i', boxes: 3)]);
 
       // 60 pages at one per slice is 59 yields of at least a millisecond each,
       // so the counter cannot stay near zero. Unpaced, the whole section is a
@@ -276,16 +275,7 @@ void main() {
         section('S', [withBytes, withB64])
       ]);
       expect(r.pages, 2);
-      // One blob, stored once — identical bytes share a hash by design.
-      // Counted in `blobs/`, not in the container's `blobs` table: from v0.17
-      // Step 6 the container takes no blob bytes at all, so `blobIndex` is
-      // empty for anything written since and would make this assertion pass
-      // for the wrong reason if it were `0` we were checking.
-      final ref = repo.notebooks.firstWhere((n) => n.id == nb);
-      final store = OpLogStore.forNotebook(ref.file, logDir: ref.logDir);
-      expect(store.blobHashes(), hasLength(1));
-      expect(repo.blobIndex(nb), isEmpty,
-          reason: 'the container is not where pictures live any more');
+      expect(repo.blobIndex(nb), hasLength(1));
     });
   });
 
@@ -343,13 +333,9 @@ void main() {
           repo.notebooks.firstWhere((n) => n.title == 'Discrete Maths');
       expect(repo.loadNodes(imported.id).where((n) => n.kind == NodeKind.page),
           hasLength(2));
-      // And the seq the isolate reached was persisted here — without it the
-      // next open forks this device's id.
-      expect(repo.getSetting('deviceSeq:${imported.id}'), isNotNull);
     });
 
-    test('an imported picture has its bytes in the notebook folder, not only '
-        'in the notebook file', () async {
+    test('an imported picture is stored in the notebook', () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final (repo, _, app, _) = await fixture('onote_jobrun_blob_');
       final png = Uint8List.fromList(List.generate(300, (i) => (i * 7) & 0xff));
@@ -370,21 +356,10 @@ void main() {
       await settle(job!);
       expect(job.state, ImportJobState.done);
 
-      // **This is where the owner's 26.3 MB hole came from.** The writer
-      // isolate used to be handed `materialiseBlobs: app.notebookIsShared(nb)`,
-      // and an import into the local workspace is never shared at that moment —
-      // so 378 of 488 pictures went into the container alone, and the log named
-      // bytes that were nowhere on disk. An import is also the cheapest place
-      // to get this right: the bytes are already in hand.
       final ref = repo.notebooks.firstWhere((n) => n.title == 'Pictures');
-      final store = OpLogStore.forNotebook(ref.file, logDir: ref.logDir);
-      final hashes = store.blobHashes();
+      final hashes = repo.blobIndex(ref.id);
       expect(hashes, hasLength(1));
-      expect(store.readBlob(hashes.single), png,
-          reason: 'the same bytes, not merely a file of the right name');
-      expect(repo.blobIndex(ref.id), isEmpty,
-          reason: 'and only there — v0.17 Step 6 stopped the container '
-              'taking a second copy');
+      expect(repo.getBlob(ref.id, hashes.single.hash), png);
     });
 
     test('a partial import says which sections did not make it', () async {

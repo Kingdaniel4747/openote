@@ -10,9 +10,7 @@ import '../study/study_stats.dart';
 import '../theme/onote_theme.dart';
 import 'exam_date.dart';
 import 'notebook_manager.dart';
-import 'page_history_dialog.dart';
 import 'protect_dialog.dart';
-import 'sync_dot.dart';
 import '../theme/tokens.dart';
 import 'onote_dialog.dart';
 
@@ -1035,15 +1033,13 @@ class _NotebookHeader extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 10, 6, 4),
       child: Tooltip(
-        message: 'Notebooks — switch, rename, duplicate, import',
+        message: 'Notebooks — switch, rename, backup, import',
         waitDuration: const Duration(milliseconds: 600),
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
           onTap: () => showNotebookManager(context, app),
-          onSecondaryTapUp: (_) =>
-              showNotebookManager(context, app, focusId: current.id),
-          onLongPress: () =>
-              showNotebookManager(context, app, focusId: current.id),
+          onSecondaryTapUp: (_) => showNotebookManager(context, app),
+          onLongPress: () => showNotebookManager(context, app),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
             child: Row(
@@ -1051,19 +1047,9 @@ class _NotebookHeader extends StatelessWidget {
                 Icon(Icons.menu_book_outlined, size: 18, color: scheme.primary),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(current.title,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                          overflow: TextOverflow.ellipsis),
-                      // Where the open notebook lives, said once where the
-                      // notebook is named. The status bar's chip answers the
-                      // same question but is easy to never look at.
-                      SyncDotWithLabel(app: app, notebookId: current.id),
-                    ],
-                  ),
+                  child: Text(current.title,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                      overflow: TextOverflow.ellipsis),
                 ),
                 const Icon(Icons.unfold_more, size: 16),
                 IconButton(
@@ -1344,9 +1330,8 @@ Future<void> showRecycleBin(BuildContext context, AppState app) async {
                                         size: 16, color: OnoteColors.danger),
                                     tooltip: 'Delete permanently',
                                     onPressed: () async {
-                                      final ok = await _confirmPurgeNotebook(
-                                          ctx, nb,
-                                          caveat: app.purgeCaveat(nb.id));
+                                      final ok =
+                                          await _confirmPurgeNotebook(ctx, nb);
                                       if (ok) {
                                         await app.purgeNotebook(nb.id);
                                         setLocal(() {});
@@ -1411,15 +1396,14 @@ Future<void> showRecycleBin(BuildContext context, AppState app) async {
   );
 }
 
-Future<bool> _confirmPurgeNotebook(BuildContext context, NotebookRef nb,
-    {String? caveat}) async {
+Future<bool> _confirmPurgeNotebook(BuildContext context, NotebookRef nb) async {
   final ok = await showOnoteDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
       title: const AppText('Delete permanently?'),
       content: Text(
           '“${nb.title}” and all its pages will be removed for good. This can\'t '
-          'be undone.${caveat == null ? '' : '\n\n$caveat'}'),
+          'be undone.'),
       actions: [
         TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -2011,7 +1995,6 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
         _nodeItem('sharepdf', Icons.picture_as_pdf_outlined, 'Share as PDF…'),
         _nodeItem('print', Icons.print_outlined, 'Print…'),
         _nodeItem('copylink', Icons.link, 'Copy link to page'),
-        _nodeItem('history', Icons.history, 'Recent changes…'),
       ],
       const PopupMenuDivider(),
       // Available on every kind, because the ask was "a page ... a section, or
@@ -2125,10 +2108,6 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       app.indentPage(node.id, 1);
     case 'outdent':
       app.indentPage(node.id, -1);
-    case 'history':
-      await _onPage(app, node.id, () async {
-        if (context.mounted) await showVersionHistory(context, app);
-      });
     case 'delete':
       await app.deleteNode(node.id);
   }
@@ -2153,18 +2132,6 @@ Future<void> _promptSaveTemplate(BuildContext context, AppState app) async {
 }
 
 */
-/// The page's change history.
-///
-/// **One door, three answers.** It used to be `page_versions` alone — up to
-/// thirty automatic snapshots of this page, and nothing at all about who made
-/// a change or what was deleted. Step 8a of the v0.17 plan adds the two things
-/// the owner actually asked for (*"keeping track of who made what edits (that
-/// are currently visible and maybe recent deletions, like the last 10 noteable
-/// deletions)"*) and they belong behind the same button, so the whole of
-/// "what happened to this page" is in one place rather than two.
-Future<void> showVersionHistory(BuildContext context, AppState app) =>
-    showPageHistory(context, app);
-
 /// The colour swatches inside a section's context menu.
 ///
 /// Lives in a disabled `PopupMenuItem` so the row itself isn't a menu action —

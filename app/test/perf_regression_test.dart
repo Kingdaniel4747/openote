@@ -16,7 +16,6 @@ import 'package:openote/model/models.dart';
 import 'package:openote/model/tags.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
-import 'package:openote/sync/op_log.dart';
 
 import 'support/sqlite.dart';
 
@@ -69,15 +68,15 @@ void main() {
     // selectPage, not a bare pageId assignment: only the former loads blocks.
     // And one of OUR pages — a new notebook ships with an empty starter page
     // that sorts first and would give an empty block list.
-    await app.selectPage(
-        app.nodes.firstWhere((n) => n.title == 'Page 0').id);
+    await app.selectPage(app.nodes.firstWhere((n) => n.title == 'Page 0').id);
     return (repo, tmp, app, section);
   }
 
   group('deck counts are cached', () {
     test('repeated calls do not re-read the notebook', () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-      final (repo, tmp, app, _) = await notebookWithPages('onote_perf_deck_', 12);
+      final (repo, tmp, app, _) =
+          await notebookWithPages('onote_perf_deck_', 12);
       addTearDown(() {
         repo.dispose();
         try {
@@ -105,7 +104,8 @@ void main() {
 
     test('the cache still invalidates when content changes', () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-      final (repo, tmp, app, _) = await notebookWithPages('onote_perf_inval_', 3);
+      final (repo, tmp, app, _) =
+          await notebookWithPages('onote_perf_inval_', 3);
       addTearDown(() {
         repo.dispose();
         try {
@@ -142,7 +142,8 @@ void main() {
   group('tag rollup is cached', () {
     test('repeated calls do not re-read the notebook', () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-      final (repo, tmp, app, _) = await notebookWithPages('onote_perf_tags_', 12);
+      final (repo, tmp, app, _) =
+          await notebookWithPages('onote_perf_tags_', 12);
       addTearDown(() {
         repo.dispose();
         try {
@@ -156,8 +157,7 @@ void main() {
         app.allTags();
       }
       final reads = Repository.debugSharedPageReads - before;
-      expect(reads, 0,
-          reason: '200 allTags calls re-read $reads page(s)');
+      expect(reads, 0, reason: '200 allTags calls re-read $reads page(s)');
     });
   });
 
@@ -212,32 +212,6 @@ void main() {
       // revision the agenda's key was built from.
       app.study.setExamDate(section, now.add(const Duration(days: 10)));
       expect(app.planner.agenda(now: now), hasLength(1));
-    });
-  });
-
-  group('sync status is cached', () {
-    test('repeated calls do not re-list the ops directory', () async {
-      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-      final (repo, tmp, app, _) = await notebookWithPages('onote_perf_sync_', 2);
-      addTearDown(() {
-        repo.dispose();
-        try {
-          tmp.deleteSync(recursive: true);
-        } catch (_) {}
-      });
-
-      // This one is a synchronous DIRECTORY LISTING, and once the notebook is
-      // in a cloud folder that path is sync-client-backed — so uncached it was
-      // filesystem I/O per character typed.
-      app.syncDeviceCount(app.notebookId!);
-      final before = OpLogStore.debugDirectoryListings;
-      for (var i = 0; i < 500; i++) {
-        app.syncDeviceCount(app.notebookId!);
-      }
-      final listings = OpLogStore.debugDirectoryListings - before;
-      expect(listings, 0,
-          reason: '500 device-count calls listed the ops directory $listings '
-              'time(s) — that is filesystem I/O per keystroke');
     });
   });
 }

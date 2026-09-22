@@ -7,12 +7,11 @@
 /// a receiver:
 ///
 /// - the **app**, for importing one `.one` section into a notebook the user has
-///   open, where `AppState` is the funnel every mutation goes through (so the
-///   op log records it, undo sees it, the UI notices);
+///   open, where `AppState` is the funnel every mutation goes through (so undo
+///   sees it and the UI notices);
 /// - the **writer isolate**, for importing a whole `.onepkg` into a brand-new
 ///   notebook, where there is no `AppState` at all — no Flutter binding, no
-///   Repository, no registry — only a `Database` handle and an op log that
-///   nothing else has open.
+///   Repository or registry — only a `Database` handle nothing else has open.
 ///
 /// Six methods is the whole surface, which is the measure of how little the
 /// translation actually needed. Each implementation is a handful of lines; the
@@ -56,8 +55,8 @@ abstract class ImportSink {
   void purgeNode(String id);
 }
 
-/// The in-app sink: everything goes through `AppState`'s storage facade, so
-/// imports are recorded in the op log exactly like any other mutation.
+/// The in-app sink: everything goes through `AppState`'s storage facade like
+/// any other mutation.
 class AppStateImportSink implements ImportSink {
   AppStateImportSink(this.app, this.notebookId);
 
@@ -76,11 +75,8 @@ class AppStateImportSink implements ImportSink {
       // this is the funnel every import route already passes through, and it
       // has `blob` beside it. Handwriting reaches disk as bytes rather than as
       // decimal text.
-      app.importPage(
-          notebookId,
-          pageId,
-          InkStorage.persistAll(blocks, (b) => blob(b, inkMimeType)),
-          props);
+      app.importPage(notebookId, pageId,
+          InkStorage.persistAll(blocks, (b) => blob(b, inkMimeType)), props);
 
   @override
   String blob(Uint8List bytes, String mime) =>

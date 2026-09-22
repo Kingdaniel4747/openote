@@ -17,14 +17,9 @@ import 'ui/windows_window_frame.dart';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
-  // The notebook we were launched to open: `openote Physics.onotebook`, or a
-  // double-click in the file manager — on the notebook folder itself where the
-  // shell will open one, and on the `Open this notebook.onotelink` inside it
-  // everywhere else (v0.17 Step 8b). Parsed before anything else because the
-  // single-instance hand-off below needs to know what to hand over, and it
-  // hands over a path whether that path is a file or a directory. See
-  // core/startup_args.dart, and core/open_target.dart for which of the two it
-  // turned out to be.
+  // The notebook file we were launched to open, for example by a double-click
+  // in the file manager. Parse it before the single-instance hand-off below so
+  // an already-running window receives the requested path.
   final requested = notebookPathFromArgs(args);
 
   // BEFORE runApp, and this ordering is the whole point: if another Openote is

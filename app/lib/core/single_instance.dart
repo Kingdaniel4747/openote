@@ -6,9 +6,7 @@
 /// `workspace.json` registry and — the moment two of them land on one
 /// notebook, which is exactly what happens when you double-click the notebook
 /// you already have open — the same WAL SQLite container from two processes.
-/// That is the corruption ADR-0006 §3 is written against ("cache.onote ←
-/// local-only SQLite; never synced"), and this project has already shipped one
-/// bug where two devices shared one container. The registry is no safer: it is
+/// That can corrupt the local notebook. The registry is no safer: it is
 /// rewritten wholesale by whichever process saves last, so a notebook created
 /// in one window disappears when the other writes.
 ///
@@ -89,7 +87,8 @@ class SingleInstance {
   /// **without painting a window**, which is why this runs before `runApp` and
   /// not inside the boot widget. A second window that appears and vanishes is
   /// worse than either outcome on its own.
-  static Future<SingleInstance?> claim(Directory dir, {String? openPath}) async {
+  static Future<SingleInstance?> claim(Directory dir,
+      {String? openPath}) async {
     RandomAccessFile? lock;
     try {
       // `append`, not `write`: `write` truncates on open, and it would do so
@@ -160,8 +159,7 @@ class SingleInstance {
   /// Returns the requested path, `''` for "just come forward", or null when
   /// there is nothing to do. **Deleting the file is the acknowledgement**, so
   /// this both reads and consumes.
-  static String? takeRequest(Directory dir,
-      {Duration maxAge = requestMaxAge}) {
+  static String? takeRequest(Directory dir, {Duration maxAge = requestMaxAge}) {
     final request = requestFile(dir);
     if (!request.existsSync()) return null;
     String raw;
