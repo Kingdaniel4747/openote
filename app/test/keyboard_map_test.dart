@@ -34,8 +34,7 @@ void main() {
       }
     });
 
-    test('no duplicate keys inside a section, no duplicate section titles',
-        () {
+    test('no duplicate keys inside a section, no duplicate section titles', () {
       final titles = keyboardMap.map((s) => s.title).toList();
       expect(titles.toSet().length, titles.length);
       for (final s in keyboardMap) {
@@ -118,8 +117,8 @@ void main() {
         ..notebookId = nb.id
         ..spellCheckEnabled = false;
       app.reloadNodes();
-      await app.selectPage(
-          app.nodes.firstWhere((n) => n.kind == NodeKind.page).id);
+      await app
+          .selectPage(app.nodes.firstWhere((n) => n.kind == NodeKind.page).id);
     });
 
     tearDown(() {
@@ -209,13 +208,25 @@ void main() {
       app.reloadNodes();
       final page = app.nodes.firstWhere((n) => n.kind == NodeKind.page);
       a = Block(
-          type: BlockType.text, x: 40, y: 120, w: 200, h: 60,
+          type: BlockType.text,
+          x: 40,
+          y: 120,
+          w: 200,
+          h: 60,
           content: {'markdown': 'alpha'});
       b = Block(
-          type: BlockType.text, x: 420, y: 130, w: 200, h: 60,
+          type: BlockType.text,
+          x: 420,
+          y: 130,
+          w: 200,
+          h: 60,
           content: {'markdown': 'beta'});
       c = Block(
-          type: BlockType.text, x: 40, y: 340, w: 200, h: 60,
+          type: BlockType.text,
+          x: 40,
+          y: 340,
+          w: 200,
+          h: 60,
           content: {'markdown': 'gamma'});
       app.importPage(nb.id, page.id, [a, b, c], PageProps());
       app.reloadNodes();
@@ -300,6 +311,26 @@ void main() {
       await tester.pumpAndSettle();
     });
 
+    testWidgets('arrows scroll the page when no box is selected',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await pumpShell(tester);
+
+      // Zooming makes the page larger than the viewport, so the camera can
+      // genuinely travel rather than clamping at its top edge.
+      app.canvas.zoomAt(const Offset(700, 450), 2);
+      final before = app.canvas.offset;
+
+      await key(tester, LogicalKeyboardKey.arrowDown);
+      expect(app.selectedBlockId, isNull,
+          reason: 'a navigation key must not select a box just to scroll');
+      expect(app.canvas.offset.dy, lessThan(before.dy));
+
+      final afterDown = app.canvas.offset;
+      await key(tester, LogicalKeyboardKey.arrowRight);
+      expect(app.canvas.offset.dx, lessThan(afterDown.dx));
+    });
+
     testWidgets('Ctrl+arrows nudge, clamp to the page, and undo as one step',
         (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
@@ -320,8 +351,7 @@ void main() {
 
       // Fine nudge: exactly one pixel.
       final xBefore = live().x;
-      await key(tester, LogicalKeyboardKey.arrowRight,
-          ctrl: true, shift: true);
+      await key(tester, LogicalKeyboardKey.arrowRight, ctrl: true, shift: true);
       expect(live().x, xBefore + 1);
 
       // The burst is ONE undo entry: a single undo restores the start.

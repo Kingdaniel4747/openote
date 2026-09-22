@@ -79,7 +79,10 @@ const List<KeySection> keyboardMap = [
   KeySection('On the page (nothing focused)', [
     KeyBinding(
         'Tab / Shift+Tab', 'Select the next / previous box, in reading order'),
-    KeyBinding('↑ ↓ ← →', 'Select the nearest box in that direction'),
+    KeyBinding(
+        '↑ ↓ ← →',
+        'Scroll the page when nothing is selected; otherwise select the '
+            'nearest box in that direction'),
     KeyBinding('Enter', 'Edit the selected box (Esc climbs back out)'),
     KeyBinding('Just start typing',
         'A letter on a selected text or code box starts writing at its end'),

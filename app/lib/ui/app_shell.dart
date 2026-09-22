@@ -1013,6 +1013,15 @@ class _AppShellState extends State<AppShell> {
   /// off-axis costing double — the standard directional-navigation score.
   bool _spatial(int dx, int dy) {
     if (_routeOnTop) return false;
+    // With no object selected, arrows are viewport navigation. This makes a
+    // keyboard work like the wheel: Down and Right reveal the lower/right
+    // part of the page, so the page itself moves up and left. Once an object
+    // is selected, preserve the established spatial block navigation below.
+    if (app.selectedIds.isEmpty) {
+      const screenStep = 48.0;
+      app.canvas.panBy(Offset(-dx * screenStep, -dy * screenStep));
+      return true;
+    }
     final order = _traversable();
     if (order.isEmpty) return false;
     final cur = order.where((b) => b.id == app.selectedBlockId).firstOrNull;
