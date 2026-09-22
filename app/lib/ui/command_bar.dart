@@ -845,7 +845,10 @@ class _CommandBarState extends State<CommandBar> {
         inline: TextButton.icon(
           icon: const Icon(Icons.screenshot_monitor_outlined, size: 18),
           label: const Text('Screen'),
-          style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+          style: TextButton.styleFrom(
+            foregroundColor: Colors.white,
+            visualDensity: VisualDensity.compact,
+          ),
           onPressed: () => _insertScreenRegion(context),
         ),
         onPressed: () => _insertScreenRegion(context),
@@ -858,7 +861,10 @@ class _CommandBarState extends State<CommandBar> {
         inline: TextButton.icon(
           icon: const Icon(Icons.document_scanner_outlined, size: 18),
           label: const Text('Phone'),
-          style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+          style: TextButton.styleFrom(
+            foregroundColor: Colors.white,
+            visualDensity: VisualDensity.compact,
+          ),
           onPressed: () => showScannerPairingDialog(context, app),
         ),
         onPressed: () => showScannerPairingDialog(context, app),
@@ -1178,13 +1184,13 @@ class _CommandBarState extends State<CommandBar> {
                         width: 2,
                         color: activeCustomColour == null && activeColour == i
                             ? scheme.primary
-                            : i == 0
+                            : i == 0 && colourTool != Tool.highlighter
                                 ? scheme.outline
                                 : Colors.transparent,
                       ),
                     ),
                   ),
-                  if (i == 0)
+                  if (i == 0 && colourTool != Tool.highlighter)
                     Positioned(
                       right: -3,
                       bottom: -3,

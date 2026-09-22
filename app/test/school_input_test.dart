@@ -154,8 +154,9 @@ void main() {
               .skip(1)
               .take(5),
           OnoteColors.penColors.skip(1));
-      // Explicit black remains available on white PDF paper in dark mode.
-      await t.tap(find.byKey(const ValueKey('pen-swatch-6')));
+      // Fixed white and black remain available beside the automatic swatch,
+      // including on white PDF paper in dark mode.
+      await t.tap(find.byKey(const ValueKey('pen-swatch-7')));
       await draw(t, y: 300);
       expect(colorFromHex(strokes().last['brush']['color'] as String),
           Colors.black);
@@ -163,6 +164,17 @@ void main() {
       await t.pumpWidget(const SizedBox());
     });
   }
+
+  testWidgets('highlighter swatches are all ordinary fixed colours', (t) async {
+    await mount(t, ribbon: true);
+    app.setTool(Tool.highlighter);
+    await t.pump();
+
+    expect(find.byIcon(Icons.auto_awesome), findsNothing,
+        reason: 'the first highlighter colour is not an automatic swatch');
+    app.cancelPendingSave();
+    await t.pumpWidget(const SizedBox());
+  });
 
   testWidgets('larger eraser reaches nearby strokes; setting is persisted',
       (t) async {

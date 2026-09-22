@@ -103,9 +103,10 @@ abstract final class OnoteColors {
           : [
               dark ? moon0 : graphite900,
               ...penColors.skip(1),
-              // Keep a real black beside the theme-aware automatic swatch.
-              // In dark mode the automatic colour is white, but worksheets
-              // and imported PDFs still need an explicitly selectable black.
+              // Keep real white and black beside the theme-aware automatic
+              // swatch. Worksheets and imported PDFs need both fixed values,
+              // regardless of the application theme.
+              Colors.white,
               Colors.black,
             ];
 

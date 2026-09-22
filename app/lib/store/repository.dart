@@ -40,13 +40,15 @@ const int workspaceFormat = 2;
 class Repository {
   Repository._(this.workspaceDir);
   final Directory workspaceDir;
+  static const recycleBinDirectoryName = 'Recycle Bin';
   final Map<String, Database> _open = {}; // notebookId -> db
   // Compatibility-only locations from the removed sync layout. They are never
   // scanned at startup; an old blob is copied only if a page asks for it.
   final Map<String, String> _legacyAssetRoots = {};
   final List<NotebookRef> notebooks = [];
-  // Soft-deleted notebooks (ORG-7). Their .onote file stays on disk so a
-  // restore is lossless; purge removes the file for good.
+  // Soft-deleted notebooks (ORG-7). Their complete `.onotebook` directory is
+  // moved under `Recycle Bin`, so restore is lossless and the live workspace
+  // never contains a notebook that is no longer in the sidebar.
   final List<NotebookRef> trashedNotebooks = [];
 
   static Future<Repository> open() async {
@@ -243,6 +245,21 @@ class Repository {
         trashedNotebooks.add(ref);
         _rememberLegacyAssetFolder(
             ref, m['legacyAssets'] as String? ?? m['logDir'] as String?);
+        // Older builds kept a trashed notebook in its live location and only
+        // changed this registry list. Move such entries once on startup into
+        // the real recycle-bin folder; afterwards the registry points at the
+        // moved folder and normal restore/purge paths take over.
+        if (!_isInRecycleBin(ref.file)) {
+          try {
+            final destination = _recyclePathFor(ref);
+            _moveNotebook(ref, destination);
+            ref.file = destination;
+            relocated = true;
+          } catch (_) {
+            // Keep the old entry usable rather than losing a recoverable
+            // notebook when an antivirus or another process has it locked.
+          }
+        }
       }
     }
     // A manually copied `.onote` is a deliberate local import. Discovering
@@ -614,8 +631,10 @@ class Repository {
   // ── Notebooks ──────────────────────────────────────────────────────────
 
   Future<NotebookRef> createNotebook(String title) async {
+    title = _validatedNotebookTitle(title);
+    _ensureNotebookTitleAvailable(title);
     final id = newId();
-    final file = _freeNotebookPath(title);
+    final file = _newNotebookPath(title);
     await Directory(p.dirname(file)).create(recursive: true);
     final ref = NotebookRef(id: id, file: file, title: title);
     notebooks.add(ref);
@@ -793,10 +812,59 @@ class Repository {
     return file;
   }
 
+  /// The interactive "new notebook" path is deliberately stricter than the
+  /// import-copy path above: creating a second user-visible notebook with a
+  /// generated `-2` suffix hides a naming mistake.  An empty structured
+  /// directory is the one safe exception â€” older builds left exactly that
+  /// behind after a permanent delete, so repair it before making the name
+  /// available again.
+  String _newNotebookPath(String title) {
+    var base = title.replaceAll(RegExp(r'[^\w\- ]'), '').trim();
+    if (base.isEmpty) base = 'Notebook';
+    final folder = Directory(p.join(workspaceDir.path, '$base.onotebook'));
+    final file = p.join(folder.path, '$base.onote');
+    if (folder.existsSync()) {
+      try {
+        if (folder.listSync().isEmpty) folder.deleteSync();
+      } on FileSystemException {
+        // The check below turns a race or a locked folder into a clear error.
+      }
+    }
+    if (folder.existsSync() || File(file).existsSync()) {
+      throw StateError(
+          'A notebook folder named â€œ$titleâ€ already exists. Remove or rename it before creating this notebook.');
+    }
+    return file;
+  }
+
+  /// Notebook titles are names, not generated identifiers.  In particular, a
+  /// notebook in the recycle bin still owns its name: creating a second
+  /// "Maths" beside it makes restoring the first one needlessly ambiguous.
+  ///
+  /// Keep this check at the repository boundary as well as in the UI, because
+  /// imports and automation create notebooks without going through a dialog.
+  String _validatedNotebookTitle(String title) {
+    final value = title.trim();
+    if (value.isEmpty) throw ArgumentError.value(title, 'title', 'is empty');
+    return value;
+  }
+
+  void _ensureNotebookTitleAvailable(String title, {String? exceptId}) {
+    final key = title.trim().toLowerCase();
+    final exists = [...notebooks, ...trashedNotebooks].any(
+      (notebook) =>
+          notebook.id != exceptId && notebook.title.trim().toLowerCase() == key,
+    );
+    if (exists) {
+      throw StateError('A notebook named â€œ$titleâ€ already exists.');
+    }
+  }
+
   Future<void> renameNotebook(String id, String title) async {
     final ref = notebooks.firstWhere((n) => n.id == id);
+    title = _validatedNotebookTitle(title);
+    _ensureNotebookTitleAvailable(title, exceptId: id);
     final stem = title.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_').trim();
-    if (stem.isEmpty) throw ArgumentError.value(title, 'title', 'is empty');
     final structured =
         p.extension(p.dirname(ref.file)).toLowerCase() == '.onotebook';
     final destination = structured
@@ -813,7 +881,17 @@ class Repository {
       _open.remove(id)?.dispose();
       _decodedPages.remove(id);
       if (structured) {
-        Directory(p.dirname(ref.file)).renameSync(p.dirname(destination));
+        // Moving only the folder left its database with the old name inside
+        // it. The registry then pointed at a non-existent new-name `.onote`
+        // file; opening the renamed notebook could appear to lose its pages.
+        // Move the folder *and* every SQLite companion to the new basename.
+        final oldFolder = p.dirname(ref.file);
+        final newFolder = p.dirname(destination);
+        final oldNameInNewFolder = p.join(newFolder, p.basename(ref.file));
+        Directory(oldFolder).renameSync(newFolder);
+        _renameIfPresent(oldNameInNewFolder, destination);
+        _renameIfPresent('$oldNameInNewFolder-wal', '$destination-wal');
+        _renameIfPresent('$oldNameInNewFolder-shm', '$destination-shm');
       } else {
         _renameIfPresent(ref.file, destination);
         _renameIfPresent('${ref.file}-wal', '$destination-wal');
@@ -846,24 +924,94 @@ class Repository {
     return (sections: sections, pages: pages);
   }
 
-  /// Move a notebook to the recycle bin (ORG-7). Closes its db handle but keeps
-  /// the .onote file, so [restoreNotebook] brings it back untouched.
+  Directory get recycleBinDir =>
+      Directory(p.join(workspaceDir.path, recycleBinDirectoryName));
+
+  bool _isInRecycleBin(String file) =>
+      p.isWithin(recycleBinDir.path, p.normalize(p.absolute(file)));
+
+  bool _isStructuredNotebook(NotebookRef ref) =>
+      p.extension(p.dirname(ref.file)).toLowerCase() == '.onotebook';
+
+  String _recyclePathFor(NotebookRef ref) {
+    final filename = p.basename(ref.file);
+    if (_isStructuredNotebook(ref)) {
+      return p.join(
+          recycleBinDir.path, p.basename(p.dirname(ref.file)), filename);
+    }
+    return p.join(recycleBinDir.path, filename);
+  }
+
+  String _restoredPathFor(NotebookRef ref) {
+    final filename = p.basename(ref.file);
+    if (_isStructuredNotebook(ref)) {
+      return p.join(
+          workspaceDir.path, p.basename(p.dirname(ref.file)), filename);
+    }
+    return p.join(workspaceDir.path, filename);
+  }
+
+  void _moveNotebook(NotebookRef ref, String destination) {
+    final source = File(ref.file);
+    if (!source.existsSync()) {
+      throw StateError('The notebook file for “${ref.title}” is missing.');
+    }
+    final sourceFolder = source.parent;
+    final destinationFile = File(destination);
+    final destinationFolder = destinationFile.parent;
+    if (destinationFile.existsSync() ||
+        (_isStructuredNotebook(ref) && destinationFolder.existsSync())) {
+      throw StateError('A notebook named “${ref.title}” already exists there.');
+    }
+    if (_isStructuredNotebook(ref)) {
+      destinationFolder.parent.createSync(recursive: true);
+      sourceFolder.renameSync(destinationFolder.path);
+      return;
+    }
+    destinationFolder.createSync(recursive: true);
+    source.renameSync(destination);
+    _renameIfPresent('${ref.file}-wal', '$destination-wal');
+    _renameIfPresent('${ref.file}-shm', '$destination-shm');
+    final oldMedia = MediaStore.dirFor(ref);
+    final moved = NotebookRef(id: ref.id, file: destination, title: ref.title);
+    final newMedia = MediaStore.dirFor(moved);
+    if (oldMedia.existsSync()) oldMedia.renameSync(newMedia.path);
+  }
+
+  /// Move a notebook's complete folder into the physical recycle-bin folder.
+  /// Its file path changes together with the registry entry, so a restart still
+  /// knows exactly where to restore it from.
   Future<void> trashNotebook(String id) async {
     final i = notebooks.indexWhere((n) => n.id == id);
     if (i < 0) return;
-    final ref = notebooks.removeAt(i);
-    ref.deletedAt = nowMs();
-    trashedNotebooks.add(ref);
+    final ref = notebooks[i];
     _open.remove(id)?.dispose();
     _decodedPages.remove(id);
+    final destination = _recyclePathFor(ref);
+    _moveNotebook(ref, destination);
+    ref.file = destination;
+    ref.deletedAt = nowMs();
+    notebooks.removeAt(i);
+    trashedNotebooks.add(ref);
     await _saveNow();
   }
 
+  /// Return a notebook from the physical recycle-bin folder to the workspace.
+  /// A live notebook or folder at the destination is never overwritten.
   Future<void> restoreNotebook(String id) async {
     final i = trashedNotebooks.indexWhere((n) => n.id == id);
     if (i < 0) return;
-    final ref = trashedNotebooks.removeAt(i);
+    final ref = trashedNotebooks[i];
+    if (notebooks.any((n) =>
+        n.title.trim().toLowerCase() == ref.title.trim().toLowerCase())) {
+      throw StateError(
+          '“${ref.title}” cannot be restored because a notebook with that name already exists.');
+    }
+    final destination = _restoredPathFor(ref);
+    _moveNotebook(ref, destination);
+    ref.file = destination;
     ref.deletedAt = null;
+    trashedNotebooks.removeAt(i);
     notebooks.add(ref);
     await _saveNow();
   }
@@ -872,16 +1020,26 @@ class Repository {
   Future<void> purgeNotebook(String id) async {
     final i = trashedNotebooks.indexWhere((n) => n.id == id);
     if (i < 0) return;
-    final ref = trashedNotebooks.removeAt(i);
+    final ref = trashedNotebooks[i];
     _open.remove(id)?.dispose();
     _decodedPages.remove(id);
-    _deleteContainerFiles(ref.file);
-    try {
+    final folder = Directory(p.dirname(ref.file));
+    final structured = p.extension(folder.path).toLowerCase() == '.onotebook';
+    if (structured) {
+      // A structured notebook owns this whole directory: its container,
+      // SQLite's `-wal`/`-shm` sidecars, media, and any interrupted temporary
+      // file. Removing individual files used to strand an empty folder, which
+      // forced the next notebook of the same name to become "-2".
+      if (folder.existsSync()) folder.deleteSync(recursive: true);
+    } else {
+      _deleteContainerFiles(ref.file);
       final media = MediaStore.dirFor(ref);
       if (media.existsSync()) media.deleteSync(recursive: true);
-    } catch (_) {
-      // A locked media file must not leave a stale workspace entry behind.
     }
+    // Do not remove the recycle-bin entry until the filesystem deletion has
+    // actually succeeded. A locked file can then be retried instead of being
+    // silently orphaned outside an otherwise empty bin.
+    trashedNotebooks.removeAt(i);
     await _saveNow();
   }
 
@@ -896,10 +1054,8 @@ class Repository {
   /// nothing will ever open again.
   static void _deleteContainerFiles(String container) {
     for (final path in [container, '$container-wal', '$container-shm']) {
-      try {
-        final f = File(path);
-        if (f.existsSync()) f.deleteSync();
-      } catch (_) {/* best-effort; the workspace entry is already gone */}
+      final file = File(path);
+      if (file.existsSync()) file.deleteSync();
     }
   }
 

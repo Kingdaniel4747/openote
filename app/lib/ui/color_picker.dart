@@ -148,19 +148,9 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Theme + standard grid
-              Wrap(
-                spacing: 5,
-                runSpacing: 5,
-                children: [
-                  for (final c in OnoteColors.penColors) swatch(c),
-                  swatch(Colors.white),
-                  swatch(Colors.black),
-                  swatch(OnoteColors.graphite500),
-                  swatch(OnoteColors.brass400),
-                ],
-              ),
-              const SizedBox(height: 8),
+              // The standard grid is the complete fixed palette. The former
+              // top row mixed theme-aware ink and special colours into it,
+              // making the same position mean different things by tool/theme.
               for (final shade in const [0.95, 0.75, 0.55, 0.35])
                 Padding(
                   padding: const EdgeInsets.only(bottom: 5),

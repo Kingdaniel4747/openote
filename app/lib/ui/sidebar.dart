@@ -1322,8 +1322,13 @@ Future<void> showRecycleBin(BuildContext context, AppState app) async {
                                 children: [
                                   TextButton(
                                     onPressed: () async {
-                                      await app.restoreNotebook(nb.id);
-                                      setLocal(() {});
+                                      try {
+                                        await app.restoreNotebook(nb.id);
+                                        setLocal(() {});
+                                      } catch (error) {
+                                        if (!ctx.mounted) return;
+                                        await _showRecycleBinError(ctx, error);
+                                      }
                                     },
                                     child: const AppText('Restore'),
                                   ),
@@ -1426,6 +1431,21 @@ Future<bool> _confirmPurgeNotebook(BuildContext context, NotebookRef nb) async {
   );
   return ok == true;
 }
+
+Future<void> _showRecycleBinError(BuildContext context, Object error) =>
+    showOnoteDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const AppText('Could not restore notebook'),
+        content: Text(error.toString().replaceFirst('Bad state: ', '')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const AppText('Close'),
+          ),
+        ],
+      ),
+    );
 
 Future<bool> _confirmPurgeDeleted(BuildContext context, String title) async {
   final ok = await showOnoteDialog<bool>(
