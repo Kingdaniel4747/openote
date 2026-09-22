@@ -41,6 +41,9 @@ class Repository {
   Repository._(this.workspaceDir);
   final Directory workspaceDir;
   final Map<String, Database> _open = {}; // notebookId -> db
+  // Compatibility-only locations from the removed sync layout. They are never
+  // scanned at startup; an old blob is copied only if a page asks for it.
+  final Map<String, String> _legacyAssetRoots = {};
   final List<NotebookRef> notebooks = [];
   // Soft-deleted notebooks (ORG-7). Their .onote file stays on disk so a
   // restore is lossless; purge removes the file for good.
@@ -173,7 +176,7 @@ class Repository {
               file: f.path,
               title: p.basenameWithoutExtension(f.path));
           notebooks.add(ref);
-          await _adoptLegacyAssetFolder(ref, null);
+          _rememberLegacyAssetFolder(ref, null);
         }
         workspaceRecoveryNote =
             'workspace.json was missing or unreadable; recovered '
@@ -212,7 +215,8 @@ class Repository {
         final ref = NotebookRef(
             id: id, file: file, title: m['title'] as String? ?? 'Notebook');
         notebooks.add(ref);
-        await _adoptLegacyAssetFolder(ref, m['logDir'] as String?);
+        _rememberLegacyAssetFolder(
+            ref, m['legacyAssets'] as String? ?? m['logDir'] as String?);
       }
     }
     for (final n in (j['trashed'] as List? ?? const [])) {
@@ -226,59 +230,19 @@ class Repository {
             title: m['title'] as String? ?? 'Notebook',
             deletedAt: (m['deletedAt'] as num?)?.toInt() ?? nowMs());
         trashedNotebooks.add(ref);
-        await _adoptLegacyAssetFolder(ref, m['logDir'] as String?);
+        _rememberLegacyAssetFolder(
+            ref, m['legacyAssets'] as String? ?? m['logDir'] as String?);
       }
     }
   }
 
-  /// Bring assets written by the removed sync implementation back into the
-  /// notebook's local storage. This is deliberately copy-only: after a
-  /// successful upgrade the old folder remains a recoverable fallback and an
-  /// external cloud client may still be using it as an ordinary backup.
-  Future<void> _adoptLegacyAssetFolder(
-      NotebookRef ref, String? registeredFolder) async {
-    final legacyRoot = Directory(registeredFolder == null
-        ? '${p.withoutExtension(ref.file)}.onotebook'
-        : (p.isAbsolute(registeredFolder)
-            ? registeredFolder
-            : p.join(workspaceDir.path, registeredFolder)));
-    if (!legacyRoot.existsSync()) return;
-
-    final legacyBlobs = Directory(p.join(legacyRoot.path, 'blobs'));
-    if (legacyBlobs.existsSync()) {
-      final db = _db(ref.id);
-      final validHash = RegExp(r'^[0-9a-fA-F]{64}$');
-      for (final entry in legacyBlobs.listSync().whereType<File>()) {
-        final hash = p.basename(entry.path).toLowerCase();
-        if (!validHash.hasMatch(hash)) continue;
-        try {
-          final bytes = await entry.readAsBytes();
-          if (sha256Hex(bytes) != hash) continue;
-          db.execute(
-              'INSERT OR IGNORE INTO blobs(hash,bytes,mime,size,created_at) '
-              'VALUES(?,?,?,?,?)',
-              [hash, bytes, _mimeOf(bytes), bytes.length, nowMs()]);
-        } catch (_) {
-          // One unreadable legacy asset must not prevent the notebook opening.
-        }
-      }
-    }
-
-    final oldMedia = Directory(p.join(legacyRoot.path, 'media'));
-    if (!oldMedia.existsSync()) return;
-    final localMedia = MediaStore.dirFor(ref);
-    for (final entry in oldMedia.listSync().whereType<File>()) {
-      final name = p.basename(entry.path);
-      if (!MediaStore.isValidName(name)) continue;
-      final target = File(p.join(localMedia.path, name));
-      if (target.existsSync()) continue;
-      try {
-        await localMedia.create(recursive: true);
-        await entry.copy(target.path);
-      } catch (_) {
-        // Keep loading; the source file remains untouched for manual recovery.
-      }
-    }
+  void _rememberLegacyAssetFolder(NotebookRef ref, String? registeredFolder) {
+    if (registeredFolder == null || registeredFolder.isEmpty) return;
+    final root = p.isAbsolute(registeredFolder)
+        ? registeredFolder
+        : p.join(workspaceDir.path, registeredFolder);
+    ref.legacyAssetRoot = root;
+    _legacyAssetRoots[ref.id] = root;
   }
 
   static String _mimeOf(Uint8List bytes) {
@@ -436,6 +400,8 @@ class Repository {
             'id': n.id,
             'file': _registryPath(n.file),
             'title': n.title,
+            if (_legacyAssetRoots[n.id] case final legacy?)
+              'legacyAssets': legacy,
             // Always absolute: the shared folder is by definition outside the
             // workspace, so a basename would be meaningless.
           }
@@ -453,6 +419,8 @@ class Repository {
             'file': _registryPath(n.file),
             'title': n.title,
             'deletedAt': n.deletedAt,
+            if (_legacyAssetRoots[n.id] case final legacy?)
+              'legacyAssets': legacy,
           }
       ],
       'settings': _settings,
@@ -1229,8 +1197,32 @@ class Repository {
           String notebookId, Uint8List bytes, String mime) =>
       putBlob(notebookId, bytes, mime);
 
-  Uint8List? getBlob(String notebookId, String hash) =>
-      containerBlob(notebookId, hash);
+  Uint8List? getBlob(String notebookId, String hash) {
+    final present = containerBlob(notebookId, hash);
+    if (present != null) return present;
+
+    // Older builds kept bytes beside the notebook. Looking through every one
+    // at launch made a large workspace read gigabytes before drawing a single
+    // frame. Recover only the one asset the open page actually asks for.
+    final bare = hash.replaceFirst('sha256:', '').toLowerCase();
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(bare)) return null;
+    final ref = [...notebooks, ...trashedNotebooks]
+        .where((n) => n.id == notebookId)
+        .firstOrNull;
+    if (ref == null) return null;
+    final root = _legacyAssetRoots[notebookId] ??
+        '${p.withoutExtension(ref.file)}.onotebook';
+    final source = File(p.join(root, 'blobs', bare));
+    if (!source.existsSync()) return null;
+    try {
+      final bytes = source.readAsBytesSync();
+      if (sha256Hex(bytes) != bare) return null;
+      putBlob(notebookId, bytes, _mimeOf(bytes));
+      return bytes;
+    } catch (_) {
+      return null;
+    }
+  }
 
   Uint8List? containerBlob(String notebookId, String hash) {
     final rows = _db(notebookId).select('SELECT bytes FROM blobs WHERE hash=?',

@@ -76,7 +76,8 @@ class NotebookRef {
       {required this.id,
       required this.file,
       required this.title,
-      this.deletedAt});
+      this.deletedAt,
+      this.legacyAssetRoot});
   final String id;
 
   /// Absolute path to the local `.onote` container.
@@ -84,6 +85,10 @@ class NotebookRef {
 
   String title;
   int? deletedAt; // set while the notebook sits in the recycle bin (ORG-7)
+
+  /// Runtime-only source location for assets from the removed sync layout.
+  /// Assets are adopted from here only when a page actually asks for one.
+  String? legacyAssetRoot;
 }
 
 // ── Page properties (Data Model Spec §3 page-level; CANVAS-11) ───────────

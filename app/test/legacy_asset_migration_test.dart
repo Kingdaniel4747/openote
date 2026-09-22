@@ -15,7 +15,7 @@ void main() {
   var haveSqlite = false;
   setUpAll(() => haveSqlite = initSqliteForTests());
 
-  test('legacy sync assets are copied into local notebook storage', () async {
+  test('legacy assets stay dormant until a page requests them', () async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
 
     final temporary = Directory.systemTemp.createTempSync('onote_assets_');
@@ -47,11 +47,11 @@ void main() {
       registryFile.writeAsStringSync(jsonEncode(registry));
 
       repository = await Repository.openAt(workspace);
+      expect(repository.containerBlob(notebookId, hash), isNull,
+          reason: 'opening must not scan, read or copy legacy assets');
       expect(repository.getBlob(notebookId, hash), image);
       final reopened = repository.notebooks.single;
-      expect(
-          File(p.join(MediaStore.dirFor(reopened).path, 'lecture.mp4'))
-              .readAsBytesSync(),
+      expect(MediaStore.resolve(reopened, 'lecture.mp4')!.readAsBytesSync(),
           <int>[3, 4, 5]);
       expect(File(p.join(blobs.path, hash)).existsSync(), isTrue,
           reason: 'migration must leave the recoverable source untouched');

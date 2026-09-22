@@ -693,12 +693,14 @@ class AppState extends ChangeNotifier
           );
         }
         final media = MediaStore.dirFor(ref);
+        final legacyMedia = MediaStore.legacyDirFor(ref);
         final relativeMedia = '${p.withoutExtension(relativeFile)}.media';
-        if (media.existsSync() &&
+        final mediaToBackup = media.existsSync() ? media : legacyMedia;
+        if (mediaToBackup.existsSync() &&
             (onlyNotebookId != null ||
-                !p.isWithin(_repo.workspaceDir.path, media.path))) {
+                !p.isWithin(_repo.workspaceDir.path, mediaToBackup.path))) {
           await _copyBackupDirectory(
-            media,
+            mediaToBackup,
             Directory(p.join(root.path, relativeMedia)),
           );
         }

@@ -40,6 +40,14 @@ abstract final class MediaStore {
   static Directory dirFor(NotebookRef ref) =>
       Directory('${p.withoutExtension(ref.file)}.media');
 
+  /// Read-only fallback for media written by the removed storage layout.
+  /// Keeping this path separate prevents a launch-time copy of large videos.
+  static Directory legacyDirFor(NotebookRef ref) {
+    final root =
+        ref.legacyAssetRoot ?? '${p.withoutExtension(ref.file)}.onotebook';
+    return Directory(p.join(root, 'media'));
+  }
+
   /// A stored name is a bare filename and nothing else.
   ///
   /// The reference comes out of page content, which comes out of a file that
@@ -56,7 +64,12 @@ abstract final class MediaStore {
   static File? resolve(NotebookRef ref, String name) {
     if (!isValidName(name)) return null;
     final f = File(p.join(dirFor(ref).path, name));
-    return f.existsSync() ? f : null;
+    if (f.existsSync()) return f;
+    // Compatibility fallback only. Do not copy video files during startup:
+    // they can be gigabytes and the player is perfectly happy with their old
+    // path until the user chooses to move or back up the notebook.
+    final legacy = File(p.join(legacyDirFor(ref).path, name));
+    return legacy.existsSync() ? legacy : null;
   }
 
   /// Copy [source] in, and return the stored name to put in a block.

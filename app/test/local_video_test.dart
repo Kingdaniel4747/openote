@@ -62,7 +62,7 @@ void main() {
       final stored = MediaStore.resolve(ref, name)!;
       expect(stored.existsSync(), isTrue);
       expect(stored.lengthSync(), 4096);
-      expect(stored.path, contains('Lectures.onotebook'));
+      expect(stored.path, contains('Lectures.media'));
       expect(stored.path, endsWith('.mp4'),
           reason: 'the extension is what makes "open externally" land right');
     });
