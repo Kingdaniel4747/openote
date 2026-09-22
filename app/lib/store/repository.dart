@@ -202,6 +202,7 @@ class Repository {
       );
     }
     _settings = (j['settings'] as Map?)?.cast<String, dynamic>() ?? {};
+    var relocated = false;
     for (final n in (j['notebooks'] as List? ?? const [])) {
       final m = (n as Map).cast<String, dynamic>();
       // `p.join` with a RELATIVE path, which is what `_registryPath` writes: for
@@ -210,7 +211,12 @@ class Repository {
       // is `.cache/<id>/cache.onote`. An absolute path wins outright, which is
       // how a notebook moved into a cloud folder resolves.
       final id = m['id'] as String;
-      final file = p.join(workspaceDir.path, m['file'] as String);
+      var file = p.join(workspaceDir.path, m['file'] as String);
+      final manualMove = _manualNotebookLocation(file);
+      if (!File(file).existsSync() && manualMove != null) {
+        file = manualMove;
+        relocated = true;
+      }
       if (File(file).existsSync()) {
         final ref = NotebookRef(
             id: id, file: file, title: m['title'] as String? ?? 'Notebook');
@@ -222,7 +228,12 @@ class Repository {
     for (final n in (j['trashed'] as List? ?? const [])) {
       final m = (n as Map).cast<String, dynamic>();
       final id = m['id'] as String;
-      final file = p.join(workspaceDir.path, m['file'] as String);
+      var file = p.join(workspaceDir.path, m['file'] as String);
+      final manualMove = _manualNotebookLocation(file);
+      if (!File(file).existsSync() && manualMove != null) {
+        file = manualMove;
+        relocated = true;
+      }
       if (File(file).existsSync()) {
         final ref = NotebookRef(
             id: id,
@@ -257,7 +268,7 @@ class Repository {
       _rememberLegacyAssetFolder(ref, null);
       adopted = true;
     }
-    if (adopted && registryReadOnly == null) await _saveNow();
+    if ((adopted || relocated) && registryReadOnly == null) await _saveNow();
   }
 
   void _rememberLegacyAssetFolder(NotebookRef ref, String? registeredFolder) {
@@ -267,6 +278,18 @@ class Repository {
         : p.join(workspaceDir.path, registeredFolder);
     ref.legacyAssetRoot = root;
     _legacyAssetRoots[ref.id] = root;
+  }
+
+  /// Recognise exactly the documented manual reorganisation, without moving
+  /// or deleting any user file ourselves.
+  String? _manualNotebookLocation(String oldFile) {
+    final stem = p.basenameWithoutExtension(oldFile);
+    final candidate = p.join(
+      workspaceDir.path,
+      '$stem.onotebook',
+      '$stem.onote',
+    );
+    return File(candidate).existsSync() ? candidate : null;
   }
 
   static String _mimeOf(Uint8List bytes) {
@@ -593,6 +616,7 @@ class Repository {
   Future<NotebookRef> createNotebook(String title) async {
     final id = newId();
     final file = _freeNotebookPath(title);
+    await Directory(p.dirname(file)).create(recursive: true);
     final ref = NotebookRef(id: id, file: file, title: title);
     notebooks.add(ref);
     _open[id] = openOnote(file, notebookId: id, title: title);
@@ -629,6 +653,7 @@ class Repository {
 
     final name = title ?? p.basenameWithoutExtension(path);
     final local = _freeNotebookPath(name);
+    await Directory(p.dirname(local)).create(recursive: true);
     await file.copy(local);
     if (!File(local).existsSync() ||
         File(local).lengthSync() != file.lengthSync()) {
@@ -757,10 +782,12 @@ class Repository {
   String _freeNotebookPath(String title) {
     var base = title.replaceAll(RegExp(r'[^\w\- ]'), '').trim();
     if (base.isEmpty) base = 'Notebook';
-    var file = p.join(workspaceDir.path, '$base.onote');
+    var folder = p.join(workspaceDir.path, '$base.onotebook');
+    var file = p.join(folder, '$base.onote');
     var i = 2;
-    while (File(file).existsSync()) {
-      file = p.join(workspaceDir.path, '$base-$i.onote');
+    while (Directory(folder).existsSync() || File(file).existsSync()) {
+      folder = p.join(workspaceDir.path, '$base-$i.onotebook');
+      file = p.join(folder, '$base-$i.onote');
       i++;
     }
     return file;
@@ -770,9 +797,14 @@ class Repository {
     final ref = notebooks.firstWhere((n) => n.id == id);
     final stem = title.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_').trim();
     if (stem.isEmpty) throw ArgumentError.value(title, 'title', 'is empty');
-    final destination = p.join(p.dirname(ref.file), '$stem.onote');
+    final structured =
+        p.extension(p.dirname(ref.file)).toLowerCase() == '.onotebook';
+    final destination = structured
+        ? p.join(workspaceDir.path, '$stem.onotebook', '$stem.onote')
+        : p.join(p.dirname(ref.file), '$stem.onote');
     if (p.normalize(destination) != p.normalize(ref.file)) {
-      if (File(destination).existsSync()) {
+      if (File(destination).existsSync() ||
+          (structured && Directory(p.dirname(destination)).existsSync())) {
         throw StateError('A notebook named “$title” already exists.');
       }
       // SQLite can keep the main database open on Windows. Close the cached
@@ -780,13 +812,17 @@ class Repository {
       // files and local media as one notebook identity.
       _open.remove(id)?.dispose();
       _decodedPages.remove(id);
-      _renameIfPresent(ref.file, destination);
-      _renameIfPresent('${ref.file}-wal', '$destination-wal');
-      _renameIfPresent('${ref.file}-shm', '$destination-shm');
-      final oldMedia = MediaStore.dirFor(ref);
-      final moved = NotebookRef(id: ref.id, file: destination, title: title);
-      final newMedia = MediaStore.dirFor(moved);
-      if (oldMedia.existsSync()) oldMedia.renameSync(newMedia.path);
+      if (structured) {
+        Directory(p.dirname(ref.file)).renameSync(p.dirname(destination));
+      } else {
+        _renameIfPresent(ref.file, destination);
+        _renameIfPresent('${ref.file}-wal', '$destination-wal');
+        _renameIfPresent('${ref.file}-shm', '$destination-shm');
+        final oldMedia = MediaStore.dirFor(ref);
+        final moved = NotebookRef(id: ref.id, file: destination, title: title);
+        final newMedia = MediaStore.dirFor(moved);
+        if (oldMedia.existsSync()) oldMedia.renameSync(newMedia.path);
+      }
       ref.file = destination;
     }
     ref.title = title;

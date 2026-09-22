@@ -37,8 +37,15 @@ abstract final class MediaStore {
   static const _uuid = Uuid();
 
   /// Where [ref]'s media lives. Not created until something is stored.
-  static Directory dirFor(NotebookRef ref) =>
-      Directory('${p.withoutExtension(ref.file)}.media');
+  /// New notebooks keep it inside their own `.onotebook` folder; the flat
+  /// path remains for notebooks the user has not manually reorganised yet.
+  static Directory dirFor(NotebookRef ref) {
+    final parent = p.dirname(ref.file);
+    if (p.extension(parent).toLowerCase() == '.onotebook') {
+      return Directory(p.join(parent, 'media'));
+    }
+    return Directory('${p.withoutExtension(ref.file)}.media');
+  }
 
   /// Read-only fallback for media written by the removed storage layout.
   /// Keeping this path separate prevents a launch-time copy of large videos.
