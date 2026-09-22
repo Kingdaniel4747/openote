@@ -71,11 +71,14 @@ abstract final class OnoteColors {
   static const brass500 = Color(0xFFD9971F);
   static const brass700 = Color(0xFF9A6A12);
   // Paper & graphite (light)
-  static const paper0 = Color(0xFFFFFFFF);
-  static const paper50 = Color(0xFFFAF9F7);
-  static const paper100 = Color(0xFFF2F1ED);
-  static const paper200 = Color(0xFFE7E5DF);
-  static const paper300 = Color(0xFFD6D3CA);
+  // Light mode is deliberately a warm off-white rather than a pure #FFFFFF
+  // sheet. It keeps white ink visible, reduces glare, and mirrors the dark
+  // theme's softly lifted near-black rather than using either display extreme.
+  static const paper0 = Color(0xFFF8F7F4);
+  static const paper50 = Color(0xFFF3F2EE);
+  static const paper100 = Color(0xFFECEAE5);
+  static const paper200 = Color(0xFFE2E0D9);
+  static const paper300 = Color(0xFFD3D0C8);
   static const graphite400 = Color(0xFF9A968C);
   static const graphite500 = Color(0xFF6E6B63);
   static const graphite700 = Color(0xFF403D38);

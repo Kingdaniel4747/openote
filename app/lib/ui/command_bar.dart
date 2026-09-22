@@ -842,13 +842,9 @@ class _CommandBarState extends State<CommandBar> {
         width: 92,
         icon: Icons.screenshot_monitor_outlined,
         label: 'Screen clip',
-        inline: TextButton.icon(
-          icon: const Icon(Icons.screenshot_monitor_outlined, size: 18),
-          label: const Text('Screen'),
-          style: TextButton.styleFrom(
-            foregroundColor: Colors.white,
-            visualDensity: VisualDensity.compact,
-          ),
+        inline: CommandButton(
+          icon: Icons.screenshot_monitor_outlined,
+          label: 'Screen',
           onPressed: () => _insertScreenRegion(context),
         ),
         onPressed: () => _insertScreenRegion(context),
@@ -858,13 +854,9 @@ class _CommandBarState extends State<CommandBar> {
         width: 88,
         icon: Icons.document_scanner_outlined,
         label: 'Scan from phone',
-        inline: TextButton.icon(
-          icon: const Icon(Icons.document_scanner_outlined, size: 18),
-          label: const Text('Phone'),
-          style: TextButton.styleFrom(
-            foregroundColor: Colors.white,
-            visualDensity: VisualDensity.compact,
-          ),
+        inline: CommandButton(
+          icon: Icons.document_scanner_outlined,
+          label: 'Phone',
           onPressed: () => showScannerPairingDialog(context, app),
         ),
         onPressed: () => showScannerPairingDialog(context, app),

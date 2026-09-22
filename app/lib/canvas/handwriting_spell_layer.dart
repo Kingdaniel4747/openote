@@ -46,13 +46,24 @@ class _HandwritingSpellLayerState extends State<HandwritingSpellLayer> {
     if (_signature == signature) return;
     _signature = signature;
     // Editing or drawing anywhere else dismisses the transient suggestion
-    // chrome; the underline remains until the word is corrected or ignored.
-    if (_selectedMarkKey != null) _selectedMarkKey = null;
+    // chrome; marks are then re-evaluated for the new ink snapshot.
+    if (_selectedMarkKey != null) {
+      _selectedMarkKey = null;
+    }
     final revision = ++_revision;
     _timer?.cancel();
+    // Never leave suggestions for an earlier handwriting snapshot on screen
+    // while Windows recognises the next one. They otherwise look as though
+    // they vanished/reappeared after a save, even though the new job simply
+    // had not finished yet.
+    if (_marks.isNotEmpty) {
+      setState(() => _marks = const []);
+    }
     if (!Platform.isWindows ||
         !app.spellCheckEnabled ||
-        !app.handwritingSpellCheck) return;
+        !app.handwritingSpellCheck) {
+      return;
+    }
     final strokes = [
       for (final b in app.blocks)
         if (b.type == BlockType.ink)
@@ -87,9 +98,15 @@ class _HandwritingSpellLayerState extends State<HandwritingSpellLayer> {
               (m['w'] as num).toDouble(),
               (m['h'] as num).toDouble(),
             );
-            final key = '${app.pageId}|$text|${rect.left.round()}|'
+            final key = _stableMarkKey(app.pageId, rect);
+            // Compatibility with marks ignored before stable position keys
+            // were introduced. New ignores use [key], so the same handwritten
+            // word stays ignored even if Windows reads it a little differently
+            // on the next recognition pass.
+            final legacyKey = '${app.pageId}|$text|${rect.left.round()}|'
                 '${rect.top.round()}|${rect.width.round()}|${rect.height.round()}';
-            if (!app.isHandwritingMarkIgnored(key)) {
+            if (!app.isHandwritingMarkIgnored(key) &&
+                !app.isHandwritingMarkIgnored(legacyKey)) {
               marks.add(
                 _HandwritingMark(
                   rect: rect,
@@ -103,13 +120,26 @@ class _HandwritingSpellLayerState extends State<HandwritingSpellLayer> {
             }
           }
         }
-        if (current()) setState(() => _marks = marks);
+        if (current()) {
+          setState(() => _marks = marks);
+        }
       } catch (_) {
-        if (current())
+        if (current()) {
           app.writingServiceProblem =
               'Local writing services are unavailable. Check Windows language packs.';
+        }
       }
     });
+  }
+
+  /// Recognition bounds shift a few pixels between otherwise identical runs.
+  /// A 16-page-pixel location grid identifies the handwritten word rather
+  /// than that unstable result, while remaining distinct for neighbouring
+  /// words on a normal line.
+  static String _stableMarkKey(String? pageId, Rect rect) {
+    int cell(double value) => (value / 16).round();
+    return '${pageId ?? ''}|${cell(rect.left)}|${cell(rect.top)}|'
+        '${cell(rect.width)}|${cell(rect.height)}';
   }
 
   @override

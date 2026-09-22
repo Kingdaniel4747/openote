@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_mlkit_document_scanner/google_mlkit_document_scanner.dart';
 import 'package:http/http.dart' as http;
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -94,6 +95,7 @@ class _ScannerHomeState extends State<ScannerHome> {
   int _sent = 0;
   int _total = 0;
   String? _message;
+  bool _completed = false;
 
   @override
   void initState() {
@@ -195,6 +197,7 @@ class _ScannerHomeState extends State<ScannerHome> {
     if (pairing == null || _busy) return;
     setState(() {
       _busy = true;
+      _completed = false;
       _message = null;
       _sent = 0;
       _total = 0;
@@ -254,10 +257,12 @@ class _ScannerHomeState extends State<ScannerHome> {
         );
       }
       if (mounted) {
-        setState(
-          () => _message =
-              '${paths.length} page${paths.length == 1 ? '' : 's'} imported.',
-        );
+        setState(() => _completed = true);
+        // The computer has confirmed the completed import. A short, calm
+        // success state lets the student verify that fact before this
+        // single-purpose companion app closes itself.
+        await Future<void>.delayed(const Duration(seconds: 1));
+        if (mounted) await SystemNavigator.pop();
       }
     } on TimeoutException {
       if (mounted) {
@@ -280,6 +285,24 @@ class _ScannerHomeState extends State<ScannerHome> {
     if (_starting) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
+    if (_completed) {
+      return const Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.check_circle_rounded, size: 56, color: Colors.green),
+                SizedBox(height: 12),
+                Text('Super!', style: TextStyle(fontSize: 22)),
+                SizedBox(height: 4),
+                Text('Abgesendet'),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     final pairing = _pairing;
     return Scaffold(
       appBar: AppBar(title: const Text('Openote Scanner')),
@@ -293,12 +316,14 @@ class _ScannerHomeState extends State<ScannerHome> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Icon(
-                    pairing == null
-                        ? Icons.qr_code_scanner
-                        : Icons.document_scanner_outlined,
-                    size: 88,
-                    color: Theme.of(context).colorScheme.primary,
+                  Center(
+                    child: Icon(
+                      pairing == null
+                          ? Icons.qr_code_scanner
+                          : Icons.document_scanner_outlined,
+                      size: 72,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
                   ),
                   const SizedBox(height: 24),
                   Text(
