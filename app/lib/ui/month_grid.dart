@@ -60,6 +60,7 @@ class _MonthGridState extends State<MonthGrid> {
     // is cached, but 42 lookups through it every rebuild is still 42 walks of
     // the list, and this rebuilds with the panel.
     final marks = _marks(cells.first, cells.last);
+    final counts = _counts(cells.first, cells.last);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
@@ -109,7 +110,7 @@ class _MonthGridState extends State<MonthGrid> {
           Row(
             children: [
               for (var i = week * 7; i < week * 7 + 7 && i < cells.length; i++)
-                Expanded(child: _cell(context, cells[i], marks, scheme)),
+                Expanded(child: _cell(context, cells[i], marks, counts, scheme)),
             ],
           ),
       ]),
@@ -117,12 +118,14 @@ class _MonthGridState extends State<MonthGrid> {
   }
 
   Widget _cell(BuildContext context, DateTime day,
-      Map<String, Set<DatedKind>> marks, ColorScheme scheme) {
+      Map<String, Set<DatedKind>> marks, Map<String, int> counts,
+      ColorScheme scheme) {
     final inMonth = day.month == _month.month;
     final isToday = daysEqual(day, widget.now);
     final isPicked =
         widget.selected != null && daysEqual(day, widget.selected!);
     final kinds = marks[_key(day)] ?? const <DatedKind>{};
+    final count = counts[_key(day)] ?? 0;
 
     return InkWell(
       onTap: () => widget.onPick(day),
@@ -145,8 +148,8 @@ class _MonthGridState extends State<MonthGrid> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text('${day.day}',
-                style: TextStyle(
+            Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Text('${day.day}', style: TextStyle(
                     fontSize: 11,
                     fontWeight: isToday ? FontWeight.w700 : FontWeight.w400,
                     // Days from the neighbouring months stay visible but
@@ -156,6 +159,19 @@ class _MonthGridState extends State<MonthGrid> {
                         ? null
                         : context.surfaces.textSecondary
                             .withValues(alpha: .65))),
+              if (count > 0) ...[
+                const SizedBox(width: 3),
+                Container(
+                  constraints: const BoxConstraints(minWidth: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                  decoration: BoxDecoration(color: scheme.primary,
+                      borderRadius: BorderRadius.circular(8)),
+                  child: Text('$count', textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 8, height: 1,
+                          fontWeight: FontWeight.w700, color: scheme.onPrimary)),
+                ),
+              ],
+            ]),
             const SizedBox(height: 2),
             SizedBox(
               height: 4,
@@ -199,6 +215,18 @@ class _MonthGridState extends State<MonthGrid> {
       if (it.done) continue; // a ticked-off task is not a thing still to do
       if (it.when.isBefore(from) || it.when.isAfter(to)) continue;
       out.putIfAbsent(_key(it.when), () => <DatedKind>{}).add(it.kind);
+    }
+    return out;
+  }
+
+  /// How many unfinished things are waiting on each visible day. Dots retain
+  /// their type; this small number answers whether it is one thing or five.
+  Map<String, int> _counts(DateTime from, DateTime to) {
+    final out = <String, int>{};
+    for (final it in widget.planner.agenda(now: widget.now)) {
+      if (it.done || it.when.isBefore(from) || it.when.isAfter(to)) continue;
+      final key = _key(it.when);
+      out[key] = (out[key] ?? 0) + 1;
     }
     return out;
   }

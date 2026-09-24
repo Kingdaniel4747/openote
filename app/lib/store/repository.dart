@@ -262,10 +262,10 @@ class Repository {
         }
       }
     }
-    // A manually copied `.onote` is a deliberate local import. Discovering
-    // direct workspace files costs one directory listing, not a notebook scan,
-    // and means it appears on the next launch without creating a placeholder
-    // notebook with the same name first.
+    // A manually copied `.onote` or complete `.onotebook` folder is a
+    // deliberate local import. Discovering these costs shallow directory
+    // listings, not a scan of notebook contents, and repairs a valid folder
+    // which was left out of workspace.json by an older build or a restore.
     final known = {
       for (final ref in [...notebooks, ...trashedNotebooks])
         p.normalize(p.absolute(ref.file)),
@@ -282,6 +282,32 @@ class Repository {
         title: p.basenameWithoutExtension(file.path),
       );
       notebooks.add(ref);
+      _rememberLegacyAssetFolder(ref, null);
+      adopted = true;
+    }
+    for (final folder in workspaceDir.listSync().whereType<Directory>()) {
+      if (p.extension(folder.path).toLowerCase() != '.onotebook') continue;
+      // The container is directly inside its notebook folder. Never recurse
+      // or open SQLite here: startup remains independent of notebook size.
+      final stem = p.basenameWithoutExtension(folder.path);
+      final expected = File(p.join(folder.path, '$stem.onote'));
+      final container = expected.existsSync()
+          ? expected
+          : folder
+              .listSync()
+              .whereType<File>()
+              .where((f) => p.extension(f.path).toLowerCase() == '.onote')
+              .firstOrNull;
+      if (container == null ||
+          known.contains(p.normalize(p.absolute(container.path)))) {
+        continue;
+      }
+      final ref = NotebookRef(
+        id: newId(), file: container.path,
+        title: p.basenameWithoutExtension(container.path),
+      );
+      notebooks.add(ref);
+      known.add(p.normalize(p.absolute(container.path)));
       _rememberLegacyAssetFolder(ref, null);
       adopted = true;
     }

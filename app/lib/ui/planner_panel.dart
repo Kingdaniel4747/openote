@@ -367,15 +367,22 @@ class _PlannerPanelState extends State<PlannerPanel> {
       child: Align(
         alignment: Alignment.centerLeft,
         child: PopupMenuButton<String>(
-          tooltip: 'Add homework, reminder or exam',
-          icon: const Icon(Icons.add, size: 18),
+          tooltip: 'Add homework, to-do or exam',
           position: PopupMenuPosition.over,
           onSelected: (v) => _onAdd(v, now),
           itemBuilder: (_) => const [
             PopupMenuItem(value: 'homework', child: Text('Homework…')),
-            PopupMenuItem(value: 'reminder', child: Text('Reminder…')),
+            PopupMenuItem(value: 'reminder', child: Text('To-do…')),
             PopupMenuItem(value: 'exam', child: Text('Exam…')),
           ],
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.add_task_outlined, size: 18),
+              SizedBox(width: 6),
+              Text('Add task', style: TextStyle(fontSize: 12)),
+            ]),
+          ),
         ),
       ),
     );
@@ -484,7 +491,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
             onPressed: () => Navigator.pop(dialogContext, 'reminder'),
             child: const ListTile(
               leading: Icon(Icons.notifications_none),
-              title: Text('Add reminder'),
+              title: Text('Add to-do'),
             ),
           ),
           SimpleDialogOption(

@@ -458,8 +458,8 @@ class _BlockViewState extends State<BlockView> {
   /// own first line of text, and clicking it selects the whole container,
   /// which is the reliable way to get a text box into a multi-selection.
   Widget _moveBar(BuildContext context, Color primaryColor, bool dark) {
-    // A transparent edge hit target retains mouse dragging for editable
-    // objects. All visible actions live in the floating selection toolbar.
+    // Dragging inside a text editor correctly selects text. A visible handle
+    // makes moving the container discoverable without breaking that behaviour.
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onPanStart: _locked ? null : _dragStart,
@@ -467,7 +467,21 @@ class _BlockViewState extends State<BlockView> {
       onPanEnd: _locked ? null : _dragEnd,
       onTap: () => app.select(b.id),
       onSecondaryTapUp: (d) => showBlockMenu(context, app, b, d.globalPosition),
-      child: const SizedBox.expand(),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          width: 22,
+          height: 16,
+          margin: const EdgeInsets.only(left: 4),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: primaryColor.withValues(alpha: .82),
+            borderRadius: BorderRadius.circular(5),
+          ),
+          child: Icon(Icons.drag_indicator, size: 15,
+              color: dark ? Colors.black : Colors.white),
+        ),
+      ),
     );
   }
 
