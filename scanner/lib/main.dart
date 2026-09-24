@@ -21,9 +21,19 @@ class OpenoteScannerApp extends StatelessWidget {
     debugShowCheckedModeBanner: false,
     title: 'Openote Scanner',
     theme: ThemeData(
-      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF65558F)),
+      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF5B5BE6)),
+      scaffoldBackgroundColor: Colors.white,
       useMaterial3: true,
     ),
+    darkTheme: ThemeData(
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: const Color(0xFF7B7FEE),
+        brightness: Brightness.dark,
+      ),
+      scaffoldBackgroundColor: const Color(0xFF17161C),
+      useMaterial3: true,
+    ),
+    themeMode: ThemeMode.system,
     home: const ScannerHome(),
   );
 }
@@ -179,25 +189,45 @@ class _ScannerHomeState extends State<ScannerHome> {
   }
 
   Future<void> _chooseStartAction() async {
+    final background = Theme.of(context).scaffoldBackgroundColor;
     final choice = await showDialog<String>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text('Was möchtest du hinzufügen?'),
-        content: const Text('Wähle einen Scan oder eine Datei aus deinem Handy.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Später')),
-          FilledButton.icon(
-            onPressed: () => Navigator.pop(context, 'file'),
-            icon: const Icon(Icons.upload_file_outlined),
-            label: const Text('Datei auswählen'),
+      barrierColor: background,
+      builder: (context) => Center(
+        child: Material(
+          color: Theme.of(context).colorScheme.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 360),
+            child: Padding(
+              padding: const EdgeInsets.all(28),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.add_task_outlined, size: 44,
+                    color: Theme.of(context).colorScheme.primary),
+                const SizedBox(height: 16),
+                const Text('Was möchtest du hinzufügen?',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 8),
+                const Text('Wähle einen Scan oder eine Datei aus deinem Handy.',
+                    textAlign: TextAlign.center),
+                const SizedBox(height: 24),
+                SizedBox(width: double.infinity, child: FilledButton.icon(
+                  onPressed: () => Navigator.pop(context, 'scan'),
+                  icon: const Icon(Icons.document_scanner_outlined),
+                  label: const Text('Scannen'),
+                )),
+                const SizedBox(height: 10),
+                SizedBox(width: double.infinity, child: OutlinedButton.icon(
+                  onPressed: () => Navigator.pop(context, 'file'),
+                  icon: const Icon(Icons.upload_file_outlined),
+                  label: const Text('Datei auswählen'),
+                )),
+              ]),
+            ),
           ),
-          FilledButton.icon(
-            onPressed: () => Navigator.pop(context, 'scan'),
-            icon: const Icon(Icons.document_scanner_outlined),
-            label: const Text('Scannen'),
-          ),
-        ],
+        ),
       ),
     );
     if (!mounted || choice == null) return;
@@ -340,7 +370,11 @@ class _ScannerHomeState extends State<ScannerHome> {
       if (completion.statusCode != HttpStatus.ok) {
         throw HttpException('Openote could not finish the import (${completion.statusCode}).');
       }
-      if (mounted) setState(() => _completed = true);
+      if (mounted) {
+        setState(() => _completed = true);
+        await Future<void>.delayed(const Duration(seconds: 1));
+        if (mounted) await SystemNavigator.pop();
+      }
     } catch (error) {
       if (mounted) setState(() => _message = 'File import failed: $error');
     } finally {

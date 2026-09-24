@@ -61,6 +61,7 @@ class Reminder {
     this.pageId,
     this.blockId,
     this.line,
+    this.category = 'todo',
     this.fired = false,
     this.firedAt,
     this.dismissed = false,
@@ -101,6 +102,9 @@ class Reminder {
 
   /// 0-based line within the block, matching `NoteTag.line`.
   int? line;
+
+  /// Whether the entry was created as homework or an ordinary to-do.
+  String category;
 
   /// Whether this has already been surfaced to the user.
   ///
@@ -147,6 +151,7 @@ class Reminder {
         if (pageId != null) 'pageId': pageId,
         if (blockId != null) 'blockId': blockId,
         if (line != null) 'line': line,
+        if (category != 'todo') 'category': category,
         if (fired) 'fired': true,
         if (firedAt != null) 'firedAt': _encodeTime(firedAt!),
         if (dismissed) 'dismissed': true,
@@ -183,6 +188,7 @@ class Reminder {
       pageId: _decodeId(raw['pageId']),
       blockId: _decodeId(raw['blockId']),
       line: _decodeLine(raw['line']),
+      category: raw['category'] == 'homework' ? 'homework' : 'todo',
       fired: raw['fired'] == true,
       firedAt: _decodeTime(raw['firedAt']),
       dismissed: raw['dismissed'] == true,
@@ -349,6 +355,7 @@ class ReminderStore {
     String? pageId,
     String? blockId,
     int? line,
+    String category = 'todo',
     String? id,
     DateTime? now,
   }) {
@@ -362,6 +369,7 @@ class ReminderStore {
       pageId: pageId,
       blockId: blockId,
       line: line,
+      category: category == 'homework' ? 'homework' : 'todo',
     );
     _items.add(r);
     _persist(now);

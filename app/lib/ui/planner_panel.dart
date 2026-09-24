@@ -63,7 +63,9 @@ class _PlannerPanelState extends State<PlannerPanel> {
       // The alerts sit in the banner slot, above the scroll region, because a
       // reminder you have to scroll to find has not reminded you.
       banner: planner.pendingAlerts.isNotEmpty ? _alerts(context) : null,
-      footer: _footer(context, now),
+      // New items always begin by choosing their date in the calendar above.
+      // A second, unrelated add button made the resulting date surprising.
+      footer: null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -180,10 +182,10 @@ class _PlannerPanelState extends State<PlannerPanel> {
     return ListView(
       padding: const EdgeInsets.only(bottom: 10),
       children: [
-        for (final s in sections) ...[
-          _sectionHeader(s.bucket, now),
-          for (final it in s.items) _row(context, it, now),
-        ],
+        for (final it in [
+          for (final section in sections) ...section.items,
+        ])
+          _row(context, it, now),
       ],
     );
   }
@@ -343,8 +345,16 @@ class _PlannerPanelState extends State<PlannerPanel> {
       );
     }
     final (icon, colour) = switch (it.kind) {
-      DatedKind.exam => (Icons.flag_outlined, OnoteColors.brass500),
-      DatedKind.reminder => (Icons.notifications_none, OnoteColors.ink500),
+      DatedKind.exam => (Icons.flag_outlined, OnoteColors.ink500),
+      DatedKind.reminder => (
+          planner.reminders
+                      .byId(PlannerState.reminderIdOf(it) ?? '')
+                      ?.category ==
+                  'homework'
+              ? Icons.menu_book_outlined
+              : Icons.add_task_outlined,
+          OnoteColors.ink500
+        ),
       DatedKind.event => (Icons.schedule, context.surfaces.textSecondary),
       DatedKind.task => (
           Icons.check_box_outline_blank,
@@ -559,7 +569,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
     bool homework = false,
   }) async {
     final r =
-        await showOnoteDialog<({String text, String subject, DateTime at})>(
+        await showOnoteDialog<({String text, String subject, DateTime at, bool openPage})>(
       context: context,
       builder: (ctx) => _ReminderDialog(
         now: now,
@@ -573,13 +583,13 @@ class _PlannerPanelState extends State<PlannerPanel> {
     // isn't. v0.5 §7 left that an open decision; allowing it is the resolution,
     // because "call the tutor at 3" belongs to no page and refusing it means
     // the student simply loses the reminder rather than filing it better.
-    final title =
-        homework && r.subject.isNotEmpty ? '${r.subject} — ${r.text}' : r.text;
+    final title = r.subject.isNotEmpty ? '${r.subject} — ${r.text}' : r.text;
     planner.reminders.add(
       text: title,
       at: r.at,
+      category: homework ? 'homework' : 'todo',
       notebookId: app.notebookId,
-      pageId: page?.id,
+      pageId: r.openPage ? page?.id : null,
     );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -655,6 +665,7 @@ class _ReminderDialog extends StatefulWidget {
 class _ReminderDialogState extends State<_ReminderDialog> {
   final _subject = TextEditingController();
   final _text = TextEditingController();
+  bool _openPage = true;
   late DateTime _at = widget.initialDay == null
       ? _round(widget.now.add(const Duration(hours: 1)))
       : DateTime(
@@ -729,7 +740,8 @@ class _ReminderDialogState extends State<_ReminderDialog> {
     void submit() {
       final t = _text.text.trim();
       if (t.isEmpty) return;
-      Navigator.pop(context, (text: t, subject: _subject.text.trim(), at: _at));
+      Navigator.pop(context,
+          (text: t, subject: _subject.text.trim(), at: _at, openPage: _openPage));
     }
 
     return AlertDialog(
@@ -741,39 +753,34 @@ class _ReminderDialogState extends State<_ReminderDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (widget.homework) ...[
-              TextField(
-                controller: _subject,
-                autofocus: true,
-                style: const TextStyle(fontSize: 13),
-                decoration: const InputDecoration(
-                  hintText: 'Subject, for example Mathematics',
-                  isDense: true,
-                ),
-              ),
-              const SizedBox(height: 10),
-            ],
             TextField(
-              controller: _text,
-              autofocus: !widget.homework,
+              controller: _subject,
+              autofocus: true,
               style: const TextStyle(fontSize: 13),
               decoration: InputDecoration(
                 hintText: widget.homework
-                    ? 'What needs to be done?'
-                    : 'Come back to the proof of 2.7',
+                    ? 'Subject, for example Mathematics'
+                    : 'Title',
                 isDense: true,
               ),
               onChanged: (_) => setState(() {}),
-              onSubmitted: (_) => submit(),
             ),
-            const SizedBox(height: 14),
-            Wrap(spacing: 6, runSpacing: 6, children: [
-              _chip('In 30 min', () => _shift(const Duration(minutes: 30))),
-              _chip('In an hour', () => _shift(const Duration(hours: 1))),
-              _chip('This evening', () => _setTimeOfDay(19, 0)),
-              _chip(
-                  'Tomorrow morning', () => _setTimeOfDay(9, 0, dayOffset: 1)),
-            ]),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _text,
+              minLines: 5,
+              maxLines: 10,
+              keyboardType: TextInputType.multiline,
+              textInputAction: TextInputAction.newline,
+              style: const TextStyle(fontSize: 13),
+              decoration: InputDecoration(
+                hintText: widget.homework
+                    ? 'What needs to be done?\nYou can use several lines.'
+                    : 'Description or checklist\nYou can use several lines.',
+                alignLabelWithHint: true,
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
             const SizedBox(height: 12),
             Row(children: [
               TextButton.icon(
@@ -789,6 +796,15 @@ class _ReminderDialogState extends State<_ReminderDialog> {
                 onPressed: _pickTime,
               ),
             ]),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              value: _openPage,
+              onChanged: (value) => setState(() => _openPage = value),
+              title: const Text('Open the linked page',
+                  style: TextStyle(fontSize: 12)),
+              subtitle: const Text('Turn off for a task that belongs to no page.',
+                  style: TextStyle(fontSize: 11)),
+            ),
             const SizedBox(height: 4),
             // Said plainly rather than buried in a help page: a reminder a
             // student wrongly believes will interrupt them is worse than no
@@ -810,15 +826,10 @@ class _ReminderDialogState extends State<_ReminderDialog> {
             child: const Text('Cancel')),
         FilledButton(
           onPressed: _text.text.trim().isEmpty ? null : submit,
-          child: Text(widget.homework ? 'Add' : 'Remind me'),
+          child: const Text('Save'),
         ),
       ],
     );
   }
 
-  Widget _chip(String label, VoidCallback tap) => ActionChip(
-        label: Text(label, style: const TextStyle(fontSize: 12)),
-        visualDensity: VisualDensity.compact,
-        onPressed: tap,
-      );
 }

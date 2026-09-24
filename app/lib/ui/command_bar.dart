@@ -53,6 +53,51 @@ class CommandBar extends StatefulWidget {
   State<CommandBar> createState() => _CommandBarState();
 }
 
+/// The planner is a to-do inbox, so its toolbar entry shows the same compact
+/// count as the month grid. A number is more useful than a generic calendar
+/// glyph when the student has just opened the app to see what is waiting.
+class _PlannerButton extends StatelessWidget {
+  const _PlannerButton({required this.app});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    final count = app
+        .planner
+        .agenda()
+        .where((item) => !item.done && item.kind.name != 'event')
+        .length;
+    return Stack(clipBehavior: Clip.none, children: [
+      IconButton(
+        icon: const Icon(Icons.calendar_month_outlined, size: 18),
+        tooltip: 'Hausaufgaben, To-dos und Klausuren',
+        isSelected: app.showPlannerPanel,
+        visualDensity: VisualDensity.compact,
+        onPressed: app.togglePlannerPanel,
+      ),
+      if (count > 0)
+        Positioned(
+          right: 3,
+          top: 3,
+          child: IgnorePointer(
+            child: Container(
+              constraints: const BoxConstraints(minWidth: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text('$count', textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 9, height: 1,
+                      fontWeight: FontWeight.w700,
+                      color: Theme.of(context).colorScheme.onPrimary)),
+            ),
+          ),
+        ),
+    ]);
+  }
+}
+
 class _CommandBarState extends State<CommandBar> {
   /// The tab the user last chose among the permanent ones.
   int _tab = 0;
@@ -271,13 +316,7 @@ class _CommandBarState extends State<CommandBar> {
           visualDensity: VisualDensity.compact,
           onPressed: () => showResearchPalette(context),
         ),
-        IconButton(
-          icon: const Icon(Icons.calendar_month_outlined, size: 18),
-          tooltip: 'Hausaufgaben, To-dos und Klausuren',
-          isSelected: app.showPlannerPanel,
-          visualDensity: VisualDensity.compact,
-          onPressed: app.togglePlannerPanel,
-        ),
+        _PlannerButton(app: app),
         IconButton(
           icon: const Icon(Icons.settings_outlined, size: 18),
           tooltip: tr(context, 'Settings…'),
@@ -334,13 +373,7 @@ class _CommandBarState extends State<CommandBar> {
               visualDensity: VisualDensity.compact,
               onPressed: () => showResearchPalette(context),
             ),
-            IconButton(
-              icon: const Icon(Icons.calendar_month_outlined, size: 18),
-              tooltip: 'Hausaufgaben, To-dos und Klausuren',
-              isSelected: app.showPlannerPanel,
-              visualDensity: VisualDensity.compact,
-              onPressed: app.togglePlannerPanel,
-            ),
+            _PlannerButton(app: app),
             IconButton(
               icon: const Icon(Icons.settings_outlined, size: 18),
               tooltip: tr(context, 'Settings…'),
