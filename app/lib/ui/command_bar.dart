@@ -272,6 +272,13 @@ class _CommandBarState extends State<CommandBar> {
           onPressed: () => showResearchPalette(context),
         ),
         IconButton(
+          icon: const Icon(Icons.calendar_month_outlined, size: 18),
+          tooltip: 'Hausaufgaben, To-dos und Klausuren',
+          isSelected: app.showPlannerPanel,
+          visualDensity: VisualDensity.compact,
+          onPressed: app.togglePlannerPanel,
+        ),
+        IconButton(
           icon: const Icon(Icons.settings_outlined, size: 18),
           tooltip: tr(context, 'Settings…'),
           visualDensity: VisualDensity.compact,
@@ -326,6 +333,13 @@ class _CommandBarState extends State<CommandBar> {
               tooltip: 'Recherche und YouTube',
               visualDensity: VisualDensity.compact,
               onPressed: () => showResearchPalette(context),
+            ),
+            IconButton(
+              icon: const Icon(Icons.calendar_month_outlined, size: 18),
+              tooltip: 'Hausaufgaben, To-dos und Klausuren',
+              isSelected: app.showPlannerPanel,
+              visualDensity: VisualDensity.compact,
+              onPressed: app.togglePlannerPanel,
             ),
             IconButton(
               icon: const Icon(Icons.settings_outlined, size: 18),

@@ -100,11 +100,14 @@ class ScannerReceiver {
         return;
       }
       final mime = request.headers.contentType?.mimeType.toLowerCase();
-      if (mime != 'image/jpeg' && mime != 'image/png') {
+      if (mime == null ||
+          mime.isEmpty ||
+          mime == 'application/x-msdownload' ||
+          mime == 'application/x-executable') {
         await _reply(
           request,
           HttpStatus.unsupportedMediaType,
-          'Only JPEG and PNG scans are accepted',
+          'That file type cannot be added',
         );
         return;
       }
@@ -134,7 +137,7 @@ class ScannerReceiver {
       }
       final rawName = request.headers.value('x-openote-filename') ?? 'scan.jpg';
       final filename = rawName.replaceAll(RegExp(r'[^a-zA-Z0-9._ -]'), '_');
-      await onScan(bytes, mime!, filename);
+      await onScan(bytes, mime, filename);
       await _reply(request, HttpStatus.created, 'Imported');
     } catch (error) {
       try {

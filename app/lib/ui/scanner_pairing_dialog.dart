@@ -91,7 +91,7 @@ class _ScannerPairingDialogState extends State<_ScannerPairingDialog> {
   void initState() {
     super.initState();
     _receiver = ScannerReceiver(
-      onScan: (bytes, mime, _) async {
+      onScan: (bytes, mime, filename) async {
         if (mounted) setState(() => _importing = true);
         try {
           var targetNotebookId = widget.notebookId;
@@ -102,12 +102,13 @@ class _ScannerPairingDialogState extends State<_ScannerPairingDialog> {
             targetPageId = widget.app.pageId ?? targetPageId;
             widget.app.setPageLayout('paged');
           }
-          await importPhoneScan(
+          await importPhoneFile(
             widget.app,
             notebookId: targetNotebookId,
             pageId: targetPageId,
             bytes: bytes,
             mime: mime,
+            filename: filename,
           );
           if (mounted) setState(() => _received++);
         } finally {

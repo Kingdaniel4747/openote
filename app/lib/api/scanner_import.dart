@@ -79,6 +79,68 @@ Future<Block> importPhoneScan(
   return scan;
 }
 
+/// Store a phone-selected file on the paired page. Images retain the scan
+/// layout; PDFs and other documents become lossless attachment cards.
+Future<Block> importPhoneFile(
+  AppState app, {
+  required String notebookId,
+  required String pageId,
+  required Uint8List bytes,
+  required String mime,
+  required String filename,
+}) async {
+  if (mime == 'image/jpeg' || mime == 'image/png') {
+    return importPhoneScan(
+      app,
+      notebookId: notebookId,
+      pageId: pageId,
+      bytes: bytes,
+      mime: mime,
+    );
+  }
+  if (!app.notebooks.any((notebook) => notebook.id == notebookId)) {
+    throw StateError('The target notebook no longer exists.');
+  }
+  if (!app.readNodesOf(notebookId).any(
+        (node) => node.id == pageId && node.kind == NodeKind.page,
+      )) {
+    throw StateError('The target page no longer exists.');
+  }
+  if (app.notebookIsReadOnly(notebookId)) {
+    throw StateError('The target notebook is read-only.');
+  }
+  await app.flushSave();
+  final onScreen = app.notebookId == notebookId && app.pageId == pageId;
+  final data = onScreen
+      ? PageData(app.blocks, app.pageProps)
+      : app.readPageOf(notebookId, pageId);
+  final hash = app.importBlob(notebookId, bytes, mime);
+  var y = AppState.contentTop;
+  for (final block in data.blocks) {
+    final bottom = block.y + (block.h ?? app.estimatedHeight(block));
+    if (bottom > y) y = bottom;
+  }
+  final file = Block(
+    type: BlockType.file,
+    x: AppState.pageLeftMargin,
+    y: y + 36,
+    w: 320,
+    content: {
+      'blob': 'sha256:$hash',
+      'mime': mime,
+      'name': filename,
+      'source': 'phone-file',
+    },
+  );
+  if (onScreen) {
+    app.addBlock(file);
+    await app.flushSave();
+  } else {
+    app.importPage(notebookId, pageId, [...data.blocks, file], data.props);
+  }
+  return file;
+}
+
 Future<(double, double)?> _imageDimensions(Uint8List bytes) async {
   ui.Codec? codec;
   ui.FrameInfo? frame;

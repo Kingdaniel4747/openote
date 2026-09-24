@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:google_mlkit_document_scanner/google_mlkit_document_scanner.dart';
 import 'package:http/http.dart' as http;
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -112,7 +113,7 @@ class _ScannerHomeState extends State<ScannerHome> {
     }
     if (!mounted) return;
     setState(() => _starting = false);
-    await _pair();
+    await _chooseStartAction();
   }
 
   Future<bool> _confirmUpdate(ScannerUpdate update) async =>
@@ -177,7 +178,33 @@ class _ScannerHomeState extends State<ScannerHome> {
     }
   }
 
-  Future<void> _pair() async {
+  Future<void> _chooseStartAction() async {
+    final choice = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Was möchtest du hinzufügen?'),
+        content: const Text('Wähle einen Scan oder eine Datei aus deinem Handy.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Später')),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(context, 'file'),
+            icon: const Icon(Icons.upload_file_outlined),
+            label: const Text('Datei auswählen'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(context, 'scan'),
+            icon: const Icon(Icons.document_scanner_outlined),
+            label: const Text('Scannen'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null) return;
+    await _pair(afterPairing: choice == 'scan' ? _scan : _pickFile);
+  }
+
+  Future<void> _pair({Future<void> Function()? afterPairing}) async {
     final pairing = await Navigator.push<PairingData>(
       context,
       MaterialPageRoute(builder: (_) => const PairQrPage()),
@@ -189,7 +216,7 @@ class _ScannerHomeState extends State<ScannerHome> {
       _sent = 0;
       _total = 0;
     });
-    await _scan();
+    await (afterPairing ?? _scan)();
   }
 
   Future<void> _scan() async {
@@ -280,6 +307,61 @@ class _ScannerHomeState extends State<ScannerHome> {
     }
   }
 
+  Future<void> _pickFile() async {
+    final pairing = _pairing;
+    if (pairing == null || _busy) return;
+    final picked = await openFile();
+    if (picked == null || !mounted) return;
+    setState(() {
+      _busy = true;
+      _completed = false;
+      _message = null;
+      _sent = 0;
+      _total = 1;
+    });
+    try {
+      final response = await http.post(
+        pairing.uploadUri,
+        headers: {
+          HttpHeaders.authorizationHeader: 'Bearer ${pairing.token}',
+          HttpHeaders.contentTypeHeader: _mimeForFilename(picked.name),
+          'x-openote-filename': picked.name,
+        },
+        body: await picked.readAsBytes(),
+      ).timeout(const Duration(seconds: 90));
+      if (response.statusCode != HttpStatus.created) {
+        throw HttpException('Openote answered ${response.statusCode}: ${response.body}');
+      }
+      if (mounted) setState(() => _sent = 1);
+      final completion = await http.post(
+        pairing.completeUri,
+        headers: {HttpHeaders.authorizationHeader: 'Bearer ${pairing.token}'},
+      ).timeout(const Duration(seconds: 30));
+      if (completion.statusCode != HttpStatus.ok) {
+        throw HttpException('Openote could not finish the import (${completion.statusCode}).');
+      }
+      if (mounted) setState(() => _completed = true);
+    } catch (error) {
+      if (mounted) setState(() => _message = 'File import failed: $error');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  String _mimeForFilename(String name) {
+    final extension = name.split('.').last.toLowerCase();
+    return switch (extension) {
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'png' => 'image/png',
+      'pdf' => 'application/pdf',
+      'txt' || 'md' => 'text/plain',
+      'csv' => 'text/csv',
+      'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      _ => 'application/octet-stream',
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_starting) {
@@ -345,15 +427,21 @@ class _ScannerHomeState extends State<ScannerHome> {
                   const SizedBox(height: 28),
                   if (pairing == null)
                     FilledButton.icon(
-                      onPressed: _updating ? null : _pair,
-                      icon: const Icon(Icons.qr_code_scanner),
-                      label: const Text('Scan pairing code'),
+                      onPressed: _updating ? null : _chooseStartAction,
+                      icon: const Icon(Icons.add_circle_outline),
+                      label: const Text('Scan oder Datei hinzufügen'),
                     )
                   else ...[
                     FilledButton.icon(
                       onPressed: _busy ? null : _scan,
                       icon: const Icon(Icons.document_scanner_outlined),
                       label: Text(_busy ? 'Sending…' : 'Scan document'),
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: _busy ? null : _pickFile,
+                      icon: const Icon(Icons.upload_file_outlined),
+                      label: const Text('Datei hinzufügen'),
                     ),
                     const SizedBox(height: 8),
                     TextButton(

@@ -35,6 +35,7 @@ dependencies:
   mobile_scanner: ^7.4.0
   ota_update: ^7.1.0
   package_info_plus: ^10.2.1
+  file_selector: ^1.0.3
 
 dev_dependencies:
   flutter_test:
