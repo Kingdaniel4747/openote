@@ -6,8 +6,10 @@
 //    (with a small amount of buffer room)."
 import 'dart:io';
 
-import 'package:flutter/gestures.dart' show PointerDeviceKind;
+import 'package:flutter/gestures.dart'
+    show PointerDeviceKind, kMiddleMouseButton;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/canvas/block_view.dart';
@@ -175,6 +177,49 @@ void main() {
 
       expect(app.selectedIds, contains(b.id),
           reason: 'pen and mouse keep the selector drag');
+      app.cancelPendingSave();
+    });
+
+    testWidgets(
+        'wheel scrolls; Shift-wheel zooms; middle drag pans over a block',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      app.addBlock(Block(
+          type: BlockType.text,
+          x: 180,
+          y: 180,
+          w: 300,
+          h: 250,
+          content: {'text': 'block', 'autoWidth': false}));
+      app.addBlock(Block(
+          type: BlockType.text,
+          x: 100,
+          y: 1600,
+          w: 300,
+          content: {'text': 'below', 'autoWidth': false}));
+      await pump(t);
+
+      final wheel = TestPointer(1, PointerDeviceKind.mouse);
+      await t.sendEventToBinding(wheel.hover(const Offset(400, 300)));
+      await t.sendEventToBinding(wheel.scroll(const Offset(0, 120)));
+      await t.pump();
+      expect(app.canvas.offset.dy, lessThan(0));
+      final scale = app.canvas.scale;
+      await t.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await t.sendEventToBinding(wheel.scroll(const Offset(0, -120)));
+      await t.pump();
+      await t.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      expect(app.canvas.scale, greaterThan(scale));
+
+      final from = app.canvas.pageToScreen(const Offset(250, 250));
+      final middle =
+          TestPointer(2, PointerDeviceKind.mouse, null, kMiddleMouseButton);
+      await t.sendEventToBinding(middle.down(from));
+      final before = app.canvas.offset;
+      await t.sendEventToBinding(middle.move(from + const Offset(-60, -40)));
+      await t.sendEventToBinding(middle.up());
+      await t.pump();
+      expect(app.canvas.offset.dy, lessThan(before.dy));
       app.cancelPendingSave();
     });
   });

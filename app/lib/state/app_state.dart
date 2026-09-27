@@ -4083,6 +4083,75 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
+  /// Present the PDF slides on this page as the paper itself, or return to the
+  /// normal slide canvas. All blocks use the same translation, so ink stays
+  /// aligned with the slide it was drawn on.
+  bool get hasPdfSlideContent => blocks.any(
+      (b) => b.content['pdf'] is String || b.content['source'] == 'phone-scan');
+
+  void setPdfEditorView(bool enabled) {
+    if (pageProps.pdfOnly == enabled) return;
+    final slides = blocks
+        .where((b) =>
+            b.content['pdf'] is String || b.content['source'] == 'phone-scan')
+        .toList();
+    if (slides.isEmpty) return;
+    pushUndo();
+    final saved = pageProps.unknownFields;
+    if (enabled) {
+      final left = slides.map((b) => b.x).reduce(math.min);
+      final top = slides.map((b) => b.y).reduce(math.min);
+      saved['pdfSlidesPreviousLayout'] = pageProps.layout;
+      saved['pdfSlidesPreviousWidth'] = pageProps.pageWidth;
+      saved['pdfSlidesPreviousBackground'] = pageProps.background;
+      saved['pdfSlidesOffsetX'] = left;
+      saved['pdfSlidesOffsetY'] = top;
+      for (final b in blocks) {
+        b.x -= left;
+        b.y -= top;
+      }
+      for (final b in slides) {
+        b.content['pdfSlidesWasLocked'] = b.content['locked'] == true;
+        b.content['pdfSlidesWasBackground'] = b.content['background'] == true;
+        b.content['locked'] = true;
+        b.content['background'] = true;
+      }
+      pageProps
+        ..layout = 'pdf'
+        ..background = 'blank'
+        ..pageWidth = slides.map((b) => b.x + b.w).reduce(math.max)
+        ..pdfPageHeight = slides
+            .map((b) => b.y + (b.h ?? estimatedHeight(b)))
+            .reduce(math.max);
+    } else {
+      final left = (saved.remove('pdfSlidesOffsetX') as num?)?.toDouble() ??
+          pageLeftMargin;
+      final top =
+          (saved.remove('pdfSlidesOffsetY') as num?)?.toDouble() ?? contentTop;
+      for (final b in blocks) {
+        b.x += left;
+        b.y += top;
+      }
+      for (final b in slides) {
+        b.content['locked'] = b.content.remove('pdfSlidesWasLocked') == true;
+        b.content['background'] =
+            b.content.remove('pdfSlidesWasBackground') == true;
+      }
+      pageProps
+        ..layout =
+            saved.remove('pdfSlidesPreviousLayout') as String? ?? 'canvas'
+        ..pageWidth =
+            (saved.remove('pdfSlidesPreviousWidth') as num?)?.toDouble() ?? 1100
+        ..background =
+            saved.remove('pdfSlidesPreviousBackground') as String? ?? 'blank';
+    }
+    selectedIds.clear();
+    docRevision++;
+    markDirty();
+    notifyListeners();
+    canvas.clampToPage();
+  }
+
   /// The one big box a paged page writes into, created if it is not there.
   ///
   /// Recognised by geometry rather than by a flag: it is the full-width text

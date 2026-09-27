@@ -168,7 +168,7 @@ void main() {
 
       await t.drag(
         find.byKey(const ValueKey('writing-toolbar-drag-handle')),
-        const Offset(-400, 40),
+        const Offset(-400, 86),
       );
       await t.pumpAndSettle();
       final dockedToolbar =

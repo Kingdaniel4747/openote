@@ -158,6 +158,9 @@ class _GraphBlockViewState extends State<GraphBlockView> {
   /// signals — a wheel notch has no pointer to claim.
   void _wheel(PointerSignalEvent e) {
     if (e is! PointerScrollEvent || _lastSize.isEmpty) return;
+    final keys = HardwareKeyboard.instance;
+    if (!keys.isControlPressed && !keys.isMetaPressed && !keys.isShiftPressed)
+      return;
     // **Sideways is not a zoom.** A trackpad's horizontal swipe, a tilt
     // wheel and Shift+wheel all arrive here with dy of zero, and the
     // up-or-down test had no middle: five sideways flicks magnified the
@@ -265,21 +268,19 @@ class _GraphBlockViewState extends State<GraphBlockView> {
         child: RawGestureDetector(
           behavior: HitTestBehavior.opaque,
           gestures: {
-            _AltAwarePan:
-                GestureRecognizerFactoryWithHandlers<_AltAwarePan>(
+            _AltAwarePan: GestureRecognizerFactoryWithHandlers<_AltAwarePan>(
               _AltAwarePan.new,
               (r) => r.onUpdate = _pan,
             ),
-            DoubleTapGestureRecognizer:
-                GestureRecognizerFactoryWithHandlers<DoubleTapGestureRecognizer>(
+            DoubleTapGestureRecognizer: GestureRecognizerFactoryWithHandlers<
+                DoubleTapGestureRecognizer>(
               DoubleTapGestureRecognizer.new,
               (r) => r.onDoubleTap = _reset,
             ),
           },
           child: LayoutBuilder(builder: (context, cons) {
-            _lastSize = Size(cons.maxWidth, cons.maxHeight.isFinite
-                ? cons.maxHeight
-                : (b.h ?? 240));
+            _lastSize = Size(cons.maxWidth,
+                cons.maxHeight.isFinite ? cons.maxHeight : (b.h ?? 240));
             return Container(
               decoration: BoxDecoration(
                 color: s.raised,
@@ -335,9 +336,8 @@ class _GraphBlockViewState extends State<GraphBlockView> {
     // Samples follow the ZOOM: a block painter draws in page units inside the
     // canvas transform, so a magnified curve drawn at block-width resolution
     // turns into a polygon.
-    final px = (_lastSize.width * widget.app.canvas.scale)
-        .clamp(2.0, 4000.0)
-        .round();
+    final px =
+        (_lastSize.width * widget.app.canvas.scale).clamp(2.0, 4000.0).round();
     final plot = source.verticalAt != null
         ? Plot(pieces: const [], view: _view)
         : plotFunction(source.fn!, _view, samples: px, fitY: _fitY);
@@ -573,17 +573,14 @@ class GraphPainter extends CustomPainter {
     //    origin is off screen, so a graph is never unlabelled ─────────────
     final xAxisY = sy(0).clamp(0.5, size.height - 0.5);
     final yAxisX = sx(0).clamp(0.5, size.width - 0.5);
-    canvas.drawLine(
-        Offset(0, xAxisY), Offset(size.width, xAxisY), axisPaint);
-    canvas.drawLine(
-        Offset(yAxisX, 0), Offset(yAxisX, size.height), axisPaint);
+    canvas.drawLine(Offset(0, xAxisY), Offset(size.width, xAxisY), axisPaint);
+    canvas.drawLine(Offset(yAxisX, 0), Offset(yAxisX, size.height), axisPaint);
 
     // ── the numbers ──────────────────────────────────────────────────────
     void text(String t, Offset at, {bool rightAlign = false}) {
       final tp = TextPainter(
         text: TextSpan(
-            text: t,
-            style: TextStyle(fontSize: 9, color: label, height: 1)),
+            text: t, style: TextStyle(fontSize: 9, color: label, height: 1)),
         textDirection: TextDirection.ltr,
       )..layout();
       tp.paint(canvas, at.translate(rightAlign ? -tp.width : 0, 0));
@@ -628,7 +625,11 @@ class GraphPainter extends CustomPainter {
     final h = hover;
     if (h != null && hoverDot != null) {
       canvas.drawCircle(
-          h.screen, 3.5, Paint()..color = hoverDot!..style = PaintingStyle.fill);
+          h.screen,
+          3.5,
+          Paint()
+            ..color = hoverDot!
+            ..style = PaintingStyle.fill);
       canvas.drawCircle(
           h.screen,
           3.5,

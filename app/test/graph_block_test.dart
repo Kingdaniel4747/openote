@@ -11,6 +11,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/editor/graph_block_view.dart';
@@ -151,8 +152,7 @@ void main() {
       app.cancelPendingSave();
     });
 
-    test(
-        'a changed equation refits the window, even after a manual pan/zoom',
+    test('a changed equation refits the window, even after a manual pan/zoom',
         () {
       // Reported: "the scale in the graph doesnt auto update to better fit
       // the graph when it changes, id like to do this." Panning or zooming
@@ -164,8 +164,8 @@ void main() {
       final eq = equation('y=3x+10');
       final g = app.insertGraph(latex: 'y=3x+10', from: eq.id);
       // Simulate the manual pan/zoom GraphBlockView._setView would record.
-      g.content['view'] = const GraphView(x0: 100, x1: 200, y0: 100, y1: 200)
-          .toJson();
+      g.content['view'] =
+          const GraphView(x0: 100, x1: 200, y0: 100, y1: 200).toJson();
       g.content['fitY'] = false;
 
       expect(app.pushEquationToGraphs(eq.id, 'y=x^2'), isTrue);
@@ -180,8 +180,7 @@ void main() {
     test('a changed equation refits an inline graph the same way', () {
       if (!haveSqlite) return;
       final g = app.insertGraph(latex: 'y=3x', from: 'p1', fromLatex: 'y=3x');
-      g.content['view'] =
-          const GraphView(x0: 5, x1: 6, y0: 5, y1: 6).toJson();
+      g.content['view'] = const GraphView(x0: 5, x1: 6, y0: 5, y1: 6).toJson();
       g.content['fitY'] = false;
 
       expect(app.pushInlineEquationToGraphs('p1', 'y=3x', 'y=9x'), isTrue);
@@ -229,8 +228,7 @@ void main() {
           w: 400,
           content: {'text': r'we know $y=3x$ here'});
       app.blocks.add(para);
-      final g =
-          app.insertGraph(latex: 'y=3x', from: 'p1', fromLatex: 'y=3x');
+      final g = app.insertGraph(latex: 'y=3x', from: 'p1', fromLatex: 'y=3x');
       expect(app.graphsFollowingInline('p1', 'y=3x').single.id, g.id);
       // The paragraph is edited: the equation becomes y=4x.
       expect(app.pushInlineEquationToGraphs('p1', 'y=3x', 'y=4x'), isTrue);
@@ -307,16 +305,14 @@ void main() {
 
     test('an equation in a sentence lights up with its graph too', () {
       if (!haveSqlite) return;
-      final g =
-          app.insertGraph(latex: 'y=3x', from: 'p1', fromLatex: 'y=3x');
+      final g = app.insertGraph(latex: 'y=3x', from: 'p1', fromLatex: 'y=3x');
       app.select(g.id);
       expect(app.inlineGraphTint('p1', 'y=3x'), kGraphLinkColour);
       expect(app.inlineGraphTint('p1', 'y=9x'), isNull,
           reason: 'a different equation in the same paragraph is not this one');
       app.select(null);
       expect(app.inlineGraphTint('p1', 'y=3x'), isNull);
-      expect(app.inlineGraphTint('p1', 'y=3x', editing: true),
-          kGraphLinkColour,
+      expect(app.inlineGraphTint('p1', 'y=3x', editing: true), kGraphLinkColour,
           reason: 'the equation being written is the one being looked at');
       app.cancelPendingSave();
     });
@@ -397,8 +393,8 @@ void main() {
 
       // Top-left of a -10..10 window is (-10, 10) — nowhere near y=x,
       // which passes through (-10, -10) at that x.
-      final corner = tester.getTopLeft(find.byType(GraphBlockView)) +
-          const Offset(4, 4);
+      final corner =
+          tester.getTopLeft(find.byType(GraphBlockView)) + const Offset(4, 4);
       await tester.sendEventToBinding(pointer.hover(corner));
       await tester.pump();
 
@@ -462,7 +458,8 @@ void main() {
     Border borderOf(WidgetTester tester) => (tester
             .widget<Container>(find
                 .descendant(
-                    of: find.byType(GraphBlockView), matching: find.byType(Container))
+                    of: find.byType(GraphBlockView),
+                    matching: find.byType(Container))
                 .first)
             .decoration as BoxDecoration)
         .border as Border;
@@ -532,8 +529,8 @@ void main() {
       final graphs = app.blocks.where((b) => b.type == BlockType.graph);
       expect(graphs.length, 2);
       final copy = graphs.firstWhere((b) => b.id != g.id);
-      final copiedEq = app.blocks.firstWhere(
-          (b) => b.type == BlockType.math && b.id != eq.id);
+      final copiedEq = app.blocks
+          .firstWhere((b) => b.type == BlockType.math && b.id != eq.id);
       expect(copy.content['from'], copiedEq.id);
       expect(app.graphsFollowing(eq.id).length, 1,
           reason: 'the original still has exactly its own');
@@ -577,8 +574,32 @@ void main() {
     });
   });
 
-
   group('the wheel over a graph', () {
+    testWidgets('scrolls the page without a zoom modifier', (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final g = app.insertGraph(latex: 'y=x^2', at: const Offset(120, 120));
+      app.addBlock(Block(
+          type: BlockType.text,
+          x: 100,
+          y: 2200,
+          w: 300,
+          content: {'text': 'below', 'autoWidth': false}));
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(body: PageCanvas(state: app)),
+      ));
+      await tester.pump();
+      final where = tester.getCenter(find.byType(GraphBlockView).first);
+      final before = app.canvas.offset.dy;
+      final pointer = TestPointer(1, PointerDeviceKind.mouse);
+      pointer.hover(where);
+      await tester.sendEventToBinding(pointer.scroll(const Offset(0, 120)));
+      await tester.pump();
+      expect(app.canvas.offset.dy, lessThan(before));
+      expect(
+          GraphView.fromJson(g.content['view']).width, GraphView.initial.width);
+      app.cancelPendingSave();
+    });
+
     // A wheel notch is delivered to every listener under the pointer, and the
     // page canvas has one of its own. One notch used to zoom the graph AND
     // scroll the page out from under it, so the thing being zoomed slid away
@@ -605,9 +626,10 @@ void main() {
       final wasOffset = app.canvas.offset;
       final pointer = TestPointer(1, PointerDeviceKind.mouse);
       pointer.hover(where);
-      await tester.sendEventToBinding(
-          pointer.scroll(const Offset(0, 120)));
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendEventToBinding(pointer.scroll(const Offset(0, 120)));
       await tester.pump();
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
 
       expect(GraphView.fromJson(g.content['view']).width,
           greaterThan(GraphView.initial.width),
@@ -654,18 +676,15 @@ void main() {
 
       final pointer = TestPointer(1, PointerDeviceKind.trackpad);
       await tester.sendEventToBinding(pointer.panZoomStart(where));
-      await tester.sendEventToBinding(
-          pointer.panZoomUpdate(where, scale: 1.5));
+      await tester.sendEventToBinding(pointer.panZoomUpdate(where, scale: 1.5));
       await tester.sendEventToBinding(pointer.panZoomEnd());
       await tester.pump();
 
       expect(GraphView.fromJson(g.content['view']).width,
           lessThan(GraphView.initial.width),
           reason: 'the graph zoomed in — a rising scale is fingers spreading');
-      expect(app.canvas.scale, wasScale,
-          reason: 'the page did not zoom');
-      expect(app.canvas.offset, wasOffset,
-          reason: 'and did not pan either');
+      expect(app.canvas.scale, wasScale, reason: 'the page did not zoom');
+      expect(app.canvas.offset, wasOffset, reason: 'and did not pan either');
       app.cancelPendingSave();
     });
 
@@ -683,8 +702,8 @@ void main() {
       await tester.sendEventToBinding(pointer.panZoomEnd());
       await tester.pump();
 
-      expect(GraphView.fromJson(g.content['view']).x0,
-          isNot(GraphView.initial.x0),
+      expect(
+          GraphView.fromJson(g.content['view']).x0, isNot(GraphView.initial.x0),
           reason: 'the graph panned');
       expect(app.canvas.offset, wasOffset, reason: 'the page did not');
       app.cancelPendingSave();
@@ -705,8 +724,8 @@ void main() {
 
       final pointer = TestPointer(1, PointerDeviceKind.trackpad);
       await tester.sendEventToBinding(pointer.panZoomStart(where));
-      await tester.sendEventToBinding(pointer.panZoomUpdate(where,
-          pan: const Offset(80, 0), scale: 1.5));
+      await tester.sendEventToBinding(
+          pointer.panZoomUpdate(where, pan: const Offset(80, 0), scale: 1.5));
       await tester.sendEventToBinding(pointer.panZoomEnd());
       await tester.pump();
 
@@ -762,8 +781,7 @@ void main() {
       final where = await pumpGraphOnCanvas(tester, g);
       var pointer = TestPointer(1, PointerDeviceKind.trackpad);
       await tester.sendEventToBinding(pointer.panZoomStart(where));
-      await tester.sendEventToBinding(
-          pointer.panZoomUpdate(where, scale: 1.5));
+      await tester.sendEventToBinding(pointer.panZoomUpdate(where, scale: 1.5));
       await tester.sendEventToBinding(pointer.panZoomEnd());
       await tester.pump();
 
@@ -771,8 +789,8 @@ void main() {
       final farAway = const Offset(1100, 850); // empty canvas, off the graph
       pointer = TestPointer(2, PointerDeviceKind.trackpad);
       await tester.sendEventToBinding(pointer.panZoomStart(farAway));
-      await tester.sendEventToBinding(
-          pointer.panZoomUpdate(farAway, scale: 1.5));
+      await tester
+          .sendEventToBinding(pointer.panZoomUpdate(farAway, scale: 1.5));
       await tester.sendEventToBinding(pointer.panZoomEnd());
       await tester.pump();
 
@@ -807,13 +825,15 @@ void main() {
     // Reported: "If it has bene moved/changed there should be some way for
     // me to reset it back to the default too." Double-tap already did this
     // — see `_reset` — but nothing on screen ever said so.
-    testWidgets('the reset button is hidden until there is something to '
+    testWidgets(
+        'the reset button is hidden until there is something to '
         'reset', (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final g = app.insertGraph(latex: 'y=x^2');
       await pump(tester, g);
       final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
-      await gesture.addPointer(location: tester.getCenter(find.byType(GraphBlockView)));
+      await gesture.addPointer(
+          location: tester.getCenter(find.byType(GraphBlockView)));
       await tester.pump();
       expect(find.byIcon(Icons.restart_alt), findsNothing,
           reason: 'fitY is still true — a fresh graph has nothing to reset');
@@ -825,13 +845,13 @@ void main() {
         (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final g = app.insertGraph(latex: 'y=x^2');
-      g.content['view'] =
-          const GraphView(x0: 5, x1: 6, y0: 5, y1: 6).toJson();
+      g.content['view'] = const GraphView(x0: 5, x1: 6, y0: 5, y1: 6).toJson();
       g.content['fitY'] = false;
       await pump(tester, g);
 
       final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
-      await gesture.addPointer(location: tester.getCenter(find.byType(GraphBlockView)));
+      await gesture.addPointer(
+          location: tester.getCenter(find.byType(GraphBlockView)));
       await tester.pump();
       expect(find.byIcon(Icons.restart_alt), findsOneWidget);
 

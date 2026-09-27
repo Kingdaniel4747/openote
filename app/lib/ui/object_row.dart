@@ -188,6 +188,13 @@ class PageFace extends StatelessWidget {
             Text(app.splitViewEnabled ? 'Close split screen' : 'Split screen'),
         onPressed: app.toggleSplitView,
       ),
+      if (app.hasPdfSlideContent)
+        TextButton.icon(
+          key: const ValueKey('pdf-view-toggle'),
+          icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+          label: Text(app.pageProps.pdfOnly ? 'PDF slides' : 'PDF editor'),
+          onPressed: () => app.setPdfEditorView(!app.pageProps.pdfOnly),
+        ),
       const SizedBox(width: 2),
       bg('blank', Icons.crop_din, 'blank'),
       bg('grid', Icons.grid_4x4, 'grid'),
@@ -197,19 +204,20 @@ class PageFace extends StatelessWidget {
       // Canvas or paper. Per page, not per notebook: one notebook holds the
       // lecture you scribble on and the essay you hand in, and making you
       // choose once for both is why people keep two apps.
-      IconButton(
-        icon: Icon(paged ? Icons.description : Icons.dashboard_customize,
-            size: OnoteIcon.md),
-        tooltip: paged
-            ? 'Page mode: ${app.pageProps.paper.name}'
-                '${app.pageProps.landscape ? ' landscape' : ''} '
-                '— click for canvas'
-            : 'Canvas mode: boundless — click for pages',
-        isSelected: paged,
-        visualDensity: VisualDensity.compact,
-        color: paged ? scheme.primary : null,
-        onPressed: () => app.setPageLayout(paged ? 'canvas' : 'paged'),
-      ),
+      if (!app.pageProps.pdfOnly)
+        IconButton(
+          icon: Icon(paged ? Icons.description : Icons.dashboard_customize,
+              size: OnoteIcon.md),
+          tooltip: paged
+              ? 'Page mode: ${app.pageProps.paper.name}'
+                  '${app.pageProps.landscape ? ' landscape' : ''} '
+                  '— click for canvas'
+              : 'Canvas mode: boundless — click for pages',
+          isSelected: paged,
+          visualDensity: VisualDensity.compact,
+          color: paged ? scheme.primary : null,
+          onPressed: () => app.setPageLayout(paged ? 'canvas' : 'paged'),
+        ),
       // At the END of its group, so its arrival displaces nothing.
       if (paged)
         PopupMenuButton<String>(

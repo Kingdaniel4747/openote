@@ -157,6 +157,32 @@ class _PageCanvasState extends State<PageCanvas> {
   /// for the gesture's whole lifetime; see the comment on
   /// `onPointerPanZoomStart` for why this is not re-checked per update.
   int? _panZoomClaimedBy;
+  int? _middlePanPointer;
+  Offset? _middlePanLast;
+
+  bool _beginMiddlePan(PointerDownEvent e) {
+    if (e.kind != PointerDeviceKind.mouse ||
+        (e.buttons & kMiddleMouseButton) == 0) return false;
+    _middlePanPointer = e.pointer;
+    _middlePanLast = e.localPosition;
+    app.claimedPointers.remove(e.pointer);
+    return true;
+  }
+
+  bool _moveMiddlePan(PointerMoveEvent e) {
+    if (_middlePanPointer != e.pointer) return false;
+    final last = _middlePanLast ?? e.localPosition;
+    controller.panBy(e.localPosition - last);
+    _middlePanLast = e.localPosition;
+    return true;
+  }
+
+  bool _endMiddlePan(PointerEvent e) {
+    if (_middlePanPointer != e.pointer) return false;
+    _middlePanPointer = null;
+    _middlePanLast = null;
+    return true;
+  }
 
   // Lasso-select (INK-7): the freeform loop being drawn, in page space.
   List<Offset>? _lasso;
@@ -1250,6 +1276,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _selectDown(PointerDownEvent e) {
+    if (_beginMiddlePan(e)) return;
     if (_beginRulerPointer(e)) return;
     if (_rulerPointers.containsKey(e.pointer)) {
       app.claimedPointers.remove(e.pointer);
@@ -1261,17 +1288,12 @@ class _PageCanvasState extends State<PageCanvas> {
       return;
     }
     final blockOwnsPointer = app.claimedPointers.remove(e.pointer);
-    if (e.kind != PointerDeviceKind.touch && blockOwnsPointer) {
-      return; // a block owns this mouse/pen interaction
-    }
     _downScreen = e.localPosition;
     _lastScreen = e.localPosition;
     _downKind = e.kind;
 
-    if (e.kind == PointerDeviceKind.mouse &&
-        (e.buttons & kMiddleMouseButton) != 0) {
-      _mode = _DragMode.pan;
-      return;
+    if (e.kind != PointerDeviceKind.touch && blockOwnsPointer) {
+      return; // a block owns this mouse/pen interaction
     }
     // Right-click on empty canvas → context menu (blocks claim theirs first).
     if (e.kind == PointerDeviceKind.mouse &&
@@ -1326,6 +1348,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _selectMove(PointerMoveEvent e) {
+    if (_moveMiddlePan(e)) return;
     if (_updateRulerPointer(e)) return;
     if (_windowsInkPointer == e.pointer) {
       _inkMove(e);
@@ -1392,6 +1415,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _selectUp(PointerUpEvent e) {
+    if (_endMiddlePan(e)) return;
     if (_endRulerPointer(e)) return;
     if (_windowsInkPointer == e.pointer) {
       _inkUp(e);
@@ -1566,21 +1590,18 @@ class _PageCanvasState extends State<PageCanvas> {
       final ctrl = HardwareKeyboard.instance.isControlPressed ||
           HardwareKeyboard.instance.isMetaPressed;
       final shift = HardwareKeyboard.instance.isShiftPressed;
-      if (ctrl) {
+      if (ctrl || shift) {
+        if (e.scrollDelta.dy == 0) return;
         controller.zoomAt(
           e.localPosition,
-          e.scrollDelta.dy > 0 ? 1 / 1.1 : 1.1,
+          math.exp(-e.scrollDelta.dy * .0015),
         );
-      } else if (shift) {
-        // Shift+wheel → horizontal scroll (a mouse's vertical wheel drives X).
-        controller.panBy(Offset(-e.scrollDelta.dy - e.scrollDelta.dx, 0));
       } else {
         // Scroll signals include precision-touchpad scrolling on Windows.
         // Apply the delta immediately, like a finger/trackpad pan; easing it
         // here made that input feel noticeably slower than direct touch.
         controller.panBy(-e.scrollDelta);
       }
-      setState(() {});
     });
   }
 
@@ -1731,17 +1752,6 @@ class _PageCanvasState extends State<PageCanvas> {
                                       width: livePageSize.width -
                                           AppState.pageLeftMargin * 2,
                                     ),
-                                  ),
-                                ),
-                              if (app.pageProps.pdfOnly)
-                                Positioned(
-                                  left: AppState.pageLeftMargin,
-                                  top: 10,
-                                  child: PageTitleView(
-                                    key: ValueKey('title-${app.pageId}'),
-                                    app: app,
-                                    width: livePageSize.width -
-                                        AppState.pageLeftMargin * 2,
                                   ),
                                 ),
                               // Painted in z order (review fix: z was stored but
@@ -1905,6 +1915,7 @@ class _PageCanvasState extends State<PageCanvas> {
       canvas = Listener(
         behavior: HitTestBehavior.opaque,
         onPointerDown: (e) {
+          if (_beginMiddlePan(e)) return;
           // The ruler is the topmost canvas instrument even though its painter
           // intentionally ignores hit testing. Give it first refusal before a
           // block or scroll bar claim can discard this pointer.
@@ -1925,6 +1936,7 @@ class _PageCanvasState extends State<PageCanvas> {
           }
         },
         onPointerMove: (e) {
+          if (_moveMiddlePan(e)) return;
           if (_lassoMovePointer == e.pointer) {
             _moveLassoFingerSelection(e);
             return;
@@ -1936,6 +1948,7 @@ class _PageCanvasState extends State<PageCanvas> {
           }
         },
         onPointerUp: (e) {
+          if (_endMiddlePan(e)) return;
           if (_lassoMovePointer == e.pointer) {
             _finishLassoFingerMove(e);
             return;
@@ -1947,6 +1960,7 @@ class _PageCanvasState extends State<PageCanvas> {
           }
         },
         onPointerCancel: (e) {
+          if (_endMiddlePan(e)) return;
           if (_endRulerPointer(e)) return;
           if (_lassoMovePointer == e.pointer) {
             _finishLassoFingerMove(e);
@@ -1967,6 +1981,7 @@ class _PageCanvasState extends State<PageCanvas> {
       canvas = Listener(
         behavior: HitTestBehavior.opaque,
         onPointerDown: (e) {
+          if (_beginMiddlePan(e)) return;
           if (_beginRulerPointer(e)) return;
           // The scroll bar claims its pointers; the pen must not draw a
           // stroke behind it.
@@ -1986,6 +2001,7 @@ class _PageCanvasState extends State<PageCanvas> {
           // finger from ever producing ink or an eraser mark.
         },
         onPointerMove: (e) {
+          if (_moveMiddlePan(e)) return;
           if (_touches.containsKey(e.pointer)) {
             _touchMove(e);
           } else {
@@ -1993,6 +2009,7 @@ class _PageCanvasState extends State<PageCanvas> {
           }
         },
         onPointerUp: (e) {
+          if (_endMiddlePan(e)) return;
           if (_touches.containsKey(e.pointer)) {
             _touchUp(e);
           } else {
@@ -2000,6 +2017,7 @@ class _PageCanvasState extends State<PageCanvas> {
           }
         },
         onPointerCancel: (e) {
+          if (_endMiddlePan(e)) return;
           if (_endRulerPointer(e)) return;
           _touches.remove(e.pointer);
           if (_windowsPen.enabled && _windowsInkPointer != e.pointer) return;
@@ -2042,6 +2060,7 @@ class _PageCanvasState extends State<PageCanvas> {
           onPointerMove: _selectMove,
           onPointerUp: _selectUp,
           onPointerCancel: (e) {
+            if (_endMiddlePan(e)) return;
             if (_endRulerPointer(e)) return;
             _mode = _DragMode.none;
             _touches.clear();
@@ -2253,11 +2272,11 @@ class _PageCanvasState extends State<PageCanvas> {
           return;
         }
         final scaleFactor = e.scale / _pzLastScale;
-        if (e.scale != _pzLastScale) {
+        if ((e.scale - _pzLastScale).abs() > .001) {
           // A precision-touchpad event can carry a small pan delta alongside
           // a pinch. Applying it after the zoom moves the content away from
           // the cursor, so keep a zoom anchored exactly at [localPosition].
-          controller.transformAt(e.localPosition, scaleFactor, Offset.zero);
+          controller.transformAt(e.localPosition, scaleFactor, e.localPanDelta);
         } else if (e.localPanDelta != Offset.zero) {
           // Two-finger scrolling without a scale change is still a pan.
           controller.panBy(e.localPanDelta, elasticLeading: true);
@@ -2274,8 +2293,9 @@ class _PageCanvasState extends State<PageCanvas> {
         _pzLastScale = e.scale;
       },
       onPointerPanZoomEnd: (e) {
-        if (_panZoomClaimedBy == e.pointer) _panZoomClaimedBy = null;
-        controller.release(_pzVelocity);
+        final claimed = _panZoomClaimedBy == e.pointer;
+        if (claimed) _panZoomClaimedBy = null;
+        if (!claimed) controller.release(_pzVelocity);
         _pzVelocity = Offset.zero;
         _pzLastMotionAt = null;
       },

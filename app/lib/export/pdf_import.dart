@@ -27,6 +27,7 @@ library;
 
 import 'dart:io';
 import 'dart:async';
+import 'dart:typed_data';
 import 'dart:math' as math;
 
 import 'package:file_selector/file_selector.dart';
@@ -58,12 +59,6 @@ enum PdfPlacement {
   /// Better for a 200-slide unit you want in the navigator as separate pages.
   pagePerSlide,
 
-  /// One small card with a thumbnail — the whole deck behind a click, not
-  /// spread over the page. "Have a little thumbnail appear in my page, but
-  /// not have the whole thing always open." Clicking the card opens the
-  /// viewer, where the text is selectable.
-  card,
-
   /// Fixed-size pages: the PDF is the paper, without extra drawing margins.
   pdfOnly,
 }
@@ -80,30 +75,26 @@ Future<PdfImportResult?> importPdfAsPages(
   void Function(String message)? onStatus,
 }) async {
   const typeGroup = XTypeGroup(label: 'PDF', extensions: ['pdf']);
-  if (placement == PdfPlacement.pdfOnly || app.pageProps.pdfOnly) {
-    final files = await openFiles(acceptedTypeGroups: [typeGroup]);
-    if (files.isEmpty) return null;
-    PdfImportResult? first;
-    var pages = 0;
-    for (final file in files) {
-      onStatus?.call(
-          'PDF ${files.indexOf(file) + 1} / ${files.length}: ${file.name}');
-      final result = await importPdfFile(app, file.path, file.name,
-          placement: PdfPlacement.pdfOnly, onProgress: onProgress);
-      first ??= result;
-      pages += result.pages;
-    }
-    return (
-      pages: pages,
-      sectionId: first?.sectionId,
-      firstPageId: first?.firstPageId
-    );
+  final files = await openFiles(acceptedTypeGroups: [typeGroup]);
+  if (files.isEmpty) return null;
+  if (placement == PdfPlacement.currentPage && app.pageProps.pdfOnly) {
+    app.setPdfEditorView(false);
   }
-  final file = await openFile(acceptedTypeGroups: [typeGroup]);
-  if (file == null) return null;
-  onStatus?.call(file.name);
-  return importPdfFile(app, file.path, file.name,
-      placement: placement, onProgress: onProgress);
+  PdfImportResult? first;
+  var pages = 0;
+  for (var i = 0; i < files.length; i++) {
+    final file = files[i];
+    onStatus?.call('PDF ${i + 1} / ${files.length}: ${file.name}');
+    final result = await importPdfFile(app, file.path, file.name,
+        placement: placement, onProgress: onProgress);
+    first ??= result;
+    pages += result.pages;
+  }
+  return (
+    pages: pages,
+    sectionId: first?.sectionId,
+    firstPageId: first?.firstPageId,
+  );
 }
 
 /// Import [path] — onto the current page, as one page per slide, or as a card.
@@ -113,6 +104,18 @@ Future<PdfImportResult?> importPdfAsPages(
 Future<PdfImportResult> importPdfFile(
   AppState app,
   String path,
+  String displayName, {
+  PdfPlacement placement = PdfPlacement.currentPage,
+  void Function(int done, int total)? onProgress,
+}) async {
+  return importPdfBytes(app, await File(path).readAsBytes(), displayName,
+      placement: placement, onProgress: onProgress);
+}
+
+/// Import a PDF already received in memory, such as a phone scan.
+Future<PdfImportResult> importPdfBytes(
+  AppState app,
+  Uint8List bytes,
   String displayName, {
   PdfPlacement placement = PdfPlacement.currentPage,
   void Function(int done, int total)? onProgress,
@@ -137,15 +140,13 @@ Future<PdfImportResult> importPdfFile(
 
   // The source file, once, into the content-addressed store. Everything else
   // in this import is a reference to this hash.
-  final bytes = await File(path).readAsBytes();
   final doc = await PdfRuntime.open(bytes, displayName);
   try {
     if (doc.pages.isEmpty) throw StateError('The PDF contains no pages.');
     // Finish expensive rendering before publishing any slide blocks. Retain
     // only hashes, never a whole deck of PNGs or decoded images in memory.
-    final previews = placement == PdfPlacement.card
-        ? <String>[]
-        : await preparePdfPreviews(app, nb, doc, onProgress: onProgress);
+    final previews =
+        await preparePdfPreviews(app, nb, doc, onProgress: onProgress);
     final title =
         displayName.replaceAll(RegExp(r'\.pdf$', caseSensitive: false), '');
 
@@ -168,10 +169,6 @@ Future<PdfImportResult> importPdfFile(
         ? app.importBlob(nb, bytes, 'application/pdf')
         : app.addBlob(bytes, 'application/pdf');
 
-    if (placement == PdfPlacement.card) {
-      return _importAsCard(
-          app, doc, pdfHash, title.isEmpty ? displayName : title);
-    }
     if (placement == PdfPlacement.currentPage) {
       return await _importOntoCurrentPage(app, doc, pdfHash, previews);
     }
@@ -320,31 +317,6 @@ Block _slideBlock(
         if (text != null && text.isNotEmpty) 'sourceText': text,
       },
     );
-
-/// The card: one block, the deck behind a click.
-PdfImportResult _importAsCard(
-    AppState app, PdfDocument doc, String pdfHash, String name) {
-  final anchor = _insertionAnchor(app);
-  app.pushUndo();
-  final b = app.addBlock(
-    Block(
-      type: BlockType.file,
-      x: AppState.pageLeftMargin,
-      y: anchor.top,
-      w: 300,
-      content: {
-        'kind': 'pdf',
-        'blob': 'sha256:$pdfHash',
-        'name': name,
-        'mime': 'application/pdf',
-        'pages': doc.pages.length,
-      },
-    ),
-    recordUndo: false,
-  );
-  app.select(b.id);
-  return (pages: doc.pages.length, sectionId: null, firstPageId: app.pageId);
-}
 
 /// Stack every slide down the page that is currently open, below whatever is
 /// already on it.

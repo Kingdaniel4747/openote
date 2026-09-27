@@ -7,7 +7,7 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'onote_dialog.dart';
 
-/// The popup PDF viewer: the whole document behind a card or a slide, with
+/// The PDF viewer for an imported slide, with
 /// REAL text — select it, copy it — because the pages in here are drawn by
 /// pdfium from the stored PDF, not from the raster the canvas shows.
 ///
@@ -18,9 +18,7 @@ Future<void> showPdfViewerDialog(
   BuildContext context,
   AppState app, {
   required String hash,
-  String? title,
   int initialPage = 0,
-  Offset? growFrom,
 }) {
   final bytes = app.blob(hash);
   if (bytes == null) {
@@ -31,7 +29,6 @@ Future<void> showPdfViewerDialog(
   final controller = PdfViewerController();
   return showOnoteDialog<void>(
     context: context,
-    growFrom: growFrom,
     builder: (context) {
       final screen = MediaQuery.of(context).size;
       // Enough to read an A4 page comfortably, never a takeover. Small
@@ -50,7 +47,7 @@ Future<void> showPdfViewerDialog(
                 const Icon(Icons.picture_as_pdf_outlined, size: 18),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(title ?? 'PDF',
+                  child: Text('PDF',
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleSmall),
                 ),

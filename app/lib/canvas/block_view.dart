@@ -217,6 +217,8 @@ class _BlockViewState extends State<BlockView> {
   }
 
   void _pointerDown(PointerDownEvent e) {
+    if (e.kind == PointerDeviceKind.mouse &&
+        (e.buttons & kMiddleMouseButton) != 0) return;
     // A PDF/image printout is a backdrop, not a touch surface. Let every
     // finger reach PageCanvas so panning and pinch-zoom work over the sheet
     // just as they do in the empty margin. Stylus input is handled by the
@@ -255,6 +257,8 @@ class _BlockViewState extends State<BlockView> {
   }
 
   void _pointerMove(PointerMoveEvent e) {
+    if (e.kind == PointerDeviceKind.mouse &&
+        (e.buttons & kMiddleMouseButton) != 0) return;
     final from = _pressGlobal;
     // A touch beginning on an object must still scroll the page naturally.
     // Its down remains claimed for a short tap, then a pre-hold swipe is
@@ -472,14 +476,17 @@ class _BlockViewState extends State<BlockView> {
         child: Container(
           width: 22,
           height: 16,
-          margin: const EdgeInsets.only(left: 4),
+          margin: const EdgeInsets.only(left: 4, bottom: 2),
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: primaryColor.withValues(alpha: .82),
             borderRadius: BorderRadius.circular(5),
           ),
-          child: Icon(Icons.drag_indicator, size: 15,
-              color: dark ? Colors.black : Colors.white),
+          child: Transform.rotate(
+            angle: 1.588, // 91 degrees
+            child: Icon(Icons.more_horiz,
+                size: 15, color: dark ? Colors.black : Colors.white),
+          ),
         ),
       ),
     );

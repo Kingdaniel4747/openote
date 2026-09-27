@@ -5,10 +5,9 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../api/scanner_import.dart';
 import '../api/scanner_receiver.dart';
+import '../export/pdf_import.dart';
 import '../state/app_state.dart';
 import 'onote_dialog.dart';
-
-enum _PhoneScanPlacement { currentPage, pagesOnly }
 
 Future<void> showScannerPairingDialog(
     BuildContext context, AppState app) async {
@@ -20,33 +19,6 @@ Future<void> showScannerPairingDialog(
     );
     return;
   }
-  final placement = await showOnoteDialog<_PhoneScanPlacement>(
-    context: context,
-    builder: (dialogContext) => AlertDialog(
-      title: const Text('Import phone scans as'),
-      content: const Text(
-        'Choose whether every scan is placed below the current note or gets '
-        'its own paper page, like the PDF editor mode.',
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(dialogContext),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(
-              dialogContext, _PhoneScanPlacement.currentPage),
-          child: const Text('PDF slides'),
-        ),
-        FilledButton(
-          onPressed: () =>
-              Navigator.pop(dialogContext, _PhoneScanPlacement.pagesOnly),
-          child: const Text('PDF editor (pages only)'),
-        ),
-      ],
-    ),
-  );
-  if (placement == null || !context.mounted) return;
   final title = app.node(pageId)?.title ?? 'Openote page';
   await showOnoteDialog<void>(
     context: context,
@@ -55,7 +27,6 @@ Future<void> showScannerPairingDialog(
       notebookId: notebookId,
       pageId: pageId,
       pageTitle: title,
-      placement: placement,
     ),
   );
 }
@@ -66,14 +37,12 @@ class _ScannerPairingDialog extends StatefulWidget {
     required this.notebookId,
     required this.pageId,
     required this.pageTitle,
-    required this.placement,
   });
 
   final AppState app;
   final String notebookId;
   final String pageId;
   final String pageTitle;
-  final _PhoneScanPlacement placement;
 
   @override
   State<_ScannerPairingDialog> createState() => _ScannerPairingDialogState();
@@ -94,22 +63,21 @@ class _ScannerPairingDialogState extends State<_ScannerPairingDialog> {
       onScan: (bytes, mime, filename) async {
         if (mounted) setState(() => _importing = true);
         try {
-          var targetNotebookId = widget.notebookId;
-          var targetPageId = widget.pageId;
-          if (widget.placement == _PhoneScanPlacement.pagesOnly) {
-            await widget.app.addPage(sectionId: widget.app.sectionOf(widget.pageId));
-            targetNotebookId = widget.app.notebookId ?? targetNotebookId;
-            targetPageId = widget.app.pageId ?? targetPageId;
-            widget.app.setPageLayout('paged');
+          if (mime == 'application/pdf') {
+            if (widget.app.pageProps.pdfOnly) {
+              widget.app.setPdfEditorView(false);
+            }
+            await importPdfBytes(widget.app, bytes, filename);
+          } else {
+            await importPhoneFile(
+              widget.app,
+              notebookId: widget.notebookId,
+              pageId: widget.pageId,
+              bytes: bytes,
+              mime: mime,
+              filename: filename,
+            );
           }
-          await importPhoneFile(
-            widget.app,
-            notebookId: targetNotebookId,
-            pageId: targetPageId,
-            bytes: bytes,
-            mime: mime,
-            filename: filename,
-          );
           if (mounted) setState(() => _received++);
         } finally {
           if (mounted) setState(() => _importing = false);

@@ -55,6 +55,9 @@ class _AppShellState extends State<AppShell> {
 
   void _activateEditor(AppState editor) {
     if (app == editor) return;
+    editor.navSectionsW = app.navSectionsW;
+    editor.navPagesW = app.navPagesW;
+    editor.navCollapsed = app.navCollapsed;
     editor.reloadNodes();
     setState(() => _activeEditor = editor);
   }
@@ -90,6 +93,9 @@ class _AppShellState extends State<AppShell> {
         editor.toggleSplitView = _toggleSplit;
         editor.splitViewEnabled = true;
         editor.navigateNudge = _nudge;
+        editor.navSectionsW = widget.app.navSectionsW;
+        editor.navPagesW = widget.app.navPagesW;
+        editor.navCollapsed = widget.app.navCollapsed;
         setState(() {
           _splitEditor = editor;
           widget.app.splitViewEnabled = true;
@@ -1299,7 +1305,7 @@ class _AppShellState extends State<AppShell> {
               body: LayoutBuilder(
                 builder: (context, constraints) {
                   final horizontalWidth = math.min(
-                      760.0, math.max(220.0, constraints.maxWidth - 32));
+                      1100.0, math.max(220.0, constraints.maxWidth - 32));
                   final dockedVertical =
                       _writingToolbarDock != _WritingToolbarDock.floating;
                   final vertical =
@@ -1458,7 +1464,7 @@ class _AppShellState extends State<AppShell> {
                           clipBehavior: Clip.antiAlias,
                           borderRadius: BorderRadius.circular(12),
                           child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 170),
+                            duration: Duration.zero,
                             curve: Curves.easeOutCubic,
                             width: toolbarWidth,
                             height: toolbarHeight,

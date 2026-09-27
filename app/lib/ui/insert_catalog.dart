@@ -338,26 +338,6 @@ final List<InsertGroup> kInsertGroups = [
       label: 'PDF slides',
       opensPicker: true,
       size: Size.zero, // it lays itself out down the page
-      extras: [
-        InsertItem(
-          id: 'pdf-only',
-          icon: Icons.picture_as_pdf_outlined,
-          label: 'PDF editor (pages only)',
-          opensPicker: true,
-          size: Size.zero,
-          run: (c, a, at) =>
-              importPdfWithProgress(c, a, placement: PdfPlacement.pdfOnly),
-        ),
-        InsertItem(
-          id: 'pdf-card',
-          icon: Icons.branding_watermark_outlined,
-          label: 'As a card — open in a popup',
-          opensPicker: true,
-          size: Size.zero,
-          run: (c, a, at) =>
-              importPdfWithProgress(c, a, placement: PdfPlacement.card),
-        ),
-      ],
       run: (c, a, at) =>
           importPdfWithProgress(c, a, placement: PdfPlacement.currentPage),
     ),
@@ -760,7 +740,7 @@ Future<void> importPdfWithProgress(BuildContext context, AppState app,
       content: Text('Imported ${result.pages} '
           '${result.pages == 1 ? 'slide' : 'slides'}'
           '${result.sectionId == null ? ' onto this page' : ''}. '
-          '${placement == PdfPlacement.card ? 'PDF saved.' : 'All pages are prepared and saved.'}'),
+          'All pages are prepared and saved.'),
     ));
   } catch (e) {
     if (dialogOpen && context.mounted) {

@@ -142,22 +142,42 @@ void main() {
         reason: 'a page the document does not have is null, not a throw');
   });
 
-  test('card mode: one block, the whole deck behind it', () async {
-    if (!haveSqlite || !havePdfium) {
-      return markTestSkipped('sqlite or pdfium unavailable');
-    }
-    final before = app.blocks.length;
-    final r = await importPdfFile(app, pdfFile.path, 'deck.pdf',
-        placement: PdfPlacement.card);
-    expect(r.pages, 2);
-    expect(app.blocks.length, before + 1,
-        reason: 'a card, not a spread of slides');
-    final card = app.blocks.last;
-    expect(card.type, BlockType.file);
-    expect(card.content['kind'], 'pdf');
-    expect(card.content['mime'], 'application/pdf');
-    expect(card.content['pages'], 2);
-    expect(card.content['name'], 'deck');
+  test('PDF slides can switch to the PDF editor view and back', () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    app.addBlock(Block(
+      type: BlockType.image,
+      x: AppState.pageLeftMargin,
+      y: AppState.contentTop,
+      w: 960,
+      h: 540,
+      content: {'pdf': 'sha256:fixture', 'page': 0},
+    ));
+    app.addBlock(Block(
+      type: BlockType.image,
+      x: AppState.pageLeftMargin,
+      y: AppState.contentTop + 576,
+      w: 960,
+      h: 540,
+      content: {'pdf': 'sha256:fixture', 'page': 1},
+    ));
+    final note = app.addBlock(Block(
+      type: BlockType.text,
+      x: AppState.pageLeftMargin + 20,
+      y: AppState.contentTop + 20,
+      w: 200,
+      content: {'text': 'annotation'},
+    ));
+    final slides = app.blocks.where((b) => b.content['pdf'] is String).toList();
+    final positions = [for (final b in slides) (b.x, b.y, b.w)];
+    final notePosition = (note.x, note.y);
+    app.setPdfEditorView(true);
+    expect(app.pageProps.pdfOnly, isTrue);
+    expect(app.pageProps.pageWidth, 960);
+    expect(slides.every((b) => b.content['locked'] == true), isTrue);
+    app.setPdfEditorView(false);
+    expect(app.pageProps.pdfOnly, isFalse);
+    expect([for (final b in slides) (b.x, b.y, b.w)], positions);
+    expect((note.x, note.y), notePosition);
   });
 
   test('the refs index needs no pdfium: any pdf-ref block is declared', () {

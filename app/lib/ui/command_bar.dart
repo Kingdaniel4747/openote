@@ -62,8 +62,7 @@ class _PlannerButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final count = app
-        .planner
+    final count = app.planner
         .agenda()
         .where((item) => !item.done && item.kind.name != 'event')
         .length;
@@ -87,8 +86,11 @@ class _PlannerButton extends StatelessWidget {
                 color: Theme.of(context).colorScheme.primary,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Text('$count', textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 9, height: 1,
+              child: Text('$count',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      fontSize: 9,
+                      height: 1,
                       fontWeight: FontWeight.w700,
                       color: Theme.of(context).colorScheme.onPrimary)),
             ),
@@ -1361,7 +1363,9 @@ class _CommandBarState extends State<CommandBar> {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.only(right: 10),
+          padding: vertical
+              ? const EdgeInsets.symmetric(vertical: 2)
+              : const EdgeInsets.only(right: 10),
           child: AppText(
             '${app.eraserSize.round()} px',
             style: const TextStyle(fontSize: 11),
@@ -1369,18 +1373,18 @@ class _CommandBarState extends State<CommandBar> {
         ),
         SizedBox(
           width: vertical ? 48 : null,
-          height: vertical ? 114 : 28,
+          height: vertical ? 96 : 28,
           child: RotatedBox(
             quarterTurns: vertical ? 3 : 0,
             child: SizedBox(
-              width: vertical ? 114 : null,
+              width: vertical ? 96 : null,
               child: SegmentedButton<EraserMode>(
                 segments: [
                   for (final m in EraserMode.values)
                     ButtonSegment(
                       value: m,
                       label: AppText(
-                        m.label,
+                        vertical && m == EraserMode.stroke ? 'Stroke' : m.label,
                         style: const TextStyle(fontSize: 10),
                       ),
                     ),
@@ -1391,6 +1395,9 @@ class _CommandBarState extends State<CommandBar> {
                 style: const ButtonStyle(
                   visualDensity: VisualDensity.compact,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  minimumSize: WidgetStatePropertyAll(Size.zero),
+                  padding: WidgetStatePropertyAll(
+                      EdgeInsets.symmetric(horizontal: 5)),
                 ),
               ),
             ),
