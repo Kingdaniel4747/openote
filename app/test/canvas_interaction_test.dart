@@ -14,6 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/canvas/block_view.dart';
 import 'package:openote/canvas/page_canvas.dart';
+import 'package:openote/canvas/page_title_view.dart';
 import 'package:openote/editor/text_block_view.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
@@ -82,6 +83,30 @@ void main() {
       await t.pump(); // the post-frame view restore
       await t.pump();
     }
+
+    testWidgets('PDF title moves with the page instead of staying fixed',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      app.addBlock(Block(
+        type: BlockType.image,
+        x: AppState.pageLeftMargin,
+        y: AppState.contentTop,
+        w: 960,
+        h: 1200,
+        content: {'pdf': 'sha256:fixture', 'page': 0},
+      ));
+      app.setPdfEditorView(true);
+      await pump(t);
+
+      expect(find.byType(PageTitleView), findsOneWidget);
+      final before = t.getTopLeft(find.byType(PageTitleView));
+      app.canvas.panBy(const Offset(0, -30));
+      await t.pump();
+      final after = t.getTopLeft(find.byType(PageTitleView));
+      expect(after.dy, closeTo(before.dy - 30, 0.01));
+      await t.pump(const Duration(seconds: 1));
+      await t.pump(const Duration(milliseconds: 500));
+    });
 
     testWidgets('A FINGER DRAG PANS; IT DOES NOT MARQUEE', (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');

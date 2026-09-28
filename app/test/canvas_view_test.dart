@@ -132,14 +132,15 @@ void main() {
       ..pdfPresentation = true;
 
     c.fitPdfWidth();
-    final fit = (1000 - CanvasController.pdfSideMargin * 2) / 1200;
+    const fit = (1000 - CanvasController.pdfSideMargin * 2) / 1200;
     expect(c.scale, closeTo(fit, 0.0001));
     expect(c.offset.dx, closeTo(CanvasController.pdfSideMargin, 0.0001));
-    expect(c.offset.dy, CanvasController.pdfTopMargin);
+    expect(c.offset.dy, closeTo(CanvasController.pdfTopMargin * fit, 0.0001));
 
     c.setZoom(0.3);
     expect(c.scale, closeTo(0.3, 0.0001));
     expect(c.offset.dx, closeTo((1000 - 1200 * 0.3) / 2, 0.0001));
+    expect(c.offset.dy, closeTo(CanvasController.pdfTopMargin * 0.3, 0.0001));
     c.transformPinchAt(const Offset(500, 300), 0.1, const Offset(500, 300));
     expect(c.scale, CanvasController.minScale);
 
@@ -147,6 +148,12 @@ void main() {
     c.setZoom(0.3);
     expect(c.offset.dx, closeTo((1000 - 1200 * 0.3) / 2, 0.0001));
     c.reset();
-    expect(c.offset.dy, CanvasController.pdfTopMargin);
+    expect(c.offset.dy, closeTo(CanvasController.pdfTopMargin * fit, 0.0001));
+    c.release(const Offset(0, 100));
+    expect(c.offset.dy, closeTo(CanvasController.pdfTopMargin * fit, 0.0001));
+
+    c.viewport = const Size(1400, 700);
+    c.clampToPage();
+    expect(c.offset.dx, closeTo((1400 - 1200 * fit) / 2, 0.0001));
   });
 }

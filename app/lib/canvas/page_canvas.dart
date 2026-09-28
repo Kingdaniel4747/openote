@@ -1643,6 +1643,10 @@ class _PageCanvasState extends State<PageCanvas> {
     Widget canvas = LayoutBuilder(
       builder: (context, constraints) {
         controller.viewport = Size(constraints.maxWidth, constraints.maxHeight);
+        // A resized PDF viewport must recenter the page immediately. The
+        // controller does not notify during layout, so the current build uses
+        // the corrected transform without scheduling another frame.
+        if (app.pageProps.pdfOnly) controller.clampToPage();
         return AnimatedBuilder(
           animation: controller,
           builder: (context, _) {
@@ -1719,6 +1723,9 @@ class _PageCanvasState extends State<PageCanvas> {
                                     )
                                   : null,
                           sheets: app.sheetCount,
+                          pdfHeaderHeight: app.pageProps.pdfOnly
+                              ? CanvasController.pdfTopMargin
+                              : 0,
                         ),
                       ),
                     ),
@@ -1891,33 +1898,21 @@ class _PageCanvasState extends State<PageCanvas> {
                       ),
                     if (app.pageProps.pdfOnly)
                       Positioned(
-                        left: 0,
-                        right: 0,
-                        top: 0,
-                        height: CanvasController.pdfTopMargin - 8,
-                        child: ColoredBox(
-                          color: dark ? OnoteColors.night0 : OnoteColors.paper0,
-                          child: Center(
-                            child: SizedBox(
-                              width: math.min(
-                                960,
-                                math.max(
-                                    0,
-                                    controller.viewport.width -
-                                        CanvasController.pdfSideMargin * 2),
-                              ),
-                              child: PageTitleView(
-                                key: ValueKey('title-${app.pageId}'),
-                                app: app,
-                                width: math.min(
-                                  960,
-                                  math.max(
-                                      0,
-                                      controller.viewport.width -
-                                          CanvasController.pdfSideMargin * 2),
-                                ),
-                              ),
-                            ),
+                        left: controller.offset.dx +
+                            AppState.pageLeftMargin * controller.scale,
+                        top: controller.offset.dy -
+                            (CanvasController.pdfTopMargin - 20) *
+                                controller.scale,
+                        child: Transform.scale(
+                          scale: controller.scale,
+                          alignment: Alignment.topLeft,
+                          child: PageTitleView(
+                            key: ValueKey('title-${app.pageId}'),
+                            app: app,
+                            width: math.max(
+                                0,
+                                livePageSize.width -
+                                    AppState.pageLeftMargin * 2),
                           ),
                         ),
                       ),
@@ -2507,6 +2502,7 @@ class _PagePainter extends CustomPainter {
     required this.dark,
     this.sheet,
     this.sheets = 1,
+    this.pdfHeaderHeight = 0,
   }) : super(repaint: controller);
   final CanvasController controller;
   final Size pageSize;
@@ -2519,6 +2515,9 @@ class _PagePainter extends CustomPainter {
 
   /// How many sheets of it the content occupies.
   final int sheets;
+
+  /// The title is part of the PDF sheet visually, above its content origin.
+  final double pdfHeaderHeight;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -2533,9 +2532,9 @@ class _PagePainter extends CustomPainter {
         Offset.zero & size,
         Paint()..color = dark ? OnoteColors.night200 : OnoteColors.paper200,
       );
-      final topLeft = controller.pageToScreen(Offset.zero);
+      final topLeft = controller.pageToScreen(Offset(0, -pdfHeaderHeight));
       final w = paper.width * controller.scale;
-      final h = paper.height * controller.scale;
+      final h = (paper.height + pdfHeaderHeight) * controller.scale;
       final shadow = Paint()
         ..color = Colors.black.withValues(alpha: dark ? .35 : .12)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
@@ -2608,6 +2607,7 @@ class _PagePainter extends CustomPainter {
       old.dark != dark ||
       old.sheet != sheet ||
       old.sheets != sheets ||
+      old.pdfHeaderHeight != pdfHeaderHeight ||
       old.pageSize != pageSize;
 }
 

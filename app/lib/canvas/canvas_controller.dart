@@ -19,6 +19,8 @@ class CanvasController extends ChangeNotifier {
   static const minScale = 0.15;
   static const maxScale = 8.0;
   static const pdfSideMargin = 24.0;
+
+  /// Space above PDF content for the same title band as a normal page.
   static const pdfTopMargin = 108.0;
   bool pdfPresentation = false;
 
@@ -38,7 +40,10 @@ class CanvasController extends ChangeNotifier {
     stopMotion();
     scale = ((viewport.width - pdfSideMargin * 2) / page.width)
         .clamp(_minimumScale, maxScale);
-    offset = Offset((viewport.width - page.width * scale) / 2, pdfTopMargin);
+    offset = Offset(
+      (viewport.width - page.width * scale) / 2,
+      pdfTopMargin * scale,
+    );
     clampToPage();
     notifyListeners();
   }
@@ -48,7 +53,8 @@ class CanvasController extends ChangeNotifier {
   /// Whether the page is currently pulled past its natural top/left origin.
   /// Kept here rather than inferred by a gesture recognizer so touch, mouse
   /// and precision-touchpad releases all settle the exact same state.
-  bool get hasLeadingOverscroll => offset.dx > .01 || offset.dy > .01;
+  bool get hasLeadingOverscroll =>
+      !pdfPresentation && (offset.dx > .01 || offset.dy > .01);
 
   Matrix4 get matrix => Matrix4.identity()
     ..translate(offset.dx, offset.dy)
@@ -213,10 +219,10 @@ class CanvasController extends ChangeNotifier {
           ? (viewport.width - width) / 2
           : offset.dx
               .clamp(viewport.width - pdfSideMargin - width, pdfSideMargin);
-      final y = height + pdfTopMargin + pdfSideMargin <= viewport.height
-          ? pdfTopMargin
-          : offset.dy
-              .clamp(viewport.height - pdfSideMargin - height, pdfTopMargin);
+      final header = pdfTopMargin * scale;
+      final y = height + header + pdfSideMargin <= viewport.height
+          ? header
+          : offset.dy.clamp(viewport.height - pdfSideMargin - height, header);
       offset = Offset(x, y);
       return;
     }
@@ -274,6 +280,10 @@ class CanvasController extends ChangeNotifier {
   /// never consume the vertical fling (or restore a stale vertical position).
   void release(Offset velocity) {
     stopMotion();
+    if (pdfPresentation) {
+      settleToPage();
+      return;
+    }
     if (!hasLeadingOverscroll && velocity.distance < 8) return;
     var vx = velocity.dx;
     var vy = velocity.dy;
