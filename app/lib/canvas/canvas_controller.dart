@@ -28,15 +28,16 @@ class CanvasController extends ChangeNotifier {
         page == null ||
         viewport.width <= 0 ||
         page.width <= 0) return minScale;
-    return ((viewport.width - pdfSideMargin * 2) / page.width)
-        .clamp(0.01, maxScale);
+    final fit = (viewport.width - pdfSideMargin * 2) / page.width;
+    return math.min(minScale, fit.clamp(0.01, maxScale));
   }
 
   void fitPdfWidth() {
     final page = pageSize;
     if (!pdfPresentation || page == null || viewport == Size.zero) return;
     stopMotion();
-    scale = _minimumScale;
+    scale = ((viewport.width - pdfSideMargin * 2) / page.width)
+        .clamp(_minimumScale, maxScale);
     offset = Offset((viewport.width - page.width * scale) / 2, pdfTopMargin);
     clampToPage();
     notifyListeners();

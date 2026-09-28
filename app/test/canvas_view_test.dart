@@ -124,7 +124,7 @@ void main() {
     expect(c.pageSize, const Size(1200, 1400));
   });
 
-  test('PDF view centers the page and stops zooming out at its side margins',
+  test('PDF view fits first, then allows further zoom out with centered pages',
       () {
     final c = CanvasController()
       ..viewport = const Size(1000, 700)
@@ -137,14 +137,15 @@ void main() {
     expect(c.offset.dx, closeTo(CanvasController.pdfSideMargin, 0.0001));
     expect(c.offset.dy, CanvasController.pdfTopMargin);
 
-    c.setZoom(0.1);
-    expect(c.scale, closeTo(fit, 0.0001));
+    c.setZoom(0.3);
+    expect(c.scale, closeTo(0.3, 0.0001));
+    expect(c.offset.dx, closeTo((1000 - 1200 * 0.3) / 2, 0.0001));
     c.transformPinchAt(const Offset(500, 300), 0.1, const Offset(500, 300));
-    expect(c.scale, closeTo(fit, 0.0001));
+    expect(c.scale, CanvasController.minScale);
 
     c.setZoom(fit * 1.5);
-    c.setZoom(0.1);
-    expect(c.offset.dx, closeTo(CanvasController.pdfSideMargin, 0.0001));
+    c.setZoom(0.3);
+    expect(c.offset.dx, closeTo((1000 - 1200 * 0.3) / 2, 0.0001));
     c.reset();
     expect(c.offset.dy, CanvasController.pdfTopMargin);
   });

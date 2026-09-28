@@ -1896,27 +1896,25 @@ class _PageCanvasState extends State<PageCanvas> {
                         top: 0,
                         height: CanvasController.pdfTopMargin - 8,
                         child: ColoredBox(
-                          color: dark
-                              ? OnoteColors.night200
-                              : OnoteColors.paper200,
+                          color: dark ? OnoteColors.night0 : OnoteColors.paper0,
                           child: Center(
                             child: SizedBox(
                               width: math.min(
+                                960,
                                 math.max(
                                     0,
                                     controller.viewport.width -
                                         CanvasController.pdfSideMargin * 2),
-                                livePageSize.width * controller.scale,
                               ),
                               child: PageTitleView(
                                 key: ValueKey('title-${app.pageId}'),
                                 app: app,
                                 width: math.min(
+                                  960,
                                   math.max(
                                       0,
                                       controller.viewport.width -
                                           CanvasController.pdfSideMargin * 2),
-                                  livePageSize.width * controller.scale,
                                 ),
                               ),
                             ),
