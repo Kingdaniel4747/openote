@@ -61,6 +61,19 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('browser shortcut can be hidden and stays hidden', (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await pump(tester, const Size(2600, 1200));
+    expect(find.byTooltip('Open default browser'), findsOneWidget);
+    expect(find.byTooltip('Recherche und YouTube'), findsNothing);
+
+    app.setBrowserShortcutEnabled(false);
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Open default browser'), findsNothing);
+    expect(repo.getSetting('browserShortcutEnabled'), isFalse);
+    await tester.pump(const Duration(milliseconds: 500));
+  });
+
   testWidgets('a wide window shows every trailing control inline, no fold',
       (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');

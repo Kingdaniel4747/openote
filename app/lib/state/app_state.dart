@@ -1780,11 +1780,18 @@ class AppState extends ChangeNotifier
 
   bool get ankiShortcutEnabled =>
       _repo.getSetting('ankiShortcutEnabled') == true;
+  bool get browserShortcutEnabled =>
+      _repo.getSetting('browserShortcutEnabled') != false;
   String? get ankiExecutablePath =>
       _repo.getSetting('ankiExecutablePath') as String?;
 
   void setAnkiShortcutEnabled(bool value) {
     _repo.setSetting('ankiShortcutEnabled', value);
+    notifyListeners();
+  }
+
+  void setBrowserShortcutEnabled(bool value) {
+    _repo.setSetting('browserShortcutEnabled', value);
     notifyListeners();
   }
 

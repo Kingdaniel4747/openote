@@ -304,6 +304,15 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 ),
               _section('Integrations'),
               _row(
+                'Show browser shortcut',
+                _toggle(
+                    app.browserShortcutEnabled, app.setBrowserShortcutEnabled),
+              ),
+              const AppText(
+                'Opens Google in your default browser.',
+                style: TextStyle(fontSize: 11),
+              ),
+              _row(
                 'Show Anki shortcut',
                 _toggle(app.ankiShortcutEnabled, app.setAnkiShortcutEnabled),
               ),

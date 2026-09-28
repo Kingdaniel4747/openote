@@ -13,6 +13,7 @@ import '../export/print_page.dart';
 import '../editor/list_editing.dart';
 import '../canvas/media_drop.dart';
 import '../core/anki_launcher.dart';
+import '../core/platform_open.dart';
 import '../markdown/md_syntax.dart';
 import '../state/app_state.dart';
 import '../platform/screen_capture.dart';
@@ -26,7 +27,6 @@ import 'insert_catalog.dart';
 import 'object_face.dart';
 import 'object_row.dart';
 import 'settings_dialog.dart';
-import 'research_palette.dart';
 import 'scanner_pairing_dialog.dart';
 import 'update_dialog.dart';
 import '../theme/tokens.dart';
@@ -312,12 +312,13 @@ class _CommandBarState extends State<CommandBar> {
             visualDensity: VisualDensity.compact,
             onPressed: () => _openAnki(context, app),
           ),
-        IconButton(
-          icon: const Icon(Icons.ondemand_video_outlined, size: 18),
-          tooltip: 'Recherche und YouTube',
-          visualDensity: VisualDensity.compact,
-          onPressed: () => showResearchPalette(context),
-        ),
+        if (app.browserShortcutEnabled)
+          IconButton(
+            icon: const Icon(Icons.open_in_browser_outlined, size: 18),
+            tooltip: 'Open default browser',
+            visualDensity: VisualDensity.compact,
+            onPressed: () => _openBrowser(context),
+          ),
         _PlannerButton(app: app),
         IconButton(
           icon: const Icon(Icons.settings_outlined, size: 18),
@@ -369,12 +370,13 @@ class _CommandBarState extends State<CommandBar> {
                 visualDensity: VisualDensity.compact,
                 onPressed: () => _openAnki(context, app),
               ),
-            IconButton(
-              icon: const Icon(Icons.ondemand_video_outlined, size: 18),
-              tooltip: 'Recherche und YouTube',
-              visualDensity: VisualDensity.compact,
-              onPressed: () => showResearchPalette(context),
-            ),
+            if (app.browserShortcutEnabled)
+              IconButton(
+                icon: const Icon(Icons.open_in_browser_outlined, size: 18),
+                tooltip: 'Open default browser',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => _openBrowser(context),
+              ),
             _PlannerButton(app: app),
             IconButton(
               icon: const Icon(Icons.settings_outlined, size: 18),
@@ -1540,6 +1542,15 @@ Future<void> _openAnki(BuildContext context, AppState app) async {
   if (!opened && context.mounted) {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
       content: Text('Anki was not found. Choose its app file in Settings.'),
+    ));
+  }
+}
+
+Future<void> _openBrowser(BuildContext context) async {
+  final opened = await PlatformOpen.url('https://www.google.com/');
+  if (!opened && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('The default browser could not be opened.'),
     ));
   }
 }
