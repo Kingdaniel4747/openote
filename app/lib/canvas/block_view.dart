@@ -76,7 +76,7 @@ const double _kChromePad = 8;
 /// a drag moves the container. OneNote's model, and the reason for it is that
 /// a click-drag inside a text box means "select this text" to everyone who has
 /// ever used a text box.
-const double _kBarH = _kChromePad;
+const double _kBarH = 30;
 
 class _BlockViewState extends State<BlockView> {
   bool _hoverBody = false;
@@ -475,18 +475,15 @@ class _BlockViewState extends State<BlockView> {
         alignment: Alignment.centerLeft,
         child: Container(
           width: 22,
-          height: 16,
+          height: 28,
           margin: const EdgeInsets.only(left: 4, bottom: 2),
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: primaryColor.withValues(alpha: .82),
-            borderRadius: BorderRadius.circular(5),
+            borderRadius: BorderRadius.circular(6),
           ),
-          child: Transform.rotate(
-            angle: 1.588, // 91 degrees
-            child: Icon(Icons.more_horiz,
-                size: 15, color: dark ? Colors.black : Colors.white),
-          ),
+          child: Icon(Icons.drag_indicator,
+              size: 20, color: dark ? Colors.black : Colors.white),
         ),
       ),
     );
