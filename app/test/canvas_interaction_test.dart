@@ -84,9 +84,7 @@ void main() {
       await t.pump();
     }
 
-    testWidgets('PDF title moves with the page instead of staying fixed',
-        (t) async {
-      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    void makePdfPage() {
       app.addBlock(Block(
         type: BlockType.image,
         x: AppState.pageLeftMargin,
@@ -96,6 +94,12 @@ void main() {
         content: {'pdf': 'sha256:fixture', 'page': 0},
       ));
       app.setPdfEditorView(true);
+    }
+
+    testWidgets('PDF title moves with the page instead of staying fixed',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      makePdfPage();
       await pump(t);
 
       expect(find.byType(PageTitleView), findsOneWidget);
@@ -104,6 +108,79 @@ void main() {
       await t.pump();
       final after = t.getTopLeft(find.byType(PageTitleView));
       expect(after.dy, closeTo(before.dy - 30, 0.01));
+      await t.pump(const Duration(seconds: 1));
+      await t.pump(const Duration(milliseconds: 500));
+    });
+
+    testWidgets('PDF trackpad pinch stays under the mouse cursor', (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      makePdfPage();
+      await pump(t);
+      const cursor = Offset(250, 300);
+      final mouse = TestPointer(1, PointerDeviceKind.mouse);
+      await t.sendEventToBinding(mouse.hover(cursor));
+      final pagePoint = app.canvas.screenToPage(cursor);
+
+      final trackpad = TestPointer(2, PointerDeviceKind.trackpad);
+      const gesturePosition = Offset(600, 450);
+      await t.sendEventToBinding(trackpad.panZoomStart(gesturePosition));
+      await t.sendEventToBinding(trackpad.panZoomUpdate(gesturePosition,
+          pan: const Offset(80, 40), scale: 1.5));
+      await t.sendEventToBinding(trackpad.panZoomEnd());
+      expect(app.canvas.scale, greaterThan(1));
+      final after = app.canvas.screenToPage(cursor);
+      expect(after.dx, closeTo(pagePoint.dx, .01));
+      expect(after.dy, closeTo(pagePoint.dy, .01));
+      await t.pump(const Duration(seconds: 1));
+      await t.pump(const Duration(milliseconds: 500));
+    });
+
+    testWidgets('PDF trackpad swipe coasts after the fingers lift', (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      makePdfPage();
+      await pump(t);
+      final trackpad = TestPointer(2, PointerDeviceKind.trackpad);
+      const position = Offset(400, 400);
+      await t.sendEventToBinding(trackpad.panZoomStart(position));
+      await t.sendEventToBinding(
+          trackpad.panZoomUpdate(position, pan: const Offset(0, -80)));
+      await t.sendEventToBinding(trackpad.panZoomEnd());
+      final liftedAt = app.canvas.offset.dy;
+      await t.pump(const Duration(milliseconds: 80));
+      expect(app.canvas.offset.dy, lessThan(liftedAt));
+      app.canvas.stopMotion();
+      await t.pump(const Duration(seconds: 1));
+      await t.pump(const Duration(milliseconds: 500));
+    });
+
+    testWidgets('PDF finger swipe coasts after release', (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      makePdfPage();
+      await pump(t);
+      final finger = await t.startGesture(const Offset(400, 400),
+          kind: PointerDeviceKind.touch);
+      await finger.moveBy(const Offset(0, -80));
+      await finger.up();
+      final liftedAt = app.canvas.offset.dy;
+      await t.pump(const Duration(milliseconds: 80));
+      expect(app.canvas.offset.dy, lessThan(liftedAt));
+      app.canvas.stopMotion();
+      await t.pump(const Duration(seconds: 1));
+      await t.pump(const Duration(milliseconds: 500));
+    });
+
+    testWidgets('PDF precision scroll signal gets a short coast', (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      makePdfPage();
+      await pump(t);
+      final pointer = TestPointer(1, PointerDeviceKind.mouse);
+      await t.sendEventToBinding(pointer.hover(const Offset(400, 400)));
+      await t.sendEventToBinding(pointer.scroll(const Offset(0, 32)));
+      final afterSignal = app.canvas.offset.dy;
+      await t.pump(const Duration(milliseconds: 100));
+      await t.pump(const Duration(milliseconds: 50));
+      expect(app.canvas.offset.dy, lessThan(afterSignal));
+      app.canvas.stopMotion();
       await t.pump(const Duration(seconds: 1));
       await t.pump(const Duration(milliseconds: 500));
     });

@@ -156,4 +156,17 @@ void main() {
     c.clampToPage();
     expect(c.offset.dx, closeTo((1400 - 1200 * fit) / 2, 0.0001));
   });
+
+  test('PDF finger pan stays direct until the title edge', () {
+    final c = CanvasController()
+      ..viewport = const Size(1000, 700)
+      ..pageSize = const Size(1200, 2400)
+      ..pdfPresentation = true;
+    c.fitPdfWidth();
+    final top = c.offset.dy;
+    c.panBy(const Offset(0, -140), elasticLeading: true);
+    c.panBy(const Offset(0, 100), elasticLeading: true);
+    expect(c.offset.dy, closeTo(top - 40, .001));
+    c.dispose();
+  });
 }

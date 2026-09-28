@@ -127,8 +127,13 @@ class _PageCanvasState extends State<PageCanvas> {
   Offset? _pinchStartOffset;
   bool _pinchFramePending = false;
   double _pzLastScale = 1.0;
+  bool _pzZooming = false;
   Offset _pzVelocity = Offset.zero;
   DateTime? _pzLastMotionAt;
+  Offset? _mousePosition;
+  Timer? _scrollReleaseTimer;
+  Offset _scrollVelocity = Offset.zero;
+  DateTime? _lastScrollAt;
 
   Offset _touchVelocity = Offset.zero;
   DateTime? _lastTouchMove;
@@ -337,6 +342,7 @@ class _PageCanvasState extends State<PageCanvas> {
   @override
   void dispose() {
     controller.stopMotion();
+    _scrollReleaseTimer?.cancel();
     _shapeHold?.cancel();
     app.touchCanvasGesture = false;
     app.relinquishedTouchPointers.clear();
@@ -1021,6 +1027,7 @@ class _PageCanvasState extends State<PageCanvas> {
   // ── Touch pan/pinch (shared: pen-mode palm rejection & navigation) ──────
 
   void _touchDown(PointerDownEvent e) {
+    _cancelScrollCoast();
     controller.stopMotion();
     if (_beginRulerPointer(e)) return;
     _touches[e.pointer] = e.localPosition;
@@ -1576,6 +1583,13 @@ class _PageCanvasState extends State<PageCanvas> {
 
   // ── Wheel / trackpad ────────────────────────────────────────────────────
 
+  void _cancelScrollCoast() {
+    _scrollReleaseTimer?.cancel();
+    _scrollReleaseTimer = null;
+    _scrollVelocity = Offset.zero;
+    _lastScrollAt = null;
+  }
+
   /// Pan or zoom the page.
   ///
   /// **Through the resolver.** A wheel notch is delivered to every listener
@@ -1594,16 +1608,42 @@ class _PageCanvasState extends State<PageCanvas> {
           HardwareKeyboard.instance.isMetaPressed;
       final shift = HardwareKeyboard.instance.isShiftPressed;
       if (ctrl || shift) {
+        _cancelScrollCoast();
         if (e.scrollDelta.dy == 0) return;
         controller.zoomAt(
           e.localPosition,
           math.exp(-e.scrollDelta.dy * .0015),
         );
       } else {
-        // Scroll signals include precision-touchpad scrolling on Windows.
-        // Apply the delta immediately, like a finger/trackpad pan; easing it
-        // here made that input feel noticeably slower than direct touch.
-        controller.panBy(-e.scrollDelta);
+        // Follow every scroll sample directly. Only after a short quiet gap
+        // add a bounded coast for precision touchpads on PDF pages.
+        final delta = -e.scrollDelta;
+        controller.panBy(delta);
+        final precision =
+            e.kind == PointerDeviceKind.trackpad || e.scrollDelta.distance < 80;
+        if (app.pageProps.pdfOnly && precision) {
+          final now = DateTime.now();
+          final seconds = (now
+                      .difference(_lastScrollAt ??
+                          now.subtract(const Duration(milliseconds: 16)))
+                      .inMicroseconds /
+                  1000000)
+              .clamp(.008, .05);
+          final instant = delta / seconds;
+          _scrollVelocity = _lastScrollAt == null
+              ? instant
+              : Offset.lerp(_scrollVelocity, instant, .35)!;
+          _lastScrollAt = now;
+          _scrollReleaseTimer?.cancel();
+          _scrollReleaseTimer = Timer(const Duration(milliseconds: 80), () {
+            _scrollReleaseTimer = null;
+            controller.release(_scrollVelocity);
+            _scrollVelocity = Offset.zero;
+            _lastScrollAt = null;
+          });
+        } else {
+          _cancelScrollCoast();
+        }
       }
     });
   }
@@ -2287,7 +2327,9 @@ class _PageCanvasState extends State<PageCanvas> {
       // on every `onPointerPanZoomUpdate` would silently start panning the
       // page mid-gesture the instant something unrelated cleared the set.
       onPointerPanZoomStart: (e) {
+        _cancelScrollCoast();
         _pzLastScale = 1.0;
+        _pzZooming = false;
         _pzVelocity = Offset.zero;
         _pzLastMotionAt = DateTime.now();
         _panZoomClaimedBy = app.claimedPointers.contains(e.pointer) ||
@@ -2304,11 +2346,13 @@ class _PageCanvasState extends State<PageCanvas> {
         }
         final scaleFactor = e.scale / _pzLastScale;
         if ((e.scale - _pzLastScale).abs() > .001) {
-          // A precision-touchpad event can carry a small pan delta alongside
-          // a pinch. Applying it after the zoom moves the content away from
-          // the cursor, so keep a zoom anchored exactly at [localPosition].
-          controller.transformAt(e.localPosition, scaleFactor, e.localPanDelta);
-        } else if (e.localPanDelta != Offset.zero) {
+          // The pan delta in a pinch describes noisy finger-centroid motion,
+          // not movement of the mouse cursor. Keep the page point under the
+          // last mouse hover fixed, just like Ctrl+wheel zoom.
+          _pzZooming = true;
+          _pzVelocity = Offset.zero;
+          controller.zoomAt(_mousePosition ?? e.localPosition, scaleFactor);
+        } else if (!_pzZooming && e.localPanDelta != Offset.zero) {
           // Two-finger scrolling without a scale change is still a pan.
           controller.panBy(e.localPanDelta, elasticLeading: true);
           final now = DateTime.now();
@@ -2326,11 +2370,15 @@ class _PageCanvasState extends State<PageCanvas> {
       onPointerPanZoomEnd: (e) {
         final claimed = _panZoomClaimedBy == e.pointer;
         if (claimed) _panZoomClaimedBy = null;
-        if (!claimed) controller.release(_pzVelocity);
+        if (!claimed && !_pzZooming) controller.release(_pzVelocity);
+        _pzZooming = false;
         _pzVelocity = Offset.zero;
         _pzLastMotionAt = null;
       },
       child: MouseRegion(
+        onEnter: (e) => _mousePosition = e.localPosition,
+        onHover: (e) => _mousePosition = e.localPosition,
+        onExit: (_) => _mousePosition = null,
         cursor: _windowsPen.enabled &&
                 _inkTool &&
                 (_gestureErase || _windowsPen.nativeEraser)

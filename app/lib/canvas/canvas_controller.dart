@@ -65,7 +65,7 @@ class CanvasController extends ChangeNotifier {
 
   void panBy(Offset delta, {bool elasticLeading = false}) {
     stopMotion();
-    if (elasticLeading) {
+    if (elasticLeading && !pdfPresentation) {
       double resisted(double current, double movement) {
         final next = current + movement;
         if (movement <= 0 || next <= 0) return next;
@@ -83,7 +83,7 @@ class CanvasController extends ChangeNotifier {
       offset += delta;
     }
     _resetRunwayAtMinimumZoom();
-    clampToPage(allowLeadingOverscroll: elasticLeading);
+    clampToPage(allowLeadingOverscroll: elasticLeading && !pdfPresentation);
     notifyListeners();
   }
 
@@ -281,7 +281,7 @@ class CanvasController extends ChangeNotifier {
   void release(Offset velocity) {
     stopMotion();
     if (pdfPresentation) {
-      settleToPage();
+      _coastPdf(velocity);
       return;
     }
     if (!hasLeadingOverscroll && velocity.distance < 8) return;
@@ -330,6 +330,41 @@ class CanvasController extends ChangeNotifier {
       springX = x.$3;
       springY = y.$3;
       if (!springX && !springY && vx == 0 && vy == 0) {
+        timer.cancel();
+        _leadingBounce = null;
+      }
+      notifyListeners();
+    });
+  }
+
+  /// Let a PDF keep moving after a finger or precision-touchpad swipe. Its
+  /// leading edge includes the title band, so the ordinary canvas spring
+  /// (whose leading edge is zero) cannot be used here.
+  void _coastPdf(Offset velocity) {
+    clampToPage();
+    if (velocity.distance < 70) {
+      notifyListeners();
+      return;
+    }
+    var speed = Offset(
+      velocity.dx.clamp(-3000.0, 3000.0),
+      velocity.dy.clamp(-3000.0, 3000.0),
+    );
+    var previous = DateTime.now();
+    _leadingBounce = Timer.periodic(const Duration(milliseconds: 16), (timer) {
+      final now = DateTime.now();
+      final dt =
+          (now.difference(previous).inMicroseconds / 1000000).clamp(.001, .032);
+      previous = now;
+      final before = offset;
+      offset += speed * dt;
+      clampToPage();
+      speed = Offset(
+            (offset.dx - before.dx - speed.dx * dt).abs() > .01 ? 0 : speed.dx,
+            (offset.dy - before.dy - speed.dy * dt).abs() > .01 ? 0 : speed.dy,
+          ) *
+          math.exp(-5 * dt);
+      if (speed.distance < 8) {
         timer.cancel();
         _leadingBounce = null;
       }
