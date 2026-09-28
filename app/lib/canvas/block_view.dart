@@ -80,8 +80,7 @@ const double _kBarH = 30;
 
 class _BlockViewState extends State<BlockView> {
   bool _hoverBody = false;
-  bool _hoverChrome = false;
-  bool get _hover => _hoverBody || _hoverChrome;
+  bool get _hover => _hoverBody;
   bool _dragUndoPushed = false;
   bool _resizeUndoPushed = false;
   Offset? _touchMoveLast;
@@ -728,12 +727,10 @@ class _BlockViewState extends State<BlockView> {
         app.tool == Tool.eraser ||
         app.tool == Tool.lasso;
 
-    // Chrome is only live for its OWN block, so two abutting blocks can never
-    // both offer a bar at once even though the reserved strips overlap.
-    // Suppressed entirely while _pendingEmpty — the box does not exist yet,
-    // as far as the eye can tell, until the first character lands in it.
+    // The move grip belongs to the selected object. Hover alone must not
+    // reveal it or leave it visible after the pointer departs.
     final showChrome =
-        !inkToolActive && !_pendingEmpty && (_hover || selected || editing);
+        !inkToolActive && !_pendingEmpty && (selected || editing);
 
     const devices = {
       // Trackpad two-finger scrolls arrive as PointerPanZoom events, which
@@ -944,35 +941,15 @@ class _BlockViewState extends State<BlockView> {
                   child: _withFastObjectHold(touchable),
                 ),
               ),
-              // The bar strip is ALWAYS hover-sensing, and only sometimes
-              // drawn. It used to be mounted only when `showChrome` was already
-              // true — but `showChrome` needs `_hover`, and the only thing that
-              // could set `_hover` was the body, because the bar's own
-              // MouseRegion did not exist yet. So the bar was unreachable
-              // except by first moving the cursor INTO the box and back up to
-              // it: "if i want to move it i need to move my cursor into the box
-              // then back up to the bar".
-              //
-              // When the bar is not shown this is a bare MouseRegion. It tracks
-              // the mouse but has no GestureDetector, so it absorbs no taps —
-              // a click on the strip still falls through to the canvas and
-              // creates a new text box, which is the behaviour just outside a
-              // block. Suppressed entirely for the ink tools and for locked
-              // blocks, matching `showChrome`, so hovering never competes with
-              // the pen.
-              if (!inkToolActive && !_locked)
+              // Unselected objects have no bar hit area. Their content can be
+              // clicked to select them; only then does this move target appear.
+              if (showChrome && !_locked)
                 Positioned(
                   left: 0,
                   right: 0,
                   top: 0,
                   height: _kBarH,
-                  child: showChrome
-                      ? _moveBar(context, primaryColor, dark)
-                      : MouseRegion(
-                          onEnter: (_) => setState(() => _hoverChrome = true),
-                          onExit: (_) => setState(() => _hoverChrome = false),
-                          child: const SizedBox.expand(),
-                        ),
+                  child: _moveBar(context, primaryColor, dark),
                 ),
               // Resize handles. Now that the chrome sits INSIDE the render
               // box, each handle's full visual extent is grabbable instead of

@@ -374,37 +374,31 @@ void main() {
       return s != null && s.isValid ? s.baseOffset : null;
     }
 
-    testWidgets('the bar is reachable without entering the box first',
-        (t) async {
+    testWidgets('the move grip appears only after selection', (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-      // The reported symptom: "The bar only shows up when i hover over the box
-      // itself, so if i want to move it i need to move my cursor into the box
-      // then back up to the bar."
-      //
-      // The strip was mounted only once `showChrome` was true, and `showChrome`
-      // needed `_hover`, which only the BODY could set — the bar's own
-      // MouseRegion did not exist yet to set it. A hover straight onto the
-      // strip therefore did nothing at all.
       await pump(t);
       await t.pump();
 
       final box = blockRect(t);
-      // A point inside the bar strip, above the content — the place a user
-      // aims for when they want to drag the container.
-      final onBar = Offset(box.center.dx, box.top + 4);
-
       final mouse = await t.createGesture(kind: PointerDeviceKind.mouse);
       await mouse.addPointer(location: const Offset(0, 0));
       addTearDown(mouse.removePointer);
       await t.pump();
 
-      // Straight onto the strip, never touching the body.
-      await mouse.moveTo(onBar);
+      await mouse.moveTo(box.center);
       await t.pumpAndSettle();
+      expect(find.byIcon(Icons.drag_indicator), findsNothing,
+          reason: 'hover alone must not reveal the move grip');
 
+      await t.tapAt(box.center);
+      await t.pump();
       expect(find.byIcon(Icons.drag_indicator), findsOneWidget,
-          reason: 'hovering the bar strip must reveal the bar, without the '
-              'cursor ever having been inside the box');
+          reason: 'clicking the object reveals its move grip');
+
+      app.select(null);
+      await t.pump();
+      expect(find.byIcon(Icons.drag_indicator), findsNothing,
+          reason: 'deselecting the object hides its move grip');
     });
 
     testWidgets('dragging the bar never puts the box into edit mode',
