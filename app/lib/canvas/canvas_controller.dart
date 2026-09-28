@@ -18,6 +18,30 @@ class CanvasController extends ChangeNotifier {
 
   static const minScale = 0.15;
   static const maxScale = 8.0;
+  static const pdfSideMargin = 24.0;
+  static const pdfTopMargin = 108.0;
+  bool pdfPresentation = false;
+
+  double get _minimumScale {
+    final page = pageSize;
+    if (!pdfPresentation ||
+        page == null ||
+        viewport.width <= 0 ||
+        page.width <= 0) return minScale;
+    return ((viewport.width - pdfSideMargin * 2) / page.width)
+        .clamp(0.01, maxScale);
+  }
+
+  void fitPdfWidth() {
+    final page = pageSize;
+    if (!pdfPresentation || page == null || viewport == Size.zero) return;
+    stopMotion();
+    scale = _minimumScale;
+    offset = Offset((viewport.width - page.width * scale) / 2, pdfTopMargin);
+    clampToPage();
+    notifyListeners();
+  }
+
   Timer? _leadingBounce;
 
   /// Whether the page is currently pulled past its natural top/left origin.
@@ -70,7 +94,7 @@ class CanvasController extends ChangeNotifier {
     bool clamp = true,
   }) {
     stopMotion();
-    final newScale = (scale * factor).clamp(minScale, maxScale);
+    final newScale = (scale * factor).clamp(_minimumScale, maxScale);
     final pageFocal = screenToPage(screenFocal);
     scale = newScale;
     offset = screenFocal - pageFocal * scale + panDelta;
@@ -88,7 +112,7 @@ class CanvasController extends ChangeNotifier {
     Offset currentFocal,
   ) {
     final pageFocal = screenToPage(previousFocal);
-    final newScale = (scale * factor).clamp(minScale, maxScale);
+    final newScale = (scale * factor).clamp(_minimumScale, maxScale);
     scale = newScale;
     offset = currentFocal - pageFocal * newScale;
     _resetRunwayAtMinimumZoom();
@@ -110,7 +134,7 @@ class CanvasController extends ChangeNotifier {
     required double scaleFactor,
   }) {
     final pageFocal = (startFocal - startOffset) / startScale;
-    scale = (startScale * scaleFactor).clamp(minScale, maxScale);
+    scale = (startScale * scaleFactor).clamp(_minimumScale, maxScale);
     // Keep the page point below the fingers fixed, including when the gesture
     // starts at the top-left origin. Pinning that origin to zero made every
     // zoom-in visibly jump away from the fingers.
@@ -128,6 +152,10 @@ class CanvasController extends ChangeNotifier {
   }
 
   void reset() {
+    if (pdfPresentation) {
+      fitPdfWidth();
+      return;
+    }
     stopMotion();
     scale = 1.0;
     offset = Offset.zero; // page anchored top-left (OneNote-like)
@@ -176,6 +204,21 @@ class CanvasController extends ChangeNotifier {
   void clampToPage({bool allowLeadingOverscroll = false}) {
     final ps = pageSize;
     if (ps == null || viewport == Size.zero) return;
+    if (pdfPresentation) {
+      scale = scale.clamp(_minimumScale, maxScale);
+      final width = ps.width * scale;
+      final height = ps.height * scale;
+      final x = width + pdfSideMargin * 2 <= viewport.width
+          ? (viewport.width - width) / 2
+          : offset.dx
+              .clamp(viewport.width - pdfSideMargin - width, pdfSideMargin);
+      final y = height + pdfTopMargin + pdfSideMargin <= viewport.height
+          ? pdfTopMargin
+          : offset.dy
+              .clamp(viewport.height - pdfSideMargin - height, pdfTopMargin);
+      offset = Offset(x, y);
+      return;
+    }
     if (_growsTrailingEdges) _growTrailingRunway(offset);
     double axis(double o, double vp, double contentPx) {
       if (allowLeadingOverscroll && o > 0) return o.clamp(0.0, 44.0);
@@ -333,6 +376,10 @@ class CanvasController extends ChangeNotifier {
 
   /// Zoom-to-fit a page-space rectangle (style guide §8.2).
   void fitTo(Rect pageBounds) {
+    if (pdfPresentation) {
+      fitPdfWidth();
+      return;
+    }
     if (viewport == Size.zero || pageBounds.isEmpty) {
       reset();
       return;

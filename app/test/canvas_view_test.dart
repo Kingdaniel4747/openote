@@ -123,4 +123,29 @@ void main() {
     expect(c.offset, const Offset(-300, -700));
     expect(c.pageSize, const Size(1200, 1400));
   });
+
+  test('PDF view centers the page and stops zooming out at its side margins',
+      () {
+    final c = CanvasController()
+      ..viewport = const Size(1000, 700)
+      ..pageSize = const Size(1200, 2400)
+      ..pdfPresentation = true;
+
+    c.fitPdfWidth();
+    final fit = (1000 - CanvasController.pdfSideMargin * 2) / 1200;
+    expect(c.scale, closeTo(fit, 0.0001));
+    expect(c.offset.dx, closeTo(CanvasController.pdfSideMargin, 0.0001));
+    expect(c.offset.dy, CanvasController.pdfTopMargin);
+
+    c.setZoom(0.1);
+    expect(c.scale, closeTo(fit, 0.0001));
+    c.transformPinchAt(const Offset(500, 300), 0.1, const Offset(500, 300));
+    expect(c.scale, closeTo(fit, 0.0001));
+
+    c.setZoom(fit * 1.5);
+    c.setZoom(0.1);
+    expect(c.offset.dx, closeTo(CanvasController.pdfSideMargin, 0.0001));
+    c.reset();
+    expect(c.offset.dy, CanvasController.pdfTopMargin);
+  });
 }

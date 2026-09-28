@@ -4148,8 +4148,15 @@ class AppState extends ChangeNotifier
     selectedIds.clear();
     docRevision++;
     markDirty();
+    canvas.pdfPresentation = enabled;
+    canvas.setPageBounds(pageSize(),
+        growsTrailingEdges: !enabled && !pageProps.isPaged);
     notifyListeners();
-    canvas.clampToPage();
+    if (enabled) {
+      canvas.fitPdfWidth();
+    } else {
+      canvas.fitWidth(contentExtent().right);
+    }
   }
 
   /// The one big box a paged page writes into, created if it is not there.

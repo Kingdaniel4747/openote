@@ -167,6 +167,7 @@ class PageFace extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final surfaces = context.surfaces;
     Widget bg(String v, IconData icon, String tip) => IconButton(
           icon: Icon(icon, size: OnoteIcon.md),
           tooltip: 'Background: $tip',
@@ -179,6 +180,10 @@ class PageFace extends StatelessWidget {
     return FixedToolbar(children: [
       TextButton.icon(
         key: const ValueKey('split-screen'),
+        style: TextButton.styleFrom(
+          foregroundColor:
+              app.splitViewEnabled ? scheme.primary : surfaces.textPrimary,
+        ),
         icon: Icon(
             app.splitViewEnabled
                 ? Icons.view_agenda_outlined
@@ -191,6 +196,10 @@ class PageFace extends StatelessWidget {
       if (app.hasPdfSlideContent)
         TextButton.icon(
           key: const ValueKey('pdf-view-toggle'),
+          style: TextButton.styleFrom(
+            foregroundColor:
+                app.pageProps.pdfOnly ? scheme.primary : surfaces.textPrimary,
+          ),
           icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
           label: Text(app.pageProps.pdfOnly ? 'PDF slides' : 'PDF editor'),
           onPressed: () => app.setPdfEditorView(!app.pageProps.pdfOnly),

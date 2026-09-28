@@ -352,6 +352,7 @@ class _PageCanvasState extends State<PageCanvas> {
     // A controller outlives the keyed page widget. Do not carry the previous
     // page's virtual runway into the next note.
     controller.resetPageBounds();
+    controller.pdfPresentation = app.pageProps.pdfOnly;
     _windowsPen.addListener(_windowsPenChanged);
     _windowsPen.attach();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -368,6 +369,8 @@ class _PageCanvasState extends State<PageCanvas> {
       if (mem != null && !(mem[0] == 1.0 && mem[1] == 0.0 && mem[2] == 0.0)) {
         controller.jumpTo(mem[0], Offset(mem[1], mem[2]));
         controller.clampToPage();
+      } else if (app.pageProps.pdfOnly) {
+        controller.fitPdfWidth();
       } else {
         controller.fitWidth(app.contentExtent().right);
       }
@@ -1635,6 +1638,7 @@ class _PageCanvasState extends State<PageCanvas> {
       pageSize,
       growsTrailingEdges: !app.pageProps.pdfOnly && !app.pageProps.isPaged,
     );
+    controller.pdfPresentation = app.pageProps.pdfOnly;
 
     Widget canvas = LayoutBuilder(
       builder: (context, constraints) {
@@ -1883,6 +1887,40 @@ class _PageCanvasState extends State<PageCanvas> {
                           center: _rulerCenterForViewport(),
                           angle: _rulerAngle,
                           length: _rulerLength,
+                        ),
+                      ),
+                    if (app.pageProps.pdfOnly)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        top: 0,
+                        height: CanvasController.pdfTopMargin - 8,
+                        child: ColoredBox(
+                          color: dark
+                              ? OnoteColors.night200
+                              : OnoteColors.paper200,
+                          child: Center(
+                            child: SizedBox(
+                              width: math.min(
+                                math.max(
+                                    0,
+                                    controller.viewport.width -
+                                        CanvasController.pdfSideMargin * 2),
+                                livePageSize.width * controller.scale,
+                              ),
+                              child: PageTitleView(
+                                key: ValueKey('title-${app.pageId}'),
+                                app: app,
+                                width: math.min(
+                                  math.max(
+                                      0,
+                                      controller.viewport.width -
+                                          CanvasController.pdfSideMargin * 2),
+                                  livePageSize.width * controller.scale,
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     // A real scroll bar for the page — "there is also no scroll
