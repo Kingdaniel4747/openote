@@ -3,6 +3,7 @@
 #include <hidsdi.h>
 #include <algorithm>
 #include <cstddef>
+#include <sstream>
 
 namespace {
 constexpr USAGE kDigitizer = 0x0d;
@@ -35,6 +36,18 @@ PenButtons::PenButtons(HWND view, flutter::BinaryMessenger* messenger)
              std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
         if (call.method_name() == "getState") {
           result->Success(State());
+        } else if (call.method_name() == "startTrace") {
+          trace_.clear();
+          trace_start_ = GetTickCount64();
+          tracing_ = true;
+          Trace("native trace started");
+          result->Success();
+        } else if (call.method_name() == "stopTrace") {
+          Trace("native trace stopped");
+          tracing_ = false;
+          std::ostringstream output;
+          for (const auto& line : trace_) output << line << '\n';
+          result->Success(flutter::EncodableValue(output.str()));
         } else {
           result->NotImplemented();
         }
@@ -56,14 +69,24 @@ flutter::EncodableValue PenButtons::State() const {
       {flutter::EncodableValue("eraser"), flutter::EncodableValue(eraser_)}});
 }
 
+void PenButtons::Trace(const std::string& event) {
+  if (!tracing_) return;
+  if (trace_.size() >= 600) trace_.pop_front();
+  trace_.push_back(std::to_string(GetTickCount64() - trace_start_) +
+                   "ms " + event);
+}
+
 void PenButtons::Send(bool in_range, bool eraser) {
   if (in_range == in_range_ && eraser == eraser_) return;
+  Trace("emit range=" + std::to_string(in_range) +
+        " eraser=" + std::to_string(eraser));
   in_range_ = in_range;
   eraser_ = eraser;
   channel_->InvokeMethod("state", std::make_unique<flutter::EncodableValue>(State()));
 }
 
 void PenButtons::Reset() {
+  Trace("reset");
   pointer_id_ = 0;
   pointer_in_contact_ = false;
   raw_in_range_ = false;
@@ -84,6 +107,7 @@ void PenButtons::ReadPointer(UINT message, WPARAM wparam) {
       const auto id = GET_POINTERID_WPARAM(wparam);
       POINTER_PEN_INFO pen{};
       if (GetPointerPenInfo(id, &pen)) {
+        const bool was_contact = pointer_in_contact_;
         pointer_id_ = id;
         // Contact is an interval from DOWN to UP. Some UPDATE packets omit
         // INCONTACT momentarily; treating that as lift lets raw hover packets
@@ -100,12 +124,26 @@ void PenButtons::ReadPointer(UINT message, WPARAM wparam) {
         const bool erase = (pen.penFlags &
             (PEN_FLAG_BARREL | PEN_FLAG_ERASER | PEN_FLAG_INVERTED)) != 0 ||
             IS_POINTER_SECONDBUTTON_WPARAM(wparam);
+        if (tracing_ && (message == WM_POINTERDOWN ||
+                         message == WM_POINTERUP || erase != eraser_ ||
+                         was_contact != pointer_in_contact_ || !active)) {
+          Trace("pointer msg=" + std::to_string(message) +
+                " flags=" + std::to_string(pen.pointerInfo.pointerFlags) +
+                " penFlags=" + std::to_string(pen.penFlags) +
+                " second=" +
+                std::to_string(IS_POINTER_SECONDBUTTON_WPARAM(wparam) != 0) +
+                " contact=" + std::to_string(pointer_in_contact_) +
+                " erase=" + std::to_string(erase));
+        }
         if (canceled || (!active && !pointer_in_contact_)) Reset();
         else if (active) Send(true, erase);
       } else if (id == pointer_id_ && IS_POINTER_INCONTACT_WPARAM(wparam)) {
         // Message flags remain usable even if a nested message pump expired
         // GetPointerPenInfo. Hover buttons require the pen/HID report instead.
         pointer_in_contact_ = message != WM_POINTERUP;
+        Trace("pointer fallback msg=" + std::to_string(message) +
+              " second=" +
+              std::to_string(IS_POINTER_SECONDBUTTON_WPARAM(wparam) != 0));
         Send(true, IS_POINTER_SECONDBUTTON_WPARAM(wparam) != 0);
       } else if (id == pointer_id_ && message == WM_POINTERUP) {
         pointer_in_contact_ = false;
@@ -181,8 +219,15 @@ void PenButtons::ReadRawInput(HRAWINPUT input) {
       return std::find(usages.begin(), usages.begin() + length, usage) !=
           usages.begin() + length;
     };
-    raw_in_range_ = on(kInRange);
-    raw_eraser_ = on(kBarrel) || on(kInvert) || on(kEraser);
+    const bool in_range = on(kInRange);
+    const bool eraser = on(kBarrel) || on(kInvert) || on(kEraser);
+    if (in_range != raw_in_range_ || eraser != raw_eraser_) {
+      Trace("raw range=" + std::to_string(in_range) +
+            " eraser=" + std::to_string(eraser) +
+            " suppressed=" + std::to_string(pointer_in_contact_));
+    }
+    raw_in_range_ = in_range;
+    raw_eraser_ = eraser;
     // Raw HID supplies hover. During contact WM_POINTER carries the button
     // state; alternating the two streams made the tool flicker until lift.
     if (!pointer_in_contact_) {

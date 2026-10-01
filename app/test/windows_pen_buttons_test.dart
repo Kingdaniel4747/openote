@@ -39,6 +39,20 @@ void main() {
     );
   }
 
+  test('pen diagnostics combine native and Flutter state without positions',
+      () async {
+    messenger.setMockMethodCallHandler(WindowsPenButtons.channel, (call) async {
+      if (call.method == 'stopTrace') return '12ms raw range=1 eraser=1';
+      return null;
+    });
+    await WindowsPenButtons.startTrace();
+    WindowsPenButtons.trace('toolbar pen -> eraser');
+    final report = await WindowsPenButtons.stopTrace();
+    expect(report, contains('toolbar pen -> eraser'));
+    expect(report, contains('raw range=1 eraser=1'));
+    expect(WindowsPenButtons.tracing, false);
+  });
+
   test('Windows recognizes barrel, eraser tip and secondary stylus button', () {
     final pen = WindowsPenButtons(enabled: true);
     addTearDown(pen.dispose);
