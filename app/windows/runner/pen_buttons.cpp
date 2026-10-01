@@ -89,6 +89,8 @@ void PenButtons::Reset() {
   Trace("reset");
   pointer_id_ = 0;
   pointer_in_contact_ = false;
+  pointer_button_known_ = false;
+  pointer_eraser_ = false;
   raw_in_range_ = false;
   raw_eraser_ = false;
   Send(false, false);
@@ -124,8 +126,12 @@ void PenButtons::ReadPointer(UINT message, WPARAM wparam) {
         const bool erase = (pen.penFlags &
             (PEN_FLAG_BARREL | PEN_FLAG_ERASER | PEN_FLAG_INVERTED)) != 0 ||
             IS_POINTER_SECONDBUTTON_WPARAM(wparam);
+        const bool button_changed =
+            !pointer_button_known_ || erase != pointer_eraser_;
+        pointer_button_known_ = true;
+        pointer_eraser_ = erase;
         if (tracing_ && (message == WM_POINTERDOWN ||
-                         message == WM_POINTERUP || erase != eraser_ ||
+                         message == WM_POINTERUP || button_changed ||
                          was_contact != pointer_in_contact_ || !active)) {
           Trace("pointer msg=" + std::to_string(message) +
                 " flags=" + std::to_string(pen.pointerInfo.pointerFlags) +
@@ -136,7 +142,7 @@ void PenButtons::ReadPointer(UINT message, WPARAM wparam) {
                 " erase=" + std::to_string(erase));
         }
         if (canceled || (!active && !pointer_in_contact_)) Reset();
-        else if (active) Send(true, erase);
+        else if (active && (button_changed || !in_range_)) Send(true, erase);
       } else if (id == pointer_id_ && IS_POINTER_INCONTACT_WPARAM(wparam)) {
         // Message flags remain usable even if a nested message pump expired
         // GetPointerPenInfo. Hover buttons require the pen/HID report instead.
@@ -144,7 +150,12 @@ void PenButtons::ReadPointer(UINT message, WPARAM wparam) {
         Trace("pointer fallback msg=" + std::to_string(message) +
               " second=" +
               std::to_string(IS_POINTER_SECONDBUTTON_WPARAM(wparam) != 0));
-        Send(true, IS_POINTER_SECONDBUTTON_WPARAM(wparam) != 0);
+        const bool erase = IS_POINTER_SECONDBUTTON_WPARAM(wparam) != 0;
+        const bool button_changed =
+            !pointer_button_known_ || erase != pointer_eraser_;
+        pointer_button_known_ = true;
+        pointer_eraser_ = erase;
+        if (button_changed || !in_range_) Send(true, erase);
       } else if (id == pointer_id_ && message == WM_POINTERUP) {
         pointer_in_contact_ = false;
       }
@@ -221,6 +232,7 @@ void PenButtons::ReadRawInput(HRAWINPUT input) {
     };
     const bool in_range = on(kInRange);
     const bool eraser = on(kBarrel) || on(kInvert) || on(kEraser);
+    const bool button_changed = eraser != raw_eraser_;
     if (in_range != raw_in_range_ || eraser != raw_eraser_) {
       Trace("raw range=" + std::to_string(in_range) +
             " eraser=" + std::to_string(eraser) +
@@ -228,12 +240,14 @@ void PenButtons::ReadRawInput(HRAWINPUT input) {
     }
     raw_in_range_ = in_range;
     raw_eraser_ = eraser;
-    // The Book4 trace shows WM_POINTERUPDATE reporting the pressed button
-    // while raw HID reports it released on every hover sample. Let one
-    // tracked pointer own the state for its entire range lifetime, including
-    // hover. HID is only the fallback before POINTERENTER or after LEAVE.
+    // The Book4 reports real press/release edges through HID while a tracked
+    // pointer is hovering. POINTER_PEN_INFO can then keep its old button value
+    // until the next range entry. Accept either source's changes, but never
+    // let an unchanged sample from one undo the other's newer transition.
     if (pointer_id_ == 0) {
       Send(raw_in_range_, raw_in_range_ && raw_eraser_);
+    } else if (raw_in_range_ && button_changed) {
+      Send(true, raw_eraser_);
     }
   }
 }

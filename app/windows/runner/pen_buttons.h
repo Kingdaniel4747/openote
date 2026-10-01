@@ -35,6 +35,8 @@ class PenButtons {
   bool eraser_ = false;
   bool raw_registered_ = false;
   bool pointer_in_contact_ = false;
+  bool pointer_button_known_ = false;
+  bool pointer_eraser_ = false;
   bool raw_in_range_ = false;
   bool raw_eraser_ = false;
   HANDLE raw_device_ = nullptr;
