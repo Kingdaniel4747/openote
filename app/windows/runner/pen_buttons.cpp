@@ -224,13 +224,15 @@ void PenButtons::ReadRawInput(HRAWINPUT input) {
     if (in_range != raw_in_range_ || eraser != raw_eraser_) {
       Trace("raw range=" + std::to_string(in_range) +
             " eraser=" + std::to_string(eraser) +
-            " suppressed=" + std::to_string(pointer_in_contact_));
+            " pointerTracked=" + std::to_string(pointer_id_ != 0));
     }
     raw_in_range_ = in_range;
     raw_eraser_ = eraser;
-    // Raw HID supplies hover. During contact WM_POINTER carries the button
-    // state; alternating the two streams made the tool flicker until lift.
-    if (!pointer_in_contact_) {
+    // The Book4 trace shows WM_POINTERUPDATE reporting the pressed button
+    // while raw HID reports it released on every hover sample. Let one
+    // tracked pointer own the state for its entire range lifetime, including
+    // hover. HID is only the fallback before POINTERENTER or after LEAVE.
+    if (pointer_id_ == 0) {
       Send(raw_in_range_, raw_in_range_ && raw_eraser_);
     }
   }
