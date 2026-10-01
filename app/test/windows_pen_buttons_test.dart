@@ -125,7 +125,26 @@ void main() {
       await nativeState(true, false);
       expect(pen.nativeInRange, true);
       expect(pen.erases(stale), false);
+      expect(
+          pen.erasesAtContact(const PointerDownEvent(
+              kind: PointerDeviceKind.stylus,
+              buttons: kPrimaryButton | kPrimaryStylusButton)),
+          false);
     }
+  });
+
+  test('native button release stays authoritative when range briefly drops',
+      () async {
+    final pen = WindowsPenButtons(enabled: true);
+    addTearDown(pen.dispose);
+    await pen.attach();
+    await nativeState(true, true);
+    await nativeState(false, false);
+    expect(
+        pen.erasesAtContact(const PointerDownEvent(
+            kind: PointerDeviceKind.stylus,
+            buttons: kPrimaryButton | kPrimaryStylusButton)),
+        false);
   });
 
   test('leaving range/focus clears native state even with an old eraser bit',
@@ -253,10 +272,14 @@ void main() {
       await nativeState(true, false);
       await t.pump();
       expect(app.tool, Tool.pen);
+      await down(t, 250, buttons: kPrimaryButton | kPrimaryStylusButton);
+      await move(t, 300, buttons: kPrimaryButton | kPrimaryStylusButton);
+      await up(t, 300);
+      expect(strokes(app), hasLength(1));
       await down(t, 250);
       await move(t, 300);
       await up(t, 300);
-      expect(strokes(app), hasLength(1));
+      expect(strokes(app), hasLength(2));
       expect(app.tool, Tool.pen);
       await finish(t, app);
     });
@@ -302,7 +325,10 @@ void main() {
       await nativeState(true, true);
       await t.pump();
       expect(app.tool, Tool.eraser);
+      await move(t, 110, buttons: kPrimaryButton | kPrimaryStylusButton);
+      expect(app.tool, Tool.eraser);
       await move(t, 120);
+      expect(app.tool, Tool.eraser);
       expect(strokes(app), isEmpty);
       await nativeState(true, false);
       await t.pump();

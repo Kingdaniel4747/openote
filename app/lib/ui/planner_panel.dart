@@ -476,7 +476,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
         if (planner.canRedate(it)) ...[
           const PopupMenuItem(value: 'edit', child: Text('Edit')),
           if (it.kind == DatedKind.reminder)
-            const PopupMenuItem(value: 'delay', child: Text('Delay reminder…')),
+            const PopupMenuItem(value: 'delay', child: Text('Delay…')),
           const PopupMenuItem(value: 'delete', child: Text('Delete')),
         ] else
           // Said, not hidden. A calendar row with no menu at all reads as a

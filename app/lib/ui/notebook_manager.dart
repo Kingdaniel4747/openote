@@ -353,6 +353,8 @@ class _NotebookManagerState extends State<_NotebookManager> {
     final current = nb.id == app.notebookId;
     final counts = _counts[nb.id] ?? (sections: 0, pages: 0);
     final cover = _coverColor(app.notebookColor(nb.id), nb.id);
+    final coverForeground =
+        cover.computeLuminance() > .58 ? const Color(0xFF243040) : Colors.white;
     return InkWell(
       borderRadius: BorderRadius.circular(10),
       onTap: () async {
@@ -407,14 +409,14 @@ class _NotebookManagerState extends State<_NotebookManager> {
                     child: Icon(
                       Icons.menu_book_outlined,
                       size: 44,
-                      color: Colors.white.withValues(alpha: .9),
+                      color: coverForeground.withValues(alpha: .9),
                     ),
                   ),
                   Positioned(
                     top: 2,
                     right: 0,
                     child: PopupMenuButton<String>(
-                      icon: const Icon(Icons.more_vert, color: Colors.white),
+                      icon: Icon(Icons.more_vert, color: coverForeground),
                       tooltip: 'Notebook options',
                       popUpAnimationStyle: AnimationStyle.noAnimation,
                       onSelected: (value) async {
@@ -445,24 +447,20 @@ class _NotebookManagerState extends State<_NotebookManager> {
                           child: Text('Move to recycle bin'),
                         ),
                         const PopupMenuDivider(),
-                        // A fixed-size Wrap, rather than a scrollable GridView
-                        // inside a menu item. A popup menu supplies only tight
-                        // height constraints to its child; GridView then has no
-                        // viewport to paint into on some Windows layouts. The
-                        // Wrap is always a visible 4 × 3 colour matrix.
+                        // A fixed-size Wrap keeps all sixteen colours visible
+                        // inside the popup without a nested scroll viewport.
                         PopupMenuItem(
                           value: '__palette',
-                          height: 116,
+                          height: 154,
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                           child: SizedBox(
-                            width: 200,
-                            height: 96,
+                            width: 170,
+                            height: 130,
                             child: Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
+                              spacing: 6,
+                              runSpacing: 6,
                               children: [
-                                for (final color
-                                    in _coverTokens.whereType<String>())
+                                for (final color in _coverColors.keys)
                                   Tooltip(
                                     message: color,
                                     child: GestureDetector(
@@ -471,17 +469,32 @@ class _NotebookManagerState extends State<_NotebookManager> {
                                         app.setNotebookColor(nb.id, color);
                                       },
                                       child: Container(
-                                        width: 44,
-                                        height: 26,
+                                        width: 38,
+                                        height: 28,
                                         decoration: BoxDecoration(
                                           color: _coverColor(color, nb.id),
                                           borderRadius:
                                               BorderRadius.circular(4),
                                           border: Border.all(
-                                            color: scheme.outline,
-                                            width: 1.2,
+                                            color: app.notebookColor(nb.id) ==
+                                                    color
+                                                ? scheme.primary
+                                                : scheme.outlineVariant,
+                                            width: app.notebookColor(nb.id) ==
+                                                    color
+                                                ? 2
+                                                : 1,
                                           ),
                                         ),
+                                        child: app.notebookColor(nb.id) == color
+                                            ? Icon(Icons.check,
+                                                size: 17,
+                                                color: _coverColor(color, nb.id)
+                                                            .computeLuminance() >
+                                                        .58
+                                                    ? const Color(0xFF243040)
+                                                    : Colors.white)
+                                            : null,
                                       ),
                                     ),
                                   ),
@@ -519,8 +532,27 @@ class _NotebookManagerState extends State<_NotebookManager> {
     );
   }
 
-  static const List<String?> _coverTokens = [
-    null,
+  static const Map<String, Color> _coverColors = {
+    'Red': Color(0xFFC4424B),
+    'Coral': Color(0xFFE57258),
+    'Orange': Color(0xFFCF852E),
+    'Yellow': Color(0xFFE8C547),
+    'Lime': Color(0xFF9ABF46),
+    'Green': Color(0xFF3D8B70),
+    'Teal': Color(0xFF2C8888),
+    'Cyan': Color(0xFF399DBB),
+    'Blue': Color(0xFF426BB2),
+    'Indigo': Color(0xFF3F548F),
+    'Purple': Color(0xFF7351A6),
+    'Pink': Color(0xFFD45D99),
+    'Brown': Color(0xFF7A5847),
+    'Slate': Color(0xFF4C5563),
+    'White': Color(0xFFF7F7F2),
+    'Black': Color(0xFF20242B),
+  };
+
+  // Keep the same automatic colour for notebooks that have no saved choice.
+  static const List<String> _automaticCoverTokens = [
     'Blue',
     'Purple',
     'Green',
@@ -534,22 +566,10 @@ class _NotebookManagerState extends State<_NotebookManager> {
   ];
 
   static Color _coverColor(String? token, String id) {
-    const colors = {
-      'Blue': Color(0xFF426BB2),
-      'Purple': Color(0xFF7351A6),
-      'Green': Color(0xFF3D8B70),
-      'Orange': Color(0xFFB56D32),
-      'Red': Color(0xFFAD5155),
-      'Teal': Color(0xFF2C8888),
-      'Pink': Color(0xFFB9507B),
-      'Indigo': Color(0xFF3F548F),
-      'Brown': Color(0xFF7A5847),
-      'Slate': Color(0xFF4C5563),
-    };
-    if (token != null) return colors[token] ?? colors['Blue']!;
-    return colors.values.elementAt(
-      id.codeUnits.fold<int>(0, (a, b) => a + b) % colors.length,
-    );
+    if (token != null) return _coverColors[token] ?? _coverColors['Blue']!;
+    final index = id.codeUnits.fold<int>(0, (a, b) => a + b) %
+        _automaticCoverTokens.length;
+    return _coverColors[_automaticCoverTokens[index]]!;
   }
 }
 // ── Import entry points ────────────────────────────────────────────────────

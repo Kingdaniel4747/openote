@@ -100,4 +100,26 @@ void main() {
       }
     });
   }
+
+  testWidgets('notebook colours form a 4 by 4 palette and save the choice',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await newApp(tester);
+    await openDialog(tester, app, (c, a) => showNotebookManager(c, a),
+        window: const Size(900, 620));
+    await tester.tap(find.byTooltip('Notebook options'));
+    await tester.pumpAndSettle();
+    final palette = find.byWidgetPredicate((widget) =>
+        widget is PopupMenuItem<String> && widget.value == '__palette');
+    expect(find.descendant(of: palette, matching: find.byType(Tooltip)),
+        findsNWidgets(16));
+    expect(find.byTooltip('Red'), findsOneWidget);
+    expect(find.byTooltip('White'), findsOneWidget);
+    expect(find.byTooltip('Black'), findsOneWidget);
+    await tester.tap(find.byTooltip('White'));
+    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pumpAndSettle();
+    expect(app.notebookColor(app.notebookId!), 'White');
+    expect(tester.takeException(), isNull);
+  });
 }

@@ -15,6 +15,7 @@ class WindowsPenButtons extends ChangeNotifier {
   final bool enabled;
   bool nativeInRange = false;
   bool nativeEraser = false;
+  bool _nativeReady = false;
   bool _attached = false;
   int _revision = 0;
 
@@ -51,6 +52,7 @@ class WindowsPenButtons extends ChangeNotifier {
   void _readState(Object? value) {
     if (value is! Map) return;
     _revision++;
+    _nativeReady = true;
     final inRange = value['inRange'] == true;
     final eraser = inRange && value['eraser'] == true;
     if (nativeInRange == inRange && nativeEraser == eraser) return;
@@ -65,22 +67,18 @@ class WindowsPenButtons extends ChangeNotifier {
     final barrel = (event.buttons & kPrimaryStylusButton) != 0;
     // Preserve Linux exactly; the new secondary/native path is Windows.
     if (!enabled) return barrel;
-    // Flutter can keep a button bit from pointer-down for the whole stroke.
-    // A native release must win over that stale bit, not be OR-ed with it.
-    if (nativeInRange) return nativeEraser;
-    return barrel ||
-        (event.buttons & kSecondaryStylusButton) != 0;
+    // Windows owns the barrel-button state once its channel answers. Flutter
+    // can keep a stale bit for an entire contact and must never re-enable the
+    // eraser after the physical button has been released.
+    if (_nativeReady) return nativeEraser;
+    return barrel || (event.buttons & kSecondaryStylusButton) != 0;
   }
 
-  /// At the first contact a Galaxy S Pen can expose Flutter's barrel bit one
-  /// event before Windows' raw-HID state arrives. Use it only to decide this
-  /// new gesture; subsequent moves continue using [erases], where a live
-  /// native release correctly wins over a stale Flutter button bit.
+  /// Use the same authority on pointer-down as on every later move. Mixing a
+  /// Flutter bit on down with native state on move made one continuous contact
+  /// alternate between eraser and pen.
   bool erasesAtContact(PointerEvent event) {
-    if (erases(event)) return true;
-    if (!enabled || event.kind != PointerDeviceKind.stylus) return false;
-    return (event.buttons & kPrimaryStylusButton) != 0 ||
-        (event.buttons & kSecondaryStylusButton) != 0;
+    return erases(event);
   }
 
   @override

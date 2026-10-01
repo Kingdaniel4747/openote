@@ -82,25 +82,33 @@ void PenButtons::ReadPointer(UINT message, WPARAM wparam) {
     case WM_POINTERUPDATE:
     case WM_POINTERUP: {
       const auto id = GET_POINTERID_WPARAM(wparam);
-      if (message == WM_POINTERUP && id == pointer_id_) {
-        pointer_in_contact_ = false;
-      }
       POINTER_PEN_INFO pen{};
       if (GetPointerPenInfo(id, &pen)) {
         pointer_id_ = id;
-        pointer_in_contact_ =
-            (pen.pointerInfo.pointerFlags & POINTER_FLAG_INCONTACT) != 0;
+        // Contact is an interval from DOWN to UP. Some UPDATE packets omit
+        // INCONTACT momentarily; treating that as lift lets raw hover packets
+        // overwrite the pressed button until the pen really leaves the glass.
+        if (message == WM_POINTERDOWN ||
+            (pen.pointerInfo.pointerFlags & POINTER_FLAG_INCONTACT) != 0) {
+          pointer_in_contact_ = true;
+        }
+        if (message == WM_POINTERUP) pointer_in_contact_ = false;
+        const bool canceled =
+            (pen.pointerInfo.pointerFlags & POINTER_FLAG_CANCELED) != 0;
         const bool active = (pen.pointerInfo.pointerFlags & POINTER_FLAG_INRANGE)
-            && !(pen.pointerInfo.pointerFlags & POINTER_FLAG_CANCELED);
+            && !canceled;
         const bool erase = (pen.penFlags &
             (PEN_FLAG_BARREL | PEN_FLAG_ERASER | PEN_FLAG_INVERTED)) != 0 ||
             IS_POINTER_SECONDBUTTON_WPARAM(wparam);
-        if (!active) Reset();
-        else Send(true, erase);
+        if (canceled || (!active && !pointer_in_contact_)) Reset();
+        else if (active) Send(true, erase);
       } else if (id == pointer_id_ && IS_POINTER_INCONTACT_WPARAM(wparam)) {
         // Message flags remain usable even if a nested message pump expired
         // GetPointerPenInfo. Hover buttons require the pen/HID report instead.
+        pointer_in_contact_ = message != WM_POINTERUP;
         Send(true, IS_POINTER_SECONDBUTTON_WPARAM(wparam) != 0);
+      } else if (id == pointer_id_ && message == WM_POINTERUP) {
+        pointer_in_contact_ = false;
       }
       break;
     }
