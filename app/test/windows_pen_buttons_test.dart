@@ -307,8 +307,8 @@ void main() {
       await nativeState(true, false);
       await t.pump();
       expect(app.tool, Tool.pen);
-      await move(t, 320);
-      await move(t, 350);
+      await move(t, 320, buttons: kPrimaryButton | kPrimaryStylusButton);
+      await move(t, 350, buttons: kPrimaryButton | kPrimaryStylusButton);
       await up(t, 350);
       expect(strokes(app).last['x'], [320.0, 350.0]);
       await finish(t, app);

@@ -60,7 +60,9 @@ class _ImageBlockViewState extends State<ImageBlockView> {
   String? _hash;
   Timer? _zoomRenderTimer;
   int _qualityBucket = 2;
+  int _requestedBucket = 2;
   int _qualityRequest = 0;
+  bool _zoomRendering = false;
 
   /// True while an on-demand PDF page render is in flight — the placeholder
   /// then says "rendering" rather than "missing", which are different facts.
@@ -72,12 +74,14 @@ class _ImageBlockViewState extends State<ImageBlockView> {
   void initState() {
     super.initState();
     _load();
+    widget.app.canvas.addListener(_scheduleZoomRender);
     _scheduleZoomRender();
   }
 
   @override
   void dispose() {
     _zoomRenderTimer?.cancel();
+    widget.app.canvas.removeListener(_scheduleZoomRender);
     _qualityRequest++;
     super.dispose();
   }
@@ -89,7 +93,10 @@ class _ImageBlockViewState extends State<ImageBlockView> {
     if (key != _hash ||
         old.block.content['page'] != widget.block.content['page']) {
       _qualityBucket = 2;
+      _requestedBucket = 2;
       _qualityRequest++;
+      _zoomRenderTimer?.cancel();
+      _zoomRendering = false;
       _load();
     }
     _scheduleZoomRender();
@@ -99,25 +106,29 @@ class _ImageBlockViewState extends State<ImageBlockView> {
     final pdf = widget.block.content['pdf'] as String?;
     if (pdf == null) return;
     final zoom = widget.app.canvas.scale;
-    final bucket = zoom >= 2.5
-        ? 6
-        : zoom >= 1.5
+    final bucket = zoom >= 2.4
+        ? 8
+        : zoom >= 1.35
             ? 4
             : 2;
-    if (bucket <= _qualityBucket) return;
+    if (bucket <= _qualityBucket || bucket <= _requestedBucket) return;
     _zoomRenderTimer?.cancel();
+    _requestedBucket = bucket;
     final request = ++_qualityRequest;
     _zoomRenderTimer = Timer(const Duration(milliseconds: 180), () async {
+      if (mounted) setState(() => _zoomRendering = true);
       final page = (widget.block.content['page'] as num?)?.toInt() ?? 0;
       final png = await PdfPages.pageImageAtScale(
           widget.app, pdf, page, bucket.toDouble());
       if (!mounted ||
           request != _qualityRequest ||
-          png == null ||
           widget.block.content['pdf'] != pdf) return;
       setState(() {
-        _provider = MemoryImage(png);
-        _qualityBucket = bucket;
+        _zoomRendering = false;
+        if (png != null) {
+          _provider = MemoryImage(png);
+          _qualityBucket = bucket;
+        }
       });
     });
   }
@@ -242,7 +253,7 @@ class _ImageBlockViewState extends State<ImageBlockView> {
       _hash = ref ?? _hash;
       _rendering = false;
       _pdfError = null;
-      _provider = MemoryImage(png);
+      if (_qualityBucket <= 2) _provider = MemoryImage(png);
     });
   }
 
@@ -251,7 +262,9 @@ class _ImageBlockViewState extends State<ImageBlockView> {
   static Future<void> _readQueue = Future<void>.value();
 
   void _setBytes(Uint8List? b) {
-    _provider = b == null ? null : MemoryImage(b);
+    if (_qualityBucket <= 2 || widget.block.content['pdf'] == null) {
+      _provider = b == null ? null : MemoryImage(b);
+    }
     // Record intrinsic size once, so width-resize keeps aspect ratio.
     if (b != null && widget.block.content['naturalW'] == null) {
       ui.decodeImageFromList(b, (img) {
@@ -332,42 +345,54 @@ class _ImageBlockViewState extends State<ImageBlockView> {
       // child **centres** it: the image shifted up by half the difference, which
       // is exactly the "layout is right, just offset vertically" symptom. It was
       // also `BoxFit.cover`, so the mismatch was cropped rather than visible.
-      child: Align(
-        alignment: Alignment.topLeft,
-        child: boxH != null
-            // Imported (or explicitly sized): honour OneNote's rectangle exactly
-            // and fit inside it — never crop, never shift.
-            ? Image(
-                image: _provider!,
-                width: widget.block.w,
-                height: boxH,
-                fit: BoxFit.contain,
-                alignment: Alignment.topLeft,
-                gaplessPlayback: true,
-                filterQuality: FilterQuality.medium,
-              )
-            : aspect != null
-                // Auto-height: derive the height from the width so a width
-                // resize scales the image proportionally.
-                ? AspectRatio(
-                    aspectRatio: aspect,
-                    child: Image(
+      child: Stack(children: [
+        Align(
+          alignment: Alignment.topLeft,
+          child: boxH != null
+              // Imported (or explicitly sized): honour OneNote's rectangle exactly
+              // and fit inside it — never crop, never shift.
+              ? Image(
+                  image: _provider!,
+                  width: widget.block.w,
+                  height: boxH,
+                  fit: BoxFit.contain,
+                  alignment: Alignment.topLeft,
+                  gaplessPlayback: true,
+                  filterQuality: FilterQuality.medium,
+                )
+              : aspect != null
+                  // Auto-height: derive the height from the width so a width
+                  // resize scales the image proportionally.
+                  ? AspectRatio(
+                      aspectRatio: aspect,
+                      child: Image(
+                        image: _provider!,
+                        fit: BoxFit.contain,
+                        alignment: Alignment.topLeft,
+                        gaplessPlayback: true,
+                        filterQuality: FilterQuality.medium,
+                      ),
+                    )
+                  : Image(
                       image: _provider!,
-                      fit: BoxFit.contain,
+                      width: widget.block.w,
+                      fit: BoxFit.fitWidth,
                       alignment: Alignment.topLeft,
-                      gaplessPlayback: true,
+                      gaplessPlayback: true, // no blank frame on rebuild
                       filterQuality: FilterQuality.medium,
                     ),
-                  )
-                : Image(
-                    image: _provider!,
-                    width: widget.block.w,
-                    fit: BoxFit.fitWidth,
-                    alignment: Alignment.topLeft,
-                    gaplessPlayback: true, // no blank frame on rebuild
-                    filterQuality: FilterQuality.medium,
-                  ),
-      ),
+        ),
+        if (_zoomRendering)
+          const Positioned(
+            right: 8,
+            top: 8,
+            child: SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+      ]),
     );
   }
 }

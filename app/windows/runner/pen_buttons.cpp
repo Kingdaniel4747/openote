@@ -65,6 +65,7 @@ void PenButtons::Send(bool in_range, bool eraser) {
 
 void PenButtons::Reset() {
   pointer_id_ = 0;
+  pointer_in_contact_ = false;
   raw_in_range_ = false;
   raw_eraser_ = false;
   Send(false, false);
@@ -81,9 +82,14 @@ void PenButtons::ReadPointer(UINT message, WPARAM wparam) {
     case WM_POINTERUPDATE:
     case WM_POINTERUP: {
       const auto id = GET_POINTERID_WPARAM(wparam);
+      if (message == WM_POINTERUP && id == pointer_id_) {
+        pointer_in_contact_ = false;
+      }
       POINTER_PEN_INFO pen{};
       if (GetPointerPenInfo(id, &pen)) {
         pointer_id_ = id;
+        pointer_in_contact_ =
+            (pen.pointerInfo.pointerFlags & POINTER_FLAG_INCONTACT) != 0;
         const bool active = (pen.pointerInfo.pointerFlags & POINTER_FLAG_INRANGE)
             && !(pen.pointerInfo.pointerFlags & POINTER_FLAG_CANCELED);
         const bool erase = (pen.penFlags &
@@ -100,7 +106,8 @@ void PenButtons::ReadPointer(UINT message, WPARAM wparam) {
     }
     case WM_POINTERLEAVE:
     case WM_POINTERCAPTURECHANGED:
-      if (GET_POINTERID_WPARAM(wparam) == pointer_id_) Reset();
+      if (GET_POINTERID_WPARAM(wparam) == pointer_id_ &&
+          !pointer_in_contact_) Reset();
       break;
   }
 }
@@ -168,7 +175,11 @@ void PenButtons::ReadRawInput(HRAWINPUT input) {
     };
     raw_in_range_ = on(kInRange);
     raw_eraser_ = on(kBarrel) || on(kInvert) || on(kEraser);
-    Send(raw_in_range_, raw_in_range_ && raw_eraser_);
+    // Raw HID supplies hover. During contact WM_POINTER carries the button
+    // state; alternating the two streams made the tool flicker until lift.
+    if (!pointer_in_contact_) {
+      Send(raw_in_range_, raw_in_range_ && raw_eraser_);
+    }
   }
 }
 

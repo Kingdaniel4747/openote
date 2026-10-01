@@ -56,6 +56,7 @@ void main() {
     await PdfPages.reset();
     PdfPages.openForTest = null;
     PdfPages.renderForTest = null;
+    PdfPages.renderAtScaleForTest = null;
     app.cancelPendingSave();
     app.dispose();
     repo.dispose();
@@ -263,6 +264,38 @@ void main() {
     await tester.pumpAndSettle();
     expect(opens, 1);
     await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('an existing PDF preview re-renders from its source on zoom',
+      (tester) async {
+    final png = File('assets/icon/openote_icon.png').readAsBytesSync();
+    final preview = app.addBlob(png, 'image/png');
+    final scales = <double>[];
+    PdfPages.openForTest = (_, __) async => _Document([_Page()]);
+    PdfPages.renderAtScaleForTest = (_, scale) async {
+      scales.add(scale);
+      return (png: png, width: 1, height: 1);
+    };
+    final block = Block(
+        type: BlockType.image,
+        x: 0,
+        y: 0,
+        w: 400,
+        h: 500,
+        content: {'pdf': hash, 'blob': 'sha256:$preview', 'page': 0});
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: SizedBox(
+                width: 400,
+                height: 500,
+                child: ImageBlockView(block: block, app: app)))));
+    await tester.pumpAndSettle();
+    app.canvas.jumpTo(2, Offset.zero);
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pumpAndSettle();
+    expect(scales, [4]);
+    await tester.pumpWidget(const SizedBox());
+    await PdfPages.reset();
   });
 
   test('PDF-only paper geometry round-trips and stays exact when exporting',

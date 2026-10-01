@@ -49,42 +49,68 @@ class _PlannerPanelState extends State<PlannerPanel> {
   /// Which day the grid has selected, if any. Null means "no day picked" and
   /// the agenda below shows everything.
   DateTime? _pickedDay;
+  int _calendarReset = 0;
+  Offset? _rowPressPosition;
+
+  void _resetCalendar() {
+    if (_pickedDay == null) return;
+    setState(() {
+      _pickedDay = null;
+      _calendarReset++;
+    });
+  }
+
+  Future<void> _pickCalendarDay(DateTime day) async {
+    final now = DateTime.now();
+    final alreadySelected = _pickedDay != null && daysEqual(_pickedDay!, day);
+    final hasItems = planner
+        .itemsOn(day, now: now)
+        .any((item) => !_isPastDay(item.when, now));
+    setState(() => _pickedDay = day);
+    if (!hasItems || alreadySelected) await _chooseDayAction(day);
+  }
 
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
     final sections = planner.sections(now: now);
 
-    return SidePanel(
-      title: SidePanelKind.planner.label,
-      icon: Icons.event_note_outlined,
-      onClose: app.closePanel,
-      actions: const [],
-      // The alerts sit in the banner slot, above the scroll region, because a
-      // reminder you have to scroll to find has not reminded you.
-      banner: planner.pendingAlerts.isNotEmpty ? _alerts(context) : null,
-      // New items always begin by choosing their date in the calendar above.
-      // A second, unrelated add button made the resulting date surprising.
-      footer: null,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          MonthGrid(
-            planner: planner,
-            now: now,
-            selected: _pickedDay,
-            onPick: (day) async {
-              setState(() => _pickedDay = day);
-              await _chooseDayAction(day);
-            },
-          ),
-          const Divider(height: 1),
-          Expanded(
-            child: _pickedDay != null
-                ? _dayList(context, _pickedDay!, now)
-                : _agendaList(context, sections, now),
-          ),
-        ],
+    return TapRegion(
+      onTapOutside: (event) {
+        final render = app.canvasKey.currentContext?.findRenderObject();
+        if (render is! RenderBox) return;
+        final local = render.globalToLocal(event.position);
+        if ((Offset.zero & render.size).contains(local)) _resetCalendar();
+      },
+      child: SidePanel(
+        title: SidePanelKind.planner.label,
+        icon: Icons.event_note_outlined,
+        onClose: app.closePanel,
+        actions: const [],
+        // The alerts sit in the banner slot, above the scroll region, because a
+        // reminder you have to scroll to find has not reminded you.
+        banner: planner.pendingAlerts.isNotEmpty ? _alerts(context) : null,
+        // New items always begin by choosing their date in the calendar above.
+        // A second, unrelated add button made the resulting date surprising.
+        footer: null,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            MonthGrid(
+              key: ValueKey(_calendarReset),
+              planner: planner,
+              now: now,
+              selected: _pickedDay,
+              onPick: _pickCalendarDay,
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: _pickedDay != null
+                  ? _dayList(context, _pickedDay!, now)
+                  : _agendaList(context, sections, now),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -257,6 +283,9 @@ class _PlannerPanelState extends State<PlannerPanel> {
     final overdue = bucketFor(it, now) == AgendaBucket.overdue;
     return InkWell(
       onTap: () => _open(it),
+      onTapDown: (details) => _rowPressPosition = details.globalPosition,
+      onLongPress: () =>
+          _rowMenu(it, _rowPressPosition ?? Offset.zero, DateTime.now()),
       onSecondaryTapDown: (d) => _rowMenu(it, d.globalPosition, now),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 5, 10, 5),
@@ -318,13 +347,6 @@ class _PlannerPanelState extends State<PlannerPanel> {
                   if (id != null) planner.reminders.dismiss(id);
                 },
               ),
-            ),
-          if (it.kind != DatedKind.event)
-            IconButton(
-              icon: const Icon(Icons.edit_outlined, size: 16),
-              tooltip: 'Edit',
-              visualDensity: VisualDensity.compact,
-              onPressed: () => _edit(it, now),
             ),
         ]),
       ),
@@ -451,20 +473,11 @@ class _PlannerPanelState extends State<PlannerPanel> {
       position: RelativeRect.fromRect(
           at & const Size(1, 1), Offset.zero & overlay.size),
       items: [
-        if (it.pageId != null)
-          const PopupMenuItem(value: 'open', child: Text('Go to the note')),
         if (planner.canRedate(it)) ...[
-          const PopupMenuItem(value: 'today', child: Text('Move to today')),
-          const PopupMenuItem(
-              value: 'tomorrow', child: Text('Move to tomorrow')),
-          const PopupMenuItem(value: 'week', child: Text('Move on a week')),
-          const PopupMenuItem(value: 'pick', child: Text('Pick a date…')),
-          const PopupMenuDivider(),
-          PopupMenuItem(
-              value: 'clear',
-              child: Text(it.kind == DatedKind.reminder
-                  ? 'Delete reminder'
-                  : 'Clear the date')),
+          const PopupMenuItem(value: 'edit', child: Text('Edit')),
+          if (it.kind == DatedKind.reminder)
+            const PopupMenuItem(value: 'delay', child: Text('Delay reminder…')),
+          const PopupMenuItem(value: 'delete', child: Text('Delete')),
         ] else
           // Said, not hidden. A calendar row with no menu at all reads as a
           // bug; a menu that explains why it cannot be edited is the answer to
@@ -477,25 +490,42 @@ class _PlannerPanelState extends State<PlannerPanel> {
       ],
     );
     if (choice == null || !mounted) return;
-    final today = DateTime(now.year, now.month, now.day);
     switch (choice) {
-      case 'open':
-        _open(it);
-      case 'today':
-        planner.redate(it, today);
-      case 'tomorrow':
-        planner.redate(it, DateTime(today.year, today.month, today.day + 1));
-      case 'week':
-        // A week from where it IS, not from today: "move on a week" about
-        // something due next Friday means the Friday after.
-        planner.redate(
-            it, DateTime(it.when.year, it.when.month, it.when.day + 7));
-      case 'pick':
-        final d = await _pickDay(initial: it.when, now: now);
-        if (d != null) planner.redate(it, d);
-      case 'clear':
+      case 'edit':
+        await _edit(it, now);
+      case 'delay':
+        await _delayReminder(it);
+      case 'delete':
         planner.redate(it, null);
     }
+  }
+
+  Future<void> _delayReminder(DatedItem it) async {
+    final id = PlannerState.reminderIdOf(it);
+    if (id == null) return;
+    final minutes = await showOnoteDialog<int>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('Delay reminder'),
+        children: [
+          for (final (label, value) in [
+            ('10 minutes', 10),
+            ('1 hour', 60),
+            ('Tomorrow', 1440),
+          ])
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, value),
+              child: Text(label),
+            ),
+        ],
+      ),
+    );
+    if (minutes == null) return;
+    final reminder = planner.reminders.byId(id);
+    if (reminder == null) return;
+    final now = DateTime.now();
+    final from = reminder.at.isAfter(now) ? reminder.at : now;
+    planner.reminders.reschedule(id, from.add(Duration(minutes: minutes)));
   }
 
   Future<void> _onAdd(String choice, DateTime now) async {
@@ -582,7 +612,11 @@ class _PlannerPanelState extends State<PlannerPanel> {
     // isn't. v0.5 §7 left that an open decision; allowing it is the resolution,
     // because "call the tutor at 3" belongs to no page and refusing it means
     // the student simply loses the reminder rather than filing it better.
-    final title = r.subject.isNotEmpty ? '${r.subject} — ${r.text}' : r.text;
+    final title = r.subject.isEmpty
+        ? r.text
+        : r.text.isEmpty
+            ? r.subject
+            : '${r.subject} — ${r.text}';
     if (editing != null) {
       planner.reminders.update(editing.id,
           text: title,
@@ -703,7 +737,7 @@ class _ReminderDialogState extends State<_ReminderDialog> {
       _subject.text = editing.text.substring(0, separator);
       _text.text = editing.text.substring(separator + 3);
     } else {
-      _text.text = editing.text;
+      _subject.text = editing.text;
     }
     _openPage = editing.pageId != null;
   }
@@ -764,14 +798,10 @@ class _ReminderDialogState extends State<_ReminderDialog> {
   Widget build(BuildContext context) {
     final when = DatedItem(
         id: '', kind: DatedKind.reminder, title: '', when: _at, allDay: true);
-    // Enter in the field IS the "Remind me" button. The field is
-    // autofocused, so typing the reminder and pressing Enter is what anyone
-    // will try first; without this it did nothing at all and the only way
-    // out was to find the button with the mouse (phase-3 audit). Empty text
-    // does nothing, the same rule that greys the button out.
+    // Only the title is required; the notes below it can stay empty.
     void submit() {
       final t = _text.text.trim();
-      if (t.isEmpty) return;
+      if (_subject.text.trim().isEmpty) return;
       Navigator.pop(context, (
         text: t,
         subject: _subject.text.trim(),
@@ -871,7 +901,7 @@ class _ReminderDialogState extends State<_ReminderDialog> {
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancel')),
         FilledButton(
-          onPressed: _text.text.trim().isEmpty ? null : submit,
+          onPressed: _subject.text.trim().isEmpty ? null : submit,
           child: const Text('Save'),
         ),
       ],

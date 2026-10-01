@@ -132,7 +132,67 @@ void main() {
     // This is the whole complaint: before the planner, that date could only be
     // read from inside the study panel, on the section you happened to be on.
     expect(find.text(title), findsOneWidget);
-    expect(find.byTooltip('Edit'), findsOneWidget);
+    expect(find.byTooltip('Edit'), findsNothing);
+    await tester.tapAt(tester.getCenter(find.text(title)), buttons: 2);
+    await tester.pumpAndSettle();
+    expect(find.text('Edit'), findsOneWidget);
+    expect(find.text('Delete'), findsOneWidget);
+    expect(find.text('Pick a date…'), findsNothing);
+  });
+
+  testWidgets('an occupied day opens its entries before the add menu',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (app, _) = await newApp(tester);
+    final now = DateTime.now();
+    app.planner.reminders
+        .add(text: 'Biology', at: DateTime(now.year, now.month, now.day, 17));
+    await tester.pumpWidget(host(app));
+    await settle(tester);
+    await tester.tap(find.text('${now.day}').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Biology'), findsOneWidget);
+    expect(find.text('Add homework'), findsNothing);
+    expect(find.text('Show all'), findsOneWidget);
+    await tester.tap(find.text('${now.day}').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Add homework'), findsOneWidget);
+  });
+
+  testWidgets('a title alone is enough for a new exam', (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (app, _) = await newApp(tester);
+    await tester.pumpWidget(host(app));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('${DateTime.now().day}').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add exam'));
+    await tester.pumpAndSettle();
+    final dialogFields = find.descendant(
+        of: find.byType(AlertDialog), matching: find.byType(TextField));
+    await tester.enterText(dialogFields.at(1), 'Optional note');
+    await tester.pump();
+    expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, 'Save'))
+            .onPressed,
+        isNull);
+    await tester.enterText(dialogFields.at(1), '');
+    await tester.enterText(dialogFields.first, 'Biology');
+    expect(tester.widget<TextField>(dialogFields.first).controller!.text,
+        'Biology');
+    await tester.pump();
+    expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, 'Save'))
+            .onPressed,
+        isNotNull);
+    await tester.tap(find.text('Save'));
+    await settle(tester);
+    expect(app.planner.reminders.all, hasLength(1));
+    final exam = app.planner.reminders.all.single;
+    expect(exam.text, 'Biology');
+    expect(exam.category, 'exam');
   });
 
   testWidgets('a missed deadline leaves the active planner', (tester) async {

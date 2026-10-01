@@ -46,6 +46,7 @@ class PageCanvas extends StatefulWidget {
 enum _DragMode { none, pending, marquee, moveSelection, pan }
 
 class _PageCanvasState extends State<PageCanvas> {
+  static const double _scrollGain = .60;
   Stroke? _wet;
   final WindowsPenButtons _windowsPen = WindowsPenButtons();
   int? _windowsInkPointer;
@@ -151,6 +152,8 @@ class _PageCanvasState extends State<PageCanvas> {
 
   Offset _touchVelocity = Offset.zero;
   DateTime? _lastTouchMove;
+  Offset? _touchPanStart;
+  bool _touchPanActive = false;
   bool _multiTouchSeen = false;
 
   Offset? _rulerCenter;
@@ -1063,6 +1066,10 @@ class _PageCanvasState extends State<PageCanvas> {
     _lastScreen = e.localPosition;
     _touchVelocity = Offset.zero;
     _lastTouchMove = DateTime.now();
+    if (_touches.length == 1) {
+      _touchPanStart = e.localPosition;
+      _touchPanActive = false;
+    }
     if (_touches.length == 2) {
       _multiTouchSeen = true;
       final pts = _touches.values.toList();
@@ -1215,10 +1222,29 @@ class _PageCanvasState extends State<PageCanvas> {
       // for both contacts and paint one coherent transform per display frame.
       _schedulePinchTransform();
     } else if (_touches.length == 1 && !_multiTouchSeen) {
-      final delta = e.localPosition - _lastScreen;
-      controller.panBy(delta * .55, elasticLeading: true);
+      var delta = e.localPosition - _lastScreen;
+      if (!_touchPanActive) {
+        final fromStart = e.localPosition - (_touchPanStart ?? e.localPosition);
+        if (fromStart.distance < 8) {
+          _lastTouchMove = now;
+          return;
+        }
+        _touchPanActive = true;
+        delta = fromStart * (1 - 8 / fromStart.distance);
+      }
+      _lastScreen = e.localPosition;
+      // A sleeve or resting palm can produce one enormous position jump.
+      // Drop that isolated sample and its fling instead of moving a page.
+      if (delta.distance > 180) {
+        _touchVelocity = Offset.zero;
+        _lastTouchMove = now;
+        return;
+      }
+      controller.panBy(delta * _scrollGain, elasticLeading: true);
       if (elapsed > 0) {
-        final instant = delta * (.55 * 1000000 / elapsed);
+        final seconds = (elapsed / 1000000).clamp(.008, .05);
+        final raw = delta * (_scrollGain / seconds);
+        final instant = raw.distance > 2400 ? raw * (2400 / raw.distance) : raw;
         // The final pointer sample is often a tiny stationary sample emitted
         // while the finger lifts. Replacing the velocity with that sample
         // killed the fling. A short moving average preserves the gesture's
@@ -1227,7 +1253,6 @@ class _PageCanvasState extends State<PageCanvas> {
             ? instant
             : Offset.lerp(_touchVelocity, instant, .35)!;
       }
-      _lastScreen = e.localPosition;
     }
     _lastTouchMove = now;
   }
@@ -1280,6 +1305,7 @@ class _PageCanvasState extends State<PageCanvas> {
     }
     if (_touches.length == 1) _lastScreen = _touches.values.first;
     if (_touches.isEmpty) {
+      _touchPanStart = null;
       // Pinch bounds are already handled for every motion sample. Do not
       // perform a second correction on lift: that used to move the page
       // after the fingers had stopped and looked like a sudden jump.
@@ -1298,6 +1324,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   bool _startInertia() {
+    if (!_touchPanActive) return false;
     if (_touchVelocity.distance < 70) return false;
     controller.release(_touchVelocity);
     return true;
@@ -1418,7 +1445,7 @@ class _PageCanvasState extends State<PageCanvas> {
     _lastScreen = e.localPosition;
     switch (_mode) {
       case _DragMode.pan:
-        controller.panBy(delta * .55, elasticLeading: true);
+        controller.panBy(delta * _scrollGain, elasticLeading: true);
       case _DragMode.pending:
         if ((e.localPosition - _downScreen).distance > 5) {
           if (_downKind == PointerDeviceKind.touch) {
@@ -1427,7 +1454,7 @@ class _PageCanvasState extends State<PageCanvas> {
             // by the 5px it took to decide.
             _mode = _DragMode.pan;
             controller.panBy(
-              (e.localPosition - _downScreen) * .55,
+              (e.localPosition - _downScreen) * _scrollGain,
               elasticLeading: true,
             );
           } else {
@@ -1646,7 +1673,7 @@ class _PageCanvasState extends State<PageCanvas> {
       } else {
         // Follow every scroll sample directly. Only after a short quiet gap
         // add a bounded coast for precision touchpads on PDF pages.
-        final delta = -e.scrollDelta * .55;
+        final delta = -e.scrollDelta * _scrollGain;
         controller.panBy(delta);
         final precision =
             e.kind == PointerDeviceKind.trackpad || e.scrollDelta.distance < 80;
@@ -2383,12 +2410,12 @@ class _PageCanvasState extends State<PageCanvas> {
           controller.zoomAt(_mousePosition ?? e.localPosition, scaleFactor);
         } else if (!_pzZooming && e.localPanDelta != Offset.zero) {
           // Two-finger scrolling without a scale change is still a pan.
-          controller.panBy(e.localPanDelta * .55, elasticLeading: true);
+          controller.panBy(e.localPanDelta * _scrollGain, elasticLeading: true);
           final now = DateTime.now();
           final previous = _pzLastMotionAt ?? now;
           final seconds = (now.difference(previous).inMicroseconds / 1000000)
               .clamp(.001, .05);
-          final instant = e.localPanDelta * .55 / seconds;
+          final instant = e.localPanDelta * _scrollGain / seconds;
           // A small moving average filters touchpad report jitter while keeping
           // the release speed faithful to the user's last swipe.
           _pzVelocity = Offset.lerp(_pzVelocity, instant, .38)!;

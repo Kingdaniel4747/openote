@@ -39,6 +39,9 @@ abstract final class PdfPages {
   static Future<PdfDocument> Function(Uint8List, String)? openForTest;
   @visibleForTesting
   static Future<RenderedPdfPage?> Function(PdfPage)? renderForTest;
+  @visibleForTesting
+  static Future<RenderedPdfPage?> Function(PdfPage, double)?
+      renderAtScaleForTest;
 
   static Future<Uint8List?> pageImage(AppState app, String hash, int page) {
     final key = '$hash#$page';
@@ -100,9 +103,11 @@ abstract final class PdfPages {
       if (entry == null) return null;
       final doc = await entry.ready;
       if (page < 0 || page >= doc.pages.length) return null;
-      final image = scale == kPdfPageScale && renderForTest != null
-          ? await renderForTest!(doc.pages[page])
-          : await renderPdfPageToPng(doc.pages[page], scale: scale);
+      final image = scale != kPdfPageScale && renderAtScaleForTest != null
+          ? await renderAtScaleForTest!(doc.pages[page], scale)
+          : scale == kPdfPageScale && renderForTest != null
+              ? await renderForTest!(doc.pages[page])
+              : await renderPdfPageToPng(doc.pages[page], scale: scale);
       if (image == null) return null;
       if (generation == _generation) {
         _pageBytes -= _pages.remove(key)?.length ?? 0;
@@ -239,8 +244,9 @@ Future<RenderedPdfPage?> _renderPdfPageToPng(
       page.height <= 0) {
     return null;
   }
+  final maxSide = requestedScale > kPdfPageScale ? 6144 : 4096;
   final scale =
-      math.min(requestedScale, 4096 / math.max(page.width, page.height));
+      math.min(requestedScale, maxSide / math.max(page.width, page.height));
   final w = (page.width * scale).round();
   final h = (page.height * scale).round();
   if (w <= 0 || h <= 0) return null;

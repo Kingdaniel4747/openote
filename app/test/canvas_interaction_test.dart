@@ -169,6 +169,21 @@ void main() {
       await t.pump(const Duration(milliseconds: 500));
     });
 
+    testWidgets('a brief resting touch does not pan or fling the page',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      makePdfPage();
+      await pump(t);
+      final before = app.canvas.offset;
+      final finger = await t.startGesture(const Offset(400, 400),
+          kind: PointerDeviceKind.touch);
+      await finger.moveBy(const Offset(3, 4));
+      await finger.up();
+      await t.pump(const Duration(milliseconds: 80));
+      expect(app.canvas.offset, before);
+      app.cancelPendingSave();
+    });
+
     testWidgets('PDF precision scroll signal gets a short coast', (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       makePdfPage();
