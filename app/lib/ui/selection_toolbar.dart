@@ -43,14 +43,15 @@ class SelectionToolbar extends StatelessWidget {
               app.toggleSelectedLock),
           if (downloadable != null)
             _button(context, 'Save original', Icons.download_outlined,
-                () => _saveOriginal(context, downloadable)),
+                () => saveOriginal(context, app, downloadable)),
           _button(context, 'Deselect', Icons.close, () => app.select(null)),
         ]),
       ),
     );
   }
 
-  Future<void> _saveOriginal(BuildContext context, Block block) async {
+  static Future<void> saveOriginal(
+      BuildContext context, AppState app, Block block) async {
     if (block.content['kind'] == 'drawio') {
       await _saveLinkedDiagram(context, block);
       return;
@@ -86,7 +87,8 @@ class SelectionToolbar extends StatelessWidget {
     await File(destination).writeAsBytes(bytes, flush: true);
   }
 
-  Future<void> _saveLinkedDiagram(BuildContext context, Block block) async {
+  static Future<void> _saveLinkedDiagram(
+      BuildContext context, Block block) async {
     final sourcePath = (block.content['path'] as String?)?.trim() ?? '';
     final source = File(sourcePath);
     if (sourcePath.isEmpty || !source.existsSync()) {

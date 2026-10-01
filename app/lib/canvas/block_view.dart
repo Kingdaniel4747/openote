@@ -472,17 +472,20 @@ class _BlockViewState extends State<BlockView> {
       onSecondaryTapUp: (d) => showBlockMenu(context, app, b, d.globalPosition),
       child: Align(
         alignment: Alignment.centerLeft,
-        child: Container(
-          width: 22,
-          height: 28,
-          margin: const EdgeInsets.only(left: 4, bottom: 2),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: primaryColor.withValues(alpha: .82),
-            borderRadius: BorderRadius.circular(6),
+        child: RotatedBox(
+          quarterTurns: 1,
+          child: Container(
+            width: 22,
+            height: 28,
+            margin: const EdgeInsets.only(left: 4, bottom: 2),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: primaryColor.withValues(alpha: .82),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Icon(Icons.drag_indicator,
+                size: 20, color: dark ? Colors.black : Colors.white),
           ),
-          child: Icon(Icons.drag_indicator,
-              size: 20, color: dark ? Colors.black : Colors.white),
         ),
       ),
     );

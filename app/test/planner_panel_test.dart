@@ -100,7 +100,7 @@ void main() {
     }
   }
 
-  testWidgets('an empty planner stays clean and offers one add button',
+  testWidgets('an empty planner offers actions from a calendar day',
       (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (app, _) = await newApp(tester);
@@ -109,13 +109,11 @@ void main() {
 
     expect(find.text('PLANNER'), findsOneWidget);
     expect(find.text('Nothing dated yet.'), findsNothing);
-    expect(find.byTooltip('Add homework, reminder or exam'), findsOneWidget);
-
-    await tester.tap(find.byTooltip('Add homework, reminder or exam'));
+    await tester.tap(find.text('${DateTime.now().day}').first);
     await tester.pumpAndSettle();
-    expect(find.text('Homework…'), findsOneWidget);
-    expect(find.text('Reminder…'), findsOneWidget);
-    expect(find.text('Exam…'), findsOneWidget);
+    expect(find.text('Add homework'), findsOneWidget);
+    expect(find.text('Add to-do'), findsOneWidget);
+    expect(find.text('Add exam'), findsOneWidget);
     expect(find.textContaining('Subscribe'), findsNothing);
   });
 
@@ -134,11 +132,10 @@ void main() {
     // This is the whole complaint: before the planner, that date could only be
     // read from inside the study panel, on the section you happened to be on.
     expect(find.text(title), findsOneWidget);
-    expect(find.text('LATER'), findsOneWidget);
+    expect(find.byTooltip('Edit'), findsOneWidget);
   });
 
-  testWidgets('a missed deadline is shown, not quietly dropped',
-      (tester) async {
+  testWidgets('a missed deadline leaves the active planner', (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (app, _) = await newApp(tester);
     await tester.pumpWidget(host(app));
@@ -148,9 +145,7 @@ void main() {
     app.setTagDue(app.blocks.single.id, 0, TagKind.todo, yesterday);
     await settle(tester);
 
-    expect(find.text('OVERDUE'), findsOneWidget);
-    expect(find.text('Finish tutorial 4'), findsOneWidget);
-    expect(find.text('yesterday'), findsOneWidget);
+    expect(find.text('Finish tutorial 4'), findsNothing);
   });
 
   testWidgets('ticking a task in the planner ticks it in the note',
@@ -225,7 +220,7 @@ void main() {
     await tester.tap(find.text('${DateTime.now().day}').first);
     await tester.pumpAndSettle();
     expect(find.text('Add homework'), findsOneWidget);
-    expect(find.text('Add reminder'), findsOneWidget);
+    expect(find.text('Add to-do'), findsOneWidget);
     expect(find.text('Add exam'), findsOneWidget);
   });
 

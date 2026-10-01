@@ -75,13 +75,30 @@ void main() {
 
   setUp(() => settings = FakeSettings());
 
+  test('an edited exam keeps its identity, subject and comment after restart',
+      () {
+    final store = build();
+    final exam = store.add(
+        text: 'Math — Algebra', at: now, category: 'exam', id: 'exam-1');
+    store.update(exam.id,
+        text: 'Physics — Optics',
+        at: now.add(const Duration(days: 1)),
+        category: 'exam');
+    settings.restart();
+    final restored = build().byId('exam-1')!;
+    expect(restored.category, 'exam');
+    expect(restored.text, 'Physics — Optics');
+    expect(restored.at, now.add(const Duration(days: 1)));
+  });
+
   group('storage', () {
     test('a free-standing reminder with no target survives a restart', () {
       // v0.5 §7 leaves free-standing reminders an open decision; the store
       // allows them, so "call the tutor at 3" must not be silently mangled into
       // a row pointing at a page that does not exist.
       final store = build();
-      final added = store.add(text: 'Call the tutor', at: DateTime(2026, 8, 5, 15));
+      final added =
+          store.add(text: 'Call the tutor', at: DateTime(2026, 8, 5, 15));
 
       settings.restart();
       final reopened = build();
@@ -146,7 +163,8 @@ void main() {
       expect(store.all, hasLength(1));
     });
 
-    test('remove deletes, and an unknown id is a no-op rather than a throw', () {
+    test('remove deletes, and an unknown id is a no-op rather than a throw',
+        () {
       final store = build();
       final a = store.add(text: 'a', at: now);
       store.add(text: 'b', at: now);
@@ -168,8 +186,10 @@ void main() {
       // untouched reminder with it, byId/dismiss/snooze only ever reach the
       // first, and the second silently vanishes at the next launch.
       final store = build();
-      final first = store.add(text: 'first', at: DateTime(2026, 8, 5, 16), id: 'x');
-      final second = store.add(text: 'second', at: DateTime(2026, 8, 5, 17), id: 'x');
+      final first =
+          store.add(text: 'first', at: DateTime(2026, 8, 5, 16), id: 'x');
+      final second =
+          store.add(text: 'second', at: DateTime(2026, 8, 5, 17), id: 'x');
 
       expect(second.id, isNot(first.id));
       expect(store.all, hasLength(2));
@@ -275,9 +295,24 @@ void main() {
       // Reminder.toJson then persists and a click-through dereferences out of
       // bounds. That is the same failure a negative index is rejected for.
       settings.values[ReminderStore.settingsKey] = [
-        {'id': 'huge', 'text': 't', 'at': '2026-08-05T16:00:00.000', 'line': 1e300},
-        {'id': 'frac', 'text': 't', 'at': '2026-08-05T16:00:00.000', 'line': 2.7},
-        {'id': 'whole', 'text': 't', 'at': '2026-08-05T16:00:00.000', 'line': 3.0},
+        {
+          'id': 'huge',
+          'text': 't',
+          'at': '2026-08-05T16:00:00.000',
+          'line': 1e300
+        },
+        {
+          'id': 'frac',
+          'text': 't',
+          'at': '2026-08-05T16:00:00.000',
+          'line': 2.7
+        },
+        {
+          'id': 'whole',
+          'text': 't',
+          'at': '2026-08-05T16:00:00.000',
+          'line': 3.0
+        },
       ];
 
       final store = build();
@@ -285,7 +320,8 @@ void main() {
       expect(store.byId('huge')!.line, isNull);
       expect(store.byId('frac')!.line, isNull);
       expect(store.byId('whole')!.line, 3,
-          reason: 'JSON writes whole numbers as doubles; line 3 is still line 3');
+          reason:
+              'JSON writes whole numbers as doubles; line 3 is still line 3');
     });
 
     test('epoch milliseconds are accepted as a time', () {
@@ -387,7 +423,8 @@ void main() {
 
       expect(store.due(now), isEmpty);
       expect(store.nextDueAt(now), isNull);
-      expect(store.byId(r.id), isNotNull, reason: 'kept for the retention window');
+      expect(store.byId(r.id), isNotNull,
+          reason: 'kept for the retention window');
     });
   });
 
@@ -485,46 +522,58 @@ void main() {
     test('staleAfter separates "missed" from "just fired"', () {
       // The discriminating case: both are due, only one was unreachable.
       final store = build();
-      final old = store.add(text: 'old', at: now.subtract(const Duration(days: 2)));
-      final fresh =
-          store.add(text: 'fresh', at: now.subtract(const Duration(seconds: 30)));
+      final old =
+          store.add(text: 'old', at: now.subtract(const Duration(days: 2)));
+      final fresh = store.add(
+          text: 'fresh', at: now.subtract(const Duration(seconds: 30)));
 
       expect(store.due(now).map((r) => r.id), [old.id, fresh.id]);
       expect(
-          store.missedWhileAway(now, staleAfter: const Duration(minutes: 2))
+          store
+              .missedWhileAway(now, staleAfter: const Duration(minutes: 2))
               .map((r) => r.id),
           [old.id]);
     });
 
     test('the default staleAfter is two minutes, boundary included', () {
       final store = build();
-      final r = store.add(text: 'x', at: now.subtract(const Duration(minutes: 2)));
+      final r =
+          store.add(text: 'x', at: now.subtract(const Duration(minutes: 2)));
 
       expect(store.missedWhileAway(now).map((x) => x.id), [r.id]);
-      expect(
-          store.missedWhileAway(now.subtract(const Duration(seconds: 1))), isEmpty);
+      expect(store.missedWhileAway(now.subtract(const Duration(seconds: 1))),
+          isEmpty);
     });
 
     test('what has been surfaced or dismissed is not "missed"', () {
       // Otherwise the catch-up list announces reminders the student already saw
       // this session, and stops meaning anything.
       final store = build();
-      final shown = store.add(text: 'shown', at: now.subtract(const Duration(days: 1)));
-      final killed = store.add(text: 'killed', at: now.subtract(const Duration(days: 1)));
-      final missed = store.add(text: 'missed', at: now.subtract(const Duration(days: 1)));
+      final shown =
+          store.add(text: 'shown', at: now.subtract(const Duration(days: 1)));
+      final killed =
+          store.add(text: 'killed', at: now.subtract(const Duration(days: 1)));
+      final missed =
+          store.add(text: 'missed', at: now.subtract(const Duration(days: 1)));
 
       store.markFired([shown.id], now);
       store.dismiss(killed.id, now);
 
-      expect(store.missedWhileAway(now, staleAfter: Duration.zero).map((r) => r.id),
+      expect(
+          store
+              .missedWhileAway(now, staleAfter: Duration.zero)
+              .map((r) => r.id),
           [missed.id]);
     });
 
     test('the catch-up list is oldest first and clears once acknowledged', () {
       final store = build();
-      final week = store.add(text: 'week', at: now.subtract(const Duration(days: 7)));
-      final hour = store.add(text: 'hour', at: now.subtract(const Duration(hours: 1)));
-      final day = store.add(text: 'day', at: now.subtract(const Duration(days: 1)));
+      final week =
+          store.add(text: 'week', at: now.subtract(const Duration(days: 7)));
+      final hour =
+          store.add(text: 'hour', at: now.subtract(const Duration(hours: 1)));
+      final day =
+          store.add(text: 'day', at: now.subtract(const Duration(days: 1)));
 
       final missed = store.missedWhileAway(now, staleAfter: Duration.zero);
       expect(missed.map((r) => r.id), [week.id, day.id, hour.id]);
@@ -627,8 +676,7 @@ void main() {
       expect(store.all.map((r) => r.id), contains(live.id));
 
       settings.restart();
-      expect(build().all.map((r) => r.text),
-          ['recent', 'live', 'trigger'],
+      expect(build().all.map((r) => r.text), ['recent', 'live', 'trigger'],
           reason: 'the pruned list is what reaches the settings file');
     });
 
@@ -659,7 +707,10 @@ void main() {
       store.add(text: 'trigger', at: DateTime(2026, 8, 7, 9), now: now);
 
       expect(store.all.map((r) => r.id), contains(ancient.id));
-      expect(store.missedWhileAway(now, staleAfter: Duration.zero).map((r) => r.id),
+      expect(
+          store
+              .missedWhileAway(now, staleAfter: Duration.zero)
+              .map((r) => r.id),
           [ancient.id]);
     });
   });

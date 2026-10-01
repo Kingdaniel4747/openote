@@ -58,6 +58,9 @@ class ImageBlockView extends StatefulWidget {
 class _ImageBlockViewState extends State<ImageBlockView> {
   MemoryImage? _provider;
   String? _hash;
+  Timer? _zoomRenderTimer;
+  int _qualityBucket = 2;
+  int _qualityRequest = 0;
 
   /// True while an on-demand PDF page render is in flight — the placeholder
   /// then says "rendering" rather than "missing", which are different facts.
@@ -69,6 +72,14 @@ class _ImageBlockViewState extends State<ImageBlockView> {
   void initState() {
     super.initState();
     _load();
+    _scheduleZoomRender();
+  }
+
+  @override
+  void dispose() {
+    _zoomRenderTimer?.cancel();
+    _qualityRequest++;
+    super.dispose();
   }
 
   @override
@@ -77,8 +88,38 @@ class _ImageBlockViewState extends State<ImageBlockView> {
     final key = widget.block.content['blob'] ?? widget.block.content['pdf'];
     if (key != _hash ||
         old.block.content['page'] != widget.block.content['page']) {
+      _qualityBucket = 2;
+      _qualityRequest++;
       _load();
     }
+    _scheduleZoomRender();
+  }
+
+  void _scheduleZoomRender() {
+    final pdf = widget.block.content['pdf'] as String?;
+    if (pdf == null) return;
+    final zoom = widget.app.canvas.scale;
+    final bucket = zoom >= 2.5
+        ? 6
+        : zoom >= 1.5
+            ? 4
+            : 2;
+    if (bucket <= _qualityBucket) return;
+    _zoomRenderTimer?.cancel();
+    final request = ++_qualityRequest;
+    _zoomRenderTimer = Timer(const Duration(milliseconds: 180), () async {
+      final page = (widget.block.content['page'] as num?)?.toInt() ?? 0;
+      final png = await PdfPages.pageImageAtScale(
+          widget.app, pdf, page, bucket.toDouble());
+      if (!mounted ||
+          request != _qualityRequest ||
+          png == null ||
+          widget.block.content['pdf'] != pdf) return;
+      setState(() {
+        _provider = MemoryImage(png);
+        _qualityBucket = bucket;
+      });
+    });
   }
 
   void _load() {

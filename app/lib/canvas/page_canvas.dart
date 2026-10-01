@@ -52,6 +52,8 @@ class _PageCanvasState extends State<PageCanvas> {
   bool _buttonOverride = false;
   int _overrideToolRevision = -1;
   bool _pendingErase = false;
+  bool _inkContactActive = false;
+  bool _invertedInkContact = false;
   Tool _penReturnTool = Tool.pen;
   Tool _contactTool = Tool.pen;
   Offset? _eraserScreen;
@@ -62,11 +64,23 @@ class _PageCanvasState extends State<PageCanvas> {
 
   void _windowsPenChanged() {
     if (!mounted) return;
-    _pendingErase = _windowsPen.nativeEraser;
-    // The barrel state is deliberately only applied at a pen contact boundary
-    // in _inkDown/_inkUp. Switching a tool while the pen merely hovers makes
-    // choosing a toolbar option frustrating and can cut an active stroke.
+    _pendingErase = _windowsPen.nativeEraser || _invertedInkContact;
+    _setContactErase(_pendingErase);
+    _showPenButtonTool(_pendingErase);
     setState(() {});
+  }
+
+  /// A barrel press or release can happen while the nib is still touching the
+  /// page. Commit the ink before erasing; never join a pen segment across an
+  /// erased section. The next move starts a fresh segment after release.
+  void _setContactErase(bool erase) {
+    if (!_inkContactActive || _gestureErase == erase) return;
+    if (erase) _finishWetStroke();
+    _gestureErase = erase;
+    _contactTool = erase ? Tool.eraser : _penReturnTool;
+    if (!erase && _eraserScreen != null) {
+      setState(() => _eraserScreen = null);
+    }
   }
 
   void _showPenButtonTool(bool erase) {
@@ -309,6 +323,8 @@ class _PageCanvasState extends State<PageCanvas> {
     _shapeKind = null;
     _shapeLastMotion = null;
     _windowsInkPointer = null;
+    _inkContactActive = false;
+    _invertedInkContact = false;
     _gestureErase = false;
     _eraseUndoPushed = false;
     if (_wet != null) setState(() => _wet = null);
@@ -412,6 +428,8 @@ class _PageCanvasState extends State<PageCanvas> {
         e.kind == PointerDeviceKind.invertedStylus;
     if (stylus) _pendingErase = _gestureErase;
     _contactTool = !stylus && _buttonOverride ? _penReturnTool : app.tool;
+    _inkContactActive = stylus;
+    _invertedInkContact = e.kind == PointerDeviceKind.invertedStylus;
     final pt = _snapToRuler(
       _clampToPagePoint(controller.screenToPage(e.localPosition)),
     );
@@ -467,9 +485,12 @@ class _PageCanvasState extends State<PageCanvas> {
 
   void _inkMove(PointerMoveEvent e) {
     if (_updateRulerPointer(e)) return;
-    if (_windowsPen.enabled) {
-      if (_windowsInkPointer != e.pointer) return;
+    if (_windowsPen.enabled && _windowsInkPointer != e.pointer) return;
+    if (e.kind == PointerDeviceKind.stylus ||
+        e.kind == PointerDeviceKind.invertedStylus) {
       _pendingErase = _windowsPen.erases(e);
+      _setContactErase(_pendingErase);
+      _showPenButtonTool(_pendingErase);
     }
     if (!_onPaper(controller.screenToPage(e.localPosition))) {
       _finishWetStroke();
@@ -681,16 +702,15 @@ class _PageCanvasState extends State<PageCanvas> {
       if (_windowsInkPointer != e.pointer) return;
       _windowsInkPointer = null;
     }
-    final erased = _contactTool == Tool.eraser || _gestureErase;
+    _inkContactActive = false;
+    _invertedInkContact = false;
     _eraseUndoPushed = false;
     _gestureErase = false;
     if (_eraserScreen != null) setState(() => _eraserScreen = null);
     _finishWetStroke();
-    // Erasing is a one-gesture correction. Returning immediately to the pen
-    // makes the toolbar ready for the next colour or width selection.
-    if (erased) app.setTool(Tool.pen, temporary: true);
     if (e.kind == PointerDeviceKind.stylus ||
         e.kind == PointerDeviceKind.invertedStylus) {
+      _pendingErase = _windowsPen.nativeInRange && _windowsPen.nativeEraser;
       _showPenButtonTool(_pendingErase);
     }
   }
@@ -922,7 +942,16 @@ class _PageCanvasState extends State<PageCanvas> {
   // The object toolbar belongs to the selected container, not to a particular
   // editor. It remains available for text, equations and code while their
   // content is active, exactly as it already is for media and tables.
-  bool get _selectionToolbarCanShow => true;
+  bool get _selectionToolbarCanShow {
+    final selected =
+        app.blocks.where((b) => app.selectedIds.contains(b.id)).toList();
+    if (selected.length != 1) return selected.isNotEmpty;
+    final block = selected.single;
+    if (block.type == BlockType.image) return false;
+    if (block.type == BlockType.text &&
+        (block.content['text'] as String? ?? '').trim().isEmpty) return false;
+    return true;
+  }
 
   void _moveLassoFingerSelection(PointerMoveEvent e) {
     if (_lassoMovePointer != e.pointer) return;
@@ -1187,9 +1216,9 @@ class _PageCanvasState extends State<PageCanvas> {
       _schedulePinchTransform();
     } else if (_touches.length == 1 && !_multiTouchSeen) {
       final delta = e.localPosition - _lastScreen;
-      controller.panBy(delta, elasticLeading: true);
+      controller.panBy(delta * .55, elasticLeading: true);
       if (elapsed > 0) {
-        final instant = delta * (1000000 / elapsed);
+        final instant = delta * (.55 * 1000000 / elapsed);
         // The final pointer sample is often a tiny stationary sample emitted
         // while the finger lifts. Replacing the velocity with that sample
         // killed the fling. A short moving average preserves the gesture's
@@ -1389,7 +1418,7 @@ class _PageCanvasState extends State<PageCanvas> {
     _lastScreen = e.localPosition;
     switch (_mode) {
       case _DragMode.pan:
-        controller.panBy(delta, elasticLeading: true);
+        controller.panBy(delta * .55, elasticLeading: true);
       case _DragMode.pending:
         if ((e.localPosition - _downScreen).distance > 5) {
           if (_downKind == PointerDeviceKind.touch) {
@@ -1398,7 +1427,7 @@ class _PageCanvasState extends State<PageCanvas> {
             // by the 5px it took to decide.
             _mode = _DragMode.pan;
             controller.panBy(
-              e.localPosition - _downScreen,
+              (e.localPosition - _downScreen) * .55,
               elasticLeading: true,
             );
           } else {
@@ -1617,7 +1646,7 @@ class _PageCanvasState extends State<PageCanvas> {
       } else {
         // Follow every scroll sample directly. Only after a short quiet gap
         // add a bounded coast for precision touchpads on PDF pages.
-        final delta = -e.scrollDelta;
+        final delta = -e.scrollDelta * .55;
         controller.panBy(delta);
         final precision =
             e.kind == PointerDeviceKind.trackpad || e.scrollDelta.distance < 80;
@@ -2354,12 +2383,12 @@ class _PageCanvasState extends State<PageCanvas> {
           controller.zoomAt(_mousePosition ?? e.localPosition, scaleFactor);
         } else if (!_pzZooming && e.localPanDelta != Offset.zero) {
           // Two-finger scrolling without a scale change is still a pan.
-          controller.panBy(e.localPanDelta, elasticLeading: true);
+          controller.panBy(e.localPanDelta * .55, elasticLeading: true);
           final now = DateTime.now();
           final previous = _pzLastMotionAt ?? now;
           final seconds = (now.difference(previous).inMicroseconds / 1000000)
               .clamp(.001, .05);
-          final instant = e.localPanDelta / seconds;
+          final instant = e.localPanDelta * .55 / seconds;
           // A small moving average filters touchpad report jitter while keeping
           // the release speed faithful to the user's last swipe.
           _pzVelocity = Offset.lerp(_pzVelocity, instant, .38)!;

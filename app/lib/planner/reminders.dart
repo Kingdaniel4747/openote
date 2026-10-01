@@ -41,6 +41,9 @@ import 'dart:collection';
 
 import '../core/ids.dart';
 
+String _category(Object? value) =>
+    value == 'homework' || value == 'exam' ? value as String : 'todo';
+
 /// One scheduled nudge.
 ///
 /// Mutable, because the store edits reminders in place and persists the whole
@@ -188,7 +191,7 @@ class Reminder {
       pageId: _decodeId(raw['pageId']),
       blockId: _decodeId(raw['blockId']),
       line: _decodeLine(raw['line']),
-      category: raw['category'] == 'homework' ? 'homework' : 'todo',
+      category: _category(raw['category']),
       fired: raw['fired'] == true,
       firedAt: _decodeTime(raw['firedAt']),
       dismissed: raw['dismissed'] == true,
@@ -369,11 +372,31 @@ class ReminderStore {
       pageId: pageId,
       blockId: blockId,
       line: line,
-      category: category == 'homework' ? 'homework' : 'todo',
+      category: _category(category),
     );
     _items.add(r);
     _persist(now);
     return r;
+  }
+
+  /// Edit a scheduled item without changing the identity used by the planner.
+  void update(String id,
+      {required String text,
+      required DateTime at,
+      required String category,
+      String? pageId,
+      String? notebookId}) {
+    final r = byId(id);
+    if (r == null) return;
+    r
+      ..text = text.trim()
+      ..at = at
+      ..category = _category(category)
+      ..pageId = pageId
+      ..notebookId = notebookId
+      ..fired = false
+      ..firedAt = null;
+    _persist();
   }
 
   /// The requested id, or a fresh one when it is already taken (or empty).

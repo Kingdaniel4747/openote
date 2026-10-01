@@ -90,12 +90,11 @@ void PenButtons::ReadPointer(UINT message, WPARAM wparam) {
             (PEN_FLAG_BARREL | PEN_FLAG_ERASER | PEN_FLAG_INVERTED)) != 0 ||
             IS_POINTER_SECONDBUTTON_WPARAM(wparam);
         if (!active) Reset();
-        else Send(true, raw_in_range_ ? raw_eraser_ : erase);
+        else Send(true, erase);
       } else if (id == pointer_id_ && IS_POINTER_INCONTACT_WPARAM(wparam)) {
         // Message flags remain usable even if a nested message pump expired
         // GetPointerPenInfo. Hover buttons require the pen/HID report instead.
-        Send(true, raw_in_range_ ? raw_eraser_ :
-            IS_POINTER_SECONDBUTTON_WPARAM(wparam) != 0);
+        Send(true, IS_POINTER_SECONDBUTTON_WPARAM(wparam) != 0);
       }
       break;
     }

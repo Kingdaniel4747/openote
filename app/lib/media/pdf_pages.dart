@@ -66,8 +66,33 @@ abstract final class PdfPages {
     });
   }
 
+  /// A transient, zoom-specific raster. The stored 2x preview stays untouched.
+  static Future<Uint8List?> pageImageAtScale(
+      AppState app, String hash, int page, double scale) {
+    final key = '$hash#$page#${scale.toStringAsFixed(0)}';
+    final hit = _pages.remove(key);
+    if (hit != null) {
+      _pages[key] = hit;
+      return Future.value(hit);
+    }
+    return _renders.putIfAbsent(key, () {
+      final generation = _generation;
+      final notebook = app.notebookId;
+      final result = (_pageQueue ?? Future<void>.value()).then<Uint8List?>((_) {
+        if (generation != _generation || notebook != app.notebookId)
+          return null;
+        return _render(app, hash, page, key, scale: scale);
+      }).whenComplete(() {
+        if (generation == _generation) _renders.remove(key);
+      });
+      _pageQueue = result.then<void>((_) {}, onError: (Object _) {});
+      return result;
+    });
+  }
+
   static Future<Uint8List?> _render(
-      AppState app, String hash, int page, String key) async {
+      AppState app, String hash, int page, String key,
+      {double scale = kPdfPageScale}) async {
     final generation = _generation;
     _Doc? entry;
     try {
@@ -75,8 +100,9 @@ abstract final class PdfPages {
       if (entry == null) return null;
       final doc = await entry.ready;
       if (page < 0 || page >= doc.pages.length) return null;
-      final image =
-          await (renderForTest ?? renderPdfPageToPng)(doc.pages[page]);
+      final image = scale == kPdfPageScale && renderForTest != null
+          ? await renderForTest!(doc.pages[page])
+          : await renderPdfPageToPng(doc.pages[page], scale: scale);
       if (image == null) return null;
       if (generation == _generation) {
         _pageBytes -= _pages.remove(key)?.length ?? 0;
@@ -196,15 +222,17 @@ typedef RenderedPdfPage = ({Uint8List png, int width, int height});
 Future<void> _renderQueue = Future<void>.value();
 
 /// Render one page at the standard scale for import, display or export.
-Future<RenderedPdfPage?> renderPdfPageToPng(PdfPage page) {
+Future<RenderedPdfPage?> renderPdfPageToPng(PdfPage page,
+    {double scale = kPdfPageScale}) {
   // Bound raw pixel buffers and PNG encodes across imports and legacy views.
   // The timeout starts when work begins, not while waiting for another page.
-  final result = _renderQueue.then((_) => _renderPdfPageToPng(page));
+  final result = _renderQueue.then((_) => _renderPdfPageToPng(page, scale));
   _renderQueue = result.then<void>((_) {}, onError: (Object _) {});
   return result;
 }
 
-Future<RenderedPdfPage?> _renderPdfPageToPng(PdfPage page) async {
+Future<RenderedPdfPage?> _renderPdfPageToPng(
+    PdfPage page, double requestedScale) async {
   if (!page.width.isFinite ||
       !page.height.isFinite ||
       page.width <= 0 ||
@@ -212,7 +240,7 @@ Future<RenderedPdfPage?> _renderPdfPageToPng(PdfPage page) async {
     return null;
   }
   final scale =
-      math.min(kPdfPageScale, 4096 / math.max(page.width, page.height));
+      math.min(requestedScale, 4096 / math.max(page.width, page.height));
   final w = (page.width * scale).round();
   final h = (page.height * scale).round();
   if (w <= 0 || h <= 0) return null;

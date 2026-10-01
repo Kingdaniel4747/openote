@@ -9,6 +9,7 @@ import '../theme/tokens.dart';
 import 'color_picker.dart';
 import 'insert_catalog.dart';
 import 'pdf_viewer_dialog.dart';
+import 'selection_toolbar.dart';
 
 /// Right-click menus (style guide: most actions within ≤2 clicks).
 
@@ -35,8 +36,8 @@ PopupMenuItem<String> _item(String v, IconData icon, String label,
   );
 }
 
-Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
-    Offset globalPos) async {
+Future<void> showBlockMenu(
+    BuildContext context, AppState app, Block b, Offset globalPos) async {
   if (!app.selectedIds.contains(b.id)) app.select(b.id);
   final editable = b.type == BlockType.text ||
       b.type == BlockType.code ||
@@ -56,24 +57,29 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
       // than a state — and the slides now land on the user's own page.
       _item(
           'lock',
-          b.content['locked'] == true ? Icons.lock_open_outlined : Icons.lock_outline,
+          b.content['locked'] == true
+              ? Icons.lock_open_outlined
+              : Icons.lock_outline,
           b.content['locked'] == true ? 'Unlock' : 'Lock in place'),
       // The box itself gets attributes, starting with a fill. The picker
       // returns RRGGBBAA, so transparency comes with it — a translucent
       // highlight over a diagram is half of why anyone tints a box.
       _item('bg', Icons.format_color_fill, 'Background colour…'),
       if (b.content['bg'] != null)
-        _item('bg-clear', Icons.format_color_reset_outlined,
-            'Remove background'),
+        _item(
+            'bg-clear', Icons.format_color_reset_outlined, 'Remove background'),
       // A slide is a page of a stored PDF; the viewer is where its text is
       // selectable, which the raster on the canvas can never be.
       if (b.content['pdf'] is String)
         _item('open-pdf', Icons.picture_as_pdf_outlined, 'Open the PDF…'),
+      if (b.type == BlockType.image || b.content['kind'] == 'drawio')
+        _item('download', Icons.download_outlined, 'Save original'),
       const PopupMenuDivider(),
       _item('front', Icons.flip_to_front, 'Bring to front'),
       _item('back', Icons.flip_to_back, 'Send to back'),
       const PopupMenuDivider(),
       _item('delete', Icons.delete_outline, 'Delete', shortcut: 'Del'),
+      _item('deselect', Icons.close, 'Deselect'),
     ],
   );
   switch (action) {
@@ -90,8 +96,7 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
     case 'bg':
       if (context.mounted) {
         final hex = await showOnoteColorPicker(context, app,
-            initial: b.content['bg'] as String?,
-            title: 'Background colour');
+            initial: b.content['bg'] as String?, title: 'Background colour');
         if (hex != null) {
           app.pushUndo();
           b.content['bg'] = hex;
@@ -108,6 +113,10 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
             hash: b.content['pdf'] as String,
             initialPage: (b.content['page'] as num?)?.toInt() ?? 0);
       }
+    case 'download':
+      if (context.mounted) {
+        await SelectionToolbar.saveOriginal(context, app, b);
+      }
     case 'copy':
       app.copySelectedBlocks();
     case 'cut':
@@ -120,6 +129,8 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
       app.sendToBack(b.id);
     case 'delete':
       app.removeSelected();
+    case 'deselect':
+      app.select(null);
   }
 }
 
@@ -142,8 +153,8 @@ Future<void> showBlockMenu(BuildContext context, AppState app, Block b,
 ///
 /// The four `Background: …` rows become one submenu with a tick on the
 /// current one, which the old rows never showed.
-Future<void> showCanvasMenu(BuildContext context, AppState app,
-    Offset globalPos, Offset pagePt) async {
+Future<void> showCanvasMenu(
+    BuildContext context, AppState app, Offset globalPos, Offset pagePt) async {
   final action = await showMenu<String>(
     context: context,
     position: RelativeRect.fromLTRB(
@@ -222,8 +233,8 @@ PopupMenuEntry<String> _bgSubmenu(BuildContext context, AppState app) {
           const Icon(Icons.wallpaper_outlined, size: 16),
           const SizedBox(width: 10),
           const Expanded(
-              child: AppText('Page background',
-                  style: TextStyle(fontSize: 13))),
+              child:
+                  AppText('Page background', style: TextStyle(fontSize: 13))),
           Icon(Icons.chevron_right,
               size: 16, color: context.surfaces.textSecondary),
         ]),

@@ -164,6 +164,7 @@ void main() {
         ..tool = Tool.pen
         ..penSize = 4
         ..penColor = 2
+        ..eraserMode = EraserMode.stroke
         ..spellCheckEnabled = false
         ..penProximitySwitch = false
         ..snapToGrid = false;
@@ -243,9 +244,15 @@ void main() {
       await move(t, 150);
       await up(t, 150);
       expect(strokes(app), hasLength(1));
-      await down(t, 100, buttons: kPrimaryButton | kPrimaryStylusButton);
+      await nativeState(true, true);
+      await t.pump();
+      expect(app.tool, Tool.eraser);
+      await down(t, 100);
       await up(t, 100);
       expect(strokes(app), isEmpty);
+      await nativeState(true, false);
+      await t.pump();
+      expect(app.tool, Tool.pen);
       await down(t, 250);
       await move(t, 300);
       await up(t, 300);
@@ -254,63 +261,66 @@ void main() {
       await finish(t, app);
     });
 
-    testWidgets('button transitions during a stroke do not split or erase it',
+    testWidgets('press and release split a stroke at the button transition',
         (t) async {
       final app = await mount(t);
       app.tool = Tool.highlighter;
       await t.pump();
       await down(t, 100);
       await move(t, 140);
-      await move(t, 280, buttons: kPrimaryButton | kPrimaryStylusButton);
+      await nativeState(true, true);
+      await t.pump();
+      expect(app.tool, Tool.eraser);
+      expect(strokes(app), hasLength(1));
+      await nativeState(true, false);
+      await t.pump();
+      expect(app.tool, Tool.highlighter);
+      await move(t, 280);
       await move(t, 340);
-      await move(t, 390);
-      await up(t, 390);
+      await up(t, 340);
       final ink = strokes(app);
-      expect(ink, hasLength(1));
-      expect(ink[0]['x'], [100.0, 140.0, 280.0, 340.0, 390.0]);
+      expect(ink, hasLength(2));
+      expect(ink[0]['x'], [100.0, 140.0]);
+      expect(ink[1]['x'], [280.0, 340.0]);
       expect((ink[0]['brush'] as Map)['tool'], 'highlighter');
+      expect((ink[1]['brush'] as Map)['tool'], 'highlighter');
       expect(app.tool, Tool.highlighter);
       expect(app.penSize, 4);
       expect(app.penColor, 2);
       await finish(t, app);
     });
 
-    testWidgets('native button changes apply only after lifting the pen',
+    testWidgets(
+        'press while touching erases and release restores pen immediately',
         (t) async {
       final app = await mount(t);
       await down(t, 100);
       await move(t, 140);
+      await up(t, 140);
+      expect(strokes(app), hasLength(1));
+      await down(t, 250);
       await nativeState(true, true);
       await t.pump();
-      expect(app.tool, Tool.pen);
-      expect(strokes(app), isEmpty,
-          reason: 'wet stroke is not prematurely committed');
-      await move(t, 180);
-      await up(t, 180);
-      expect(strokes(app), hasLength(1));
       expect(app.tool, Tool.eraser);
-      // Release while erasing: keep erasing until lift, then restore the pen.
-      await down(t, 100);
+      await move(t, 120);
+      expect(strokes(app), isEmpty);
       await nativeState(true, false);
       await t.pump();
-      expect(app.tool, Tool.eraser);
-      await move(t, 140, buttons: kPrimaryStylusButton);
-      await up(t, 140);
       expect(app.tool, Tool.pen);
-      await down(t, 280);
       await move(t, 320);
-      await up(t, 320);
-      expect(strokes(app).last['x'], [280.0, 320.0]);
+      await move(t, 350);
+      await up(t, 350);
+      expect(strokes(app).last['x'], [320.0, 350.0]);
       await finish(t, app);
     });
 
-    testWidgets('hover keeps the selected tool until a pen contact',
+    testWidgets('hover button changes the tool and release restores it',
         (t) async {
       final app = await mount(t);
       app.setTool(Tool.lasso);
       await nativeState(true, true);
       await t.pump();
-      expect(app.tool, Tool.lasso);
+      expect(app.tool, Tool.eraser);
       await nativeState(true, false);
       await t.pump();
       expect(app.tool, Tool.lasso);

@@ -382,6 +382,17 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   ),
                 ),
               ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () => PlatformOpen.url(
+                    'https://github.com/$kUpdateRepository/issues/new',
+                  ),
+                  icon: const Icon(Icons.bug_report_outlined, size: 16),
+                  label: const AppText('Report a bug',
+                      style: TextStyle(fontSize: 12)),
+                ),
+              ),
             ],
           ),
         ),
