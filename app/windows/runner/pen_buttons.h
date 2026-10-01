@@ -7,8 +7,6 @@
 #include <windows.h>
 #include <commctrl.h>
 #include <memory>
-#include <deque>
-#include <string>
 #include <vector>
 
 // Observes only this app's input. Never consumes or synthesizes pointer input.
@@ -27,7 +25,6 @@ class PenButtons {
   void Send(bool in_range, bool eraser);
   void ReadPointer(UINT message, WPARAM wparam);
   void ReadRawInput(HRAWINPUT input);
-  void Trace(const std::string& event);
   flutter::EncodableValue State() const;
   HWND view_;
   UINT32 pointer_id_ = 0;
@@ -41,9 +38,6 @@ class PenButtons {
   bool raw_eraser_ = false;
   HANDLE raw_device_ = nullptr;
   std::vector<BYTE> raw_descriptor_;
-  bool tracing_ = false;
-  ULONGLONG trace_start_ = 0;
-  std::deque<std::string> trace_;
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> channel_;
 };
 

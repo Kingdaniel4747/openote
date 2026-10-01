@@ -54,7 +54,6 @@ class _PageCanvasState extends State<PageCanvas> {
   int _overrideToolRevision = -1;
   bool _pendingErase = false;
   bool _inkContactActive = false;
-  int? _lastTraceButtons;
   bool _invertedInkContact = false;
   Tool _penReturnTool = Tool.pen;
   Tool _contactTool = Tool.pen;
@@ -66,8 +65,6 @@ class _PageCanvasState extends State<PageCanvas> {
 
   void _windowsPenChanged() {
     if (!mounted) return;
-    WindowsPenButtons.trace(
-        'native range=${_windowsPen.nativeInRange} erase=${_windowsPen.nativeEraser} contact=$_inkContactActive tool=${app.tool.name}');
     _pendingErase = _windowsPen.nativeEraser || _invertedInkContact;
     _setContactErase(_pendingErase);
     _showPenButtonTool(_pendingErase);
@@ -79,7 +76,6 @@ class _PageCanvasState extends State<PageCanvas> {
   /// erased section. The next move starts a fresh segment after release.
   void _setContactErase(bool erase) {
     if (!_inkContactActive || _gestureErase == erase) return;
-    WindowsPenButtons.trace('contact erase $_gestureErase -> $erase');
     if (erase) _finishWetStroke();
     _gestureErase = erase;
     _contactTool = erase ? Tool.eraser : _penReturnTool;
@@ -89,8 +85,6 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _showPenButtonTool(bool erase) {
-    final beforeTool = app.tool;
-    final beforeOverride = _buttonOverride;
     // A deliberate toolbar choice supersedes the tool remembered by an old
     // barrel-button gesture, even if the pen is still hovering.
     if (_buttonOverride && _overrideToolRevision != app.toolChoiceRevision) {
@@ -110,10 +104,6 @@ class _PageCanvasState extends State<PageCanvas> {
     } else if (_buttonOverride) {
       _buttonOverride = false;
       app.setTool(_penReturnTool, temporary: true);
-    }
-    if (beforeTool != app.tool || beforeOverride != _buttonOverride) {
-      WindowsPenButtons.trace(
-          'toolbar ${beforeTool.name} -> ${app.tool.name} button=$erase override=$_buttonOverride');
     }
   }
 
@@ -415,9 +405,6 @@ class _PageCanvasState extends State<PageCanvas> {
   // ── Ink capture (page-space, Ink Data Spec §1) ──────────────────────────
 
   void _inkDown(PointerDownEvent e) {
-    _lastTraceButtons = e.buttons;
-    WindowsPenButtons.trace(
-        'pointer down kind=${e.kind.name} buttons=${e.buttons} native=${_windowsPen.nativeEraser} tool=${app.tool.name}');
     if (_beginRulerPointer(e)) return;
     if (e.kind == PointerDeviceKind.stylus ||
         e.kind == PointerDeviceKind.invertedStylus) {
@@ -500,11 +487,6 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _inkMove(PointerMoveEvent e) {
-    if (WindowsPenButtons.tracing && _lastTraceButtons != e.buttons) {
-      _lastTraceButtons = e.buttons;
-      WindowsPenButtons.trace(
-          'pointer move buttons=${e.buttons} native=${_windowsPen.nativeEraser} tool=${app.tool.name}');
-    }
     if (_updateRulerPointer(e)) return;
     if (_windowsPen.enabled && _windowsInkPointer != e.pointer) return;
     if (e.kind == PointerDeviceKind.stylus ||
@@ -716,9 +698,6 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _inkUp(PointerUpEvent e) {
-    WindowsPenButtons.trace(
-        'pointer up kind=${e.kind.name} native=${_windowsPen.nativeEraser} tool=${app.tool.name}');
-    _lastTraceButtons = null;
     if (_endRulerPointer(e)) return;
     if (_windowsPen.enabled ||
         e.kind == PointerDeviceKind.stylus ||

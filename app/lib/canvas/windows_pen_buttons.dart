@@ -12,53 +12,12 @@ class WindowsPenButtons extends ChangeNotifier {
   static const channel = MethodChannel('openote/windows_pen_buttons');
   static final Set<WindowsPenButtons> _clients = {};
   static bool _handlerInstalled = false;
-  static bool tracing = false;
-  static final List<String> _trace = [];
-  static Stopwatch? _traceClock;
   final bool enabled;
   bool nativeInRange = false;
   bool nativeEraser = false;
   bool _nativeReady = false;
   bool _attached = false;
   int _revision = 0;
-
-  /// Records button and tool states only; no coordinates or note contents.
-  static void trace(String event) {
-    if (!tracing) return;
-    if (_trace.length >= 600) _trace.removeAt(0);
-    _trace.add('${_traceClock?.elapsedMilliseconds ?? 0}ms $event');
-  }
-
-  static Future<void> startTrace() async {
-    _trace.clear();
-    _traceClock = Stopwatch()..start();
-    tracing = true;
-    trace('Dart trace started');
-    try {
-      await channel.invokeMethod<void>('startTrace');
-    } on MissingPluginException {
-      trace('Native trace unavailable');
-    } on PlatformException catch (e) {
-      trace('Native trace error: ${e.code}');
-    }
-  }
-
-  static Future<String> stopTrace() async {
-    if (!tracing) return '';
-    trace('Dart trace stopped');
-    tracing = false;
-    _traceClock?.stop();
-    String native = '';
-    try {
-      native = await channel.invokeMethod<String>('stopTrace') ?? '';
-    } on MissingPluginException {
-      native = 'Native trace unavailable';
-    } on PlatformException catch (e) {
-      native = 'Native trace error: ${e.code}';
-    }
-    return 'Openote pen diagnostics (button and tool states only)\n'
-        'Dart:\n${_trace.join('\n')}\nNative:\n$native';
-  }
 
   Future<void> attach() async {
     if (!enabled || _attached) return;
@@ -96,7 +55,6 @@ class WindowsPenButtons extends ChangeNotifier {
     _nativeReady = true;
     final inRange = value['inRange'] == true;
     final eraser = inRange && value['eraser'] == true;
-    trace('channel inRange=$inRange eraser=$eraser');
     if (nativeInRange == inRange && nativeEraser == eraser) return;
     nativeInRange = inRange;
     nativeEraser = eraser;

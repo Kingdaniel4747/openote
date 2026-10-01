@@ -2,9 +2,7 @@ import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
-import '../canvas/windows_pen_buttons.dart';
 import '../core/platform_open.dart';
 import '../l10n/app_strings.dart';
 import '../spell/writing_services.dart';
@@ -48,33 +46,6 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   }
 
   String? _updateNote;
-
-  Future<void> _togglePenTrace() async {
-    if (!WindowsPenButtons.tracing) {
-      await WindowsPenButtons.startTrace();
-      if (mounted) setState(() {});
-      return;
-    }
-    final report = await WindowsPenButtons.stopTrace();
-    await Clipboard.setData(ClipboardData(text: report));
-    if (!mounted) return;
-    setState(() {});
-    await showOnoteDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Pen diagnostics copied'),
-        content: const Text(
-            'Paste the report into the bug conversation. It contains button, '
-            'contact and tool states only, without note text or pen positions.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
 
   Future<void> _checkLanguage() async {
     setState(() => _checkingLanguage = true);
@@ -424,26 +395,6 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                       style: TextStyle(fontSize: 12)),
                 ),
               ),
-              if (Platform.isWindows) ...[
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: _togglePenTrace,
-                    icon: const Icon(Icons.edit_note_outlined, size: 16),
-                    label: Text(
-                        WindowsPenButtons.tracing
-                            ? 'Stop and copy pen diagnostics'
-                            : 'Record pen diagnostics',
-                        style: const TextStyle(fontSize: 12)),
-                  ),
-                ),
-                if (WindowsPenButtons.tracing)
-                  const Text(
-                    'Close Settings, reproduce the pen issue, then reopen '
-                    'Settings and stop the recording.',
-                    style: TextStyle(fontSize: 11),
-                  ),
-              ],
             ],
           ),
         ),
