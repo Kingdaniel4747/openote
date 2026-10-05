@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
@@ -243,6 +241,39 @@ class _SettingsDialogState extends State<_SettingsDialog> {
               ),
               const AppText(
                 'Deleted notebooks, sections and pages can be restored until this time expires.',
+                style: TextStyle(fontSize: 11),
+              ),
+              _section('Navigation'),
+              _row(
+                'Pan sensitivity',
+                SizedBox(
+                  width: 240,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Slider(
+                          value: app.panSensitivity,
+                          min: 0.2,
+                          max: 2.0,
+                          divisions: 18,
+                          label: '${app.panSensitivity.toStringAsFixed(1)}×',
+                          onChanged: app.setPanSensitivity,
+                        ),
+                      ),
+                      SizedBox(
+                        width: 38,
+                        child: Text(
+                          '${app.panSensitivity.toStringAsFixed(1)}×',
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const AppText(
+                'Controls page movement with touch, touchpad and mouse wheel. Zoom speed stays the same.',
                 style: TextStyle(fontSize: 11),
               ),
               _section('Writing and drawing'),

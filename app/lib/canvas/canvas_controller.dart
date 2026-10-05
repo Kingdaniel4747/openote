@@ -82,7 +82,7 @@ class CanvasController extends ChangeNotifier {
     } else {
       offset += delta;
     }
-    _resetRunwayAtMinimumZoom();
+    _trimRunwayAtMinimumZoom();
     clampToPage(allowLeadingOverscroll: elasticLeading && !pdfPresentation);
     notifyListeners();
   }
@@ -105,7 +105,7 @@ class CanvasController extends ChangeNotifier {
     final pageFocal = screenToPage(screenFocal);
     scale = newScale;
     offset = screenFocal - pageFocal * scale + panDelta;
-    _resetRunwayAtMinimumZoom();
+    _trimRunwayAtMinimumZoom();
     if (clamp) clampToPage();
     notifyListeners();
   }
@@ -122,7 +122,7 @@ class CanvasController extends ChangeNotifier {
     final newScale = (scale * factor).clamp(_minimumScale, maxScale);
     scale = newScale;
     offset = currentFocal - pageFocal * newScale;
-    _resetRunwayAtMinimumZoom();
+    _trimRunwayAtMinimumZoom();
     clampToPage();
     notifyListeners();
   }
@@ -146,7 +146,7 @@ class CanvasController extends ChangeNotifier {
     // starts at the top-left origin. Pinning that origin to zero made every
     // zoom-in visibly jump away from the fingers.
     offset = currentFocal - pageFocal * scale;
-    _resetRunwayAtMinimumZoom();
+    _trimRunwayAtMinimumZoom();
     clampToPage();
     notifyListeners();
   }
@@ -191,13 +191,12 @@ class CanvasController extends ChangeNotifier {
     _minimumPageSize = minimum;
     _growsTrailingEdges = growsTrailingEdges;
     final current = _pageSize;
-    _pageSize =
-        !growsTrailingEdges || current == null || scale <= minScale + .001
-            ? minimum
-            : Size(
-                math.max(minimum.width, current.width),
-                math.max(minimum.height, current.height),
-              );
+    _pageSize = !growsTrailingEdges || current == null
+        ? minimum
+        : Size(
+            math.max(minimum.width, current.width),
+            math.max(minimum.height, current.height),
+          );
   }
 
   void resetPageBounds() {
@@ -226,7 +225,10 @@ class CanvasController extends ChangeNotifier {
       offset = Offset(x, y);
       return;
     }
-    if (_growsTrailingEdges) _growTrailingRunway(offset);
+    if (_growsTrailingEdges) {
+      _growTrailingRunway(offset);
+    }
+    final bounds = pageSize!;
     double axis(double o, double vp, double contentPx) {
       if (allowLeadingOverscroll && o > 0) return o.clamp(0.0, 44.0);
       if (contentPx <= vp) return 0.0;
@@ -234,8 +236,8 @@ class CanvasController extends ChangeNotifier {
     }
 
     offset = Offset(
-      axis(offset.dx, viewport.width, ps.width * scale),
-      axis(offset.dy, viewport.height, ps.height * scale),
+      axis(offset.dx, viewport.width, bounds.width * scale),
+      axis(offset.dy, viewport.height, bounds.height * scale),
     );
   }
 
@@ -255,13 +257,18 @@ class CanvasController extends ChangeNotifier {
     }
   }
 
-  void _resetRunwayAtMinimumZoom() {
-    // At the fully zoomed-out overview an unlimited surface must have an end.
-    // The runway returns to actual content; zooming in and travelling onward
-    // creates it again naturally.
-    if (_growsTrailingEdges && scale <= minScale + .001) {
-      _pageSize = _minimumPageSize;
-    }
+  void _trimRunwayAtMinimumZoom() {
+    if (!_growsTrailingEdges || scale > minScale + .001) return;
+    final minimum = _minimumPageSize;
+    if (minimum == null || viewport == Size.zero) return;
+    // Never discard the part of the canvas currently under the viewport.
+    // Resetting directly to the content bounds here made a distant zoom-out
+    // snap the camera back to the page origin in a single frame. As the user
+    // pans back, the unused runway contracts with the view instead.
+    _pageSize = Size(
+      math.max(minimum.width, (viewport.width - offset.dx) / scale),
+      math.max(minimum.height, (viewport.height - offset.dy) / scale),
+    );
   }
 
   /// Apply the page boundary once after a gesture has finished, rather than

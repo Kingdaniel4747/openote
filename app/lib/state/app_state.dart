@@ -1099,6 +1099,19 @@ class AppState extends ChangeNotifier
   final Set<int> relinquishedTouchPointers = {};
 
   // Canvas settings
+  /// Multiplier for page movement from touch, touchpad and mouse wheel.
+  /// Zoom speed is deliberately independent of this preference.
+  double panSensitivity = 1.0;
+
+  void setPanSensitivity(double value) {
+    if (!value.isFinite) return;
+    final next = value.clamp(0.2, 2.0);
+    if (panSensitivity == next) return;
+    panSensitivity = next;
+    _repo.setSetting('panSensitivity', next);
+    notifyListeners();
+  }
+
   Tool tool = Tool.select;
   bool writingMode = false;
   bool shapeRecognition = true;
@@ -3343,6 +3356,10 @@ class AppState extends ChangeNotifier
     final td = _repo.getSetting('touchDrawing') as String?;
     if (td != null) {
       touchDrawing = TouchDrawing.values.asNameMap()[td] ?? touchDrawing;
+    }
+    final storedPanSensitivity = _repo.getSetting('panSensitivity');
+    if (storedPanSensitivity is num && storedPanSensitivity.isFinite) {
+      panSensitivity = storedPanSensitivity.toDouble().clamp(0.2, 2.0);
     }
     final maximized = _repo.getSetting('startMaximized') ??
         _repo.getSetting('startFullscreen');

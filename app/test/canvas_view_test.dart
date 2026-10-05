@@ -101,7 +101,7 @@ void main() {
     expect(c.pageToScreen(pageUnderFingers), focal);
   });
 
-  test('open canvas grows a trailing runway but resets at overview zoom', () {
+  test('open canvas keeps the visible runway at overview zoom', () {
     final c = CanvasController()
       ..viewport = const Size(900, 700)
       ..setPageBounds(const Size(1200, 1400), growsTrailingEdges: true);
@@ -110,7 +110,19 @@ void main() {
     expect(c.pageSize!.width, greaterThan(6500));
     expect(c.pageSize!.height, greaterThan(7500));
 
+    final before = c.offset;
     c.setZoom(CanvasController.minScale);
+    expect(c.offset.dx, lessThan(0));
+    expect(c.offset.dy, lessThan(0));
+    expect(c.pageSize!.width * c.scale + c.offset.dx,
+        greaterThanOrEqualTo(c.viewport.width - .01));
+    expect(c.pageSize!.height * c.scale + c.offset.dy,
+        greaterThanOrEqualTo(c.viewport.height - .01));
+    expect((c.offset - before).distance, lessThan(9000),
+        reason: 'zooming out must not snap back to the page origin');
+
+    c.panBy(const Offset(10000, 10000));
+    expect(c.offset, Offset.zero);
     expect(c.pageSize, const Size(1200, 1400));
   });
 
@@ -167,6 +179,23 @@ void main() {
     c.panBy(const Offset(0, -140), elasticLeading: true);
     c.panBy(const Offset(0, 100), elasticLeading: true);
     expect(c.offset.dy, closeTo(top - 40, .001));
+    c.dispose();
+  });
+
+  test('PDF zoom-out crosses the fit boundary without a position jump', () {
+    final c = CanvasController()
+      ..viewport = const Size(1000, 700)
+      ..pageSize = const Size(1200, 2400)
+      ..pdfPresentation = true;
+    c.fitPdfWidth();
+    c.setZoom(0.82);
+    c.panBy(const Offset(-1000, 0));
+
+    final before = c.offset.dx;
+    c.setZoom(0.79);
+    expect((c.offset.dx - before).abs(), lessThan(40));
+    c.setZoom(0.78);
+    expect(c.offset.dx, closeTo((1000 - 1200 * 0.78) / 2, .001));
     c.dispose();
   });
 }

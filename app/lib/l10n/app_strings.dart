@@ -51,6 +51,10 @@ const german = <String, String>{
   'Maximized mode keeps the Windows taskbar available.':
       'Im maximierten Modus bleibt die Windows-Taskleiste erreichbar.',
   'Writing and drawing': 'Schreiben und Zeichnen',
+  'Navigation': 'Navigation',
+  'Pan sensitivity': 'Empfindlichkeit beim Verschieben',
+  'Controls page movement with touch, touchpad and mouse wheel. Zoom speed stays the same.':
+      'Regelt das Verschieben der Seite mit Touchscreen, Touchpad und Mausrad. Die Zoomgeschwindigkeit bleibt gleich.',
   'Writing mode': 'Schreibmodus',
   'Draw with finger': 'Mit dem Finger zeichnen',
   'Spell check': 'Rechtschreibung prüfen',

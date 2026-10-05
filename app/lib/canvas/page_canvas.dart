@@ -46,7 +46,7 @@ class PageCanvas extends StatefulWidget {
 enum _DragMode { none, pending, marquee, moveSelection, pan }
 
 class _PageCanvasState extends State<PageCanvas> {
-  static const double _scrollGain = .60;
+  double get _scrollGain => .60 * app.panSensitivity;
   Stroke? _wet;
   final WindowsPenButtons _windowsPen = WindowsPenButtons();
   int? _windowsInkPointer;
