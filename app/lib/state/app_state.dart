@@ -3490,7 +3490,7 @@ class AppState extends ChangeNotifier
     // inline — so the gate has to be rehydrated here as well. Both paths, or
     // the lock is only as good as which door you came in by.
     reloadProtection();
-    final lastPage = _repo.getSetting('lastPage') as String?;
+    final lastPage = _lastPageFor(notebookId!);
     final target = nodes.any((n) => n.id == lastPage && n.kind == NodeKind.page)
         ? lastPage
         : nodes.where((n) => n.kind == NodeKind.page).firstOrNull?.id;
@@ -3514,7 +3514,27 @@ class AppState extends ChangeNotifier
     if (_editorOwner != null) return;
     _repo.setSetting('viewMemory', _viewMemory);
     _repo.setSetting('lastNotebook', notebookId);
-    _repo.setSetting('lastPage', pageId);
+    final stored = _repo.getSetting('lastPages');
+    final lastPages = <String, String>{
+      if (stored is Map)
+        for (final entry in stored.entries)
+          if (entry.key is String && entry.value is String)
+            entry.key as String: entry.value as String,
+    };
+    if (notebookId != null && pageId != null) {
+      lastPages[notebookId!] = pageId!;
+    }
+    _repo.setSetting('lastPages', lastPages);
+  }
+
+  String? _lastPageFor(String notebook) {
+    final stored = _repo.getSetting('lastPages');
+    if (stored is Map && stored[notebook] is String) {
+      return stored[notebook] as String;
+    }
+    // One-time compatibility with sessions created before last-page state was
+    // scoped to a notebook.
+    return _repo.getSetting('lastPage') as String?;
   }
 
   Future<void> _loadNotebook() async {
@@ -3540,11 +3560,18 @@ class AppState extends ChangeNotifier
     // Reset the focused section for the new notebook (selectPage refines it).
     activeSectionId =
         nodes.where((n) => n.kind == NodeKind.section).firstOrNull?.id;
+    final remembered = _lastPageFor(notebookId!);
     final firstPage = nodes
-        .where((n) =>
-            n.kind == NodeKind.page &&
-            _editorDisplaying(notebookId, n.id) == null)
-        .firstOrNull;
+            .where((n) =>
+                n.kind == NodeKind.page &&
+                _editorDisplaying(notebookId, n.id) == null &&
+                n.id == remembered)
+            .firstOrNull ??
+        nodes
+            .where((n) =>
+                n.kind == NodeKind.page &&
+                _editorDisplaying(notebookId, n.id) == null)
+            .firstOrNull;
     await selectPage(firstPage?.id);
   }
 

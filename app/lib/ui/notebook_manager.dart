@@ -358,8 +358,8 @@ class _NotebookManagerState extends State<_NotebookManager> {
     return InkWell(
       borderRadius: BorderRadius.circular(10),
       onTap: () async {
-        if (current) return;
         Navigator.pop(context);
+        if (current) return;
         await app.selectNotebook(nb.id);
       },
       child: Column(

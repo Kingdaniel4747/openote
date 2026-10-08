@@ -106,11 +106,13 @@ class _ImageBlockViewState extends State<ImageBlockView> {
   void _scheduleZoomRender() {
     final pdf = widget.block.content['pdf'] as String?;
     final zoom = widget.app.canvas.scale;
-    final bucket = zoom >= 2.4
-        ? 8
-        : zoom >= 1.35
-            ? 4
-            : 2;
+    // The stored preview is 2×. Keep requesting larger PDF rasters as the
+    // user continues to zoom; a fixed 8× ceiling left a real PDF blurry at
+    // 500–1000% even though its vector source was available.
+    var bucket = 2;
+    while (bucket < zoom * 2 && bucket < 32) {
+      bucket *= 2;
+    }
     if (bucket <= _qualityBucket || bucket <= _requestedBucket) return;
     _zoomRenderTimer?.cancel();
     _requestedBucket = bucket;
