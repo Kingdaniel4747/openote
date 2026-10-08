@@ -56,8 +56,9 @@ class ImageBlockView extends StatefulWidget {
 }
 
 class _ImageBlockViewState extends State<ImageBlockView> {
-  MemoryImage? _provider;
+  ImageProvider<Object>? _provider;
   String? _hash;
+  Uint8List? _sourceBytes;
   Timer? _zoomRenderTimer;
   int _qualityBucket = 2;
   int _requestedBucket = 2;
@@ -104,7 +105,6 @@ class _ImageBlockViewState extends State<ImageBlockView> {
 
   void _scheduleZoomRender() {
     final pdf = widget.block.content['pdf'] as String?;
-    if (pdf == null) return;
     final zoom = widget.app.canvas.scale;
     final bucket = zoom >= 2.4
         ? 8
@@ -117,6 +117,19 @@ class _ImageBlockViewState extends State<ImageBlockView> {
     final request = ++_qualityRequest;
     _zoomRenderTimer = Timer(const Duration(milliseconds: 180), () async {
       if (mounted) setState(() => _zoomRendering = true);
+      if (pdf == null) {
+        final bytes = _sourceBytes;
+        if (mounted && request == _qualityRequest) {
+          setState(() {
+            if (bytes != null) {
+              _setBytes(bytes, quality: bucket);
+              _qualityBucket = bucket;
+            }
+            _zoomRendering = false;
+          });
+        }
+        return;
+      }
       final page = (widget.block.content['page'] as num?)?.toInt() ?? 0;
       final png = await PdfPages.pageImageAtScale(
           widget.app, pdf, page, bucket.toDouble());
@@ -126,7 +139,7 @@ class _ImageBlockViewState extends State<ImageBlockView> {
       setState(() {
         _zoomRendering = false;
         if (png != null) {
-          _provider = MemoryImage(png);
+          _setBytes(png, quality: bucket);
           _qualityBucket = bucket;
         }
       });
@@ -253,7 +266,7 @@ class _ImageBlockViewState extends State<ImageBlockView> {
       _hash = ref ?? _hash;
       _rendering = false;
       _pdfError = null;
-      if (_qualityBucket <= 2) _provider = MemoryImage(png);
+      if (_qualityBucket <= 2) _setBytes(png);
     });
   }
 
@@ -261,9 +274,20 @@ class _ImageBlockViewState extends State<ImageBlockView> {
   /// page — the stagger that keeps any single frame cheap.
   static Future<void> _readQueue = Future<void>.value();
 
-  void _setBytes(Uint8List? b) {
-    if (_qualityBucket <= 2 || widget.block.content['pdf'] == null) {
-      _provider = b == null ? null : MemoryImage(b);
+  void _setBytes(Uint8List? b, {int? quality}) {
+    _sourceBytes = b;
+    if (b == null) {
+      _provider = null;
+    } else {
+      final scale = widget.app.canvas.scale * (quality ?? _qualityBucket);
+      _provider = ResizeImage(
+        MemoryImage(b),
+        width: (widget.block.w * scale).round().clamp(1, 8192).toInt(),
+        height: ((widget.block.h ?? widget.block.w) * scale)
+            .round()
+            .clamp(1, 8192)
+            .toInt(),
+      );
     }
     // Record intrinsic size once, so width-resize keeps aspect ratio.
     if (b != null && widget.block.content['naturalW'] == null) {

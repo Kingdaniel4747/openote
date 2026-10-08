@@ -114,6 +114,18 @@ class NotebookFileMissing implements Exception {
   String toString() => 'no notebook file at $path';
 }
 
+/// A cloud client may expose a newly uploaded container before it has written
+/// SQLite's complete header. Treat that as temporarily unavailable. Opening it
+/// through `openOnote` would otherwise initialise the partial file as a new
+/// notebook and overwrite data when the sync client resumes.
+class NotebookFileUnavailable implements Exception {
+  const NotebookFileUnavailable(this.path);
+  final String path;
+
+  @override
+  String toString() => 'notebook is still being transferred: $path';
+}
+
 /// [openOnote], for a container that is **expected to already exist**.
 ///
 /// **The difference is that this one refuses to invent a notebook** (v0.17
@@ -143,6 +155,22 @@ Database openExistingOnote(String path,
   if (FileSystemEntity.typeSync(path, followLinks: true) !=
       FileSystemEntityType.file) {
     throw NotebookFileMissing(path);
+  }
+  try {
+    final header = File(path).openSync(mode: FileMode.read);
+    try {
+      final bytes = header.readSync(16);
+      if (bytes.length != _sqliteMagic.length ||
+          !_sqliteMagic.asMap().entries.every((e) => bytes[e.key] == e.value)) {
+        throw NotebookFileUnavailable(path);
+      }
+    } finally {
+      header.closeSync();
+    }
+  } on NotebookFileUnavailable {
+    rethrow;
+  } catch (_) {
+    throw NotebookFileUnavailable(path);
   }
   return openOnote(path, notebookId: notebookId, title: title);
 }

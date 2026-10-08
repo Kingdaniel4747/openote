@@ -8,7 +8,6 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../update/app_update.dart';
 import 'onote_dialog.dart';
-import 'shortcut_overlay.dart';
 import 'update_dialog.dart';
 import 'windows_window_frame.dart';
 
@@ -85,8 +84,13 @@ class _SettingsDialogState extends State<_SettingsDialog> {
     }
   }
 
-  Widget _section(String title) => Padding(
-        padding: const EdgeInsets.only(top: 14, bottom: 4),
+  Widget _section(String title) => Container(
+        margin: const EdgeInsets.only(top: 16, bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(10),
+        ),
         child: AppText(
           title,
           style: TextStyle(
@@ -371,13 +375,14 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 () => showMcpDialog(context, app),
               ),
               */
-              _section('Keyboard'),
+              /* _section('Keyboard'),
               _door(
                 Icons.keyboard_outlined,
                 'Keyboard shortcuts',
                 'Everything has a key — the full list.  (Ctrl+/)',
                 () => showShortcutOverlay(context),
               ),
+              */
               _section('About'),
               _row(
                 'Openote $kAppVersion',

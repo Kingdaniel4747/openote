@@ -634,6 +634,10 @@ class _AppShellState extends State<AppShell> {
     }
 
     if (ctrl) {
+      if (k == LogicalKeyboardKey.keyA) {
+        app.selectAllMatchingSelection();
+        return true;
+      }
       if (k == LogicalKeyboardKey.keyC) {
         if (app.selectedIds.isEmpty) return false;
         app.copySelectedBlocks();

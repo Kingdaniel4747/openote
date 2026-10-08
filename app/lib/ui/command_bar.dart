@@ -141,7 +141,14 @@ class _CommandBarState extends State<CommandBar> {
   AppState get app => widget.app;
 
   Future<void> _insertScreenRegion(BuildContext context) async {
-    final bytes = await ScreenCapture.selectRegion();
+    Uint8List? bytes;
+    try {
+      bytes = await ScreenCapture.selectRegion();
+    } on PlatformException catch (_) {
+      // A cancelled or interrupted native overlay is equivalent to cancelling
+      // the picker. Crucially, no stale selection is kept for the next use.
+      return;
+    }
     if (bytes == null || bytes.isEmpty || !context.mounted) return;
     ui.Codec? codec;
     ui.FrameInfo? frame;

@@ -222,6 +222,7 @@ class AppState extends ChangeNotifier
     // the same pass. Narrowing a listener to `app.study` is now possible and
     // is a separate, checkable change.
     study.addListener(notifyListeners);
+    _repo.notebooksChanged.addListener(notifyListeners);
   }
 
   final Repository _repo;
@@ -5297,6 +5298,14 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
+  /// Commits mutations already made by a latency-sensitive canvas gesture.
+  /// Ink erasing updates the local canvas while the pen is down, then reaches
+  /// persistence and the rest of the UI once on release.
+  void commitCanvasEdit() {
+    markDirty();
+    notifyListeners();
+  }
+
   /// Forget a stale binary-ink reference before edited working geometry is
   /// persisted. Bulk operations use this and notify only once at the end.
   void invalidateInkStorage(Block b) {
@@ -5406,6 +5415,25 @@ class AppState extends ChangeNotifier
     selectedBlockId = selectedIds.firstOrNull;
     editingBlockId = null;
     notifyListeners();
+  }
+
+  /// Ctrl+A selects the current kind when a block is selected; otherwise it
+  /// selects every object on the page. This keeps a mixed page easy to edit
+  /// while making bulk edits to images, PDFs or handwriting predictable.
+  void selectAllMatchingSelection() {
+    final selected = selectedBlockId == null
+        ? null
+        : blocks.where((b) => b.id == selectedBlockId).firstOrNull;
+    final type = selected?.type;
+    final selectedPdf = selected?.content['pdf'] is String;
+    selectMany([
+      for (final block in blocks)
+        if (type == null ||
+            (block.type == type &&
+                (type != BlockType.image ||
+                    (block.content['pdf'] is String) == selectedPdf)))
+          block.id,
+    ]);
   }
 
   /// Move every selected block by a page-space delta (ink blocks translate

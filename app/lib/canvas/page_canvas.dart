@@ -118,6 +118,8 @@ class _PageCanvasState extends State<PageCanvas> {
   Color? _eyedropperPreview;
   bool _eyedropperSampling = false;
   bool _eraseUndoPushed = false;
+  bool _eraseChanged = false;
+  Offset? _lastErasePoint;
   bool _moveUndoPushed = false;
 
   _DragMode _mode = _DragMode.none;
@@ -708,6 +710,7 @@ class _PageCanvasState extends State<PageCanvas> {
     _inkContactActive = false;
     _invertedInkContact = false;
     _eraseUndoPushed = false;
+    _commitErase();
     _gestureErase = false;
     if (_eraserScreen != null) setState(() => _eraserScreen = null);
     _finishWetStroke();
@@ -760,6 +763,17 @@ class _PageCanvasState extends State<PageCanvas> {
       _eraseUndoPushed = true;
     }
     final radius = app.eraserSize / 2 / controller.scale;
+    // A digitizer can send far more samples than the eraser can visibly
+    // change.  Reprocessing the same disk repeatedly was the source of the
+    // delayed cursor on dense, zoomed-in pages. Keep the visual cursor live,
+    // but only recompute after it has crossed a meaningful fraction of its
+    // radius. The sampled stroke geometry still makes a fast sweep continuous.
+    final previous = _lastErasePoint;
+    if (previous != null &&
+        (pt - previous).distance < math.max(.5, radius / 3)) {
+      return;
+    }
+    _lastErasePoint = pt;
     // INK-6: 'area' rubs points out mid-stroke (splitting survivors); 'stroke'
     // removes any stroke the eraser touches whole — OneNote's default, and the
     // mode that makes cleaning up a scratched-out word one swipe instead of
@@ -842,7 +856,10 @@ class _PageCanvasState extends State<PageCanvas> {
         changed = true;
         b.content['strokes'] = out;
         if (out.isNotEmpty) _refitInkBounds(b);
-        app.updateBlock(b);
+        // The working copy is enough for the canvas. Updating AppState here
+        // notified and scheduled a complete save for every pointer sample.
+        // Commit the changed blocks once when the stroke ends.
+        _strokeCache.remove(b.id);
       }
     }
     if (changed) {
@@ -850,9 +867,19 @@ class _PageCanvasState extends State<PageCanvas> {
         (b) =>
             b.type == BlockType.ink && (b.content['strokes'] as List).isEmpty,
       );
-      app.markDirty();
+      _eraseChanged = true;
       setState(() {});
     }
+  }
+
+  void _commitErase() {
+    if (!_eraseChanged) {
+      _lastErasePoint = null;
+      return;
+    }
+    _eraseChanged = false;
+    _lastErasePoint = null;
+    app.commitCanvasEdit();
   }
 
   void _refitInkBounds(Block b) {
@@ -2149,6 +2176,7 @@ class _PageCanvasState extends State<PageCanvas> {
           _touches.remove(e.pointer);
           if (_windowsPen.enabled && _windowsInkPointer != e.pointer) return;
           _gestureErase = false;
+          _commitErase();
           _cancelWetStroke();
         },
         child: canvas,

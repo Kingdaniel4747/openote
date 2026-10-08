@@ -335,7 +335,7 @@ final List<InsertGroup> kInsertGroups = [
     InsertItem(
       id: 'pdf',
       icon: Icons.picture_as_pdf_outlined,
-      label: 'PDF slides',
+      label: 'PDFs',
       opensPicker: true,
       size: Size.zero, // it lays itself out down the page
       run: (c, a, at) =>

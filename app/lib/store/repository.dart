@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart' show ChangeNotifier, visibleForTesting;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart';
@@ -46,6 +46,11 @@ class Repository {
   // scanned at startup; an old blob is copied only if a page asks for it.
   final Map<String, String> _legacyAssetRoots = {};
   final List<NotebookRef> notebooks = [];
+
+  /// Emitted when the background workspace scan finds a manually added
+  /// notebook, so an already open notebook overview updates on its own.
+  final _NotebookNotifier _notebooksChanged = _NotebookNotifier();
+  ChangeNotifier get notebooksChanged => _notebooksChanged;
   // Soft-deleted notebooks (ORG-7). Their complete `.onotebook` directory is
   // moved under `Recycle Bin`, so restore is lossless and the live workspace
   // never contains a notebook that is no longer in the sidebar.
@@ -262,56 +267,62 @@ class Repository {
         }
       }
     }
-    // A manually copied `.onote` or complete `.onotebook` folder is a
-    // deliberate local import. Discovering these costs shallow directory
-    // listings, not a scan of notebook contents, and repairs a valid folder
-    // which was left out of workspace.json by an older build or a restore.
-    final known = {
+    // The registry is the fast path. A cloud folder can contain hundreds of
+    // containers and `listSync` made opening the notebook overview wait for
+    // every Nextcloud file operation. Discover manual copies after the UI is
+    // usable; the scan never opens a database or blocks the event loop.
+    if (relocated && registryReadOnly == null) await _saveNow();
+    unawaited(_discoverUnregisteredNotebooks());
+  }
+
+  Future<void> _discoverUnregisteredNotebooks() async {
+    final known = <String>{
       for (final ref in [...notebooks, ...trashedNotebooks])
         p.normalize(p.absolute(ref.file)),
     };
     var adopted = false;
-    for (final file in workspaceDir.listSync().whereType<File>()) {
-      if (p.extension(file.path).toLowerCase() != '.onote' ||
-          known.contains(p.normalize(p.absolute(file.path)))) {
-        continue;
+    try {
+      await for (final entry in workspaceDir.list(followLinks: false)) {
+        File? container;
+        if (entry is File &&
+            p.extension(entry.path).toLowerCase() == '.onote') {
+          container = entry;
+        } else if (entry is Directory &&
+            p.extension(entry.path).toLowerCase() == '.onotebook') {
+          final stem = p.basenameWithoutExtension(entry.path);
+          final expected = File(p.join(entry.path, '$stem.onote'));
+          if (await expected.exists()) {
+            container = expected;
+          } else {
+            await for (final child in entry.list(followLinks: false)) {
+              if (child is File &&
+                  p.extension(child.path).toLowerCase() == '.onote') {
+                container = child;
+                break;
+              }
+            }
+          }
+        }
+        if (container == null) continue;
+        final path = p.normalize(p.absolute(container.path));
+        if (!known.add(path)) continue;
+        final ref = NotebookRef(
+          id: newId(),
+          file: container.path,
+          title: p.basenameWithoutExtension(container.path),
+        );
+        notebooks.add(ref);
+        _rememberLegacyAssetFolder(ref, null);
+        adopted = true;
       }
-      final ref = NotebookRef(
-        id: newId(),
-        file: file.path,
-        title: p.basenameWithoutExtension(file.path),
-      );
-      notebooks.add(ref);
-      _rememberLegacyAssetFolder(ref, null);
-      adopted = true;
-    }
-    for (final folder in workspaceDir.listSync().whereType<Directory>()) {
-      if (p.extension(folder.path).toLowerCase() != '.onotebook') continue;
-      // The container is directly inside its notebook folder. Never recurse
-      // or open SQLite here: startup remains independent of notebook size.
-      final stem = p.basenameWithoutExtension(folder.path);
-      final expected = File(p.join(folder.path, '$stem.onote'));
-      final container = expected.existsSync()
-          ? expected
-          : folder
-              .listSync()
-              .whereType<File>()
-              .where((f) => p.extension(f.path).toLowerCase() == '.onote')
-              .firstOrNull;
-      if (container == null ||
-          known.contains(p.normalize(p.absolute(container.path)))) {
-        continue;
+      if (adopted) {
+        if (registryReadOnly == null) await _saveNow();
+        _notebooksChanged.changed();
       }
-      final ref = NotebookRef(
-        id: newId(), file: container.path,
-        title: p.basenameWithoutExtension(container.path),
-      );
-      notebooks.add(ref);
-      known.add(p.normalize(p.absolute(container.path)));
-      _rememberLegacyAssetFolder(ref, null);
-      adopted = true;
+    } catch (_) {
+      // Cloud clients can replace a directory while it is being enumerated.
+      // Registered notebooks remain usable; a later start can discover it.
     }
-    if ((adopted || relocated) && registryReadOnly == null) await _saveNow();
   }
 
   void _rememberLegacyAssetFolder(NotebookRef ref, String? registeredFolder) {
@@ -1582,4 +1593,8 @@ class Repository {
   }
 
   bool _disposed = false;
+}
+
+class _NotebookNotifier extends ChangeNotifier {
+  void changed() => notifyListeners();
 }

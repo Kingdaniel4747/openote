@@ -64,6 +64,9 @@ bool ScreenCapture::Start(std::unique_ptr<Result> result) {
   }
 
   pending_ = std::move(result);
+  selecting_ = false;
+  start_ = {};
+  current_ = {};
   // The virtual screen deliberately covers every monitor, including monitors
   // arranged left or above the primary display (negative desktop coordinates).
   const int x = GetSystemMetrics(SM_XVIRTUALSCREEN);
@@ -90,6 +93,9 @@ bool ScreenCapture::Start(std::unique_ptr<Result> result) {
 void ScreenCapture::Finish(bool accepted) {
   if (!pending_) return;
   const RECT selection = SelectionRect(start_, current_);
+  // DestroyWindow/ReleaseCapture synchronously send WM_CAPTURECHANGED. Clear
+  // this first so that notification cannot finish the same MethodResult twice.
+  selecting_ = false;
   if (overlay_ != nullptr) {
     DestroyWindow(overlay_);
     overlay_ = nullptr;
@@ -236,6 +242,7 @@ LRESULT CALLBACK ScreenCapture::WindowProc(HWND hwnd, UINT message,
       return 0;
     case WM_LBUTTONUP:
       self->current_ = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+      self->selecting_ = false;
       ReleaseCapture();
       self->Finish(true);
       return 0;
@@ -246,6 +253,11 @@ LRESULT CALLBACK ScreenCapture::WindowProc(HWND hwnd, UINT message,
         return 0;
       }
       break;
+    case WM_CAPTURECHANGED:
+      // Another window may take mouse capture while the user is selecting.
+      // Finish the request so the next clip always starts from a clean state.
+      if (self->selecting_) self->Finish(false);
+      return 0;
     case WM_PAINT:
       self->Paint();
       return 0;
