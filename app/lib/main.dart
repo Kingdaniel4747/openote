@@ -143,7 +143,11 @@ class _OpenoteBootState extends State<OpenoteBoot> {
               return AppExitResponse.cancel;
             }
             await widget.instance?.dispose();
-            return AppExitResponse.exit;
+            // Flutter's normal exit waits for native PDF workers even after
+            // their Dart futures were cancelled. At this point every save and
+            // lock release above has completed, so terminate the process
+            // explicitly instead of leaving a headless Openote.exe behind.
+            exit(0);
           } catch (_) {
             await WindowsWindowController.restoreAfterFailedExit();
             if (mounted)

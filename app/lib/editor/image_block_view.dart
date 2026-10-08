@@ -64,6 +64,7 @@ class _ImageBlockViewState extends State<ImageBlockView> {
   int _requestedBucket = 2;
   int _qualityRequest = 0;
   bool _zoomRendering = false;
+  int _pdfRenderFailures = 0;
 
   /// True while an on-demand PDF page render is in flight — the placeholder
   /// then says "rendering" rather than "missing", which are different facts.
@@ -143,8 +144,20 @@ class _ImageBlockViewState extends State<ImageBlockView> {
         if (png != null) {
           _setBytes(png, quality: bucket);
           _qualityBucket = bucket;
+          _pdfRenderFailures = 0;
+        } else {
+          // Do not leave a failed transient render marked as requested. A PDF
+          // source can briefly be unavailable while its blob is read or
+          // pdfium is releasing an earlier page. The old value prevented any
+          // later retry and left the low-resolution preview on screen forever.
+          _requestedBucket = _qualityBucket;
+          _pdfRenderFailures++;
         }
       });
+      if (png == null && _pdfRenderFailures <= 3 && mounted) {
+        _zoomRenderTimer =
+            Timer(const Duration(milliseconds: 400), _scheduleZoomRender);
+      }
     });
   }
 
