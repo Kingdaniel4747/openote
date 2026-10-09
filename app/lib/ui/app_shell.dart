@@ -1652,14 +1652,14 @@ class _SectionTabs extends StatelessWidget {
     return Material(
       color: context.surfaces.chrome,
       child: SizedBox(
-        height: 40,
+        height: 34,
         child: Row(children: [
           Expanded(
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.only(left: 8, right: 4),
+              padding: const EdgeInsets.only(left: 7, right: 3),
               itemCount: sections.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 4),
+              separatorBuilder: (_, __) => const SizedBox(width: 2),
               itemBuilder: (context, index) {
                 final section = sections[index];
                 final selected = section.id == app.activeSectionId;
@@ -1669,32 +1669,33 @@ class _SectionTabs extends StatelessWidget {
                   child: InkWell(
                     borderRadius: BorderRadius.circular(8),
                     onTap: () => app.activateSection(section.id),
-                    child: Container(
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      curve: Curves.easeOutCubic,
+                      margin: EdgeInsets.only(top: selected ? 0 : 6),
                       constraints:
-                          const BoxConstraints(minWidth: 80, maxWidth: 190),
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                          const BoxConstraints(minWidth: 58, maxWidth: 145),
+                      padding: const EdgeInsets.symmetric(horizontal: 9),
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        color: selected
-                            ? color.withValues(alpha: dark ? .28 : .16)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border(
-                          bottom: BorderSide(
-                            color: selected ? color : Colors.transparent,
-                            width: 3,
-                          ),
-                        ),
+                        // Every tab keeps its section colour, as in OneNote:
+                        // colour is navigation, not merely an active-state cue.
+                        color: color.withValues(alpha: dark ? .65 : .70),
+                        borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(8)),
+                        border: selected
+                            ? Border.all(color: color, width: 1.5)
+                            : null,
                       ),
                       child: Text(
                         section.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 13,
+                          fontSize: selected ? 13 : 11,
                           fontWeight:
                               selected ? FontWeight.w700 : FontWeight.w500,
-                          color: selected ? scheme.primary : null,
+                          color: dark ? OnoteColors.moon100 : scheme.onPrimary,
                         ),
                       ),
                     ),
