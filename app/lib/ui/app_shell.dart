@@ -1633,6 +1633,15 @@ class _SectionTabs extends StatelessWidget {
   const _SectionTabs({required this.app});
   final AppState app;
 
+  Color _colorFor(String? token, bool dark) => switch (token) {
+        'brass-400' => OnoteColors.brass400,
+        'green' => OnoteColors.success,
+        'blue' => const Color(0xFF2F6FB3),
+        'violet' => const Color(0xFF6A4BC0),
+        'red' => OnoteColors.danger,
+        _ => dark ? OnoteColors.ink400 : OnoteColors.ink500,
+      };
+
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
@@ -1654,7 +1663,7 @@ class _SectionTabs extends StatelessWidget {
               itemBuilder: (context, index) {
                 final section = sections[index];
                 final selected = section.id == app.activeSectionId;
-                final color = _sectionColor(section.color, dark);
+                final color = _colorFor(section.color, dark);
                 return Tooltip(
                   message: section.title,
                   child: InkWell(
