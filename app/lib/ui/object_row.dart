@@ -179,6 +179,23 @@ class PageFace extends StatelessWidget {
     final paged = app.pageProps.isPaged;
     return FixedToolbar(children: [
       TextButton.icon(
+        key: const ValueKey('section-tabs-layout'),
+        style: TextButton.styleFrom(
+          foregroundColor:
+              app.sectionTabsAbovePage ? scheme.primary : surfaces.textPrimary,
+        ),
+        icon: Icon(
+          app.sectionTabsAbovePage
+              ? Icons.view_sidebar_outlined
+              : Icons.vertical_split_outlined,
+          size: 18,
+        ),
+        label: Text(app.sectionTabsAbovePage
+            ? 'Sections above page'
+            : 'Sections on left'),
+        onPressed: () => app.setSectionTabsAbovePage(!app.sectionTabsAbovePage),
+      ),
+      TextButton.icon(
         key: const ValueKey('split-screen'),
         style: TextButton.styleFrom(
           foregroundColor:

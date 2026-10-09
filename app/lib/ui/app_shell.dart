@@ -1261,6 +1261,7 @@ class _AppShellState extends State<AppShell> {
       app.navCollapsed,
       app.navSectionsW,
       app.navPagesW,
+      app.sectionTabsAbovePage,
       app.navHome,
       // Collapse toggles, favourites, Home — bumped explicitly. A counter and
       // not the sets' lengths, because one collapse plus one expand between
@@ -1574,6 +1575,8 @@ class _AppShellState extends State<AppShell> {
                             // named, and it earns the row.
                             if (page != null && app.navCollapsed)
                               _PageHeader(app: app, page: page),
+                            if (app.sectionTabsAbovePage)
+                              _SectionTabs(app: app),
                             Expanded(
                               child: Row(
                                 children: [
@@ -1620,6 +1623,85 @@ class _AppShellState extends State<AppShell> {
           ),
         );
       },
+    );
+  }
+}
+
+/// Compact OneNote-like section tabs. The current section still determines
+/// the page list in [Sidebar], but no longer occupies a second left column.
+class _SectionTabs extends StatelessWidget {
+  const _SectionTabs({required this.app});
+  final AppState app;
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final sections =
+        app.nodes.where((n) => n.kind == NodeKind.section).toList();
+    if (sections.isEmpty) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: context.surfaces.chrome,
+      child: SizedBox(
+        height: 40,
+        child: Row(children: [
+          Expanded(
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.only(left: 8, right: 4),
+              itemCount: sections.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 4),
+              itemBuilder: (context, index) {
+                final section = sections[index];
+                final selected = section.id == app.activeSectionId;
+                final color = _sectionColor(section.color, dark);
+                return Tooltip(
+                  message: section.title,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () => app.activateSection(section.id),
+                    child: Container(
+                      constraints:
+                          const BoxConstraints(minWidth: 80, maxWidth: 190),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? color.withValues(alpha: dark ? .28 : .16)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border(
+                          bottom: BorderSide(
+                            color: selected ? color : Colors.transparent,
+                            width: 3,
+                          ),
+                        ),
+                      ),
+                      child: Text(
+                        section.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight:
+                              selected ? FontWeight.w700 : FontWeight.w500,
+                          color: selected ? scheme.primary : null,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.add, size: 18),
+            tooltip: 'New section',
+            visualDensity: VisualDensity.compact,
+            onPressed: app.addSection,
+          ),
+        ]),
+      ),
     );
   }
 }

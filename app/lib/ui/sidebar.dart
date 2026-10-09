@@ -371,6 +371,16 @@ class _SidebarState extends State<Sidebar> {
       );
     }
     final active = app.activeSection ?? sections.first;
+    // In the tabbed layout the section chooser lives immediately above the
+    // page. Keeping this navigator to one pages column avoids showing the
+    // same sections twice while retaining search, notebook controls and page
+    // drag/drop in their familiar place.
+    if (app.sectionTabsAbovePage) {
+      return Container(
+        color: context.surfaces.chrome,
+        child: app.navHome ? _HomePane(app: app) : _pagesZone(context, active),
+      );
+    }
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [

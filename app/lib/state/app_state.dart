@@ -961,6 +961,10 @@ class AppState extends ChangeNotifier
   double navPagesW = 168; // pages column, px
   bool navCollapsed = false; // the whole navigator as a 44px rail
 
+  /// OneNote-style navigator: section tabs sit directly above the page while
+  /// the left navigator keeps only the pages for the active section.
+  bool sectionTabsAbovePage = false;
+
   /// The Home surface (favourites + recents) shown in the pages pane.
   /// Transient by design: selecting any page returns the pane to that page's
   /// section, so Home behaves like a springboard rather than a place you can
@@ -990,6 +994,13 @@ class AppState extends ChangeNotifier
   void toggleNavCollapsed() {
     navCollapsed = !navCollapsed;
     _repo.setSetting('navCollapsed', navCollapsed);
+    notifyListeners();
+  }
+
+  void setSectionTabsAbovePage(bool value) {
+    if (sectionTabsAbovePage == value) return;
+    sectionTabsAbovePage = value;
+    _repo.setSetting('sectionTabsAbovePage', value);
     notifyListeners();
   }
 
@@ -3321,6 +3332,8 @@ class AppState extends ChangeNotifier
     if (npw is num) navPagesW = npw.toDouble().clamp(140, 320);
     final nc = _repo.getSetting('navCollapsed');
     if (nc is bool) navCollapsed = nc;
+    final stap = _repo.getSetting('sectionTabsAbovePage');
+    if (stap is bool) sectionTabsAbovePage = stap;
     final slp = _repo.getSetting('sectionLastPage');
     if (slp is Map) {
       slp.forEach((k, v) {

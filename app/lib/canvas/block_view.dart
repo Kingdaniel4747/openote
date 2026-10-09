@@ -84,6 +84,7 @@ class _BlockViewState extends State<BlockView> {
   bool _dragUndoPushed = false;
   bool _resizeUndoPushed = false;
   Offset? _touchMoveLast;
+  Offset? _touchDoubleTapPosition;
   Offset? _holdMoveLastGlobal;
   bool _holdMovesObject = false;
   bool _holdObjectMoved = false;
@@ -138,6 +139,12 @@ class _BlockViewState extends State<BlockView> {
       b.type != BlockType.text &&
       b.type != BlockType.ink &&
       b.type != BlockType.unknown;
+
+  /// Images and imported PDF pages use the same object menu on touch as they
+  /// do for a mouse right-click. Keeping this narrow means a double-tap on a
+  /// text box still does the expected editing gesture.
+  bool get _touchMenuOnDoubleTap =>
+      b.type == BlockType.image || b.content['pdf'] is String;
 
   void _tap() {
     if (app.tool == Tool.pen ||
@@ -829,6 +836,15 @@ class _BlockViewState extends State<BlockView> {
       // mode (and requests Windows' tablet keyboard), other objects select.
       // Requiring a second tap left tablet-mode users unable to type.
       onTap: editing || _locked ? null : _tap,
+      onDoubleTapDown: editing || !_touchMenuOnDoubleTap
+          ? null
+          : (d) => _touchDoubleTapPosition = d.globalPosition,
+      onDoubleTap: editing || !_touchMenuOnDoubleTap
+          ? null
+          : () {
+              final position = _touchDoubleTapPosition;
+              if (position != null) showBlockMenu(context, app, b, position);
+            },
       onPanStart: editing || _locked || _fastHoldMovable || !selected
           ? null
           : (d) {
