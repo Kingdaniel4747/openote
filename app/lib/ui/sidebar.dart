@@ -926,6 +926,11 @@ class _NavRail extends StatelessWidget {
     final current = app.notebooks.firstWhere((n) => n.id == app.notebookId);
     final sections =
         app.nodes.where((n) => n.kind == NodeKind.section).toList();
+    // Section tabs already provide section navigation above the canvas.
+    // Keep page switching available without expanding the navigator.
+    final destinations = app.sectionTabsAbovePage
+        ? app.pagesOf(app.activeSectionId ?? '')
+        : sections;
     return Container(
       width: 44,
       color: context.surfaces.chrome2,
@@ -964,15 +969,13 @@ class _NavRail extends StatelessWidget {
             ),
           ),
           const Divider(height: 10, indent: 10, endIndent: 10),
-          // Initial chips, not bare colour dots: section colours only exist on
-          // imported notebooks, so dots alone would be fifteen identical grey
-          // circles. A letter is scannable either way; the colour tints it
-          // when there is one.
+          // Page icons complement the section tabs. In the two-column layout,
+          // section initials remain scannable even without section colours.
           Expanded(
             child: ListView(
               padding: const EdgeInsets.only(bottom: 8),
               children: [
-                for (final s in sections)
+                for (final s in destinations)
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 2),
                     child: Center(
@@ -981,8 +984,12 @@ class _NavRail extends StatelessWidget {
                         child: InkWell(
                           borderRadius: BorderRadius.circular(6),
                           onTap: () {
-                            app.toggleNavCollapsed();
-                            app.activateSection(s.id);
+                            if (s.kind == NodeKind.page) {
+                              app.selectPage(s.id);
+                            } else {
+                              app.toggleNavCollapsed();
+                              app.activateSection(s.id);
+                            }
                           },
                           child: Container(
                             width: 24,
@@ -992,21 +999,29 @@ class _NavRail extends StatelessWidget {
                               color: _sectionColor(s.color, dark)
                                   .withValues(alpha: .18),
                               borderRadius: BorderRadius.circular(6),
-                              border: app.activeSectionId == s.id
+                              border: (s.kind == NodeKind.page
+                                      ? app.pageId == s.id
+                                      : app.activeSectionId == s.id)
                                   ? Border.all(color: scheme.primary)
                                   : null,
                             ),
-                            child: Text(
-                              s.title.isEmpty
-                                  ? '·'
-                                  : s.title.characters.first.toUpperCase(),
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: dark
-                                      ? OnoteColors.moon100
-                                      : OnoteColors.graphite700),
-                            ),
+                            child: s.kind == NodeKind.page
+                                ? Icon(Icons.description_outlined,
+                                    size: 16,
+                                    color: app.pageId == s.id
+                                        ? scheme.primary
+                                        : context.surfaces.textSecondary)
+                                : Text(
+                                    s.title.isEmpty
+                                        ? '·'
+                                        : s.title.characters.first.toUpperCase(),
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: dark
+                                            ? OnoteColors.moon100
+                                            : OnoteColors.graphite700),
+                                  ),
                           ),
                         ),
                       ),

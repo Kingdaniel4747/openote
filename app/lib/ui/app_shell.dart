@@ -1664,11 +1664,19 @@ class _SectionTabs extends StatelessWidget {
                 final section = sections[index];
                 final selected = section.id == app.activeSectionId;
                 final color = _colorFor(section.color, dark);
+                var downPosition = Offset.zero;
                 return Tooltip(
                   message: section.title,
                   child: InkWell(
                     borderRadius: BorderRadius.circular(8),
                     onTap: () => app.activateSection(section.id),
+                    onTapDown: (details) =>
+                        downPosition = details.globalPosition,
+                    onSecondaryTapUp: (details) => showNodeMenu(
+                        context, app, section,
+                        canIndent: false, position: details.globalPosition),
+                    onLongPress: () => showNodeMenu(context, app, section,
+                        canIndent: false, position: downPosition),
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 150),
                       curve: Curves.easeOutCubic,
@@ -1903,11 +1911,25 @@ class _PageHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Text(notebook.title, style: crumbStyle),
+          Icon(Icons.menu_book_outlined,
+              size: 14, color: context.surfaces.textSecondary),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(notebook.title,
+                overflow: TextOverflow.ellipsis, style: crumbStyle),
+          ),
           if (section != null) ...[
             Text('  ›  ', style: crumbStyle),
-            Text(section.title, style: crumbStyle),
+            Flexible(
+              child: Text(section.title,
+                  overflow: TextOverflow.ellipsis, style: crumbStyle),
+            ),
           ],
+          Text('  ›  ', style: crumbStyle),
+          Flexible(
+            child: Text(page.title,
+                overflow: TextOverflow.ellipsis, style: crumbStyle),
+          ),
         ],
       ),
     );
