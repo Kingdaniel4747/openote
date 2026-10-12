@@ -110,21 +110,30 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tapAt(const Offset(790, 590));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Add without a date'));
+    await tester.tap(find.byTooltip('Add entry'));
     await tester.pumpAndSettle();
-    expect(find.byType(TextField), findsOneWidget);
-    await tester.enterText(find.byType(TextField), 'Buy paper\nAsk the tutor');
+    expect(find.text('Add homework'), findsOneWidget);
+    expect(find.text('Add to-do'), findsOneWidget);
+    expect(find.text('Add exam'), findsOneWidget);
+    await tester.tap(find.text('Add to-do'));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.schedule), findsNothing);
+    expect(find.byType(SwitchListTile), findsNothing);
+    await tester.enterText(find.byType(TextField).first, 'Buy paper');
+    await tester.enterText(find.byType(TextField).last, 'Ask the tutor');
     await tester.tap(find.text('Save'));
     await settle(tester);
     expect(find.text('Without a date'), findsOneWidget);
-    expect(find.text('Buy paper\nAsk the tutor'), findsOneWidget);
+    expect(find.text('Buy paper — Ask the tutor'), findsOneWidget);
+    expect(app.planner.undatedEntries.single.category, 'todo');
     expect(app.planner.reminders.all, isEmpty);
     await tester.tap(find.byType(Checkbox).first);
     await settle(tester);
     expect(app.planner.undatedEntries.single.done, isTrue);
-    await tester.tap(find.text('Buy paper\nAsk the tutor'));
+    await tester.tap(find.text('Buy paper — Ask the tutor'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), 'Buy notebooks');
+    await tester.enterText(find.byType(TextField).first, 'Buy notebooks');
+    await tester.enterText(find.byType(TextField).last, '');
     await tester.tap(find.text('Save'));
     await settle(tester);
     expect(find.text('Buy notebooks'), findsOneWidget);
@@ -135,6 +144,32 @@ void main() {
     await settle(tester);
     app.cancelPendingSave();
   });
+
+  for (final category in ['homework', 'exam']) {
+    testWidgets('planner plus creates undated $category with the usual form',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (app, _) = await newApp(tester);
+      await tester.pumpWidget(host(app));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Add entry'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Add $category'));
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.schedule), findsNothing);
+      await tester.enterText(find.byType(TextField).first, 'Mathematics');
+      await tester.enterText(find.byType(TextField).last, 'Practice chapter 2');
+      await tester.tap(find.text('Save'));
+      await settle(tester);
+      expect(app.planner.undatedEntries.single.category, category);
+      expect(app.planner.undatedEntries.single.text,
+          'Mathematics — Practice chapter 2');
+      expect(app.planner.reminders.all, isEmpty);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await settle(tester);
+      app.cancelPendingSave();
+    });
+  }
 
   testWidgets('an empty planner offers actions from a calendar day',
       (tester) async {

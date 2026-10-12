@@ -1656,7 +1656,6 @@ class _SectionTabsState extends State<_SectionTabs> {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final sections =
         app.nodes.where((n) => n.kind == NodeKind.section).toList();
-    if (sections.isEmpty) return const SizedBox.shrink();
     final scheme = Theme.of(context).colorScheme;
     return Material(
       color: context.surfaces.chrome,
@@ -1667,9 +1666,17 @@ class _SectionTabsState extends State<_SectionTabs> {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.only(left: 7, right: 3),
-              itemCount: sections.length,
+              itemCount: sections.length + 1,
               separatorBuilder: (_, __) => const SizedBox(width: 2),
               itemBuilder: (context, index) {
+                if (index == sections.length) {
+                  return IconButton(
+                    icon: const Icon(Icons.add, size: 18),
+                    tooltip: 'New section',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: app.addSection,
+                  );
+                }
                 final section = sections[index];
                 final selected = section.id == app.activeSectionId;
                 final color = _colorFor(section.color, dark);
@@ -1752,12 +1759,6 @@ class _SectionTabsState extends State<_SectionTabs> {
                 );
               },
             ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.add, size: 18),
-            tooltip: 'New section',
-            visualDensity: VisualDensity.compact,
-            onPressed: app.addSection,
           ),
         ]),
       ),

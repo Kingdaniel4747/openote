@@ -22,6 +22,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/model/tags.dart';
 import 'package:openote/planner/agenda.dart';
+import 'package:openote/planner/undated_entry.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/state/planner_state.dart';
 import 'package:openote/store/repository.dart';
@@ -32,6 +33,16 @@ import 'support/sqlite.dart';
 void main() {
   var haveSqlite = false;
   setUpAll(() => haveSqlite = initSqliteForTests());
+
+  test('existing undated notes load as to-dos without inventing a date', () {
+    final entry = UndatedEntry.fromJson({'id': 'old', 'text': 'Notes'});
+    expect(entry?.category, 'todo');
+    expect(entry!.toJson().containsKey('at'), isFalse);
+    for (final category in ['todo', 'homework', 'exam']) {
+      final typed = UndatedEntry(id: category, text: 'Notes', category: category);
+      expect(UndatedEntry.fromJson(typed.toJson())?.category, category);
+    }
+  });
 
   /// A notebook with one section and one page carrying two to-do lines.
   Future<(Repository, Directory, AppState, String)> fixture(String name) async {
@@ -76,7 +87,8 @@ void main() {
     addTearDown(() => cleanup(repo, tmp));
     final planner = app.planner;
     final now = DateTime(2026, 10, 12);
-    planner.addUndatedEntry('Buy paper\nAsk about the assignment');
+    planner.addUndatedEntry('Buy paper\nAsk about the assignment',
+        category: 'homework');
     final id = planner.undatedEntries.single.id;
     planner.updateUndatedEntry(id, done: true);
     expect(planner.reminders.all, isEmpty);
@@ -89,10 +101,12 @@ void main() {
     expect(restored.undatedEntries.single.text,
         'Buy paper\nAsk about the assignment');
     expect(restored.undatedEntries.single.done, isTrue);
+    expect(restored.undatedEntries.single.category, 'homework');
     restored.updateUndatedEntry(id, text: 'Updated task', done: false);
     restored.load();
     expect(restored.undatedEntries.single.text, 'Updated task');
     expect(restored.undatedEntries.single.done, isFalse);
+    expect(restored.undatedEntries.single.category, 'homework');
     restored.removeUndatedEntry(id);
     restored.load();
     expect(restored.undatedEntries, isEmpty);

@@ -91,9 +91,9 @@ class _PlannerPanelState extends State<PlannerPanel> {
         actions: [
           IconButton(
             icon: const Icon(Icons.add, size: 18),
-            tooltip: tr(context, 'Add without a date'),
+            tooltip: tr(context, 'Add entry'),
             visualDensity: VisualDensity.compact,
-            onPressed: () => _editUndatedEntry(),
+            onPressed: () => _chooseDayAction(null),
           ),
         ],
         // The alerts sit in the banner slot, above the scroll region, because a
@@ -229,16 +229,23 @@ class _PlannerPanelState extends State<PlannerPanel> {
               key: ValueKey(entry.id),
               dense: true,
               contentPadding: const EdgeInsets.only(left: 4, right: 4),
-              leading: Checkbox(
-                value: entry.done,
-                onChanged: (done) =>
-                    planner.updateUndatedEntry(entry.id, done: done),
-              ),
+              leading: entry.category == 'exam'
+                  ? const Icon(Icons.flag_outlined)
+                  : Checkbox(
+                      value: entry.done,
+                      onChanged: (done) =>
+                          planner.updateUndatedEntry(entry.id, done: done),
+                    ),
               title: Text(entry.text,
                   style: TextStyle(
                       fontSize: 13,
                       decoration:
                           entry.done ? TextDecoration.lineThrough : null)),
+              subtitle: AppText(switch (entry.category) {
+                'homework' => 'Homework',
+                'exam' => 'Exam',
+                _ => 'To-do',
+              }),
               onTap: () => _editUndatedEntry(entry),
               trailing: IconButton(
                 icon: const Icon(Icons.delete_outline, size: 16),
@@ -568,19 +575,12 @@ class _PlannerPanelState extends State<PlannerPanel> {
     planner.reminders.reschedule(id, from.add(Duration(minutes: minutes)));
   }
 
-  Future<void> _editUndatedEntry([UndatedEntry? entry]) async {
-    final text = await showOnoteDialog<String>(
-      context: context,
-      builder: (_) => _UndatedEntryDialog(initial: entry?.text),
-    );
-    if (text == null || !mounted) return;
-    if (entry == null) {
-      planner.addUndatedEntry(text);
-    } else {
-      planner.updateUndatedEntry(entry.id, text: text);
-    }
-    // Show the new entry even if a calendar day was selected before adding.
-    _resetCalendar();
+  Future<void> _editUndatedEntry(UndatedEntry entry) async {
+    await _addReminder(DateTime.now(),
+        withoutDate: true,
+        homework: entry.category == 'homework',
+        exam: entry.category == 'exam',
+        undatedEditing: entry);
   }
 
   Future<void> _onAdd(String choice, DateTime now) async {
@@ -594,12 +594,14 @@ class _PlannerPanelState extends State<PlannerPanel> {
     }
   }
 
-  Future<void> _chooseDayAction(DateTime day) async {
+  Future<void> _chooseDayAction(DateTime? day) async {
     final choice = await showOnoteDialog<String>(
       context: context,
       builder: (dialogContext) => SimpleDialog(
         title: Text(
-          MaterialLocalizations.of(context).formatMediumDate(day),
+          day == null
+              ? tr(context, 'Add entry')
+              : MaterialLocalizations.of(context).formatMediumDate(day),
           style: const TextStyle(fontSize: 15),
         ),
         children: [
@@ -607,21 +609,21 @@ class _PlannerPanelState extends State<PlannerPanel> {
             onPressed: () => Navigator.pop(dialogContext, 'homework'),
             child: const ListTile(
               leading: Icon(Icons.add_task_outlined),
-              title: Text('Add homework'),
+              title: AppText('Add homework'),
             ),
           ),
           SimpleDialogOption(
             onPressed: () => Navigator.pop(dialogContext, 'reminder'),
             child: const ListTile(
               leading: Icon(Icons.notifications_none),
-              title: Text('Add to-do'),
+              title: AppText('Add to-do'),
             ),
           ),
           SimpleDialogOption(
             onPressed: () => Navigator.pop(dialogContext, 'exam'),
             child: const ListTile(
               leading: Icon(Icons.flag_outlined),
-              title: Text('Add exam'),
+              title: AppText('Add exam'),
             ),
           ),
         ],
@@ -629,6 +631,13 @@ class _PlannerPanelState extends State<PlannerPanel> {
     );
     if (choice == null || !mounted) return;
     final now = DateTime.now();
+    if (day == null) {
+      await _addReminder(now,
+          withoutDate: true,
+          homework: choice == 'homework',
+          exam: choice == 'exam');
+      return;
+    }
     switch (choice) {
       case 'homework':
         await _addReminder(now, initialDay: day, homework: true);
@@ -649,6 +658,8 @@ class _PlannerPanelState extends State<PlannerPanel> {
     bool homework = false,
     bool exam = false,
     Reminder? editing,
+    bool withoutDate = false,
+    UndatedEntry? undatedEditing,
   }) async {
     final r = await showOnoteDialog<
         ({String text, String subject, DateTime at, bool openPage})>(
@@ -659,6 +670,8 @@ class _PlannerPanelState extends State<PlannerPanel> {
         homework: homework,
         exam: exam,
         editing: editing,
+        withoutDate: withoutDate,
+        undatedEditing: undatedEditing,
       ),
     );
     if (r == null || !mounted) return;
@@ -672,6 +685,16 @@ class _PlannerPanelState extends State<PlannerPanel> {
         : r.text.isEmpty
             ? r.subject
             : '${r.subject} — ${r.text}';
+    if (withoutDate) {
+      if (undatedEditing != null) {
+        planner.updateUndatedEntry(undatedEditing.id, text: title);
+      } else {
+        planner.addUndatedEntry(title,
+            category: exam ? 'exam' : homework ? 'homework' : 'todo');
+      }
+      _resetCalendar();
+      return;
+    }
     if (editing != null) {
       planner.reminders.update(editing.id,
           text: title,
@@ -723,56 +746,6 @@ class _PlannerPanelState extends State<PlannerPanel> {
 ///
 /// A nudge you cannot postpone is one you dismiss and forget, which is the
 /// failure mode that makes people turn reminders off.
-class _UndatedEntryDialog extends StatefulWidget {
-  const _UndatedEntryDialog({this.initial});
-  final String? initial;
-
-  @override
-  State<_UndatedEntryDialog> createState() => _UndatedEntryDialogState();
-}
-
-class _UndatedEntryDialogState extends State<_UndatedEntryDialog> {
-  late final _text = TextEditingController(text: widget.initial);
-
-  @override
-  void dispose() {
-    _text.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-        title: AppText(widget.initial == null
-            ? 'Add without a date'
-            : 'Edit entry'),
-        content: SizedBox(
-          width: 420,
-          child: TextField(
-            controller: _text,
-            autofocus: true,
-            minLines: 3,
-            maxLines: 8,
-            keyboardType: TextInputType.multiline,
-            textInputAction: TextInputAction.newline,
-            decoration: InputDecoration(
-                hintText: tr(context, 'Task or notes'),
-                alignLabelWithHint: true),
-            onChanged: (_) => setState(() {}),
-          ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const AppText('Cancel')),
-          FilledButton(
-              onPressed: _text.text.trim().isEmpty
-                  ? null
-                  : () => Navigator.pop(context, _text.text.trim()),
-              child: const AppText('Save')),
-        ],
-      );
-}
-
 class _SnoozeButton extends StatelessWidget {
   const _SnoozeButton({required this.onSnooze});
   final void Function(Duration) onSnooze;
@@ -806,12 +779,16 @@ class _ReminderDialog extends StatefulWidget {
     this.homework = false,
     this.exam = false,
     this.editing,
+    this.withoutDate = false,
+    this.undatedEditing,
   });
   final DateTime now;
   final DateTime? initialDay;
   final bool homework;
   final bool exam;
   final Reminder? editing;
+  final bool withoutDate;
+  final UndatedEntry? undatedEditing;
 
   @override
   State<_ReminderDialog> createState() => _ReminderDialogState();
@@ -836,15 +813,16 @@ class _ReminderDialogState extends State<_ReminderDialog> {
   void initState() {
     super.initState();
     final editing = widget.editing;
-    if (editing == null) return;
-    final separator = editing.text.indexOf(' — ');
+    final initialText = editing?.text ?? widget.undatedEditing?.text;
+    if (initialText == null) return;
+    final separator = initialText.indexOf(' — ');
     if (separator >= 0) {
-      _subject.text = editing.text.substring(0, separator);
-      _text.text = editing.text.substring(separator + 3);
+      _subject.text = initialText.substring(0, separator);
+      _text.text = initialText.substring(separator + 3);
     } else {
-      _subject.text = editing.text;
+      _subject.text = initialText;
     }
-    _openPage = editing.pageId != null;
+    _openPage = editing?.pageId != null;
   }
 
   /// Snapped to the next five minutes. A reminder at 15:43 is a time nobody
@@ -916,14 +894,16 @@ class _ReminderDialogState extends State<_ReminderDialog> {
     }
 
     return AlertDialog(
-      title: Text(
-          widget.editing != null
-              ? 'Edit ${widget.editing!.category}'
+      title: AppText(
+          widget.editing != null || widget.undatedEditing != null
+              ? 'Edit ${widget.editing?.category ?? widget.undatedEditing!.category}'
               : widget.exam
                   ? 'Add exam'
                   : widget.homework
                       ? 'Add homework'
-                      : 'Add reminder',
+                      : widget.withoutDate
+                          ? 'Add to-do'
+                          : 'Add reminder',
           style: const TextStyle(fontSize: 15)),
       content: SizedBox(
         width: 420,
@@ -962,42 +942,42 @@ class _ReminderDialogState extends State<_ReminderDialog> {
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 12),
-            Row(children: [
-              TextButton.icon(
-                icon: const Icon(Icons.event, size: 16),
-                label: Text(relativeWhen(when, widget.now),
-                    style: const TextStyle(fontSize: 12)),
-                onPressed: _pickDate,
+            if (!widget.withoutDate) ...[
+              Row(children: [
+                TextButton.icon(
+                  icon: const Icon(Icons.event, size: 16),
+                  label: Text(relativeWhen(when, widget.now),
+                      style: const TextStyle(fontSize: 12)),
+                  onPressed: _pickDate,
+                ),
+                TextButton.icon(
+                  icon: const Icon(Icons.schedule, size: 16),
+                  label: Text(formatClock(_at),
+                      style: const TextStyle(fontSize: 12)),
+                  onPressed: _pickTime,
+                ),
+              ]),
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                value: _openPage,
+                onChanged: (value) => setState(() => _openPage = value),
+                title: const Text('Open the linked page',
+                    style: TextStyle(fontSize: 12)),
+                subtitle: const Text(
+                    'Turn off for a task that belongs to no page.',
+                    style: TextStyle(fontSize: 11)),
               ),
-              TextButton.icon(
-                icon: const Icon(Icons.schedule, size: 16),
-                label: Text(formatClock(_at),
-                    style: const TextStyle(fontSize: 12)),
-                onPressed: _pickTime,
+              const SizedBox(height: 4),
+              // A nudge is only promised for entries with a scheduled time.
+              Text(
+                'Openote nudges you while it is open. If it was closed when the '
+                'time came, the reminder is waiting when you next open it.',
+                style: TextStyle(
+                    fontSize: 11,
+                    height: 1.4,
+                    color: context.surfaces.textSecondary),
               ),
-            ]),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              value: _openPage,
-              onChanged: (value) => setState(() => _openPage = value),
-              title: const Text('Open the linked page',
-                  style: TextStyle(fontSize: 12)),
-              subtitle: const Text(
-                  'Turn off for a task that belongs to no page.',
-                  style: TextStyle(fontSize: 11)),
-            ),
-            const SizedBox(height: 4),
-            // Said plainly rather than buried in a help page: a reminder a
-            // student wrongly believes will interrupt them is worse than no
-            // reminder at all (v0.5 §1).
-            Text(
-              'Openote nudges you while it is open. If it was closed when the '
-              'time came, the reminder is waiting when you next open it.',
-              style: TextStyle(
-                  fontSize: 11,
-                  height: 1.4,
-                  color: context.surfaces.textSecondary),
-            ),
+            ],
           ],
         ),
       ),

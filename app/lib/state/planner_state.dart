@@ -199,9 +199,10 @@ class PlannerState extends ChangeNotifier {
   final List<UndatedEntry> _undatedEntries = [];
   List<UndatedEntry> get undatedEntries => List.unmodifiable(_undatedEntries);
 
-  void addUndatedEntry(String text) {
+  void addUndatedEntry(String text, {String category = 'todo'}) {
     if (text.trim().isEmpty) return;
-    _undatedEntries.add(UndatedEntry(id: newId(), text: text.trim()));
+    _undatedEntries.add(UndatedEntry(
+        id: newId(), text: text.trim(), category: category));
     _persistUndatedEntries();
   }
 
@@ -210,7 +211,10 @@ class PlannerState extends ChangeNotifier {
     if (index < 0 || (text != null && text.trim().isEmpty)) return;
     final entry = _undatedEntries[index];
     _undatedEntries[index] = UndatedEntry(
-        id: id, text: text?.trim() ?? entry.text, done: done ?? entry.done);
+        id: id,
+        text: text?.trim() ?? entry.text,
+        category: entry.category,
+        done: done ?? entry.done);
     _persistUndatedEntries();
   }
 

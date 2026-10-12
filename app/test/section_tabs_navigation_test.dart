@@ -64,6 +64,12 @@ void main() {
 
     // Both desktop and touch open the same structural actions as sidebar rows.
     final tab = find.text('Navigation section');
+    final addSection = find.byTooltip('New section');
+    expect(addSection, findsOneWidget);
+    final gap = tester.getTopLeft(addSection).dx - tester.getTopRight(tab).dx;
+    expect(gap, greaterThanOrEqualTo(0));
+    expect(gap, lessThan(30),
+        reason: 'the plus follows the last section instead of the window edge');
     final mouse = await tester.startGesture(tester.getCenter(tab),
         kind: PointerDeviceKind.mouse, buttons: kSecondaryMouseButton);
     await mouse.up();

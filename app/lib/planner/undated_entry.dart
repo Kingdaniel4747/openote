@@ -1,12 +1,23 @@
 /// A planner checklist entry without a date or a scheduled notification.
 class UndatedEntry {
-  const UndatedEntry({required this.id, required this.text, this.done = false});
+  const UndatedEntry({
+    required this.id,
+    required this.text,
+    this.category = 'todo',
+    this.done = false,
+  });
 
   final String id;
   final String text;
   final bool done;
+  final String category;
 
-  Map<String, Object?> toJson() => {'id': id, 'text': text, 'done': done};
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'text': text,
+        'category': category,
+        'done': done,
+      };
 
   static UndatedEntry? fromJson(Object? raw) {
     if (raw is! Map) return null;
@@ -15,6 +26,13 @@ class UndatedEntry {
     if (id is! String || id.isEmpty || text is! String || text.trim().isEmpty) {
       return null;
     }
-    return UndatedEntry(id: id, text: text, done: raw['done'] == true);
+    final category = raw['category'];
+    return UndatedEntry(
+        id: id,
+        text: text,
+        category: category == 'homework' || category == 'exam'
+            ? category as String
+            : 'todo',
+        done: raw['done'] == true);
   }
 }
