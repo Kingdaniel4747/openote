@@ -100,6 +100,42 @@ void main() {
     }
   }
 
+  testWidgets('header plus creates an editable checklist without a date',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (app, _) = await newApp(tester);
+    await tester.pumpWidget(host(app));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('${DateTime.now().day}').first);
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(790, 590));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Add without a date'));
+    await tester.pumpAndSettle();
+    expect(find.byType(TextField), findsOneWidget);
+    await tester.enterText(find.byType(TextField), 'Buy paper\nAsk the tutor');
+    await tester.tap(find.text('Save'));
+    await settle(tester);
+    expect(find.text('Without a date'), findsOneWidget);
+    expect(find.text('Buy paper\nAsk the tutor'), findsOneWidget);
+    expect(app.planner.reminders.all, isEmpty);
+    await tester.tap(find.byType(Checkbox).first);
+    await settle(tester);
+    expect(app.planner.undatedEntries.single.done, isTrue);
+    await tester.tap(find.text('Buy paper\nAsk the tutor'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Buy notebooks');
+    await tester.tap(find.text('Save'));
+    await settle(tester);
+    expect(find.text('Buy notebooks'), findsOneWidget);
+    await tester.tap(find.byTooltip('Delete'));
+    await settle(tester);
+    expect(app.planner.undatedEntries, isEmpty);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await settle(tester);
+    app.cancelPendingSave();
+  });
+
   testWidgets('an empty planner offers actions from a calendar day',
       (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');

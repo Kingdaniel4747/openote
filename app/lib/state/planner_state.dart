@@ -32,6 +32,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../model/models.dart';
+import '../core/ids.dart';
+import '../planner/undated_entry.dart';
 import '../model/tags.dart';
 import '../planner/agenda.dart';
 import '../planner/alerts.dart';
@@ -193,6 +195,36 @@ class PlannerState extends ChangeNotifier {
   /// ship.
   late final ReminderStore reminders;
 
+  // These entries have no time and never enter the reminder scheduler or grid.
+  final List<UndatedEntry> _undatedEntries = [];
+  List<UndatedEntry> get undatedEntries => List.unmodifiable(_undatedEntries);
+
+  void addUndatedEntry(String text) {
+    if (text.trim().isEmpty) return;
+    _undatedEntries.add(UndatedEntry(id: newId(), text: text.trim()));
+    _persistUndatedEntries();
+  }
+
+  void updateUndatedEntry(String id, {String? text, bool? done}) {
+    final index = _undatedEntries.indexWhere((entry) => entry.id == id);
+    if (index < 0 || (text != null && text.trim().isEmpty)) return;
+    final entry = _undatedEntries[index];
+    _undatedEntries[index] = UndatedEntry(
+        id: id, text: text?.trim() ?? entry.text, done: done ?? entry.done);
+    _persistUndatedEntries();
+  }
+
+  void removeUndatedEntry(String id) {
+    _undatedEntries.removeWhere((entry) => entry.id == id);
+    _persistUndatedEntries();
+  }
+
+  void _persistUndatedEntries() {
+    _write('plannerUndatedEntries',
+        [for (final entry in _undatedEntries) entry.toJson()]);
+    notifyListeners();
+  }
+
   /// Bumped whenever the reminder store changes, so the agenda cache key moves.
   ///
   /// Kept here rather than in the store because `reminders.dart` is
@@ -232,6 +264,14 @@ class PlannerState extends ChangeNotifier {
   /// Restore persisted state. Called once, from `AppState.init`.
   void load() {
     reminders.load();
+    _undatedEntries.clear();
+    final entries = _read('plannerUndatedEntries');
+    if (entries is List) {
+      for (final raw in entries) {
+        final entry = UndatedEntry.fromJson(raw);
+        if (entry != null) _undatedEntries.add(entry);
+      }
+    }
     final raw = _read('plannerCalendar');
     _calendar = CalendarSubscription.fromJson(
         raw is String ? (jsonDecode(raw) as Object?) : raw);

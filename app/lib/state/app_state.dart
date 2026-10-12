@@ -4531,6 +4531,7 @@ class AppState extends ChangeNotifier
   void renameNode(String id, String title) {
     final n = node(id);
     if (n == null) return; // deleted while a menu was open
+    if (n.title == title) return;
     n.title = title;
     _putNode(notebookId!, n);
     bumpNodes();

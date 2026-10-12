@@ -67,7 +67,7 @@ List<Widget> _pageEntriesFor(AppState app, TreeNode section) {
 /// because they skip the pointer pipeline entirely). With this gate the
 /// first click ACTS immediately and a second within the window renames —
 /// the file-explorer behaviour, and the whole delay gone.
-class _DoubleTapGate {
+class SidebarDoubleTapGate {
   DateTime? _last;
 
   /// True when this tap is the second of a double-click.
@@ -80,7 +80,7 @@ class _DoubleTapGate {
   }
 }
 
-/// The clock [_DoubleTapGate] measures the double-click window against.
+/// The clock [SidebarDoubleTapGate] measures the double-click window against.
 ///
 /// A seam, because the window is **wall-clock** and a widget test's clock is
 /// not. `tester.pump(Duration)` advances the fake clock; it does not advance
@@ -572,7 +572,7 @@ class _GroupHeader extends StatefulWidget {
 
 class _GroupHeaderState extends State<_GroupHeader> {
   bool _renaming = false;
-  final _taps = _DoubleTapGate();
+  final _taps = SidebarDoubleTapGate();
   Offset _downPos = Offset.zero; // last pointer-down, for long-press menus
 
   /// This row's place in the keyboard, handed to its `InkWell` so there is one
@@ -612,7 +612,7 @@ class _GroupHeaderState extends State<_GroupHeader> {
           onFocusChange: (has) {
             if (has) _keyboardEnteredRow(app);
           },
-          // No onDoubleTap — it deferred every click (see _DoubleTapGate).
+          // No onDoubleTap — it deferred every click (see SidebarDoubleTapGate).
           onTap: _renaming
               ? null
               : () {
@@ -648,7 +648,7 @@ class _GroupHeaderState extends State<_GroupHeader> {
                 const SizedBox(width: 6),
                 Expanded(
                   child: _renaming
-                      ? _InlineRename(
+                      ? NodeInlineRename(
                           initial: group.title,
                           style: labelStyle,
                           onSubmit: (v) {
@@ -1113,7 +1113,7 @@ class _SectionHeader extends StatefulWidget {
 class _SectionHeaderState extends State<_SectionHeader> {
   bool _renaming = false;
   _DropZone _sectionDropZone = _DropZone.none;
-  final _taps = _DoubleTapGate();
+  final _taps = SidebarDoubleTapGate();
   Offset _downPos = Offset.zero; // last pointer-down, for long-press menus
 
   /// This row's place in the keyboard, handed to its `InkWell` so there is one
@@ -1219,7 +1219,7 @@ class _SectionHeaderState extends State<_SectionHeader> {
       onFocusChange: (has) {
         if (has) _keyboardEnteredRow(app);
       },
-      // No onDoubleTap — it deferred every click (see _DoubleTapGate).
+      // No onDoubleTap — it deferred every click (see SidebarDoubleTapGate).
       onTap: _renaming
           ? null
           : () {
@@ -1261,7 +1261,7 @@ class _SectionHeaderState extends State<_SectionHeader> {
             const SizedBox(width: 8),
             Expanded(
               child: _renaming
-                  ? _InlineRename(
+                  ? NodeInlineRename(
                       initial: section.title,
                       style: labelStyle.copyWith(letterSpacing: 0),
                       onSubmit: (v) {
@@ -1513,8 +1513,9 @@ class _BinSectionLabel extends StatelessWidget {
 /// Inline rename field (§7a: rename is a direct-manipulation action, no
 /// dialog). Autofocuses, selects all, commits on Enter or blur, cancels on
 /// Escape or an empty/unchanged value.
-class _InlineRename extends StatefulWidget {
-  const _InlineRename({
+class NodeInlineRename extends StatefulWidget {
+  const NodeInlineRename({
+    super.key,
     required this.initial,
     required this.style,
     required this.onSubmit,
@@ -1526,10 +1527,10 @@ class _InlineRename extends StatefulWidget {
   final VoidCallback onCancel;
 
   @override
-  State<_InlineRename> createState() => _InlineRenameState();
+  State<NodeInlineRename> createState() => _NodeInlineRenameState();
 }
 
-class _InlineRenameState extends State<_InlineRename> {
+class _NodeInlineRenameState extends State<NodeInlineRename> {
   late final TextEditingController _c =
       TextEditingController(text: widget.initial);
   late final FocusNode _focus = FocusNode(onKeyEvent: (_, e) {
@@ -1648,7 +1649,7 @@ class _PageTile extends StatefulWidget {
 
 class _PageTileState extends State<_PageTile> {
   bool _renaming = false;
-  final _taps = _DoubleTapGate();
+  final _taps = SidebarDoubleTapGate();
   Offset _downPos = Offset.zero; // last pointer-down, for long-press menus
 
   /// This row's place in the keyboard, handed to its `InkWell` so there is one
@@ -1756,7 +1757,7 @@ class _PageTileState extends State<_PageTile> {
         onFocusChange: (has) {
           if (has) _keyboardEnteredRow(app);
         },
-        // No onDoubleTap — it deferred every click (see _DoubleTapGate).
+        // No onDoubleTap — it deferred every click (see SidebarDoubleTapGate).
         onTap: _renaming
             ? null
             : () {
@@ -1811,7 +1812,7 @@ class _PageTileState extends State<_PageTile> {
               const SizedBox(width: 7),
               Expanded(
                 child: _renaming
-                    ? _InlineRename(
+                    ? NodeInlineRename(
                         initial: page.title,
                         style: labelStyle,
                         onSubmit: (v) {
@@ -1898,7 +1899,7 @@ PopupMenuItem<String> _nodeItem(String v, IconData icon, String label,
 /// notebook switch and tree reload — and it still would not say whether the
 /// KEYBOARD is aimed here rather than at the canvas. Flutter's focus answers
 /// both questions, every row is already an `InkWell` carrying a focus node, and
-/// hanging the handler off that node is the shape [_InlineRename] already uses.
+/// hanging the handler off that node is the shape [NodeInlineRename] already uses.
 ///
 /// **No confirmation**, because right-click ▸ Delete does not confirm either
 /// and two routes to the same recoverable action must not disagree about how

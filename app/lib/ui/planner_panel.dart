@@ -24,6 +24,8 @@ import 'package:flutter/material.dart';
 import '../planner/agenda.dart';
 import '../planner/alerts.dart';
 import '../planner/reminders.dart';
+import '../planner/undated_entry.dart';
+import '../l10n/app_strings.dart';
 import '../state/app_state.dart';
 import '../state/planner_state.dart';
 import '../theme/onote_theme.dart';
@@ -86,12 +88,17 @@ class _PlannerPanelState extends State<PlannerPanel> {
         title: SidePanelKind.planner.label,
         icon: Icons.event_note_outlined,
         onClose: app.closePanel,
-        actions: const [],
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.add, size: 18),
+            tooltip: tr(context, 'Add without a date'),
+            visualDensity: VisualDensity.compact,
+            onPressed: () => _editUndatedEntry(),
+          ),
+        ],
         // The alerts sit in the banner slot, above the scroll region, because a
         // reminder you have to scroll to find has not reminded you.
         banner: planner.pendingAlerts.isNotEmpty ? _alerts(context) : null,
-        // New items always begin by choosing their date in the calendar above.
-        // A second, unrelated add button made the resulting date surprising.
         footer: null,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -204,10 +211,43 @@ class _PlannerPanelState extends State<PlannerPanel> {
 
   Widget _agendaList(
       BuildContext context, List<AgendaSection> sections, DateTime now) {
-    if (sections.isEmpty) return _empty(context, now);
+    if (sections.isEmpty && planner.undatedEntries.isEmpty) {
+      return _empty(context, now);
+    }
     return ListView(
       padding: const EdgeInsets.only(bottom: 10),
       children: [
+        if (planner.undatedEntries.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+            child: AppText('Without a date',
+                style: TextStyle(
+                    fontSize: 11, color: context.surfaces.textSecondary)),
+          ),
+          for (final entry in planner.undatedEntries)
+            ListTile(
+              key: ValueKey(entry.id),
+              dense: true,
+              contentPadding: const EdgeInsets.only(left: 4, right: 4),
+              leading: Checkbox(
+                value: entry.done,
+                onChanged: (done) =>
+                    planner.updateUndatedEntry(entry.id, done: done),
+              ),
+              title: Text(entry.text,
+                  style: TextStyle(
+                      fontSize: 13,
+                      decoration:
+                          entry.done ? TextDecoration.lineThrough : null)),
+              onTap: () => _editUndatedEntry(entry),
+              trailing: IconButton(
+                icon: const Icon(Icons.delete_outline, size: 16),
+                tooltip: tr(context, 'Delete'),
+                onPressed: () => planner.removeUndatedEntry(entry.id),
+              ),
+            ),
+          const Divider(height: 1),
+        ],
         for (final it in [
           for (final section in sections) ...section.items,
         ])
@@ -528,6 +568,21 @@ class _PlannerPanelState extends State<PlannerPanel> {
     planner.reminders.reschedule(id, from.add(Duration(minutes: minutes)));
   }
 
+  Future<void> _editUndatedEntry([UndatedEntry? entry]) async {
+    final text = await showOnoteDialog<String>(
+      context: context,
+      builder: (_) => _UndatedEntryDialog(initial: entry?.text),
+    );
+    if (text == null || !mounted) return;
+    if (entry == null) {
+      planner.addUndatedEntry(text);
+    } else {
+      planner.updateUndatedEntry(entry.id, text: text);
+    }
+    // Show the new entry even if a calendar day was selected before adding.
+    _resetCalendar();
+  }
+
   Future<void> _onAdd(String choice, DateTime now) async {
     switch (choice) {
       case 'homework':
@@ -668,6 +723,56 @@ class _PlannerPanelState extends State<PlannerPanel> {
 ///
 /// A nudge you cannot postpone is one you dismiss and forget, which is the
 /// failure mode that makes people turn reminders off.
+class _UndatedEntryDialog extends StatefulWidget {
+  const _UndatedEntryDialog({this.initial});
+  final String? initial;
+
+  @override
+  State<_UndatedEntryDialog> createState() => _UndatedEntryDialogState();
+}
+
+class _UndatedEntryDialogState extends State<_UndatedEntryDialog> {
+  late final _text = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _text.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: AppText(widget.initial == null
+            ? 'Add without a date'
+            : 'Edit entry'),
+        content: SizedBox(
+          width: 420,
+          child: TextField(
+            controller: _text,
+            autofocus: true,
+            minLines: 3,
+            maxLines: 8,
+            keyboardType: TextInputType.multiline,
+            textInputAction: TextInputAction.newline,
+            decoration: InputDecoration(
+                hintText: tr(context, 'Task or notes'),
+                alignLabelWithHint: true),
+            onChanged: (_) => setState(() {}),
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const AppText('Cancel')),
+          FilledButton(
+              onPressed: _text.text.trim().isEmpty
+                  ? null
+                  : () => Navigator.pop(context, _text.text.trim()),
+              child: const AppText('Save')),
+        ],
+      );
+}
+
 class _SnoozeButton extends StatelessWidget {
   const _SnoozeButton({required this.onSnooze});
   final void Function(Duration) onSnooze;

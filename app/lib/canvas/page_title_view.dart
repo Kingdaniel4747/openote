@@ -130,6 +130,11 @@ class _PageTitleViewState extends State<PageTitleView> {
                       autoCloseFences: false)
                 ],
                 decoration: OnoteInput.bare.copyWith(hintText: 'Page title'),
+                // The breadcrumb, rail and planner must see the title while
+                // it is being typed, even if focus stays in this field.
+                onChanged: (_) {
+                  if (_editingPageId != null) _commitTo(_editingPageId!);
+                },
                 onSubmitted: (_) {
                   _commit();
                   widget.app.startBodyFromTitle();

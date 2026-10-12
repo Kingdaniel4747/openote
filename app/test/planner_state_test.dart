@@ -70,6 +70,35 @@ void main() {
     } catch (_) {}
   }
 
+  test('undated entries persist without scheduling or calendar dates', () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (repo, tmp, app, _) = await fixture('onote_plan_undated_');
+    addTearDown(() => cleanup(repo, tmp));
+    final planner = app.planner;
+    final now = DateTime(2026, 10, 12);
+    planner.addUndatedEntry('Buy paper\nAsk about the assignment');
+    final id = planner.undatedEntries.single.id;
+    planner.updateUndatedEntry(id, done: true);
+    expect(planner.reminders.all, isEmpty);
+    expect(planner.agenda(now: now), isEmpty);
+    expect(planner.itemsOn(now, now: now), isEmpty);
+
+    final restored = PlannerState(app, app.study,
+        readSetting: repo.getSetting, writeSetting: repo.setSetting)..load();
+    addTearDown(restored.dispose);
+    expect(restored.undatedEntries.single.text,
+        'Buy paper\nAsk about the assignment');
+    expect(restored.undatedEntries.single.done, isTrue);
+    restored.updateUndatedEntry(id, text: 'Updated task', done: false);
+    restored.load();
+    expect(restored.undatedEntries.single.text, 'Updated task');
+    expect(restored.undatedEntries.single.done, isFalse);
+    restored.removeUndatedEntry(id);
+    restored.load();
+    expect(restored.undatedEntries, isEmpty);
+    app.cancelPendingSave();
+  });
+
   // ── Due dates on tags ───────────────────────────────────────────────
 
   group('a due date on a tag', () {

@@ -1629,9 +1629,18 @@ class _AppShellState extends State<AppShell> {
 
 /// Compact OneNote-like section tabs. The current section still determines
 /// the page list in [Sidebar], but no longer occupies a second left column.
-class _SectionTabs extends StatelessWidget {
+class _SectionTabs extends StatefulWidget {
   const _SectionTabs({required this.app});
   final AppState app;
+
+  @override
+  State<_SectionTabs> createState() => _SectionTabsState();
+}
+
+class _SectionTabsState extends State<_SectionTabs> {
+  AppState get app => widget.app;
+  final _taps = <String, SidebarDoubleTapGate>{};
+  String? _renamingId;
 
   Color _colorFor(String? token, bool dark) => switch (token) {
         'brass-400' => OnoteColors.brass400,
@@ -1669,9 +1678,18 @@ class _SectionTabs extends StatelessWidget {
                   message: section.title,
                   child: InkWell(
                     borderRadius: BorderRadius.circular(8),
-                    onTap: () => app.activateSection(section.id),
-                    onTapDown: (details) =>
-                        downPosition = details.globalPosition,
+                    onTap: _renamingId == section.id
+                        ? null
+                        : () {
+                            final taps = _taps.putIfAbsent(
+                                section.id, SidebarDoubleTapGate.new);
+                            if (taps.tap()) {
+                              setState(() => _renamingId = section.id);
+                            } else {
+                              app.activateSection(section.id);
+                            }
+                          },
+                    onTapDown: (details) => downPosition = details.globalPosition,
                     onSecondaryTapUp: (details) => showNodeMenu(
                         context, app, section,
                         canIndent: false, position: details.globalPosition),
@@ -1695,17 +1713,40 @@ class _SectionTabs extends StatelessWidget {
                             ? Border.all(color: color, width: 1.5)
                             : null,
                       ),
-                      child: Text(
-                        section.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: selected ? 13 : 11,
-                          fontWeight:
-                              selected ? FontWeight.w700 : FontWeight.w500,
-                          color: dark ? OnoteColors.moon100 : scheme.onPrimary,
-                        ),
-                      ),
+                      child: _renamingId == section.id
+                          ? NodeInlineRename(
+                              initial: section.title,
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  color: dark
+                                      ? OnoteColors.moon100
+                                      : scheme.onPrimary),
+                              onSubmit: (title) {
+                                app.renameNode(section.id, title);
+                                if (mounted) {
+                                  setState(() => _renamingId = null);
+                                }
+                              },
+                              onCancel: () {
+                                if (mounted) {
+                                  setState(() => _renamingId = null);
+                                }
+                              },
+                            )
+                          : Text(
+                              section.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: selected ? 13 : 11,
+                                fontWeight: selected
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                                color: dark
+                                    ? OnoteColors.moon100
+                                    : scheme.onPrimary,
+                              ),
+                            ),
                     ),
                   ),
                 );
