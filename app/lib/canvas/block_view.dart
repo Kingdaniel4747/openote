@@ -976,7 +976,7 @@ class _BlockViewState extends State<BlockView> {
             clipBehavior: Clip.none,
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(
+                padding: EdgeInsets.fromLTRB(
                   _kChromePad + extraX,
                   _kBarH + extraY,
                   _kChromePad + extraX,
