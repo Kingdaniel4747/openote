@@ -65,6 +65,12 @@ class _PageCanvasState extends State<PageCanvas> {
 
   void _windowsPenChanged() {
     if (!mounted) return;
+    if (_windowsPen.nativeInRange && _touches.isNotEmpty) {
+      _rejectTouchSequence = true;
+      app.touchCanvasGesture = true;
+      _touchVelocity = Offset.zero;
+      controller.stopMotion();
+    }
     _pendingErase = _windowsPen.nativeEraser || _invertedInkContact;
     _setContactErase(_pendingErase);
     _showPenButtonTool(_pendingErase);
@@ -138,6 +144,10 @@ class _PageCanvasState extends State<PageCanvas> {
 
   // Two-finger touch pinch tracking.
   final Map<int, Offset> _touches = {};
+  Timer? _touchIntentDelay;
+  bool _touchReady = false;
+  DateTime? _lastPenContact;
+  bool _rejectTouchSequence = false;
   double? _pinchStartDist;
   Offset? _pinchStartFocal;
   double? _pinchStartScale;
@@ -362,6 +372,7 @@ class _PageCanvasState extends State<PageCanvas> {
 
   @override
   void dispose() {
+    _touchIntentDelay?.cancel();
     controller.stopMotion();
     _scrollReleaseTimer?.cancel();
     _shapeHold?.cancel();
@@ -407,6 +418,14 @@ class _PageCanvasState extends State<PageCanvas> {
   // ── Ink capture (page-space, Ink Data Spec §1) ──────────────────────────
 
   void _inkDown(PointerDownEvent e) {
+    if (e.kind == PointerDeviceKind.stylus ||
+        e.kind == PointerDeviceKind.invertedStylus) {
+      _lastPenContact = DateTime.now();
+      _rejectTouchSequence = _touches.isNotEmpty;
+      if (_rejectTouchSequence) app.touchCanvasGesture = true;
+      _touchVelocity = Offset.zero;
+      controller.stopMotion();
+    }
     if (_beginRulerPointer(e)) return;
     if (e.kind == PointerDeviceKind.stylus ||
         e.kind == PointerDeviceKind.invertedStylus) {
@@ -700,6 +719,10 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _inkUp(PointerUpEvent e) {
+    if (e.kind == PointerDeviceKind.stylus ||
+        e.kind == PointerDeviceKind.invertedStylus) {
+      _lastPenContact = DateTime.now();
+    }
     if (_endRulerPointer(e)) return;
     if (_windowsPen.enabled ||
         e.kind == PointerDeviceKind.stylus ||
@@ -1094,9 +1117,23 @@ class _PageCanvasState extends State<PageCanvas> {
     _touchVelocity = Offset.zero;
     _lastTouchMove = DateTime.now();
     if (_touches.length == 1) {
+      _touchReady = false;
+      _touchIntentDelay?.cancel();
+      _touchIntentDelay = Timer(const Duration(milliseconds: 100), () {
+        if (mounted) _touchReady = true;
+      });
+      _rejectTouchSequence = _windowsPen.nativeInRange ||
+          _inkContactActive ||
+          (_lastPenContact != null && DateTime.now().difference(
+              _lastPenContact!) < const Duration(milliseconds: 500));
       _touchPanStart = e.localPosition;
       _touchPanActive = false;
     }
+    if (_touches.length > 2 || e.radiusMajor > 30) {
+      _rejectTouchSequence = true;
+      _touchVelocity = Offset.zero;
+    }
+    if (_rejectTouchSequence) app.touchCanvasGesture = true;
     if (_touches.length == 2) {
       _multiTouchSeen = true;
       final pts = _touches.values.toList();
@@ -1235,6 +1272,25 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _touchMove(PointerMoveEvent e) {
+    if (!_touches.containsKey(e.pointer)) return;
+    if (_windowsPen.nativeInRange || _inkContactActive ||
+        e.radiusMajor > 30) _rejectTouchSequence = true;
+    if (_rejectTouchSequence) {
+      app.touchCanvasGesture = true;
+      _touchVelocity = Offset.zero;
+      return;
+    }
+    if (!_touchReady) {
+      _touches[e.pointer] = e.localPosition;
+      _lastScreen = e.localPosition;
+      _touchPanStart = e.localPosition;
+      if (_touches.length == 2) {
+        final pts = _touches.values.toList();
+        _pinchStartDist = (pts[0] - pts[1]).distance;
+        _pinchStartFocal = (pts[0] + pts[1]) / 2;
+      }
+      return;
+    }
     final now = DateTime.now();
     final elapsed = now.difference(_lastTouchMove ?? now).inMicroseconds;
     _touches[e.pointer] = e.localPosition;
@@ -1299,6 +1355,9 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _applyPinchTransform() {
+    if (_rejectTouchSequence || _touches.length != 2 ||
+        _windowsPen.nativeInRange || _inkContactActive) return;
+    if (!_touchReady) return;
     if (_touches.length < 2 ||
         _pinchStartDist == null ||
         _pinchStartFocal == null ||
@@ -1308,7 +1367,7 @@ class _PageCanvasState extends State<PageCanvas> {
     }
     final pts = _touches.values.toList(growable: false);
     final d = (pts[0] - pts[1]).distance;
-    if (_pinchStartDist! <= 0 || d <= 0) return;
+    if (_pinchStartDist! < 24 || d < 24) return;
     controller.transformGestureFrom(
       startScale: _pinchStartScale!,
       startOffset: _pinchStartOffset!,
@@ -1332,11 +1391,12 @@ class _PageCanvasState extends State<PageCanvas> {
     }
     if (_touches.length == 1) _lastScreen = _touches.values.first;
     if (_touches.isEmpty) {
+      _touchIntentDelay?.cancel();
       _touchPanStart = null;
       // Pinch bounds are already handled for every motion sample. Do not
       // perform a second correction on lift: that used to move the page
       // after the fingers had stopped and looked like a sudden jump.
-      if (!_multiTouchSeen) {
+      if (!_multiTouchSeen && !_rejectTouchSequence) {
         // A fling that begins after the page is already against the elastic
         // edge just keeps feeding the resistance and makes the page look
         // stuck. Release it immediately into the spring instead.
@@ -1350,6 +1410,20 @@ class _PageCanvasState extends State<PageCanvas> {
     }
   }
 
+  void _cancelTouch(PointerEvent e) {
+    _rejectTouchSequence = true;
+    _touchVelocity = Offset.zero;
+    _touchPanActive = false;
+    _touches.remove(e.pointer);
+    _blockOwnedTouches.remove(e.pointer);
+    _pinchStartDist = null;
+    _pinchStartFocal = null;
+    _pinchStartScale = null;
+    _pinchStartOffset = null;
+    app.touchCanvasGesture = _touches.isNotEmpty;
+    if (_touches.isEmpty) _touchIntentDelay?.cancel();
+  }
+
   bool _startInertia() {
     if (!_touchPanActive) return false;
     if (_touchVelocity.distance < 70) return false;
@@ -1358,8 +1432,7 @@ class _PageCanvasState extends State<PageCanvas> {
   }
   // ── Select-mode pointer model ───────────────────────────────────────────
 
-  Rect _blockRect(Block b) =>
-      Rect.fromLTWH(b.x, b.y, b.w, b.h ?? app.renderSizes[b.id]?.height ?? 60);
+  Rect _blockRect(Block b) => app.blockVisualBounds(b);
 
   String? _hitInk(Offset pagePt) {
     for (final b in app.blocks.reversed.where((b) => b.type == BlockType.ink)) {
@@ -1443,6 +1516,8 @@ class _PageCanvasState extends State<PageCanvas> {
   void _selectMove(PointerMoveEvent e) {
     if (_moveMiddlePan(e)) return;
     if (_updateRulerPointer(e)) return;
+    if (e.kind == PointerDeviceKind.touch &&
+        !_touches.containsKey(e.pointer)) return;
     if (_windowsInkPointer == e.pointer) {
       _inkMove(e);
       return;
@@ -1515,10 +1590,15 @@ class _PageCanvasState extends State<PageCanvas> {
       return;
     }
     final wasTouch = _touches.containsKey(e.pointer);
+    final rejectedTouch = wasTouch && _rejectTouchSequence;
     if (wasTouch) _touchUp(e);
     _blockOwnedTouches.remove(e.pointer);
     app.relinquishedTouchPointers.remove(e.pointer);
     if (_touches.isEmpty) app.touchCanvasGesture = false;
+    if (rejectedTouch) {
+      _mode = _DragMode.none;
+      return;
+    }
     final mode = _mode;
     _mode = _DragMode.none;
     switch (mode) {
@@ -2078,6 +2158,13 @@ class _PageCanvasState extends State<PageCanvas> {
           // under it.
           if (app.claimedPointers.remove(e.pointer)) return;
           if (e.kind == PointerDeviceKind.touch) {
+            if (_windowsPen.nativeInRange || _inkContactActive ||
+                e.radiusMajor > 30 || (_lastPenContact != null &&
+                DateTime.now().difference(_lastPenContact!) <
+                    const Duration(milliseconds: 500))) {
+              _touchDown(e);
+              return;
+            }
             if (_canFingerMoveLassoSelection(
               controller.screenToPage(e.localPosition),
             )) {
@@ -2097,7 +2184,7 @@ class _PageCanvasState extends State<PageCanvas> {
           }
           if (_touches.containsKey(e.pointer)) {
             _touchMove(e);
-          } else {
+          } else if (e.kind != PointerDeviceKind.touch) {
             _lassoMove(e);
           }
         },
@@ -2109,7 +2196,7 @@ class _PageCanvasState extends State<PageCanvas> {
           }
           if (_touches.containsKey(e.pointer)) {
             _touchUp(e);
-          } else {
+          } else if (e.kind != PointerDeviceKind.touch) {
             _lassoUp(e);
           }
         },
@@ -2120,7 +2207,7 @@ class _PageCanvasState extends State<PageCanvas> {
             _finishLassoFingerMove(e);
             return;
           }
-          if (_touches.containsKey(e.pointer)) _touchUp(e);
+          if (_touches.containsKey(e.pointer)) _cancelTouch(e);
           setState(() => _lasso = null);
         },
         child: canvas,
@@ -2145,12 +2232,6 @@ class _PageCanvasState extends State<PageCanvas> {
             return;
           }
           _touchDown(e);
-          if (_touches.length > 1) {
-            // The first finger may already be mid-stroke; a pinch is not a
-            // drawing, so drop it rather than leaving a stray mark.
-            _cancelWetStroke();
-            return;
-          }
           // A finger only navigates. This keeps palm contact and a second
           // finger from ever producing ink or an eraser mark.
         },
@@ -2158,7 +2239,7 @@ class _PageCanvasState extends State<PageCanvas> {
           if (_moveMiddlePan(e)) return;
           if (_touches.containsKey(e.pointer)) {
             _touchMove(e);
-          } else {
+          } else if (e.kind != PointerDeviceKind.touch) {
             _inkMove(e);
           }
         },
@@ -2166,14 +2247,17 @@ class _PageCanvasState extends State<PageCanvas> {
           if (_endMiddlePan(e)) return;
           if (_touches.containsKey(e.pointer)) {
             _touchUp(e);
-          } else {
+          } else if (e.kind != PointerDeviceKind.touch) {
             _inkUp(e);
           }
         },
         onPointerCancel: (e) {
           if (_endMiddlePan(e)) return;
           if (_endRulerPointer(e)) return;
-          _touches.remove(e.pointer);
+          if (e.kind == PointerDeviceKind.touch) {
+            _cancelTouch(e);
+            return;
+          }
           if (_windowsPen.enabled && _windowsInkPointer != e.pointer) return;
           _gestureErase = false;
           _commitErase();
@@ -2187,7 +2271,7 @@ class _PageCanvasState extends State<PageCanvas> {
           // Flutter's recognizer can finish the first finger's long press a
           // moment after a second finger lands. Do not turn a pinch into a
           // context menu.
-          if (_multiTouchSeen ||
+          if (_rejectTouchSequence || _multiTouchSeen ||
               _touches.length != 1 ||
               _mode != _DragMode.pending) return;
           _mode = _DragMode.none;
@@ -2466,15 +2550,15 @@ class _PageCanvasState extends State<PageCanvas> {
         cursor: _windowsPen.enabled &&
                 _inkTool &&
                 (_gestureErase || _windowsPen.nativeEraser)
-            ? SystemMouseCursors.cell
+            ? SystemMouseCursors.none
             : switch (app.tool) {
                 Tool.text => SystemMouseCursors.text,
                 Tool.pen ||
                 Tool.ballpoint ||
                 Tool.highlighter ||
                 Tool.shape =>
-                  SystemMouseCursors.precise,
-                Tool.eraser => SystemMouseCursors.cell,
+                  SystemMouseCursors.none,
+                Tool.eraser => SystemMouseCursors.none,
                 Tool.lasso => SystemMouseCursors.precise,
                 _ => MouseCursor.defer,
               },

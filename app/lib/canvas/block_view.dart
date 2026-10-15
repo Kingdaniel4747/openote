@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../l10n/app_strings.dart';
 
 import '../editor/board_block_view.dart';
 import '../editor/code_block_view.dart';
@@ -83,6 +85,29 @@ class _BlockViewState extends State<BlockView> {
   bool get _hover => _hoverBody;
   bool _dragUndoPushed = false;
   bool _resizeUndoPushed = false;
+  double? _rotationPointerAngle;
+  final _mediaKey = GlobalKey();
+  Offset get _rotationCenter {
+    final box = _mediaKey.currentContext!.findRenderObject() as RenderBox;
+    return box.localToGlobal(box.size.center(Offset.zero));
+  }
+
+  void _rotateStart(DragStartDetails details) {
+    app.pushUndo();
+    final delta = details.globalPosition - _rotationCenter;
+    _rotationPointerAngle = math.atan2(delta.dy, delta.dx);
+  }
+
+  void _rotateUpdate(DragUpdateDetails details) {
+    if (_rotationPointerAngle == null) return;
+    final delta = details.globalPosition - _rotationCenter;
+    final angle = math.atan2(delta.dy, delta.dx);
+    final change = angle - _rotationPointerAngle!;
+    b.rotation = (b.rotation + change * 180 / math.pi) % 360;
+    _rotationPointerAngle = angle;
+    app.updateBlock(b);
+  }
+
   Offset? _touchMoveLast;
   Offset? _touchDoubleTapPosition;
   Offset? _holdMoveLastGlobal;
@@ -330,7 +355,7 @@ class _BlockViewState extends State<BlockView> {
       HardwareKeyboard.instance.isControlPressed ||
       HardwareKeyboard.instance.isMetaPressed;
 
-  void _drag(DragUpdateDetails d) {
+  void _drag(DragUpdateDetails d, {bool rotated = false}) {
     if (!_dragUndoPushed) {
       app.pushUndo();
       _dragUndoPushed = true;
@@ -343,7 +368,13 @@ class _BlockViewState extends State<BlockView> {
     // page space. Dividing it by zoom again made a PDF move twice as far as
     // the finger at 50% zoom.
     final scale = widget.controller.scale;
-    app.moveSelectedBy(d.delta.dx, d.delta.dy);
+    var delta = d.delta;
+    if (rotated && b.type == BlockType.image) {
+      final angle = b.rotation * math.pi / 180;
+      delta = Offset(delta.dx * math.cos(angle) - delta.dy * math.sin(angle),
+          delta.dx * math.sin(angle) + delta.dy * math.cos(angle));
+    }
+    app.moveSelectedBy(delta.dx, delta.dy);
     // Alignment guides (CANVAS-7). Computed after the move so the guide
     // reflects where the block actually is, and the snap nudges it flush.
     app.updateAlignGuides(scale);
@@ -387,7 +418,7 @@ class _BlockViewState extends State<BlockView> {
   }
 
   void _bodyDrag(DragUpdateDetails d) {
-    if (_bodyDragMoves) _drag(d);
+    if (_bodyDragMoves) _drag(d, rotated: true);
   }
 
   void _bodyDragEnd(DragEndDetails d) {
@@ -396,7 +427,7 @@ class _BlockViewState extends State<BlockView> {
   }
 
   void _objectHoldStart(LongPressStartDetails d) {
-    if (!_fastHoldMovable || _locked) return;
+    if (!_fastHoldMovable || _locked || app.touchCanvasGesture) return;
     _holdMovesObject = true;
     _holdObjectMoved = false;
     _textDragging = false;
@@ -919,12 +950,17 @@ class _BlockViewState extends State<BlockView> {
       child: body,
     );
 
+    final mediaHeight = b.h ?? app.renderSizes[b.id]?.height ?? app.estimatedHeight(b);
+    final radians = b.type == BlockType.image ? b.rotation * math.pi / 180 : 0.0;
+    final c = math.cos(radians).abs(), s = math.sin(radians).abs();
+    final extraX = math.max(0.0, (b.w * c + mediaHeight * s - b.w) / 2);
+    final extraY = math.max(0.0, (mediaHeight * c + b.w * s - mediaHeight) / 2);
     return Positioned(
       // Shifted by the reserved chrome so the CONTENT still paints at
       // (b.x, b.y) — renderSizes, marquee, culling and export all continue to
       // mean the content box.
-      left: b.x - _kChromePad,
-      top: b.y - _kBarH,
+      left: b.x - _kChromePad - extraX,
+      top: b.y - _kBarH - extraY,
       child: IgnorePointer(
         ignoring: inkToolActive,
         // Raw pointer stream: claims the pointer so the canvas ignores it, and
@@ -941,10 +977,10 @@ class _BlockViewState extends State<BlockView> {
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(
-                  _kChromePad,
-                  _kBarH,
-                  _kChromePad,
-                  _kChromePad,
+                  _kChromePad + extraX,
+                  _kBarH + extraY,
+                  _kChromePad + extraX,
+                  _kChromePad + extraY,
                 ),
                 child: _MeasureSize(
                   onChange: (size) {
@@ -957,7 +993,11 @@ class _BlockViewState extends State<BlockView> {
                       b.w = size.width;
                     }
                   },
-                  child: _withFastObjectHold(touchable),
+                  child: Transform.rotate(
+                    key: _mediaKey,
+                    angle: b.type == BlockType.image ? b.rotation * math.pi / 180 : 0,
+                    child: _withFastObjectHold(touchable),
+                  ),
                 ),
               ),
               // Unselected objects have no bar hit area. Their content can be
@@ -975,6 +1015,27 @@ class _BlockViewState extends State<BlockView> {
               // the 4px sliver that was all the old negative offsets left
               // inside the box.
               if (primary && !_locked && !_pendingEmpty) ...[
+                if (b.type == BlockType.image)
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    child: Tooltip(
+                      message: tr(context, 'Rotate'),
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        supportedDevices: devices,
+                        onPanStart: _rotateStart,
+                        onPanUpdate: _rotateUpdate,
+                        onPanEnd: (_) => _rotationPointerAngle = null,
+                        onPanCancel: () => _rotationPointerAngle = null,
+                        child: SizedBox(
+                          width: 30, height: 30,
+                          child: Icon(Icons.rotate_right, size: 20,
+                              color: primaryColor),
+                        ),
+                      ),
+                    ),
+                  ),
                 Positioned(
                   right: 0,
                   top: _kBarH,

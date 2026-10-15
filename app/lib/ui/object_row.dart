@@ -18,6 +18,7 @@ library;
 
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
+import '../l10n/app_strings.dart';
 
 import '../math/active_math.dart';
 import '../math/evaluate.dart';
@@ -329,6 +330,17 @@ class PageFace extends StatelessWidget {
         tooltip: 'Zoom to fit content',
         visualDensity: VisualDensity.compact,
         onPressed: () => app.canvas.fitTo(app.contentBounds().inflate(24)),
+      ),
+      PopupMenuButton<bool>(
+        tooltip: tr(context, 'Arrange selected images and PDFs'),
+        enabled: app.blocks.where((b) => app.selectedIds.contains(b.id) &&
+            b.type == BlockType.image).length > 1,
+        icon: const Icon(Icons.view_module_outlined, size: OnoteIcon.md),
+        onSelected: (horizontal) => app.arrangeSelectedMedia(horizontal: horizontal),
+        itemBuilder: (_) => const [
+          PopupMenuItem(value: false, child: AppText('Arrange vertically')),
+          PopupMenuItem(value: true, child: AppText('Arrange horizontally')),
+        ],
       ),
       const _Sep(),
       _WordCount(app: app),

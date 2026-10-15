@@ -2,11 +2,12 @@ import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
-import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import '../l10n/app_strings.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
+import '../core/original_download.dart';
 
 /// Non-modal: the next lasso can start immediately on the canvas.
 class SelectionToolbar extends StatelessWidget {
@@ -17,11 +18,8 @@ class SelectionToolbar extends StatelessWidget {
   Widget build(BuildContext context) {
     final selected =
         app.blocks.where((b) => app.selectedIds.contains(b.id)).toList();
-    final downloadable = selected.length == 1 &&
-            (selected.single.type == BlockType.image ||
-                selected.single.content['kind'] == 'drawio')
-        ? selected.single
-        : null;
+    final downloadable = selected.where((b) => b.type == BlockType.image ||
+        b.content['kind'] == 'drawio').firstOrNull;
     return Listener(
       onPointerDown: (e) => app.claimedPointers.add(e.pointer),
       child: Material(
@@ -50,15 +48,61 @@ class SelectionToolbar extends StatelessWidget {
     );
   }
 
+  static Future<void> _saveQueue = Future<void>.value();
+
   static Future<void> saveOriginal(
       BuildContext context, AppState app, Block block) async {
+    final selected = app.blocks.where((b) => app.selectedIds.contains(b.id) &&
+        (b.type == BlockType.image || b.content['kind'] == 'drawio')).toList();
+    final targets = app.selectedIds.contains(block.id) ? selected : [block];
+    _saveQueue = _saveQueue.then((_) => _saveOriginals(context, app, targets));
+    await _saveQueue;
+  }
+
+  static Future<void> _saveOriginals(
+      BuildContext context, AppState app, List<Block> targets) async {
+    try {
+      final downloads = await getDownloadsDirectory();
+      final directory = downloads?.path ?? await getDirectoryPath(
+          confirmButtonText: 'Save originals here');
+      if (directory == null) return;
+      await Directory(directory).create(recursive: true);
+      var saved = 0;
+      for (final target in targets) {
+        try {
+          await _saveOriginalTo(app, target, directory);
+          saved++;
+        } catch (e) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Could not save original: $e')));
+          }
+        }
+      }
+      if (context.mounted && saved > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('$saved original(s) saved to $directory')));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not save originals: $e')));
+      }
+    }
+  }
+
+  static Future<void> _saveOriginalTo(
+      AppState app, Block block, String directory) async {
     if (block.content['kind'] == 'drawio') {
-      await _saveLinkedDiagram(context, block);
+      final source = File(block.content['path'] as String? ?? '');
+      if (!await source.exists()) throw StateError('The original file is unavailable.');
+      final destination = await reserveOriginalDownload(directory, 'drawio');
+      await source.copy(destination.path);
       return;
     }
     final pdf = block.content['pdf'] as String?;
     final blob = pdf ?? block.content['blob'] as String?;
-    if (blob == null) return;
+    if (blob == null) throw StateError('The original file is unavailable.');
     final extension = pdf != null
         ? 'pdf'
         : switch (block.content['mime'] as String?) {
@@ -67,59 +111,12 @@ class SelectionToolbar extends StatelessWidget {
             'image/webp' => 'webp',
             _ => 'png',
           };
-    final location = await getSaveLocation(
-      suggestedName: 'Openote file.$extension',
-      acceptedTypeGroups: [
-        XTypeGroup(label: extension.toUpperCase(), extensions: [extension])
-      ],
-    );
-    if (location == null) return;
     final bytes = app.blob(blob);
     if (bytes == null) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('The original file is unavailable.')));
-      }
-      return;
+      throw StateError('The original file is unavailable.');
     }
-    var destination = location.path;
-    if (p.extension(destination).isEmpty) destination += '.$extension';
-    await File(destination).writeAsBytes(bytes, flush: true);
-  }
-
-  static Future<void> _saveLinkedDiagram(
-      BuildContext context, Block block) async {
-    final sourcePath = (block.content['path'] as String?)?.trim() ?? '';
-    final source = File(sourcePath);
-    if (sourcePath.isEmpty || !source.existsSync()) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('The original file is unavailable.')));
-      }
-      return;
-    }
-    final name = (block.content['name'] as String?)?.trim();
-    final suggested = name == null || name.isEmpty ? 'diagram.drawio' : name;
-    final extension = p.extension(suggested).replaceFirst('.', '').isEmpty
-        ? 'drawio'
-        : p.extension(suggested).replaceFirst('.', '');
-    final location =
-        await getSaveLocation(suggestedName: suggested, acceptedTypeGroups: [
-      XTypeGroup(label: extension.toUpperCase(), extensions: [extension])
-    ]);
-    if (location == null) return;
-    var destination = location.path;
-    if (p.extension(destination).isEmpty && extension.isNotEmpty) {
-      destination += '.$extension';
-    }
-    try {
-      await source.copy(destination);
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text("That copy didn't save: $e")));
-      }
-    }
+    final destination = await reserveOriginalDownload(directory, extension);
+    await destination.writeAsBytes(bytes, flush: true);
   }
 
   Widget _button(BuildContext context, String label, IconData icon,

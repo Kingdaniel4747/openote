@@ -4041,9 +4041,9 @@ class AppState extends ChangeNotifier
   ({double right, double bottom}) contentExtent() {
     var right = pageLeftMargin, bottom = contentTop;
     for (final b in blocks) {
-      final bh = b.h ?? renderSizes[b.id]?.height ?? estimatedHeight(b);
-      if (b.x + b.w > right) right = b.x + b.w;
-      if (b.y + bh > bottom) bottom = b.y + bh;
+      final bounds = blockVisualBounds(b);
+      if (bounds.right > right) right = bounds.right;
+      if (bounds.bottom > bottom) bottom = bounds.bottom;
     }
     return (right: right, bottom: bottom);
   }
@@ -4307,12 +4307,22 @@ class AppState extends ChangeNotifier
     var r = Rect.zero;
     var first = true;
     for (final b in blocks) {
-      final bh = b.h ?? renderSizes[b.id]?.height ?? 60;
-      final br = Rect.fromLTWH(b.x, b.y, b.w, bh);
+      final br = blockVisualBounds(b);
       r = first ? br : r.expandToInclude(br);
       first = false;
     }
     return r;
+  }
+
+  Rect blockVisualBounds(Block b) {
+    final h = b.h ?? renderSizes[b.id]?.height ?? estimatedHeight(b);
+    final radians = b.type == BlockType.image ? b.rotation * math.pi / 180 : 0.0;
+    final c = math.cos(radians).abs(), s = math.sin(radians).abs();
+    return Rect.fromCenter(
+      center: Offset(b.x + b.w / 2, b.y + h / 2),
+      width: b.w * c + h * s,
+      height: h * c + b.w * s,
+    );
   }
 
   /// Content never above/left of the page origin (CANVAS-1 v0.3), and never
@@ -5337,6 +5347,35 @@ class AppState extends ChangeNotifier
     b.updatedAt = nowMs();
     markDirty();
     notifyListeners();
+  }
+
+  /// Arrange selected media in page order, preserving their sizes and angles.
+  void arrangeSelectedMedia({required bool horizontal}) {
+    final media = blocks.where((b) => selectedIds.contains(b.id) &&
+        b.type == BlockType.image).toList();
+    if (media.length < 2) return;
+    pushUndo();
+    var x = media.map((b) => b.x).reduce(math.min);
+    var y = media.map((b) => b.y).reduce(math.min);
+    final left = x, top = y;
+    for (final b in media) {
+      final h = b.h ?? renderSizes[b.id]?.height ?? estimatedHeight(b);
+      final radians = b.rotation * math.pi / 180;
+      final c = math.cos(radians).abs(), s = math.sin(radians).abs();
+      final width = b.w * c + h * s;
+      final height = h * c + b.w * s;
+      b.x = x + (width - b.w) / 2;
+      b.y = y + (height - h) / 2;
+      b.updatedAt = nowMs();
+      if (horizontal) {
+        x += width + 24;
+        y = top;
+      } else {
+        y += height + 24;
+        x = left;
+      }
+    }
+    commitCanvasEdit();
   }
 
   /// Commits mutations already made by a latency-sensitive canvas gesture.

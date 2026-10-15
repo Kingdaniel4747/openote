@@ -34,6 +34,10 @@ class AppText extends StatelessWidget {
 }
 
 const german = <String, String>{
+  'Rotate': 'Drehen',
+  'Arrange selected images and PDFs': 'Ausgewählte Bilder und PDFs anordnen',
+  'Arrange vertically': 'Untereinander anordnen',
+  'Arrange horizontally': 'Nebeneinander anordnen',
   'View': 'Ansicht',
   'Settings': 'Einstellungen',
   'Settings…': 'Einstellungen…',

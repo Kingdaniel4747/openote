@@ -154,9 +154,21 @@ class _SidebarState extends State<Sidebar> {
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final searching = _query.trim().isNotEmpty;
 
-    if (app.navCollapsed) return _NavRail(app: app, dark: dark);
+    return ClipRect(
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOutCubic,
+        alignment: Alignment.centerLeft,
+        child: app.navCollapsed
+            ? _NavRail(app: app, dark: dark)
+            : _expanded(context),
+      ),
+    );
+  }
+
+  Widget _expanded(BuildContext context) {
+    final searching = _query.trim().isNotEmpty;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -1027,6 +1039,13 @@ class _NavRail extends StatelessWidget {
                       ),
                     ),
                   ),
+                IconButton(
+                  tooltip: tr(context, 'New page'),
+                  icon: const Icon(Icons.add, size: 20),
+                  onPressed: app.activeSectionId == null
+                      ? null
+                      : () => app.addPage(sectionId: app.activeSectionId!),
+                ),
               ],
             ),
           ),

@@ -327,8 +327,8 @@ double? _slideHeight(List<Block> blocks, double widthPx) {
 }
 
 bool _overlaps(AppState app, Block b, double top, double bottom) {
-  final h = b.h ?? app.renderSizes[b.id]?.height ?? app.estimatedHeight(b);
-  return b.y < bottom && b.y + h > top;
+  final bounds = app.blockVisualBounds(b);
+  return bounds.top < bottom && bounds.bottom > top;
 }
 
 /// One block, positioned for the sheet starting at [sheetTop].
@@ -357,7 +357,12 @@ pw.Widget? _blockWidget(
   return pw.Positioned(
     left: left,
     top: top,
-    child: pw.SizedBox(width: w, child: child),
+    child: b.type == BlockType.image && b.rotation != 0
+        ? pw.Transform.rotate(
+            angle: -b.rotation * math.pi / 180,
+            child: pw.SizedBox(width: w, height: h / _pxPerPoint, child: child),
+          )
+        : pw.SizedBox(width: w, child: child),
   );
 }
 

@@ -290,11 +290,7 @@ class Block {
   double? h; // null = auto-height
   int z;
 
-  /// Degrees clockwise. **Round-tripped but not yet applied when rendering** —
-  /// no UI creates a rotated block. It is a real envelope field rather than an
-  /// unknown-field passenger because the spec defines it; previously `toJson`
-  /// hard-coded `0` while `_known` claimed the key, so any non-zero rotation in
-  /// a file was destroyed on the first load→save cycle.
+  /// Degrees clockwise around the block centre; rendered for images/PDFs.
   double rotation;
   String placement; // 'free' | 'snapped'
   String? frameId;

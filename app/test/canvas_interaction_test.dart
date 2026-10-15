@@ -96,6 +96,27 @@ void main() {
       app.setPdfEditorView(true);
     }
 
+    testWidgets('top-right rotation handle rotates media and supports undo', (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final image = app.addBlock(Block(type: BlockType.image,
+          x: 200, y: 200, w: 180, h: 120));
+      app.select(image.id);
+      await pump(t);
+      final handle = find.byTooltip('Rotate');
+      expect(handle, findsOneWidget);
+      final gesture = await t.startGesture(t.getCenter(handle));
+      await gesture.moveBy(const Offset(0, 25));
+      await gesture.moveBy(const Offset(0, 60));
+      await t.pump();
+      await gesture.up();
+      expect(image.rotation, isNot(0));
+      expect(Block.fromJson(image.toJson()).rotation, image.rotation);
+      app.undo();
+      expect(app.blocks.firstWhere((b) => b.id == image.id).rotation, 0);
+      await t.pump();
+      app.cancelPendingSave();
+    });
+
     testWidgets('PDF title moves with the page instead of staying fixed',
         (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
@@ -159,6 +180,7 @@ void main() {
       await pump(t);
       final finger = await t.startGesture(const Offset(400, 400),
           kind: PointerDeviceKind.touch);
+      await t.pump(const Duration(milliseconds: 120));
       await finger.moveBy(const Offset(0, -80));
       await finger.up();
       final liftedAt = app.canvas.offset.dy;
@@ -182,6 +204,49 @@ void main() {
       await t.pump(const Duration(milliseconds: 80));
       expect(app.canvas.offset, before);
       app.cancelPendingSave();
+    });
+
+    testWidgets('touch waits for intent before moving the page', (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      makePdfPage();
+      await pump(t);
+      final before = app.canvas.offset;
+      final finger = await t.startGesture(const Offset(400, 400),
+          kind: PointerDeviceKind.touch);
+      await finger.moveBy(const Offset(0, -40));
+      await t.pump(const Duration(milliseconds: 50));
+      expect(app.canvas.offset, before);
+      await t.pump(const Duration(milliseconds: 60));
+      await finger.moveBy(const Offset(0, -40));
+      expect(app.canvas.offset.dy, lessThan(before.dy));
+      await finger.up();
+      app.canvas.stopMotion();
+      await t.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('three resting contacts cannot pan or zoom the page', (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      makePdfPage();
+      await pump(t);
+      final before = app.canvas.offset;
+      final scale = app.canvas.scale;
+      final first = await t.startGesture(const Offset(300, 350),
+          pointer: 11, kind: PointerDeviceKind.touch);
+      final second = await t.startGesture(const Offset(400, 350),
+          pointer: 12, kind: PointerDeviceKind.touch);
+      final third = await t.startGesture(const Offset(350, 400),
+          pointer: 13, kind: PointerDeviceKind.touch);
+      await t.pump(const Duration(milliseconds: 120));
+      await first.moveBy(const Offset(-70, -90));
+      await second.moveBy(const Offset(80, -70));
+      await t.pump();
+      await third.up();
+      await first.moveBy(const Offset(-30, -30));
+      await second.up();
+      await first.up();
+      await t.pump();
+      expect(app.canvas.offset, before);
+      expect(app.canvas.scale, scale);
     });
 
     testWidgets('PDF precision scroll signal gets a short coast', (t) async {
@@ -216,6 +281,7 @@ void main() {
       final before = app.canvas.offset;
       final g = await t.startGesture(const Offset(400, 300),
           kind: PointerDeviceKind.touch);
+      await t.pump(const Duration(milliseconds: 120));
       await g.moveBy(const Offset(-120, -60));
       await t.pump();
       await g.up();
