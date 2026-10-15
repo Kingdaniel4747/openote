@@ -16,6 +16,7 @@ import 'package:openote/canvas/block_view.dart';
 import 'package:openote/canvas/page_canvas.dart';
 import 'package:openote/canvas/page_title_view.dart';
 import 'package:openote/editor/text_block_view.dart';
+import 'package:openote/editor/image_block_view.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
@@ -117,6 +118,42 @@ void main() {
       app.cancelPendingSave();
     });
 
+    testWidgets('rotation handles share the image frame and resizing keeps its corner', (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final image = app.addBlock(Block(type: BlockType.image,
+          x: 250, y: 250, w: 180, h: 120, rotation: 90));
+      app.select(image.id);
+      await pump(t);
+      final handleTransforms = t.widgetList<Transform>(find.ancestor(
+          of: find.byTooltip('Rotate'), matching: find.byType(Transform)));
+      expect(handleTransforms.any((w) => w.transform.storage[1].abs() > .9), isTrue);
+      final content = find.byType(ImageBlockView);
+      final corner = t.getTopLeft(content);
+      final resize = find.byWidgetPredicate((w) => w is MouseRegion &&
+          w.cursor == SystemMouseCursors.resizeDownRight);
+      await t.drag(resize, const Offset(-30, 40));
+      await t.pump();
+      expect((t.getTopLeft(content) - corner).distance, lessThan(.01));
+      expect(image.w, greaterThan(180));
+      app.cancelPendingSave();
+    });
+
+    testWidgets('mouse cursor returns after pen hover while drawing', (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      app.setTool(Tool.pen);
+      await pump(t);
+      final pen = TestPointer(91, PointerDeviceKind.stylus);
+      await t.sendEventToBinding(pen.hover(const Offset(400, 400)));
+      await t.pump();
+      expect(find.byWidgetPredicate((w) => w is MouseRegion &&
+          w.cursor == SystemMouseCursors.none), findsOneWidget);
+      final mouse = TestPointer(92, PointerDeviceKind.mouse);
+      await t.sendEventToBinding(mouse.hover(const Offset(420, 400)));
+      await t.pump();
+      expect(find.byWidgetPredicate((w) => w is MouseRegion &&
+          w.cursor == SystemMouseCursors.none), findsNothing);
+    });
+
     testWidgets('PDF title moves with the page instead of staying fixed',
         (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
@@ -180,7 +217,6 @@ void main() {
       await pump(t);
       final finger = await t.startGesture(const Offset(400, 400),
           kind: PointerDeviceKind.touch);
-      await t.pump(const Duration(milliseconds: 120));
       await finger.moveBy(const Offset(0, -80));
       await finger.up();
       final liftedAt = app.canvas.offset.dy;
@@ -206,18 +242,14 @@ void main() {
       app.cancelPendingSave();
     });
 
-    testWidgets('touch waits for intent before moving the page', (t) async {
+    testWidgets('a quick finger swipe moves immediately', (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       makePdfPage();
       await pump(t);
       final before = app.canvas.offset;
       final finger = await t.startGesture(const Offset(400, 400),
           kind: PointerDeviceKind.touch);
-      await finger.moveBy(const Offset(0, -40));
-      await t.pump(const Duration(milliseconds: 50));
-      expect(app.canvas.offset, before);
-      await t.pump(const Duration(milliseconds: 60));
-      await finger.moveBy(const Offset(0, -40));
+      await finger.moveBy(const Offset(0, -260));
       expect(app.canvas.offset.dy, lessThan(before.dy));
       await finger.up();
       app.canvas.stopMotion();
@@ -236,7 +268,6 @@ void main() {
           pointer: 12, kind: PointerDeviceKind.touch);
       final third = await t.startGesture(const Offset(350, 400),
           pointer: 13, kind: PointerDeviceKind.touch);
-      await t.pump(const Duration(milliseconds: 120));
       await first.moveBy(const Offset(-70, -90));
       await second.moveBy(const Offset(80, -70));
       await t.pump();
@@ -281,7 +312,6 @@ void main() {
       final before = app.canvas.offset;
       final g = await t.startGesture(const Offset(400, 300),
           kind: PointerDeviceKind.touch);
-      await t.pump(const Duration(milliseconds: 120));
       await g.moveBy(const Offset(-120, -60));
       await t.pump();
       await g.up();

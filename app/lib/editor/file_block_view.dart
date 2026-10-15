@@ -47,6 +47,25 @@ class FileBlockView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final poolPath = block.content['poolPath'] as String?;
+    if (poolPath != null) {
+      final path = app.resolvePoolFile(poolPath);
+      return ListTile(
+        leading: const Icon(Icons.link),
+        title: Text(block.content['name'] as String? ?? poolPath),
+        subtitle: Text('Pool / $poolPath', overflow: TextOverflow.ellipsis),
+        onTap: () async {
+          final opened = path != null && await PlatformOpen.file(path);
+          if (!opened && context.mounted) _toast(context,
+              'Die verknüpfte Datei fehlt im Datenpool.');
+        },
+        trailing: IconButton(
+          tooltip: 'Im Explorer zeigen',
+          icon: const Icon(Icons.folder_open_outlined),
+          onPressed: path == null ? null : () => PlatformOpen.directory(p.dirname(path)),
+        ),
+      );
+    }
     // A recording kept in the notebook, played in the page. Checked before the
     // url and blob branches because it is neither: the bytes are a file beside
     // the container (store/media_store.dart), and an older build that knows

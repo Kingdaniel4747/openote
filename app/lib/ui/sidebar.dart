@@ -988,7 +988,7 @@ class _NavRail extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: 8),
               children: [
                 for (final s in destinations)
-                  Padding(
+                  NavigatorDragEntry(app: app, node: s, child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 2),
                     child: Center(
                       child: Tooltip(
@@ -1038,7 +1038,7 @@ class _NavRail extends StatelessWidget {
                         ),
                       ),
                     ),
-                  ),
+                  )),
                 IconButton(
                   tooltip: tr(context, 'New page'),
                   icon: const Icon(Icons.add, size: 20),
@@ -1053,6 +1053,72 @@ class _NavRail extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Shared drag/drop and context-menu behavior for rail icons and section tabs.
+/// Mouse dragging stays immediate; holding a touch opens the existing node menu.
+class NavigatorDragEntry extends StatefulWidget {
+  const NavigatorDragEntry({super.key, required this.app, required this.node,
+    required this.child, this.horizontal = false, this.draggable = true});
+  final AppState app;
+  final TreeNode node;
+  final Widget child;
+  final bool horizontal;
+  final bool draggable;
+  @override
+  State<NavigatorDragEntry> createState() => _NavigatorDragEntryState();
+}
+
+class _NavigatorDragEntryState extends State<NavigatorDragEntry> {
+  bool after = false;
+  bool accepts(String id) {
+    final moving = widget.app.node(id);
+    return id != widget.node.id && moving != null &&
+        (moving.kind == widget.node.kind ||
+         moving.kind == NodeKind.page && widget.node.kind == NodeKind.section);
+  }
+
+  @override
+  Widget build(BuildContext context) => DragTarget<String>(
+    onWillAcceptWithDetails: (d) => accepts(d.data),
+    onMove: (d) {
+      final box = context.findRenderObject() as RenderBox;
+      final point = box.globalToLocal(d.offset);
+      final next = widget.horizontal ? point.dx > box.size.width / 2
+          : point.dy > box.size.height / 2;
+      if (next != after) setState(() => after = next);
+    },
+    onAcceptWithDetails: (d) {
+      if (widget.app.node(d.data)?.kind == NodeKind.page &&
+          widget.node.kind == NodeKind.section) {
+        widget.app.movePageToSection(d.data, widget.node.id);
+      } else {
+        widget.app.reorderNode(d.data, widget.node.id, after: after);
+      }
+    },
+    builder: (context, candidates, rejected) {
+      final color = candidates.isEmpty ? Colors.transparent : Theme.of(context).colorScheme.primary;
+      final line = BorderSide(color: color, width: 2);
+      final entry = GestureDetector(
+        onSecondaryTapUp: (d) => showNodeMenu(context, widget.app, widget.node,
+            canIndent: widget.node.kind == NodeKind.page, position: d.globalPosition),
+        onLongPressStart: (d) => showNodeMenu(context, widget.app, widget.node,
+            canIndent: widget.node.kind == NodeKind.page, position: d.globalPosition),
+        child: DecoratedBox(decoration: BoxDecoration(border: widget.horizontal
+            ? Border(left: after ? BorderSide.none : line, right: after ? line : BorderSide.none)
+            : Border(top: after ? BorderSide.none : line, bottom: after ? line : BorderSide.none)),
+            child: widget.child),
+      );
+      return Draggable<String>(
+        data: widget.node.id,
+        maxSimultaneousDrags: widget.draggable ? 1 : 0,
+        feedback: dragChip(context, widget.node.title,
+            widget.node.kind == NodeKind.page ? Icons.description_outlined : Icons.folder_outlined),
+        childWhenDragging: Opacity(opacity: .4, child: widget.child),
+        child: entry,
+      );
+    },
+  );
 }
 
 /// The notebook bar: shows the current notebook and opens the notebook manager.

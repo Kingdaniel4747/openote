@@ -1681,7 +1681,9 @@ class _SectionTabsState extends State<_SectionTabs> {
                 final selected = section.id == app.activeSectionId;
                 final color = _colorFor(section.color, dark);
                 var downPosition = Offset.zero;
-                return Tooltip(
+                return NavigatorDragEntry(app: app, node: section,
+                  draggable: _renamingId != section.id,
+                  horizontal: true, child: Tooltip(
                   message: section.title,
                   child: InkWell(
                     borderRadius: BorderRadius.circular(8),
@@ -1756,7 +1758,7 @@ class _SectionTabsState extends State<_SectionTabs> {
                             ),
                     ),
                   ),
-                );
+                ));
               },
             ),
           ),

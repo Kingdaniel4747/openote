@@ -75,6 +75,11 @@ abstract final class PlatformOpen {
     return _handOff(path);
   }
 
+  static Future<bool> directory(String path) async {
+    if (!await Directory(path).exists()) return false;
+    return _handOff(path);
+  }
+
   static Future<bool> _handOff(String target) async {
     try {
       if (Platform.isWindows) return _shellExecute(target);

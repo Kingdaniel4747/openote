@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:openote/core/original_download.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
@@ -34,6 +35,34 @@ void main() {
 
   var haveSqlite = false;
   setUpAll(() => haveSqlite = initSqliteForTests());
+  test('pool links store relative paths without copying file contents', () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final directory = await Directory.systemTemp.createTemp('openote_pool_');
+    final repo = await Repository.openAt(directory);
+    final nb = await repo.createNotebook('Pool');
+    final app = AppState(repo)..notebookId = nb.id;
+    try {
+      app.reloadNodes();
+      await app.selectPage(app.nodes.firstWhere((n) => n.kind == NodeKind.page).id);
+      final file = File(p.join(app.poolDirectory.path, 'Math', 'worksheet.mn'));
+      await file.parent.create(recursive: true);
+      await file.writeAsString('original');
+      app.linkPoolFile(file.path);
+      final link = app.blocks.last;
+      expect(link.content['poolPath'], 'Math/worksheet.mn');
+      expect(link.content.containsKey('blob'), isFalse);
+      expect(app.resolvePoolFile(link.content['poolPath'] as String), file.path);
+      expect(app.resolvePoolFile('../outside.pdf'), isNull);
+      expect(await file.readAsString(), 'original');
+      app.undo();
+      expect(app.blocks.where((b) => b.id == link.id), isEmpty);
+      expect(await file.exists(), isTrue);
+    } finally {
+      app.cancelPendingSave();
+      repo.dispose();
+      await directory.delete(recursive: true);
+    }
+  });
   for (final horizontal in [false, true]) {
     test('arrange rotated media ${horizontal ? 'horizontally' : 'vertically'} and undo', () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');

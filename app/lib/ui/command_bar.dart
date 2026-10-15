@@ -19,6 +19,7 @@ import '../state/app_state.dart';
 import '../platform/screen_capture.dart';
 import '../theme/onote_theme.dart';
 import 'color_picker.dart';
+import 'data_pool_dialog.dart';
 import 'command_button.dart';
 import 'compacting_toolbar.dart';
 import 'fixed_toolbar.dart';
@@ -327,6 +328,12 @@ class _CommandBarState extends State<CommandBar> {
             onPressed: () => _openBrowser(context),
           ),
         _PlannerButton(app: app),
+        IconButton(
+          icon: const Icon(Icons.folder_copy_outlined, size: 18),
+          tooltip: 'Datenpool',
+          visualDensity: VisualDensity.compact,
+          onPressed: () => showDataPool(context, app),
+        ),
         IconButton(
           icon: const Icon(Icons.settings_outlined, size: 18),
           tooltip: tr(context, 'Settings…'),

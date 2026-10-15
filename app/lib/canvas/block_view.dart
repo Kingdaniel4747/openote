@@ -355,7 +355,7 @@ class _BlockViewState extends State<BlockView> {
       HardwareKeyboard.instance.isControlPressed ||
       HardwareKeyboard.instance.isMetaPressed;
 
-  void _drag(DragUpdateDetails d, {bool rotated = false}) {
+  void _drag(DragUpdateDetails d) {
     if (!_dragUndoPushed) {
       app.pushUndo();
       _dragUndoPushed = true;
@@ -369,7 +369,7 @@ class _BlockViewState extends State<BlockView> {
     // the finger at 50% zoom.
     final scale = widget.controller.scale;
     var delta = d.delta;
-    if (rotated && b.type == BlockType.image) {
+    if (b.type == BlockType.image) {
       final angle = b.rotation * math.pi / 180;
       delta = Offset(delta.dx * math.cos(angle) - delta.dy * math.sin(angle),
           delta.dx * math.sin(angle) + delta.dy * math.cos(angle));
@@ -418,7 +418,7 @@ class _BlockViewState extends State<BlockView> {
   }
 
   void _bodyDrag(DragUpdateDetails d) {
-    if (_bodyDragMoves) _drag(d, rotated: true);
+    if (_bodyDragMoves) _drag(d);
   }
 
   void _bodyDragEnd(DragEndDetails d) {
@@ -630,6 +630,12 @@ class _BlockViewState extends State<BlockView> {
       );
       b.w = oldW * bounded;
       b.h = sourceH * bounded;
+      // Keep the opposite image corner fixed in page space as its local
+      // frame scales. The unrotated top-left is not the visual corner.
+      final angle = b.rotation * math.pi / 180;
+      final dw = (b.w - oldW) / 2, dh = (b.h! - sourceH) / 2;
+      b.x += (math.cos(angle) - 1) * dw - math.sin(angle) * dh;
+      b.y += math.sin(angle) * dw + (math.cos(angle) - 1) * dh;
       app.updateBlock(b);
       setState(() {});
       return;
@@ -950,146 +956,113 @@ class _BlockViewState extends State<BlockView> {
       child: body,
     );
 
-    final mediaHeight = b.h ?? app.renderSizes[b.id]?.height ?? app.estimatedHeight(b);
     final radians = b.type == BlockType.image ? b.rotation * math.pi / 180 : 0.0;
-    final c = math.cos(radians).abs(), s = math.sin(radians).abs();
-    final extraX = math.max(0.0, (b.w * c + mediaHeight * s - b.w) / 2);
-    final extraY = math.max(0.0, (mediaHeight * c + b.w * s - mediaHeight) / 2);
     return Positioned(
       // Shifted by the reserved chrome so the CONTENT still paints at
       // (b.x, b.y) — renderSizes, marquee, culling and export all continue to
       // mean the content box.
-      left: b.x - _kChromePad - extraX,
-      top: b.y - _kBarH - extraY,
-      child: IgnorePointer(
-        ignoring: inkToolActive,
-        // Raw pointer stream: claims the pointer so the canvas ignores it, and
-        // drives text drag-selection. `deferToChild` (the default) means the
-        // reserved margin does NOT claim clicks that miss the content — a
-        // click just outside a box still creates a new text box.
-        child: Listener(
-          onPointerDown: _pointerDown,
-          onPointerMove: _pointerMove,
-          onPointerUp: _pointerUp,
-          onPointerCancel: _pointerUp,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                  _kChromePad + extraX,
-                  _kBarH + extraY,
-                  _kChromePad + extraX,
-                  _kChromePad + extraY,
-                ),
-                child: _MeasureSize(
-                  onChange: (size) {
-                    app.renderSizes[b.id] = size;
-                    // Keep the model width in sync for self-sizing math blocks
-                    // (see displayW above) so hit-testing/export match the
-                    // screen. Silent sync — no notify, no updatedAt churn.
-                    if (b.type == BlockType.math &&
-                        (size.width - b.w).abs() > 2) {
-                      b.w = size.width;
-                    }
-                  },
-                  child: Transform.rotate(
-                    key: _mediaKey,
-                    angle: b.type == BlockType.image ? b.rotation * math.pi / 180 : 0,
-                    child: _withFastObjectHold(touchable),
+      left: b.x - _kChromePad,
+      top: b.y - _kBarH,
+      child: Transform.rotate(
+        angle: radians,
+        // The content centre lies below the centre of the asymmetric chrome.
+        origin: const Offset(0, (_kBarH - _kChromePad) / 2),
+        child: IgnorePointer(
+          ignoring: inkToolActive,
+          // Raw pointer stream: claims the pointer so the canvas ignores it, and
+          // drives text drag-selection. `deferToChild` (the default) means the
+          // reserved margin does NOT claim clicks that miss the content — a
+          // click just outside a box still creates a new text box.
+          child: Listener(
+            onPointerDown: _pointerDown,
+            onPointerMove: _pointerMove,
+            onPointerUp: _pointerUp,
+            onPointerCancel: _pointerUp,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    _kChromePad,
+                    _kBarH,
+                    _kChromePad,
+                    _kChromePad,
                   ),
-                ),
-              ),
-              // Unselected objects have no bar hit area. Their content can be
-              // clicked to select them; only then does this move target appear.
-              if (showChrome && !_locked)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  top: 0,
-                  height: _kBarH,
-                  child: _moveBar(context, primaryColor, dark),
-                ),
-              // Resize handles. Now that the chrome sits INSIDE the render
-              // box, each handle's full visual extent is grabbable instead of
-              // the 4px sliver that was all the old negative offsets left
-              // inside the box.
-              if (primary && !_locked && !_pendingEmpty) ...[
-                if (b.type == BlockType.image)
-                  Positioned(
-                    right: 0,
-                    top: 0,
-                    child: Tooltip(
-                      message: tr(context, 'Rotate'),
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        supportedDevices: devices,
-                        onPanStart: _rotateStart,
-                        onPanUpdate: _rotateUpdate,
-                        onPanEnd: (_) => _rotationPointerAngle = null,
-                        onPanCancel: () => _rotationPointerAngle = null,
-                        child: SizedBox(
-                          width: 30, height: 30,
-                          child: Icon(Icons.rotate_right, size: 20,
-                              color: primaryColor),
-                        ),
-                      ),
+                  child: _MeasureSize(
+                    onChange: (size) {
+                      app.renderSizes[b.id] = size;
+                      // Keep the model width in sync for self-sizing math blocks
+                      // (see displayW above) so hit-testing/export match the
+                      // screen. Silent sync — no notify, no updatedAt churn.
+                      if (b.type == BlockType.math &&
+                          (size.width - b.w).abs() > 2) {
+                        b.w = size.width;
+                      }
+                    },
+                    child: SizedBox(
+                      key: _mediaKey,
+                      child: _withFastObjectHold(touchable),
                     ),
                   ),
-                Positioned(
-                  right: 0,
-                  top: _kBarH,
-                  bottom: 0,
-                  width: _kChromePad + 6,
-                  child: MouseRegion(
-                    cursor: SystemMouseCursors.resizeLeftRight,
-                    child: GestureDetector(
-                      // Opaque, or the strip is grabbable only over the pill:
-                      // the default deferToChild hit-tests only where a child
-                      // painted, so the cursor changed across the whole edge
-                      // (MouseRegion is the full strip) while the drag worked
-                      // on the 10×28 handle alone — "I cannot resize it
-                      // unless I'm directly over the grab bar".
-                      behavior: HitTestBehavior.opaque,
-                      supportedDevices: devices,
-                      onPanUpdate: _resize,
-                      onPanEnd: (_) => _resizeUndoPushed = false,
-                      child: Center(
-                        child: Container(
-                          width: 10,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: primaryColor.withValues(alpha: .85),
-                            borderRadius: BorderRadius.circular(5),
+                ),
+                // Unselected objects have no bar hit area. Their content can be
+                // clicked to select them; only then does this move target appear.
+                if (showChrome && !_locked)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    top: 0,
+                    height: _kBarH,
+                    child: _moveBar(context, primaryColor, dark),
+                  ),
+                // Resize handles. Now that the chrome sits INSIDE the render
+                // box, each handle's full visual extent is grabbable instead of
+                // the 4px sliver that was all the old negative offsets left
+                // inside the box.
+                if (primary && !_locked && !_pendingEmpty) ...[
+                  if (b.type == BlockType.image)
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      child: Tooltip(
+                        message: tr(context, 'Rotate'),
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          supportedDevices: devices,
+                          onPanStart: _rotateStart,
+                          onPanUpdate: _rotateUpdate,
+                          onPanEnd: (_) => _rotationPointerAngle = null,
+                          onPanCancel: () => _rotationPointerAngle = null,
+                          child: SizedBox(
+                            width: 30, height: 30,
+                            child: Icon(Icons.rotate_right, size: 20,
+                                color: primaryColor),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                ),
-                // Bottom edge and corner (CANVAS-4). Only offered when the
-                // block has a real height to drive: an auto-height text box
-                // is sized by its content, and a handle that fought the text
-                // would be a control that appears not to work.
-                if (_canResizeHeight) ...[
                   Positioned(
-                    left: _kChromePad,
-                    right: _kChromePad + 12,
+                    right: 0,
+                    top: _kBarH,
                     bottom: 0,
-                    height: _kChromePad + 6,
+                    width: _kChromePad + 6,
                     child: MouseRegion(
-                      cursor: SystemMouseCursors.resizeUpDown,
+                      cursor: SystemMouseCursors.resizeLeftRight,
                       child: GestureDetector(
-                        behavior:
-                            HitTestBehavior.opaque, // whole strip, as above
+                        // Opaque, or the strip is grabbable only over the pill:
+                        // the default deferToChild hit-tests only where a child
+                        // painted, so the cursor changed across the whole edge
+                        // (MouseRegion is the full strip) while the drag worked
+                        // on the 10×28 handle alone — "I cannot resize it
+                        // unless I'm directly over the grab bar".
+                        behavior: HitTestBehavior.opaque,
                         supportedDevices: devices,
-                        onPanUpdate: (d) =>
-                            _resizeBy(d, width: false, height: true),
+                        onPanUpdate: _resize,
                         onPanEnd: (_) => _resizeUndoPushed = false,
                         child: Center(
                           child: Container(
-                            width: 28,
-                            height: 10,
+                            width: 10,
+                            height: 28,
                             decoration: BoxDecoration(
                               color: primaryColor.withValues(alpha: .85),
                               borderRadius: BorderRadius.circular(5),
@@ -1099,30 +1072,63 @@ class _BlockViewState extends State<BlockView> {
                       ),
                     ),
                   ),
-                  Positioned(
-                    right: 1,
-                    bottom: 1,
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.resizeDownRight,
-                      child: GestureDetector(
-                        supportedDevices: devices,
-                        onPanUpdate: (d) =>
-                            _resizeBy(d, width: true, height: true),
-                        onPanEnd: (_) => _resizeUndoPushed = false,
-                        child: Container(
-                          width: 14,
-                          height: 14,
-                          decoration: BoxDecoration(
-                            color: primaryColor,
-                            borderRadius: BorderRadius.circular(3),
+                  // Bottom edge and corner (CANVAS-4). Only offered when the
+                  // block has a real height to drive: an auto-height text box
+                  // is sized by its content, and a handle that fought the text
+                  // would be a control that appears not to work.
+                  if (_canResizeHeight) ...[
+                    Positioned(
+                      left: _kChromePad,
+                      right: _kChromePad + 12,
+                      bottom: 0,
+                      height: _kChromePad + 6,
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.resizeUpDown,
+                        child: GestureDetector(
+                          behavior:
+                              HitTestBehavior.opaque, // whole strip, as above
+                          supportedDevices: devices,
+                          onPanUpdate: (d) =>
+                              _resizeBy(d, width: false, height: true),
+                          onPanEnd: (_) => _resizeUndoPushed = false,
+                          child: Center(
+                            child: Container(
+                              width: 28,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                color: primaryColor.withValues(alpha: .85),
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
+                    Positioned(
+                      right: 1,
+                      bottom: 1,
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.resizeDownRight,
+                        child: GestureDetector(
+                          supportedDevices: devices,
+                          onPanUpdate: (d) =>
+                              _resizeBy(d, width: true, height: true),
+                          onPanEnd: (_) => _resizeUndoPushed = false,
+                          child: Container(
+                            width: 14,
+                            height: 14,
+                            decoration: BoxDecoration(
+                              color: primaryColor,
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ],
-            ],
+            ),
           ),
         ),
       ),

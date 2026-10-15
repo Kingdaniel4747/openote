@@ -55,6 +55,15 @@ class _PageCanvasState extends State<PageCanvas> {
   bool _pendingErase = false;
   bool _inkContactActive = false;
   bool _invertedInkContact = false;
+  bool _penCursorActive = false;
+
+  void _trackCursorDevice(PointerEvent event) {
+    if (event.kind == PointerDeviceKind.touch) return;
+    final pen = event.kind == PointerDeviceKind.stylus ||
+        event.kind == PointerDeviceKind.invertedStylus;
+    if (_penCursorActive != pen) setState(() => _penCursorActive = pen);
+  }
+
   Tool _penReturnTool = Tool.pen;
   Tool _contactTool = Tool.pen;
   Offset? _eraserScreen;
@@ -65,6 +74,7 @@ class _PageCanvasState extends State<PageCanvas> {
 
   void _windowsPenChanged() {
     if (!mounted) return;
+    if (_windowsPen.nativeInRange) _penCursorActive = true;
     if (_windowsPen.nativeInRange && _touches.isNotEmpty) {
       _rejectTouchSequence = true;
       app.touchCanvasGesture = true;
@@ -144,9 +154,6 @@ class _PageCanvasState extends State<PageCanvas> {
 
   // Two-finger touch pinch tracking.
   final Map<int, Offset> _touches = {};
-  Timer? _touchIntentDelay;
-  bool _touchReady = false;
-  DateTime? _lastPenContact;
   bool _rejectTouchSequence = false;
   double? _pinchStartDist;
   Offset? _pinchStartFocal;
@@ -372,7 +379,6 @@ class _PageCanvasState extends State<PageCanvas> {
 
   @override
   void dispose() {
-    _touchIntentDelay?.cancel();
     controller.stopMotion();
     _scrollReleaseTimer?.cancel();
     _shapeHold?.cancel();
@@ -420,7 +426,6 @@ class _PageCanvasState extends State<PageCanvas> {
   void _inkDown(PointerDownEvent e) {
     if (e.kind == PointerDeviceKind.stylus ||
         e.kind == PointerDeviceKind.invertedStylus) {
-      _lastPenContact = DateTime.now();
       _rejectTouchSequence = _touches.isNotEmpty;
       if (_rejectTouchSequence) app.touchCanvasGesture = true;
       _touchVelocity = Offset.zero;
@@ -719,10 +724,6 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _inkUp(PointerUpEvent e) {
-    if (e.kind == PointerDeviceKind.stylus ||
-        e.kind == PointerDeviceKind.invertedStylus) {
-      _lastPenContact = DateTime.now();
-    }
     if (_endRulerPointer(e)) return;
     if (_windowsPen.enabled ||
         e.kind == PointerDeviceKind.stylus ||
@@ -1117,15 +1118,7 @@ class _PageCanvasState extends State<PageCanvas> {
     _touchVelocity = Offset.zero;
     _lastTouchMove = DateTime.now();
     if (_touches.length == 1) {
-      _touchReady = false;
-      _touchIntentDelay?.cancel();
-      _touchIntentDelay = Timer(const Duration(milliseconds: 100), () {
-        if (mounted) _touchReady = true;
-      });
-      _rejectTouchSequence = _windowsPen.nativeInRange ||
-          _inkContactActive ||
-          (_lastPenContact != null && DateTime.now().difference(
-              _lastPenContact!) < const Duration(milliseconds: 500));
+      _rejectTouchSequence = _windowsPen.nativeInRange || _inkContactActive;
       _touchPanStart = e.localPosition;
       _touchPanActive = false;
     }
@@ -1280,17 +1273,6 @@ class _PageCanvasState extends State<PageCanvas> {
       _touchVelocity = Offset.zero;
       return;
     }
-    if (!_touchReady) {
-      _touches[e.pointer] = e.localPosition;
-      _lastScreen = e.localPosition;
-      _touchPanStart = e.localPosition;
-      if (_touches.length == 2) {
-        final pts = _touches.values.toList();
-        _pinchStartDist = (pts[0] - pts[1]).distance;
-        _pinchStartFocal = (pts[0] + pts[1]) / 2;
-      }
-      return;
-    }
     final now = DateTime.now();
     final elapsed = now.difference(_lastTouchMove ?? now).inMicroseconds;
     _touches[e.pointer] = e.localPosition;
@@ -1318,7 +1300,7 @@ class _PageCanvasState extends State<PageCanvas> {
       _lastScreen = e.localPosition;
       // A sleeve or resting palm can produce one enormous position jump.
       // Drop that isolated sample and its fling instead of moving a page.
-      if (delta.distance > 180) {
+      if (delta.distance > math.max(600, controller.viewport.longestSide)) {
         _touchVelocity = Offset.zero;
         _lastTouchMove = now;
         return;
@@ -1357,7 +1339,6 @@ class _PageCanvasState extends State<PageCanvas> {
   void _applyPinchTransform() {
     if (_rejectTouchSequence || _touches.length != 2 ||
         _windowsPen.nativeInRange || _inkContactActive) return;
-    if (!_touchReady) return;
     if (_touches.length < 2 ||
         _pinchStartDist == null ||
         _pinchStartFocal == null ||
@@ -1391,7 +1372,6 @@ class _PageCanvasState extends State<PageCanvas> {
     }
     if (_touches.length == 1) _lastScreen = _touches.values.first;
     if (_touches.isEmpty) {
-      _touchIntentDelay?.cancel();
       _touchPanStart = null;
       // Pinch bounds are already handled for every motion sample. Do not
       // perform a second correction on lift: that used to move the page
@@ -1421,7 +1401,6 @@ class _PageCanvasState extends State<PageCanvas> {
     _pinchStartScale = null;
     _pinchStartOffset = null;
     app.touchCanvasGesture = _touches.isNotEmpty;
-    if (_touches.isEmpty) _touchIntentDelay?.cancel();
   }
 
   bool _startInertia() {
@@ -2158,10 +2137,7 @@ class _PageCanvasState extends State<PageCanvas> {
           // under it.
           if (app.claimedPointers.remove(e.pointer)) return;
           if (e.kind == PointerDeviceKind.touch) {
-            if (_windowsPen.nativeInRange || _inkContactActive ||
-                e.radiusMajor > 30 || (_lastPenContact != null &&
-                DateTime.now().difference(_lastPenContact!) <
-                    const Duration(milliseconds: 500))) {
+            if (_windowsPen.nativeInRange || _inkContactActive || e.radiusMajor > 30) {
               _touchDown(e);
               return;
             }
@@ -2472,7 +2448,13 @@ class _PageCanvasState extends State<PageCanvas> {
     );
 
     return Listener(
-      onPointerSignal: _onScroll,
+      onPointerSignal: (event) {
+        _trackCursorDevice(event);
+        _onScroll(event);
+      },
+      onPointerHover: _trackCursorDevice,
+      onPointerDown: _trackCursorDevice,
+      onPointerMove: _trackCursorDevice,
       // **Trackpad pan/pinch, claim-checked exactly like a mouse drag.**
       //
       // Reported: scrolling and zooming inside a graph moved the PAGE
@@ -2495,6 +2477,7 @@ class _PageCanvasState extends State<PageCanvas> {
       // on every `onPointerPanZoomUpdate` would silently start panning the
       // page mid-gesture the instant something unrelated cleared the set.
       onPointerPanZoomStart: (e) {
+        _trackCursorDevice(e);
         _cancelScrollCoast();
         _pzLastScale = 1.0;
         _pzZooming = false;
@@ -2547,20 +2530,14 @@ class _PageCanvasState extends State<PageCanvas> {
         onEnter: (e) => _mousePosition = e.localPosition,
         onHover: (e) => _mousePosition = e.localPosition,
         onExit: (_) => _mousePosition = null,
-        cursor: _windowsPen.enabled &&
-                _inkTool &&
-                (_gestureErase || _windowsPen.nativeEraser)
+        // Follow the actual device, not the chosen drawing tool. Moving a
+        // mouse restores its pointer even while a pen remains in range.
+        cursor: _penCursorActive && (_inkTool || _windowsPen.nativeInRange)
             ? SystemMouseCursors.none
             : switch (app.tool) {
                 Tool.text => SystemMouseCursors.text,
-                Tool.pen ||
-                Tool.ballpoint ||
-                Tool.highlighter ||
-                Tool.shape =>
-                  SystemMouseCursors.none,
-                Tool.eraser => SystemMouseCursors.none,
                 Tool.lasso => SystemMouseCursors.precise,
-                _ => MouseCursor.defer,
+                _ => SystemMouseCursors.basic,
               },
         child: canvas,
       ),

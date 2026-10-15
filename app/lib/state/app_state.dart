@@ -228,6 +228,25 @@ class AppState extends ChangeNotifier
   final Repository _repo;
   final DocumentEngine engine;
 
+  Directory get poolDirectory => Directory(p.join(_repo.workspaceDir.path, 'Pool'));
+
+  String? resolvePoolFile(String relative) {
+    relative = relative.replaceAll('\\', '/');
+    if (p.isAbsolute(relative)) return null;
+    final path = p.normalize(p.join(poolDirectory.path, relative));
+    return p.isWithin(poolDirectory.path, path) ? path : null;
+  }
+
+  void linkPoolFile(String path) {
+    if (pageId == null || !p.isWithin(poolDirectory.path, path)) return;
+    final at = canvas.screenToPage(Offset(canvas.viewport.width / 2,
+        canvas.viewport.height / 2));
+    final block = addBlock(Block(type: BlockType.file, x: at.dx, y: at.dy,
+        w: 320, content: {'poolPath': p.relative(path, from: poolDirectory.path).replaceAll('\\', '/'),
+          'name': p.basename(path)}));
+    select(block.id);
+  }
+
   // Split editors own their selection, undo stack and camera, but share one
   // repository.
   AppState? _editorOwner;
