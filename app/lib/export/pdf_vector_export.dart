@@ -1142,8 +1142,14 @@ pw.Widget? _inkWidget(Block b, double h) {
             ..setStrokeColor(c)
             ..setLineWidth(
                 (s.size * (s.tool == 'highlighter' ? 3 : 1)) / _pxPerPoint)
-            ..setLineCap(PdfLineCap.round)
-            ..setLineJoin(PdfLineJoin.round)
+            ..setLineCap(
+                s.tool == 'shape-rectangle' || s.tool == 'shape-triangle'
+                    ? PdfLineCap.butt
+                    : PdfLineCap.round)
+            ..setLineJoin(
+                s.tool == 'shape-rectangle' || s.tool == 'shape-triangle'
+                    ? PdfLineJoin.miter
+                    : PdfLineJoin.round)
             ..setGraphicState(PdfGraphicState(strokeOpacity: s.opacity));
           // PDF's y axis points UP from the bottom-left; the canvas's points
           // down from the top-left. Flip inside the block's own box.

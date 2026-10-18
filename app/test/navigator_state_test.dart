@@ -23,9 +23,7 @@ void main() {
     app.reloadNodes();
     final secA = app.nodes.firstWhere((n) => n.kind == NodeKind.section).id;
     final secB = app.importNode(
-        nb.id,
-        TreeNode(
-            kind: NodeKind.section, title: 'B', position: 'a2'));
+        nb.id, TreeNode(kind: NodeKind.section, title: 'B', position: 'a2'));
     for (final (sec, label) in [(secA, 'A'), (secB.id, 'B')]) {
       for (var i = 0; i < 3; i++) {
         final node = app.importNode(
@@ -124,9 +122,9 @@ void main() {
     app.setNavPagesW(10);
     app.toggleNavCollapsed();
     expect(app.navSectionsW, 220);
-    expect(app.navPagesW, 140);
+    expect(app.navPagesW, 80);
     expect(repo.getSetting('navSectionsW'), 220);
-    expect(repo.getSetting('navPagesW'), 140);
+    expect(repo.getSetting('navPagesW'), 80);
     expect(repo.getSetting('navCollapsed'), true);
   });
 

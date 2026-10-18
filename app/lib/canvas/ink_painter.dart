@@ -64,6 +64,10 @@ class InkPainter extends CustomPainter {
     final automatic = s.colorHex == 'auto' ||
         (s.colorHex.toUpperCase() == '#211F1B' && !onFixedBackdrop);
     final base = automatic ? autoColor : colorFromHex(s.colorHex);
+    if (s.tool.startsWith('shape-')) {
+      _paintGeometricStroke(canvas, s, base);
+      return;
+    }
     Path? path = cache ? _outlines[s] : null;
     if (path == null) {
       path = _outlinePath(s);
@@ -79,6 +83,28 @@ class InkPainter extends CustomPainter {
       ..style = PaintingStyle.fill
       ..isAntiAlias = true;
     canvas.drawPath(path, paint);
+  }
+
+  /// Recognised polygons are geometric paths, not simulated handwriting.
+  /// Freehand's rounded joins made rectangles look open or softly rounded at
+  /// their corners even though the recognition points themselves were exact.
+  void _paintGeometricStroke(Canvas canvas, Stroke s, Color color) {
+    if (s.x.length < 2 || s.y.length < 2) return;
+    final path = Path()..moveTo(s.x.first, s.y.first);
+    for (var i = 1; i < s.x.length && i < s.y.length; i++) {
+      path.lineTo(s.x[i], s.y[i]);
+    }
+    if (s.x.first == s.x.last && s.y.first == s.y.last) path.close();
+    final sharp = s.tool == 'shape-rectangle' || s.tool == 'shape-triangle';
+    canvas.drawPath(
+        path,
+        Paint()
+          ..color = color.withValues(alpha: s.opacity)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = visibleStrokeWidth(s)
+          ..strokeCap = sharp ? StrokeCap.butt : StrokeCap.round
+          ..strokeJoin = sharp ? StrokeJoin.miter : StrokeJoin.round
+          ..isAntiAlias = true);
   }
 
   /// Solve one stroke's variable-width outline into a fillable path.

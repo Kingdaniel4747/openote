@@ -24,6 +24,12 @@ Nur Erkenntnisse behalten, die künftige Fehler verhindern. Keine Sitzungsprotok
 
 ## Daten und Bedienung
 
+- Windows-Stifttaste: Hover-Nähe, Spitzenkontakt und Seitentaste getrennt
+  auswerten. Flutter kann `invertedStylus` bis zum Verlassen der Nähe behalten;
+  das darf ein aktuelles natives Loslassen nicht überstimmen. Physische Taste
+  über `GetRawPointerDeviceData` lesen, `PEN_FLAG_BARREL` als Fallback; keine
+  Radierer-Typkennung als gehaltene Taste speichern. Native Zustandsfolgen:
+  `app/test/native/pen_button_state_test.cpp` mit MSVC `/std:c++20 /Zs` prüfen.
 - Beim Einrasten von Drehgesten den freien Zeigerwinkel getrennt vom angezeigten
   Winkel weiterführen, damit auch langsames Weiterdrehen die Rastung lösen kann.
 - Rust-FFI braucht `panic = "unwind"` für `catch_unwind`; `opt-level = 3`

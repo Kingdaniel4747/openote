@@ -81,7 +81,10 @@ RecognisedShape? recogniseShape(List<Offset> raw) {
     bounds = bounds.expandToInclude(p & Size.zero);
   }
   final diagonal = bounds.size.longestSide;
-  if (diagonal < 28) return null;
+  // A small closed circle is still a deliberate shape. The former 28 px
+  // cutoff rejected it before the circle fit could distinguish it from a
+  // small rough rectangle.
+  if (diagonal < 16) return null;
   final closed = (points.first - points.last).distance < diagonal * .18;
   if (!closed) {
     var pathLength = 0.0;
@@ -123,10 +126,37 @@ RecognisedShape? recogniseShape(List<Offset> raw) {
       }
     }
   }
-  // Fit polygons before considering a circle. A rough rectangle commonly
-  // simplifies to five or six points because one wobbly edge contributes a
-  // harmless extra vertex; the old exact-length check skipped it and the
-  // ellipse fallback then incorrectly accepted it as a circle.
+  // Prefer a convincingly round closed loop before fitting polygons. A small
+  // hand-drawn circle often simplifies to four points, which previously made
+  // the rectangle fit win even though its radial error clearly says circle.
+  // A real rectangle's corners make its radial error exceed this threshold.
+  double radialError() {
+    if (bounds.width < 12 || bounds.height < 12) return double.infinity;
+    var error = 0.0;
+    for (final p in points) {
+      final x = (p.dx - bounds.center.dx) / (bounds.width / 2);
+      final y = (p.dy - bounds.center.dy) / (bounds.height / 2);
+      error += (math.sqrt(x * x + y * y) - 1).abs();
+    }
+    return error / points.length;
+  }
+
+  RecognisedShape circle() {
+    // Hand-drawn circles are rarely identical in width and height. Normalise
+    // the two radii so the result is a geometrically round, closed circle.
+    final radius = (bounds.width + bounds.height) / 4;
+    final outline = <Offset>[
+      for (var i = 0; i < 96; i++)
+        Offset(bounds.center.dx + math.cos(i * math.pi / 48) * radius,
+            bounds.center.dy + math.sin(i * math.pi / 48) * radius),
+    ];
+    return RecognisedShape('ellipse', [...outline, outline.first]);
+  }
+
+  if (radialError() <= .105) return circle();
+
+  // A rough rectangle can simplify to five or six points because one wobbly
+  // edge contributes a harmless extra vertex, so reduce it to four corners.
   if (corners.length >= 4) {
     final quad = _reduceCorners(corners, 4);
     // Rectify a roughly rectangular polygon while retaining its rotation.
@@ -154,24 +184,10 @@ RecognisedShape? recogniseShape(List<Offset> raw) {
       return RecognisedShape('triangle', [...triangle, triangle.first]);
     }
   }
-  if (bounds.width < 12 || bounds.height < 12) return null;
-  var error = 0.0;
-  for (final p in points) {
-    final x = (p.dx - bounds.center.dx) / (bounds.width / 2);
-    final y = (p.dy - bounds.center.dy) / (bounds.height / 2);
-    error += (math.sqrt(x * x + y * y) - 1).abs();
-  }
-  if (error / points.length > .16) return null;
-  // Hand-drawn circles are rarely identical in width and height. Recognition
-  // normalises the two radii so the result is a geometrically round circle,
-  // centred on and sized from the rough outline.
-  final radius = (bounds.width + bounds.height) / 4;
-  final circle = <Offset>[
-    for (var i = 0; i < 96; i++)
-      Offset(bounds.center.dx + math.cos(i * math.pi / 48) * radius,
-          bounds.center.dy + math.sin(i * math.pi / 48) * radius),
-  ];
-  return RecognisedShape('ellipse', [...circle, circle.first]);
+  // Keep accepting somewhat rougher large circles after polygon fitting; an
+  // intentional rectangle or triangle has already returned above.
+  if (radialError() > .16) return null;
+  return circle();
 }
 
 /// Sample geometric segments so area erasing sees their interiors as well as

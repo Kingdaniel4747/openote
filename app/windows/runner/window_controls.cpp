@@ -1,8 +1,31 @@
 #include "window_controls.h"
 #include <dwmapi.h>
-#include <shellapi.h>
+#include <inputpaneinterop.h>
+#include <roapi.h>
+#include <winrt/Windows.UI.ViewManagement.h>
 
 namespace {
+
+bool ShowTouchKeyboard(HWND window) {
+  const HRESULT initialized = RoInitialize(RO_INIT_SINGLETHREADED);
+  if (FAILED(initialized)) return false;
+  bool shown = false;
+  try {
+    using winrt::Windows::UI::ViewManagement::InputPane;
+    const auto interop = winrt::get_activation_factory<InputPane, IInputPaneInterop>();
+    InputPane pane{nullptr};
+    winrt::check_hresult(interop->GetForWindow(
+        GetAncestor(window, GA_ROOT), winrt::guid_of<InputPane>(),
+        winrt::put_abi(pane)));
+    // Launching TabTip.exe alone only starts the host process. TryShow is the
+    // explicit request to show its keyboard for this desktop window.
+    shown = pane.TryShow();
+  } catch (const winrt::hresult_error&) {
+    // The Dart caller reports a declined request without breaking the editor.
+  }
+  RoUninitialize();
+  return shown;
+}
 
 // Registering a desktop window for input-pane notifications makes the app,
 // rather than Windows' default heuristic, responsible for keeping its focused
@@ -109,18 +132,7 @@ WindowControls::WindowControls(HWND window, flutter::BinaryMessenger* messenger)
           SetForegroundWindow(window_);
           result->Success();
         } else if (call.method_name() == "showTouchKeyboard") {
-          // Flutter's Windows text connection accepts touch input but does not
-          // ask Windows to show its tablet keyboard. In tablet mode TabTip is
-          // the system-owned keyboard, so start it rather than implementing a
-          // second keyboard in the app.
-          const wchar_t* tab_tip =
-              L"C:\\Program Files\\Common Files\\microsoft shared\\ink\\TabTip.exe";
-          const auto launched = reinterpret_cast<INT_PTR>(
-              ShellExecuteW(nullptr, L"open", tab_tip, nullptr, nullptr, SW_SHOWNORMAL));
-          if (launched <= 32) {
-            ShellExecuteW(nullptr, L"open", L"TabTip.exe", nullptr, nullptr, SW_SHOWNORMAL);
-          }
-          result->Success();
+          result->Success(flutter::EncodableValue(ShowTouchKeyboard(window_)));
         } else {
           result->NotImplemented();
         }

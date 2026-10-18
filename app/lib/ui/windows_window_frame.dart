@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' show AppExitType;
+import 'dart:ui' show AppExitType, PointerDeviceKind;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -35,13 +35,16 @@ class WindowsWindowController extends ChangeNotifier {
     }
   }
 
-  /// Request Windows' own tablet keyboard after a touch opens editable text.
+  /// Request Windows' own tablet keyboard after a touch/pen opens editable text.
   /// A physical keyboard keeps working normally; this is only requested by
   /// touch-originated edits, so mouse editing never makes a keyboard appear.
   static Future<void> showTouchKeyboard() async {
     if (!Platform.isWindows) return;
     try {
-      await channel.invokeMethod<void>('showTouchKeyboard');
+      final shown = await channel.invokeMethod<bool>('showTouchKeyboard');
+      if (shown == false) {
+        debugPrint('Openote: Windows declined the touch keyboard request.');
+      }
     } on MissingPluginException {
       // Older Windows runners still leave Flutter's normal text input usable.
     } on PlatformException {
@@ -207,6 +210,29 @@ class _WindowsWindowFrameState extends State<WindowsWindowFrame> {
     return true;
   }
 
+  void _touchTextField(PointerUpEvent event) {
+    if (event.kind != PointerDeviceKind.touch &&
+        event.kind != PointerDeviceKind.stylus) {
+      return;
+    }
+    // Focus/caret placement happens inside the field's tap handler. Wait for
+    // that frame, then verify that this touch actually landed in editable text.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final focusContext = FocusManager.instance.primaryFocus?.context;
+      final editor = focusContext?.findAncestorStateOfType<EditableTextState>();
+      if (editor == null || editor.widget.readOnly) return;
+      final box = editor.context.findRenderObject();
+      if (box is! RenderBox || !box.hasSize) return;
+      if (!(Offset.zero & box.size)
+          .contains(box.globalToLocal(event.position))) {
+        return;
+      }
+      unawaited(WindowsWindowController.showTouchKeyboard());
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
   @override
   void dispose() {
     if (_window.enabled) HardwareKeyboard.instance.removeHandler(_key);
@@ -221,7 +247,10 @@ class _WindowsWindowFrameState extends State<WindowsWindowFrame> {
           builder: (_, __) => _WindowScope(
               controller: _window,
               customChrome: _window.customChrome,
-              child: widget.child))
+              child: Listener(
+                  behavior: HitTestBehavior.translucent,
+                  onPointerUp: _touchTextField,
+                  child: widget.child)))
       : widget.child;
 }
 

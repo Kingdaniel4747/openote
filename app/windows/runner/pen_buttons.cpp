@@ -1,22 +1,9 @@
 #include "pen_buttons.h"
 
-#include <hidsdi.h>
-#include <algorithm>
-#include <cstddef>
-
 namespace {
-constexpr USAGE kDigitizer = 0x0d;
-constexpr USAGE kPen = 0x02;
-constexpr USAGE kInRange = 0x32;
-constexpr USAGE kInvert = 0x3c;
-constexpr USAGE kBarrel = 0x44;
-constexpr USAGE kEraser = 0x45;
-
-bool HasUsage(const HIDP_BUTTON_CAPS& cap, USAGE usage) {
-  return cap.UsagePage == kDigitizer &&
-      (cap.IsRange ? cap.Range.UsageMin <= usage && usage <= cap.Range.UsageMax
-                   : cap.NotRange.Usage == usage);
-}
+constexpr USHORT kDigitizer = 0x0d;
+constexpr USHORT kBarrel = 0x44;
+constexpr USHORT kInvert = 0x3c;
 }  // namespace
 
 PenButtons::PenButtons(HWND view, flutter::BinaryMessenger* messenger)
@@ -25,198 +12,127 @@ PenButtons::PenButtons(HWND view, flutter::BinaryMessenger* messenger)
           messenger, "openote/windows_pen_buttons",
           &flutter::StandardMethodCodec::GetInstance())) {
   SetWindowSubclass(view_, Observe, 1, reinterpret_cast<DWORD_PTR>(this));
-  // Compatibility path for the reported S Pen proximity-only switching:
-  // read the physical HID switch too. Flags=0 means foreground only;
-  // importantly, NO NOLEGACY/INPUTSINK: Flutter still owns all drawing input.
-  RAWINPUTDEVICE device{kDigitizer, kPen, 0, view_};
-  raw_registered_ = RegisterRawInputDevices(&device, 1, sizeof(device)) != FALSE;
   channel_->SetMethodCallHandler(
       [this](const flutter::MethodCall<flutter::EncodableValue>& call,
              std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
-        if (call.method_name() == "getState") {
-          result->Success(State());
-        } else {
-          result->NotImplemented();
-        }
+        if (call.method_name() == "getState") result->Success(State());
+        else result->NotImplemented();
       });
 }
 
 PenButtons::~PenButtons() {
-  if (raw_registered_) {
-    RAWINPUTDEVICE device{kDigitizer, kPen, RIDEV_REMOVE, nullptr};
-    RegisterRawInputDevices(&device, 1, sizeof(device));
-  }
   if (IsWindow(view_)) RemoveWindowSubclass(view_, Observe, 1);
   channel_->SetMethodCallHandler(nullptr);
 }
 
 flutter::EncodableValue PenButtons::State() const {
   return flutter::EncodableValue(flutter::EncodableMap{
-      {flutter::EncodableValue("inRange"), flutter::EncodableValue(in_range_)},
-      {flutter::EncodableValue("eraser"), flutter::EncodableValue(eraser_)}});
+      {flutter::EncodableValue("inRange"), flutter::EncodableValue(state_.in_range())},
+      {flutter::EncodableValue("eraser"), flutter::EncodableValue(state_.eraser())},
+      {flutter::EncodableValue("barrel"), flutter::EncodableValue(state_.barrel())},
+      {flutter::EncodableValue("source"), flutter::EncodableValue(source_)}});
 }
 
-void PenButtons::Send(bool in_range, bool eraser) {
-  if (in_range == in_range_ && eraser == eraser_) return;
-  in_range_ = in_range;
-  eraser_ = eraser;
+void PenButtons::Publish() {
+  if (sent_in_range_ == state_.in_range() && sent_eraser_ == state_.eraser()) return;
+  sent_in_range_ = state_.in_range();
+  sent_eraser_ = state_.eraser();
   channel_->InvokeMethod("state", std::make_unique<flutter::EncodableValue>(State()));
 }
 
 void PenButtons::Reset() {
   pointer_id_ = 0;
-  pointer_in_contact_ = false;
-  pointer_button_known_ = false;
-  pointer_eraser_ = false;
-  raw_in_range_ = false;
-  raw_eraser_ = false;
-  Send(false, false);
+  state_.Reset();
+  source_ = "reset";
+  Publish();
+}
+
+void PenButtons::ReadDeviceProperties(HANDLE device) {
+  if (device_ == device) return;
+  device_ = device;
+  properties_.clear();
+  barrel_property_ = invert_property_ = -1;
+  UINT32 count = 0;
+  if (!GetPointerDeviceProperties(device, &count, nullptr) || count == 0) return;
+  std::vector<POINTER_DEVICE_PROPERTY> all(count);
+  if (!GetPointerDeviceProperties(device, &count, all.data())) return;
+  for (UINT32 i = 0; i < count; ++i) {
+    const auto& property = all[i];
+    if (property.usagePageId != kDigitizer) continue;
+    if (property.usageId == kBarrel && barrel_property_ < 0) {
+      barrel_property_ = static_cast<int>(properties_.size());
+      properties_.push_back(property);
+    } else if (property.usageId == kInvert && invert_property_ < 0) {
+      invert_property_ = static_cast<int>(properties_.size());
+      properties_.push_back(property);
+    }
+  }
 }
 
 void PenButtons::ObserveMessage(const MSG& message) {
+  // Read exactly once before Flutter dispatches the message. A second read
+  // from the subclass could see later data after a nested message pump.
   if (message.hwnd == view_) ReadPointer(message.message, message.wParam);
 }
 
 void PenButtons::ReadPointer(UINT message, WPARAM wparam) {
+  const auto id = GET_POINTERID_WPARAM(wparam);
   switch (message) {
+    case WM_POINTERLEAVE:
+    case WM_POINTERCAPTURECHANGED:
+      if (id == pointer_id_) Reset();
+      return;
     case WM_POINTERENTER:
     case WM_POINTERDOWN:
     case WM_POINTERUPDATE:
-    case WM_POINTERUP: {
-      const auto id = GET_POINTERID_WPARAM(wparam);
-      POINTER_PEN_INFO pen{};
-      if (GetPointerPenInfo(id, &pen)) {
-        pointer_id_ = id;
-        // Contact is an interval from DOWN to UP. Some UPDATE packets omit
-        // INCONTACT momentarily; treating that as lift lets raw hover packets
-        // overwrite the pressed button until the pen really leaves the glass.
-        if (message == WM_POINTERDOWN ||
-            (pen.pointerInfo.pointerFlags & POINTER_FLAG_INCONTACT) != 0) {
-          pointer_in_contact_ = true;
-        }
-        if (message == WM_POINTERUP) pointer_in_contact_ = false;
-        const bool canceled =
-            (pen.pointerInfo.pointerFlags & POINTER_FLAG_CANCELED) != 0;
-        const bool active = (pen.pointerInfo.pointerFlags & POINTER_FLAG_INRANGE)
-            && !canceled;
-        const bool erase = (pen.penFlags &
-            (PEN_FLAG_BARREL | PEN_FLAG_ERASER | PEN_FLAG_INVERTED)) != 0 ||
-            IS_POINTER_SECONDBUTTON_WPARAM(wparam);
-        const bool button_changed =
-            !pointer_button_known_ || erase != pointer_eraser_;
-        pointer_button_known_ = true;
-        pointer_eraser_ = erase;
-        if (canceled || (!active && !pointer_in_contact_)) Reset();
-        else if (active && (button_changed || !in_range_)) Send(true, erase);
-      } else if (id == pointer_id_ && IS_POINTER_INCONTACT_WPARAM(wparam)) {
-        // Message flags remain usable even if a nested message pump expired
-        // GetPointerPenInfo. Hover buttons require the pen/HID report instead.
-        pointer_in_contact_ = message != WM_POINTERUP;
-        const bool erase = IS_POINTER_SECONDBUTTON_WPARAM(wparam) != 0;
-        const bool button_changed =
-            !pointer_button_known_ || erase != pointer_eraser_;
-        pointer_button_known_ = true;
-        pointer_eraser_ = erase;
-        if (button_changed || !in_range_) Send(true, erase);
-      } else if (id == pointer_id_ && message == WM_POINTERUP) {
-        pointer_in_contact_ = false;
-      }
+    case WM_POINTERUP:
       break;
-    }
-    case WM_POINTERLEAVE:
-    case WM_POINTERCAPTURECHANGED:
-      if (GET_POINTERID_WPARAM(wparam) == pointer_id_ &&
-          !pointer_in_contact_) Reset();
-      break;
-  }
-}
-
-void PenButtons::ReadRawInput(HRAWINPUT input) {
-  if (GetForegroundWindow() != GetAncestor(view_, GA_ROOT)) return;
-  UINT size = 0;
-  if (GetRawInputData(input, RID_INPUT, nullptr, &size,
-                      sizeof(RAWINPUTHEADER)) != 0 ||
-      size < offsetof(RAWINPUT, data.hid.bRawData)) return;
-  std::vector<BYTE> bytes(size);
-  if (GetRawInputData(input, RID_INPUT, bytes.data(), &size,
-                      sizeof(RAWINPUTHEADER)) != size) return;
-  const auto raw = reinterpret_cast<const RAWINPUT*>(bytes.data());
-  if (raw->header.dwType != RIM_TYPEHID) return;
-  if (raw->header.hDevice != raw_device_ || raw_descriptor_.empty()) {
-    raw_descriptor_.clear();
-    raw_device_ = raw->header.hDevice;
-    raw_in_range_ = false;
-    UINT length = 0;
-    if (GetRawInputDeviceInfo(raw_device_, RIDI_PREPARSEDDATA, nullptr,
-                             &length) == UINT(-1) || length == 0) return;
-    raw_descriptor_.resize(length);
-    if (GetRawInputDeviceInfo(raw_device_, RIDI_PREPARSEDDATA,
-                             raw_descriptor_.data(), &length) == UINT(-1)) {
-      raw_descriptor_.clear();
+    default:
       return;
-    }
   }
-  auto descriptor = reinterpret_cast<PHIDP_PREPARSED_DATA>(raw_descriptor_.data());
-  HIDP_CAPS caps{};
-  if (HidP_GetCaps(descriptor, &caps) != HIDP_STATUS_SUCCESS ||
-      caps.UsagePage != kDigitizer || caps.Usage != kPen) return;
-  USHORT count = caps.NumberInputButtonCaps;
-  if (count == 0) return;
-  std::vector<HIDP_BUTTON_CAPS> buttons(count);
-  if (HidP_GetButtonCaps(HidP_Input, buttons.data(), &count, descriptor) !=
-      HIDP_STATUS_SUCCESS) return;
-  const auto& hid = raw->data.hid;
-  const size_t offset = reinterpret_cast<const BYTE*>(hid.bRawData) - bytes.data();
-  if (hid.dwSizeHid == 0 || offset > bytes.size() ||
-      hid.dwCount > (bytes.size() - offset) / hid.dwSizeHid) return;
-  for (DWORD i = 0; i < hid.dwCount; ++i) {
-    auto report = reinterpret_cast<PCHAR>(
-        const_cast<BYTE*>(hid.bRawData + i * hid.dwSizeHid));
-    bool has_barrel = false;
-    bool has_range = false;
-    for (USHORT j = 0; j < count; ++j) {
-      const auto& cap = buttons[j];
-      if (cap.ReportID != 0 && cap.ReportID != static_cast<BYTE>(report[0])) continue;
-      has_barrel |= HasUsage(cap, kBarrel);
-      has_range |= HasUsage(cap, kInRange);
-    }
-    // Require both usages in this report. Never interpret an unrelated report
-    // (e.g. battery status) as a button release, or latch an out-of-range pen.
-    if (!has_barrel || !has_range) continue;
-    ULONG length = HidP_MaxUsageListLength(HidP_Input, kDigitizer, descriptor);
-    if (length == 0) continue;
-    std::vector<USAGE> usages(length);
-    if (HidP_GetUsages(HidP_Input, kDigitizer, 0, usages.data(), &length,
-                      descriptor, report, hid.dwSizeHid) != HIDP_STATUS_SUCCESS) continue;
-    auto on = [&](USAGE usage) {
-      return std::find(usages.begin(), usages.begin() + length, usage) !=
-          usages.begin() + length;
-    };
-    const bool in_range = on(kInRange);
-    const bool eraser = on(kBarrel) || on(kInvert) || on(kEraser);
-    const bool button_changed = eraser != raw_eraser_;
-    raw_in_range_ = in_range;
-    raw_eraser_ = eraser;
-    // The Book4 reports real press/release edges through HID while a tracked
-    // pointer is hovering. POINTER_PEN_INFO can then keep its old button value
-    // until the next range entry. Accept either source's changes, but never
-    // let an unchanged sample from one undo the other's newer transition.
-    if (pointer_id_ == 0) {
-      Send(raw_in_range_, raw_in_range_ && raw_eraser_);
-    } else if (raw_in_range_ && button_changed) {
-      Send(true, raw_eraser_);
-    }
+  POINTER_PEN_INFO pen{};
+  // Touch and mouse packets cannot change this pen's physical switch.
+  if (!GetPointerPenInfo(id, &pen)) return;
+  if (pointer_id_ != id || device_ != pen.pointerInfo.sourceDevice) state_.Reset();
+  pointer_id_ = id;
+  const auto flags = pen.pointerInfo.pointerFlags;
+  if (flags & POINTER_FLAG_CANCELED) {
+    Reset();
+    return;
   }
+  ReadDeviceProperties(pen.pointerInfo.sourceDevice);
+  bool has_raw_barrel = false;
+  bool raw_barrel = false;
+  bool inverted = (pen.penFlags & PEN_FLAG_INVERTED) != 0;
+  std::vector<LONG> values(properties_.size());
+  if (!properties_.empty() && GetRawPointerDeviceData(
+          id, 1, static_cast<UINT32>(properties_.size()), properties_.data(), values.data())) {
+    if (barrel_property_ >= 0) {
+      has_raw_barrel = true;
+      raw_barrel = values[barrel_property_] != 0;
+    }
+    if (invert_property_ >= 0) inverted = values[invert_property_] != 0;
+  }
+  auto change = PenSwitchChange::none;
+  if (pen.pointerInfo.ButtonChangeType == POINTER_CHANGE_SECONDBUTTON_DOWN)
+    change = PenSwitchChange::pressed;
+  else if (pen.pointerInfo.ButtonChangeType == POINTER_CHANGE_SECONDBUTTON_UP)
+    change = PenSwitchChange::released;
+  // ERASER is not a physical barrel switch: some drivers latch that mapped
+  // tool for the entire proximity session. Never OR it into the switch.
+  const bool barrel = (pen.penFlags & PEN_FLAG_BARREL) != 0;
+  source_ = has_raw_barrel ? "raw-pointer" : "pointer-barrel";
+  state_.Update((flags & POINTER_FLAG_INRANGE) != 0,
+                message != WM_POINTERUP && (flags & POINTER_FLAG_INCONTACT) != 0,
+                inverted, barrel, change, has_raw_barrel, raw_barrel);
+  Publish();
 }
 
 LRESULT CALLBACK PenButtons::Observe(HWND hwnd, UINT message, WPARAM wparam,
                                     LPARAM lparam, UINT_PTR id, DWORD_PTR data) {
   auto self = reinterpret_cast<PenButtons*>(data);
-  self->ReadPointer(message, wparam);
   switch (message) {
     case WM_POINTERACTIVATE:
-      // The Flutter child view must allow a finger to activate its owning
-      // window, just as a mouse click does (including outside Start).
       return PA_ACTIVATE;
     case WM_POINTERDOWN: {
       POINTER_INPUT_TYPE type{};
@@ -226,9 +142,6 @@ LRESULT CALLBACK PenButtons::Observe(HWND hwnd, UINT message, WPARAM wparam,
       }
       break;
     }
-    case WM_INPUT:
-      self->ReadRawInput(reinterpret_cast<HRAWINPUT>(lparam));
-      break;
     case WM_KILLFOCUS:
       self->Reset();
       break;

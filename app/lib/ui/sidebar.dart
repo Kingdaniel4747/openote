@@ -175,7 +175,9 @@ class _SidebarState extends State<Sidebar> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Container(
-          width: app.navSectionsW + app.navPagesW,
+          width: app.sectionTabsAbovePage
+              ? app.navPagesW.clamp(128.0, 320.0)
+              : app.navSectionsW + app.navPagesW,
           color: context.surfaces.chrome2,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -195,7 +197,11 @@ class _SidebarState extends State<Sidebar> {
         // whole thing grows and shrinks from where your cursor already is.
         _VDragHandle(
           onDrag: (dx) {
-            app.navPagesW = (app.navPagesW + dx).clamp(140.0, 320.0);
+            final minimum = app.sectionTabsAbovePage ? 128.0 : 80.0;
+            final current = app.sectionTabsAbovePage
+                ? app.navPagesW.clamp(minimum, 320.0)
+                : app.navPagesW;
+            app.navPagesW = (current + dx).clamp(minimum, 320.0);
             app.refresh();
           },
           onEnd: () => app.setNavPagesW(app.navPagesW),
@@ -409,7 +415,7 @@ class _SidebarState extends State<Sidebar> {
         ),
         _VDragHandle(
           onDrag: (dx) {
-            app.navSectionsW = (app.navSectionsW + dx).clamp(96.0, 220.0);
+            app.navSectionsW = (app.navSectionsW + dx).clamp(80.0, 220.0);
             app.refresh();
           },
           onEnd: () => app.setNavSectionsW(app.navSectionsW),
@@ -622,6 +628,10 @@ class _SidebarState extends State<Sidebar> {
               tooltip: 'New section',
               visualDensity: VisualDensity.compact,
               onPressed: app.addSection,
+              style: IconButton.styleFrom(
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+              constraints: const BoxConstraints.tightFor(width: 32, height: 36),
+              padding: EdgeInsets.zero,
             ),
             const Spacer(),
             IconButton(
@@ -629,6 +639,10 @@ class _SidebarState extends State<Sidebar> {
               tooltip: 'New section group',
               visualDensity: VisualDensity.compact,
               onPressed: app.addSectionGroup,
+              style: IconButton.styleFrom(
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+              constraints: const BoxConstraints.tightFor(width: 32, height: 36),
+              padding: EdgeInsets.zero,
             ),
           ],
         ),
@@ -1101,30 +1115,49 @@ class _NotebookHeader extends StatelessWidget {
           onLongPress: () => showNotebookManager(context, app),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-            child: Row(
-              children: [
-                Icon(Icons.menu_book_outlined, size: 18, color: scheme.primary),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(current.title,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                      overflow: TextOverflow.ellipsis),
-                ),
-                const Icon(Icons.unfold_more, size: 16),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 16),
-                  tooltip: 'Recycle bin',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () => showRecycleBin(context, app),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.keyboard_double_arrow_left, size: 16),
-                  tooltip: 'Collapse the navigator  (Ctrl+)',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: app.toggleNavCollapsed,
-                ),
-              ],
-            ),
+            child: LayoutBuilder(
+                builder: (context, constraints) => Row(
+                      children: [
+                        Icon(Icons.menu_book_outlined,
+                            size: 18, color: scheme.primary),
+                        if (constraints.maxWidth >= 130) ...[
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(current.title,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w600),
+                                overflow: TextOverflow.ellipsis),
+                          ),
+                        ] else ...[
+                          const Spacer(),
+                        ],
+                        if (constraints.maxWidth >= 180)
+                          const Icon(Icons.unfold_more, size: 16),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, size: 16),
+                          tooltip: 'Recycle bin',
+                          style: IconButton.styleFrom(
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => showRecycleBin(context, app),
+                          constraints: const BoxConstraints.tightFor(
+                              width: 32, height: 36),
+                          padding: EdgeInsets.zero,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.keyboard_double_arrow_left,
+                              size: 16),
+                          tooltip: 'Collapse the navigator  (Ctrl+)',
+                          style: IconButton.styleFrom(
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: app.toggleNavCollapsed,
+                          constraints: const BoxConstraints.tightFor(
+                              width: 32, height: 36),
+                          padding: EdgeInsets.zero,
+                        ),
+                      ],
+                    )),
           ),
         ),
       ),

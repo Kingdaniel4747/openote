@@ -162,6 +162,35 @@ void main() {
       expect(back.p, isEmpty);
     });
 
+    test('recognised geometric brushes keep their sharp-rendering identity',
+        () {
+      final source = sample(count: 1, pressure: false).single;
+      final strokes = [
+        for (final tool in [
+          'shape-rectangle',
+          'shape-triangle',
+          'shape-circle'
+        ])
+          Stroke(
+            id: '$tool-stroke',
+            tool: tool,
+            colorHex: source.colorHex,
+            size: source.size,
+            x: source.x,
+            y: source.y,
+          ),
+      ];
+      final bytes = InkCodec.encode(strokes, originX: 0, originY: 0);
+      expect(
+          InkCodec.decode(bytes, originX: 0, originY: 0)
+              .map((stroke) => stroke.tool),
+          equals([
+            'shape-rectangle',
+            'shape-triangle',
+            'shape-circle',
+          ]));
+    });
+
     test('no strokes at all', () {
       final bytes = InkCodec.encode(const [], originX: 0, originY: 0);
       expect(InkCodec.decode(bytes, originX: 0, originY: 0), isEmpty);

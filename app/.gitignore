@@ -35,3 +35,5 @@ web/
 # them would fail the comparison everywhere except the machine that made them.
 test/goldens/
 test-results.json
+# Widget Preview related
+.widget_preview/

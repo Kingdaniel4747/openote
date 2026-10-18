@@ -253,11 +253,14 @@ abstract final class InkCodec {
 
     for (final k in brushKeys) {
       final parts = k.split('|');
-      body.u8(parts[0] == 'highlighter'
-          ? 1
-          : parts[0] == 'ballpoint'
-              ? 2
-              : 0);
+      body.u8(switch (parts[0]) {
+        'highlighter' => 1,
+        'ballpoint' => 2,
+        'shape-rectangle' => 3,
+        'shape-triangle' => 4,
+        'shape-circle' => 5,
+        _ => 0,
+      });
       final hex = parts[1];
       // A colour outside `#RRGGBB` is round-tripped as a string rather than
       // dropped: the format spec's rule is that unknown data survives, and
@@ -440,6 +443,9 @@ abstract final class InkCodec {
       tools.add(switch (r.u8()) {
         1 => 'highlighter',
         2 => 'ballpoint',
+        3 => 'shape-rectangle',
+        4 => 'shape-triangle',
+        5 => 'shape-circle',
         _ => 'pen',
       });
       final kind = r.u8();

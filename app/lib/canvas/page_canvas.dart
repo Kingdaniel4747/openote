@@ -81,7 +81,9 @@ class _PageCanvasState extends State<PageCanvas> {
       _touchVelocity = Offset.zero;
       controller.stopMotion();
     }
-    _pendingErase = _windowsPen.nativeEraser || _invertedInkContact;
+    _pendingErase = _windowsPen.hasNativeState
+        ? _windowsPen.nativeEraser
+        : _invertedInkContact;
     _setContactErase(_pendingErase);
     _showPenButtonTool(_pendingErase);
     setState(() {});
@@ -108,7 +110,8 @@ class _PageCanvasState extends State<PageCanvas> {
     }
     if (erase) {
       if (!_buttonOverride) {
-        _penReturnTool = (app.tool == Tool.highlighter ||
+        _penReturnTool = (app.tool == Tool.pen ||
+                app.tool == Tool.highlighter ||
                 app.tool == Tool.ballpoint ||
                 app.tool == Tool.lasso)
             ? app.tool
@@ -457,7 +460,8 @@ class _PageCanvasState extends State<PageCanvas> {
     if (stylus) _pendingErase = _gestureErase;
     _contactTool = !stylus && _buttonOverride ? _penReturnTool : app.tool;
     _inkContactActive = stylus;
-    _invertedInkContact = e.kind == PointerDeviceKind.invertedStylus;
+    _invertedInkContact = e.kind == PointerDeviceKind.invertedStylus &&
+        !_windowsPen.hasNativeState;
     final pt = _snapToRuler(
       _clampToPagePoint(controller.screenToPage(e.localPosition)),
     );
@@ -658,7 +662,12 @@ class _PageCanvasState extends State<PageCanvas> {
     // makes the snapped shape visible while the stylus is still down.
     setState(() {
       _wet = Stroke(
-        tool: 'ballpoint',
+        tool: switch (shape.kind) {
+          'line' => 'ballpoint',
+          'rectangle' => 'shape-rectangle',
+          'triangle' => 'shape-triangle',
+          _ => 'shape-circle',
+        },
         colorHex: w.colorHex,
         size: w.size,
         opacity: w.opacity,

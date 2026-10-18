@@ -65,6 +65,57 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('touch opens keyboard for editable fields including dialogs',
+      (tester) async {
+    final controller = WindowsWindowController(enabled: true);
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(MaterialApp(
+      builder: (_, child) => WindowsWindowFrame(
+          controller: controller, startMaximized: false, child: child!),
+      home: Scaffold(
+          body: Column(children: [
+        const TextField(key: ValueKey('editable')),
+        const TextField(key: ValueKey('readonly'), readOnly: true),
+        Builder(
+            builder: (context) => TextButton(
+                onPressed: () => showDialog<void>(
+                    context: context,
+                    builder: (_) => const AlertDialog(
+                        content: TextField(key: ValueKey('dialog-field')))),
+                child: const Text('Rename'))),
+      ])),
+    ));
+    await tester.pumpAndSettle();
+    int keyboardCalls() =>
+        calls.where((c) => c.method == 'showTouchKeyboard').length;
+    await tester.tap(find.byKey(const ValueKey('editable')),
+        kind: PointerDeviceKind.mouse);
+    await tester.pumpAndSettle();
+    expect(keyboardCalls(), 0);
+    await tester.tap(find.byKey(const ValueKey('editable')));
+    await tester.pumpAndSettle();
+    expect(keyboardCalls(), 1);
+    await tester.tap(find.byKey(const ValueKey('editable')));
+    await tester.pumpAndSettle();
+    expect(keyboardCalls(), 2,
+        reason: 'a focused field must reopen a dismissed keyboard');
+    await tester.tap(find.byKey(const ValueKey('readonly')));
+    await tester.pumpAndSettle();
+    expect(keyboardCalls(), 2);
+    await tester.tap(find.text('Rename'));
+    await tester.pumpAndSettle();
+    expect(keyboardCalls(), 2);
+    await tester.tap(find.byKey(const ValueKey('dialog-field')));
+    await tester.pumpAndSettle();
+    expect(keyboardCalls(), 3);
+    await tester.tap(find.byKey(const ValueKey('dialog-field')),
+        kind: PointerDeviceKind.stylus);
+    await tester.pumpAndSettle();
+    expect(keyboardCalls(), 4,
+        reason: 'explicit pen taps also need a keyboard in tablet mode');
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('F11 uses the same maximize or restore action as the button',
       (tester) async {
     final controller = WindowsWindowController(enabled: true);

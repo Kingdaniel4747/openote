@@ -16,6 +16,7 @@ class WindowsPenButtons extends ChangeNotifier {
   bool nativeInRange = false;
   bool nativeEraser = false;
   bool _nativeReady = false;
+  bool get hasNativeState => enabled && _nativeReady;
   bool _attached = false;
   int _revision = 0;
 
@@ -58,19 +59,28 @@ class WindowsPenButtons extends ChangeNotifier {
     if (nativeInRange == inRange && nativeEraser == eraser) return;
     nativeInRange = inRange;
     nativeEraser = eraser;
+    if (kDebugMode && value['source'] is String) {
+      debugPrint('Openote pen: range=$inRange eraser=$eraser '
+          'barrel=${value['barrel']} source=${value['source']}');
+    }
     notifyListeners();
   }
 
   bool erases(PointerEvent event) {
+    if (event.kind != PointerDeviceKind.stylus &&
+        event.kind != PointerDeviceKind.invertedStylus) {
+      return false;
+    }
+    // Windows may retain Flutter's inverted tool identity until proximity
+    // ends. It must not override a newer physical side-button release.
+    if (hasNativeState) return nativeEraser;
     if (event.kind == PointerDeviceKind.invertedStylus) return true;
-    if (event.kind != PointerDeviceKind.stylus) return false;
     final barrel = (event.buttons & kPrimaryStylusButton) != 0;
     // Preserve Linux exactly; the new secondary/native path is Windows.
     if (!enabled) return barrel;
     // Windows owns the barrel-button state once its channel answers. Flutter
     // can keep a stale bit for an entire contact and must never re-enable the
     // eraser after the physical button has been released.
-    if (_nativeReady) return nativeEraser;
     return barrel || (event.buttons & kSecondaryStylusButton) != 0;
   }
 

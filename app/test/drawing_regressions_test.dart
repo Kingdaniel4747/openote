@@ -89,6 +89,16 @@ void main() {
         ]),
         isNull);
   });
+  test('small closed circles beat the rectangle fit and stay closed', () {
+    final circle = [
+      for (var i = 0; i <= 48; i++)
+        Offset(100 + 13 * math.cos(i * math.pi / 24),
+            100 + 12 * math.sin(i * math.pi / 24)),
+    ];
+    final shape = recogniseShape(circle);
+    expect(shape?.kind, 'ellipse');
+    expect(shape?.points.first, shape?.points.last);
+  });
   test('wobbly triangles and rectangles never fall through as circles', () {
     final triangle = recogniseShape(roughPolygon(const [
       Offset(250, 80),

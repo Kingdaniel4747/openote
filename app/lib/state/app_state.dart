@@ -228,29 +228,6 @@ class AppState extends ChangeNotifier
   final Repository _repo;
   final DocumentEngine engine;
 
-  Directory get poolDirectory =>
-      Directory(p.join(_repo.workspaceDir.path, 'Pool'));
-
-  String? resolvePoolFile(String relative) {
-    relative = relative.replaceAll('\\', '/');
-    if (p.isAbsolute(relative)) return null;
-    final path = p.normalize(p.join(poolDirectory.path, relative));
-    return p.isWithin(poolDirectory.path, path) ? path : null;
-  }
-
-  void linkPoolFile(String path) {
-    if (pageId == null || !p.isWithin(poolDirectory.path, path)) return;
-    final at = canvas.screenToPage(
-        Offset(canvas.viewport.width / 2, canvas.viewport.height / 2));
-    final block = addBlock(
-        Block(type: BlockType.file, x: at.dx, y: at.dy, w: 320, content: {
-      'poolPath':
-          p.relative(path, from: poolDirectory.path).replaceAll('\\', '/'),
-      'name': p.basename(path)
-    }));
-    select(block.id);
-  }
-
   // Split editors own their selection, undo stack and camera, but share one
   // repository.
   AppState? _editorOwner;
@@ -1004,13 +981,13 @@ class AppState extends ChangeNotifier
   int navRevision = 0;
 
   void setNavSectionsW(double v) {
-    navSectionsW = v.clamp(96, 220);
+    navSectionsW = v.clamp(80, 220);
     _repo.setSetting('navSectionsW', navSectionsW);
     notifyListeners();
   }
 
   void setNavPagesW(double v) {
-    navPagesW = v.clamp(140, 320);
+    navPagesW = v.clamp(80, 320);
     _repo.setSetting('navPagesW', navPagesW);
     notifyListeners();
   }
@@ -3350,9 +3327,9 @@ class AppState extends ChangeNotifier
     final tm = _repo.getSetting('themeMode') as String?;
     if (tm != null) themeMode = ThemeMode.values.asNameMap()[tm] ?? themeMode;
     final nsw = _repo.getSetting('navSectionsW');
-    if (nsw is num) navSectionsW = nsw.toDouble().clamp(96, 220);
+    if (nsw is num) navSectionsW = nsw.toDouble().clamp(80, 220);
     final npw = _repo.getSetting('navPagesW');
-    if (npw is num) navPagesW = npw.toDouble().clamp(140, 320);
+    if (npw is num) navPagesW = npw.toDouble().clamp(80, 320);
     final nc = _repo.getSetting('navCollapsed');
     if (nc is bool) navCollapsed = nc;
     final stap = _repo.getSetting('sectionTabsAbovePage');

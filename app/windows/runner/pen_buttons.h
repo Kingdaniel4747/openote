@@ -8,6 +8,7 @@
 #include <commctrl.h>
 #include <memory>
 #include <vector>
+#include "pen_button_state.h"
 
 // Observes only this app's input. Never consumes or synthesizes pointer input.
 class PenButtons {
@@ -22,22 +23,20 @@ class PenButtons {
  private:
   static LRESULT CALLBACK Observe(HWND hwnd, UINT message, WPARAM wparam,
                                   LPARAM lparam, UINT_PTR id, DWORD_PTR data);
-  void Send(bool in_range, bool eraser);
+  void Publish();
   void ReadPointer(UINT message, WPARAM wparam);
-  void ReadRawInput(HRAWINPUT input);
+  void ReadDeviceProperties(HANDLE device);
   flutter::EncodableValue State() const;
   HWND view_;
   UINT32 pointer_id_ = 0;
-  bool in_range_ = false;
-  bool eraser_ = false;
-  bool raw_registered_ = false;
-  bool pointer_in_contact_ = false;
-  bool pointer_button_known_ = false;
-  bool pointer_eraser_ = false;
-  bool raw_in_range_ = false;
-  bool raw_eraser_ = false;
-  HANDLE raw_device_ = nullptr;
-  std::vector<BYTE> raw_descriptor_;
+  PenButtonState state_;
+  bool sent_in_range_ = false;
+  bool sent_eraser_ = false;
+  HANDLE device_ = nullptr;
+  std::vector<POINTER_DEVICE_PROPERTY> properties_;
+  int barrel_property_ = -1;
+  int invert_property_ = -1;
+  const char* source_ = "pointer";
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> channel_;
 };
 

@@ -126,7 +126,8 @@ void main() {
         find.descendant(of: rail, matching: find.byTooltip('Renamed section')),
         findsNothing);
     expect(
-        find.descendant(of: rail, matching: find.byIcon(Icons.description_outlined)),
+        find.descendant(
+            of: rail, matching: find.byIcon(Icons.description_outlined)),
         findsNWidgets(app.pagesOf(section.id).length));
     final pageButton =
         find.descendant(of: rail, matching: find.byTooltip('Another page'));
@@ -136,25 +137,36 @@ void main() {
     expect(app.navCollapsed, isTrue);
 
     // The breadcrumb contains the complete path in order.
-    final header = find.ancestor(
-        of: find.text('Navigation book'), matching: find.byType(Row)).first;
+    final header = find
+        .ancestor(of: find.text('Navigation book'), matching: find.byType(Row))
+        .first;
     expect(find.descendant(of: header, matching: find.text('Renamed section')),
         findsOneWidget);
     expect(find.descendant(of: header, matching: find.text('Another page')),
         findsOneWidget);
-    expect(tester.getCenter(find.text('Navigation book')).dx,
-        lessThan(tester.getCenter(
-            find.descendant(of: header, matching: find.text('Renamed section'))).dx));
-    expect(tester.getCenter(
-            find.descendant(of: header, matching: find.text('Renamed section'))).dx,
-        lessThan(tester.getCenter(
-            find.descendant(of: header, matching: find.text('Another page'))).dx));
+    expect(
+        tester.getCenter(find.text('Navigation book')).dx,
+        lessThan(tester
+            .getCenter(find.descendant(
+                of: header, matching: find.text('Renamed section')))
+            .dx));
+    expect(
+        tester
+            .getCenter(find.descendant(
+                of: header, matching: find.text('Renamed section')))
+            .dx,
+        lessThan(tester
+            .getCenter(find.descendant(
+                of: header, matching: find.text('Another page')))
+            .dx));
     expect(tester.takeException(), isNull);
 
     final now = DateTime.now();
     app.planner.reminders.add(
-        text: 'Linked task', at: now.add(const Duration(days: 1)),
-        notebookId: app.notebookId, pageId: secondPage.id);
+        text: 'Linked task',
+        at: now.add(const Duration(days: 1)),
+        notebookId: app.notebookId,
+        pageId: secondPage.id);
     // Warm the planner cache before editing, so a stale cached subtitle fails.
     expect(app.planner.agenda(now: now).single.subtitle, 'Another page');
     await tester.tap(find.descendant(
@@ -173,6 +185,31 @@ void main() {
     expect(app.planner.agenda(now: now).single.subtitle, 'Live page title');
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.pumpAndSettle();
+
+    // Compact layouts retain usable header actions in both navigation modes.
+    app.toggleNavCollapsed();
+    app.setNavSectionsW(80);
+    app.setNavPagesW(80);
+    await tester.pumpAndSettle();
+    expect(tester.getSize(find.byType(Sidebar)).width, lessThan(140));
+    final sidebar = find.byType(Sidebar);
+    expect(
+        find.descendant(
+            of: sidebar, matching: find.byIcon(Icons.menu_book_outlined)),
+        findsOneWidget);
+    expect(find.descendant(of: sidebar, matching: find.text('Navigation book')),
+        findsNothing);
+    expect(find.byTooltip('Recycle bin'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    app.setSectionTabsAbovePage(false);
+    await tester.pumpAndSettle();
+    expect(tester.getSize(find.byType(Sidebar)).width, lessThan(175));
+    expect(find.byTooltip('New section group'), findsOneWidget);
+    expect(
+        find.descendant(
+            of: sidebar, matching: find.byIcon(Icons.menu_book_outlined)),
+        findsOneWidget);
+    expect(tester.takeException(), isNull);
     app.cancelPendingSave();
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();

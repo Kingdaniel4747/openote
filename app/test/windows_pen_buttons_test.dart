@@ -169,6 +169,20 @@ void main() {
         true);
   });
 
+  test('native release overrides a latched inverted Flutter tool identity',
+      () async {
+    final pen = WindowsPenButtons(enabled: true);
+    addTearDown(pen.dispose);
+    await pen.attach();
+    const staleTool = PointerMoveEvent(
+        kind: PointerDeviceKind.invertedStylus, buttons: kPrimaryStylusButton);
+    await nativeState(true, true);
+    expect(pen.erases(staleTool), true);
+    await nativeState(true, false);
+    expect(pen.erases(staleTool), false);
+    expect(pen.nativeInRange, true);
+  });
+
   group('Windows canvas integration', () {
     setUpAll(() => expect(initSqliteForTests(), true,
         reason: 'Build Windows first so its bundled SQLite DLL is available.'));
@@ -350,6 +364,65 @@ void main() {
       await nativeState(true, false);
       await t.pump();
       expect(app.tool, Tool.lasso);
+      await finish(t, app);
+    });
+
+    testWidgets('release during an inverted-typed contact resumes ballpoint',
+        (t) async {
+      final app = await mount(t);
+      app.setTool(Tool.ballpoint);
+      await t.pump();
+      for (var i = 0; i < 4; i++) {
+        await nativeState(true, true);
+        await t.pump();
+        expect(app.tool, Tool.eraser);
+        await down(t, 100, kind: PointerDeviceKind.invertedStylus);
+        await nativeState(true, false);
+        await t.pump();
+        expect(app.tool, Tool.ballpoint);
+        await move(t, 140,
+            kind: PointerDeviceKind.invertedStylus,
+            buttons: kPrimaryButton | kPrimaryStylusButton);
+        await move(t, 160,
+            kind: PointerDeviceKind.invertedStylus,
+            buttons: kPrimaryButton | kPrimaryStylusButton);
+        await up(t, 160, kind: PointerDeviceKind.invertedStylus);
+        expect(app.tool, Tool.ballpoint);
+        expect((strokes(app).last['brush'] as Map)['tool'], 'ballpoint');
+      }
+      await finish(t, app);
+    });
+
+    testWidgets('erasing a recognised line restores the previous writing tool',
+        (t) async {
+      final app = await mount(t);
+      app.setTool(Tool.ballpoint);
+      app.shapeRecognition = true;
+      await t.pump();
+      for (var repeat = 0; repeat < 2; repeat++) {
+        await down(t, 100);
+        for (var x = 120.0; x <= 300; x += 20) {
+          await move(t, x);
+        }
+        // This is an input-state test. Do not start unrelated real disk I/O
+        // when advancing the widget clock through the recognition hold.
+        app.cancelPendingSave();
+        await t.pump(const Duration(milliseconds: 950));
+        await up(t, 300);
+        expect(strokes(app), hasLength(1));
+        await nativeState(true, true);
+        await t.pump();
+        expect(app.tool, Tool.eraser);
+        await down(t, 200, buttons: kPrimaryButton | kPrimaryStylusButton);
+        expect(strokes(app), isEmpty);
+        // The native release must win even if Flutter retains the button bit
+        // from the original contact, including when the last shape was erased.
+        await nativeState(true, false);
+        await t.pump();
+        expect(app.tool, Tool.ballpoint);
+        await up(t, 200);
+        expect(app.tool, Tool.ballpoint);
+      }
       await finish(t, app);
     });
 

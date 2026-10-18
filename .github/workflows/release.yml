@@ -1,14 +1,18 @@
 name: Release packages
 
-# Every pushed change creates a numbered public release. The jobs are globally
-# serialized so two near-simultaneous pushes cannot choose the same version.
+# Releases are deliberate: normal pushes only publish source code. Start this
+# workflow from Actions after the tested commit is ready to become an update.
+# The jobs are globally serialized so two manual runs cannot choose the same
+# version.
 on:
-  push:
-    branches: ["**"]
   workflow_dispatch:
     inputs:
       version:
         description: "Optional X.Y.Z override; leave empty to use the next patch version"
+        required: false
+        type: string
+      release_notes:
+        description: "Optional Markdown shown above GitHub's generated commit list"
         required: false
         type: string
 
@@ -216,6 +220,7 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: Openote v${{ needs.version.outputs.value }}
           draft: false
+          body: ${{ inputs.release_notes }}
           generate_release_notes: true
           files: |
             release-files/openote-${{ needs.version.outputs.value }}-windows-x64-setup.exe
