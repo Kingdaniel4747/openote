@@ -243,7 +243,7 @@ String _scriptToLinear(MScript s) {
     // `30°` is an angle, not thirty to the power of a degree sign. The tree
     // hangs the sign off the LAST digit (`3` then `0` with the script), so
     // emitting the base and the sign bare lets the digits rejoin.
-    if (above == '°') return rowToLinear(s.base) + '°';
+    if (above == '°') return '${rowToLinear(s.base)}°';
   }
   final sup = s.sup == null ? '' : '^(${rowToLinear(s.sup!)})';
   return '(${rowToLinear(s.base)})$sup';

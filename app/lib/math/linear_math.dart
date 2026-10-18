@@ -1,4 +1,4 @@
-/// Linear math input → LaTeX (Math Input Spec, docs/specs/12-math-input-spec.md).
+/// Linear math input → LaTeX (see ARCHITECTURE.md).
 /// This is the MVP subset of the §3 grammar: control-word autocorrect,
 /// fractions, sub/superscripts with grouping, n-ary operators with limits,
 /// roots (incl. degree), matrices (`■(a&b@c&d)` / `\matrix(...)`), cases, and
@@ -79,9 +79,10 @@ String linearToLatex(String input) {
     // Bare operands may carry scripts (spec §3.3: ^/_ bind tighter than /),
     // so `1/n^2` → \frac{1}{n^2}.
     const bare = r'(?:[A-Za-z0-9\\]+(?:[\^_](?:\{[^{}]*\}|\([^()]*\)|[A-Za-z0-9\\]+))*)';
+    const grouped = r'(\(([^()]*)\)|\{([^{}]*)\}|(';
+    const operand = '$grouped$bare))';
     s = s.replaceAllMapped(
-        RegExp(r'(\(([^()]*)\)|\{([^{}]*)\}|(' + bare + r'))\s*/\s*'
-            r'(\(([^()]*)\)|\{([^{}]*)\}|(' + bare + r'))'),
+        RegExp('$operand\\s*/\\s*$operand'),
         (m) {
       final num = m[2] ?? m[3] ?? m[4]!;
       final den = m[6] ?? m[7] ?? m[8]!;

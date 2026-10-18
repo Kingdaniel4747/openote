@@ -1,3 +1,4 @@
+import 'dart:async' show TimeoutException;
 import 'dart:io' show exit;
 import 'dart:ui' show AppExitResponse;
 
@@ -116,18 +117,26 @@ class _OpenoteBootState extends State<OpenoteBoot> {
       _lifecycle = AppLifecycleListener(
         onExitRequested: () async {
           if (_closing) return AppExitResponse.cancel;
-          if (mounted)
+          if (mounted) {
             setState(() {
               _closing = true;
               _closeFailed = false;
             });
+          }
           await WidgetsBinding.instance.endOfFrame;
           // The save remains fully awaited, but the Windows window can leave
           // the screen at once. If anything cannot be saved it is restored
           // below with the existing recovery message.
           await WindowsWindowController.hideForExit();
           try {
-            await app.shutdown();
+            // A local SQLite or network-backed workspace may be unavailable.
+            // Do not let such an I/O operation leave a windowless process
+            // behind forever: after a bounded wait the existing recovery UI
+            // keeps Openote open so the user can retry without losing edits.
+            await app.shutdown().timeout(const Duration(seconds: 8),
+                onTimeout: () {
+              throw TimeoutException('Timed out while saving before exit');
+            });
             // A page render may otherwise keep pdfium and its worker alive for
             // up to its 30-second timeout after the window has been closed.
             // Cancel first, then give cleanup a short bounded opportunity.
@@ -135,11 +144,12 @@ class _OpenoteBootState extends State<OpenoteBoot> {
                 .timeout(const Duration(milliseconds: 150), onTimeout: () {});
             if (app.hasUnsavedChanges) {
               await WindowsWindowController.restoreAfterFailedExit();
-              if (mounted)
+              if (mounted) {
                 setState(() {
                   _closing = false;
                   _closeFailed = true;
                 });
+              }
               return AppExitResponse.cancel;
             }
             await widget.instance?.dispose();
@@ -150,11 +160,12 @@ class _OpenoteBootState extends State<OpenoteBoot> {
             exit(0);
           } catch (_) {
             await WindowsWindowController.restoreAfterFailedExit();
-            if (mounted)
+            if (mounted) {
               setState(() {
                 _closing = false;
                 _closeFailed = true;
               });
+            }
             return AppExitResponse.cancel;
           }
         },
@@ -181,12 +192,13 @@ class _OpenoteBootState extends State<OpenoteBoot> {
     final err = _error;
     if (err != null) return _StartupError(error: err.$1, stack: err.$2);
     final app = _app;
-    if (app != null)
+    if (app != null) {
       return OpenoteApp(
           app: app,
           closing: _closing,
           closeFailed: _closeFailed,
           dismissCloseError: () => setState(() => _closeFailed = false));
+    }
     return MaterialApp(
       title: 'Openote',
       debugShowCheckedModeBanner: false,
@@ -309,7 +321,7 @@ class _OpenoteAppState extends State<OpenoteApp> {
           supportedLocales: const [Locale('en'), Locale('de')],
           localizationsDelegates: GlobalMaterialLocalizations.delegates,
           builder: (context, child) => WindowsWindowFrame(
-            startMaximized: widget.app.startMaximized,
+            startMaximized: true,
             child: Stack(children: [
               child ?? const SizedBox.shrink(),
               if (widget.closing) ...[

@@ -263,7 +263,7 @@ Map<String, dynamic> _runSql(Map<String, Object?> p) {
         if (rs.columnNames.isNotEmpty &&
             (rs.rows.isNotEmpty || _looksLikeSelect(sql))) {
           outCells = [
-            rs.columnNames.map((c) => '$c').toList(),
+            rs.columnNames.map((c) => c).toList(),
             for (final row in rs.rows) [for (final v in row) _cell(v)],
           ];
         }

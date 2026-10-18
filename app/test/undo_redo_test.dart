@@ -5,6 +5,7 @@
 // One of them (`a table edit is undoable`) is a regression test: table cells
 // were written with `markDirty()` but no `pushUndo()`, unlike every other
 // editor, so Ctrl+Z skipped past all the typing in a table.
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/model/models.dart';
@@ -15,13 +16,22 @@ import 'package:openote/store/repository.dart';
 /// one would drag SQLite into a pure test.
 class _NoopRepo implements Repository {
   @override
+  final notebooksChanged = ChangeNotifier();
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => null;
 }
 
 AppState _app() {
-  final app = AppState(_NoopRepo())
+  final repo = _NoopRepo();
+  final app = AppState(repo)
     ..notebookId = 'nb'
     ..pageId = 'pg';
+  addTearDown(() {
+    app.cancelPendingSave();
+    app.dispose();
+    repo.notebooksChanged.dispose();
+  });
   return app;
 }
 

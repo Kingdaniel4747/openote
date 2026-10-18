@@ -45,13 +45,11 @@ library;
 
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/painting.dart' show decodeImageFromList;
 import '../l10n/app_strings.dart';
 
 import '../canvas/media_drop.dart';
@@ -269,13 +267,13 @@ final List<InsertGroup> kInsertGroups = [
       label: 'Table',
       size: const Size(360, 80),
       extras: [
-        InsertItem(
+        const InsertItem(
           id: 'table-file',
           icon: Icons.grid_on_outlined,
           label: 'From a file',
           tooltip: 'CSV or Excel',
           opensPicker: true,
-          size: const Size(360, 80),
+          size: Size(360, 80),
           run: insertTableFromPickedFile,
         ),
       ],
@@ -324,12 +322,12 @@ final List<InsertGroup> kInsertGroups = [
     ),
   ]),
   InsertGroup(title: 'Bring in', items: [
-    InsertItem(
+    const InsertItem(
       id: 'image',
       icon: Icons.image_outlined,
       label: 'Pictures',
       opensPicker: true,
-      size: const Size(320, 240),
+      size: Size(320, 240),
       run: insertPickedImage,
     ),
     InsertItem(
@@ -341,40 +339,40 @@ final List<InsertGroup> kInsertGroups = [
       run: (c, a, at) =>
           importPdfWithProgress(c, a, placement: PdfPlacement.currentPage),
     ),
-    InsertItem(
+    const InsertItem(
       id: 'video',
       icon: Icons.play_circle_outline,
       label: 'Video',
       tooltip: 'A lecture recording, or any web link',
       opensPicker: true,
-      size: const Size(340, 56),
+      size: Size(340, 56),
       run: insertVideoOrLink,
     ),
-    InsertItem(
+    const InsertItem(
       id: 'diagram',
       icon: Icons.account_tree_outlined,
       label: 'Draw.io',
       tooltip: 'Keep a linked diagram file on this page',
       opensPicker: true,
-      size: const Size(360, 220),
+      size: Size(360, 220),
       run: insertDrawioDiagram,
     ),
-    InsertItem(
+    const InsertItem(
       id: 'file',
       icon: Icons.attach_file,
       label: 'File',
       opensPicker: true,
-      size: const Size(280, 48),
+      size: Size(280, 48),
       run: insertPickedFile,
     ),
   ]),
-  InsertGroup(title: 'Link up', items: [
+  const InsertGroup(title: 'Link up', items: [
     InsertItem(
       id: 'pagelink',
       icon: Icons.link,
       label: 'Page link',
       opensPicker: true,
-      size: const Size(240, 40),
+      size: Size(240, 40),
       run: insertPageLink,
     ),
   ]),
@@ -397,6 +395,7 @@ Future<XFile?> _pick(BuildContext context,
   try {
     return await openFile(acceptedTypeGroups: groups);
   } catch (e) {
+    if (!context.mounted) return null;
     _say(context, "Couldn't open the file picker: $e");
     return null;
   }
@@ -412,10 +411,15 @@ Future<void> insertPickedImage(
           extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'])
     ]);
   } catch (e) {
+    if (!context.mounted) return;
     _say(context, "Couldn't open the image picker: $e");
     return;
   }
   if (files.isEmpty) return;
+  // Windows returns a multi-selection in the opposite order to the list the
+  // user worked through. Insert the first copied picture at the top, then
+  // continue down the page in that visible order.
+  files = files.reversed.toList();
   var nextTop = at.dy;
   for (final file in files) {
     Uint8List bytes;
@@ -625,7 +629,9 @@ Future<void> copyVideoIntoNotebook(
     if (dialogOpen && context.mounted) {
       Navigator.of(context, rootNavigator: true).pop();
     }
-    _say(context, "That video couldn't be copied in: $e");
+    if (context.mounted) {
+      _say(context, "That video couldn't be copied in: $e");
+    }
   } finally {
     progress.dispose();
   }

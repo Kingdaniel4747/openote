@@ -86,6 +86,9 @@ class _BlockViewState extends State<BlockView> {
   bool _dragUndoPushed = false;
   bool _resizeUndoPushed = false;
   double? _rotationPointerAngle;
+  double _rotationRawDegrees = 0;
+  double? _rotationSnapDegrees;
+  double? _rotationInitialAxis;
   final _mediaKey = GlobalKey();
   Offset get _rotationCenter {
     final box = _mediaKey.currentContext!.findRenderObject() as RenderBox;
@@ -94,6 +97,9 @@ class _BlockViewState extends State<BlockView> {
 
   void _rotateStart(DragStartDetails details) {
     app.pushUndo();
+    _rotationRawDegrees = b.rotation;
+    _rotationSnapDegrees = null;
+    _rotationInitialAxis = b.rotation % 90 == 0 ? b.rotation % 360 : null;
     final delta = details.globalPosition - _rotationCenter;
     _rotationPointerAngle = math.atan2(delta.dy, delta.dx);
   }
@@ -103,9 +109,38 @@ class _BlockViewState extends State<BlockView> {
     final delta = details.globalPosition - _rotationCenter;
     final angle = math.atan2(delta.dy, delta.dx);
     final change = angle - _rotationPointerAngle!;
-    b.rotation = (b.rotation + change * 180 / math.pi) % 360;
+    // Accumulate the unsnapped pointer angle so small movements can still
+    // leave a snap instead of repeatedly starting from the locked angle.
+    _rotationRawDegrees =
+        (_rotationRawDegrees + change * 180 / math.pi) % 360;
+    b.rotation = _snapRotation(_rotationRawDegrees);
     _rotationPointerAngle = angle;
     app.updateBlock(b);
+  }
+
+  double _snapRotation(double degrees) {
+    const snapIn = 1.5;
+    const snapOut = 2.0;
+    const startSnapOut = 1.0;
+    double distance(double a, double b) =>
+        ((a - b + 180) % 360 - 180).abs();
+    // A straight object should be easy to start turning. Avoid immediately
+    // catching it again in the wider approach zone as it leaves that axis.
+    final initial = _rotationInitialAxis;
+    if (initial != null) {
+      final separation = distance(degrees, initial);
+      if (separation <= startSnapOut) return initial;
+      if (separation > snapIn) _rotationInitialAxis = null;
+      return degrees;
+    }
+    final locked = _rotationSnapDegrees;
+    if (locked != null && distance(degrees, locked) <= snapOut) {
+      return locked;
+    }
+    final nearest = ((degrees / 90).round() * 90) % 360.0;
+    _rotationSnapDegrees =
+        distance(degrees, nearest) <= snapIn ? nearest : null;
+    return _rotationSnapDegrees ?? degrees;
   }
 
   Offset? _touchMoveLast;
@@ -177,7 +212,9 @@ class _BlockViewState extends State<BlockView> {
         app.tool == Tool.shape ||
         app.tool == Tool.highlighter ||
         app.tool == Tool.eraser ||
-        app.tool == Tool.lasso) return;
+        app.tool == Tool.lasso) {
+      return;
+    }
     final additive = HardwareKeyboard.instance.isShiftPressed ||
         HardwareKeyboard.instance.isControlPressed ||
         HardwareKeyboard.instance.isMetaPressed;
@@ -249,7 +286,9 @@ class _BlockViewState extends State<BlockView> {
 
   void _pointerDown(PointerDownEvent e) {
     if (e.kind == PointerDeviceKind.mouse &&
-        (e.buttons & kMiddleMouseButton) != 0) return;
+        (e.buttons & kMiddleMouseButton) != 0) {
+      return;
+    }
     // A PDF/image printout is a backdrop, not a touch surface. Let every
     // finger reach PageCanvas so panning and pinch-zoom work over the sheet
     // just as they do in the empty margin. Stylus input is handled by the
@@ -289,7 +328,9 @@ class _BlockViewState extends State<BlockView> {
 
   void _pointerMove(PointerMoveEvent e) {
     if (e.kind == PointerDeviceKind.mouse &&
-        (e.buttons & kMiddleMouseButton) != 0) return;
+        (e.buttons & kMiddleMouseButton) != 0) {
+      return;
+    }
     final from = _pressGlobal;
     // A touch beginning on an object must still scroll the page naturally.
     // Its down remains claimed for a short tap, then a pre-hold swipe is

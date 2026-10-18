@@ -9,7 +9,6 @@ import '../theme/onote_theme.dart';
 import '../update/app_update.dart';
 import 'onote_dialog.dart';
 import 'update_dialog.dart';
-import 'windows_window_frame.dart';
 
 /// The centralised settings page (PLANNING "Consistency/UX"): one place
 /// holding every app-wide preference and door — previously each lived only
@@ -84,20 +83,33 @@ class _SettingsDialogState extends State<_SettingsDialog> {
     }
   }
 
-  Widget _section(String title) => Container(
-        margin: const EdgeInsets.only(top: 16, bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+  Widget _card(String title, List<Widget> children) => Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(10),
+          color: Theme.of(context)
+              .colorScheme
+              .surfaceContainerHighest
+              .withValues(alpha: .62),
+          border: Border.all(
+              color:
+                  Theme.of(context).colorScheme.outline.withValues(alpha: .18)),
+          borderRadius: BorderRadius.circular(12),
         ),
-        child: AppText(
-          title,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: Theme.of(context).colorScheme.primary,
-          ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            AppText(
+              title,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            ...children,
+          ],
         ),
       );
 
@@ -130,35 +142,6 @@ class _SettingsDialogState extends State<_SettingsDialog> {
         onSelectionChanged: (s) => onChanged(s.first),
       );
 
-  Widget _door(IconData icon, String label, String hint, VoidCallback open) =>
-      Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  AppText(label, style: const TextStyle(fontSize: 13)),
-                  AppText(
-                    hint,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: OnoteColors.graphite400,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            TextButton.icon(
-              icon: Icon(icon, size: 15),
-              label: const AppText('Open…', style: TextStyle(fontSize: 12)),
-              onPressed: open,
-            ),
-          ],
-        ),
-      );
-
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -170,202 +153,193 @@ class _SettingsDialogState extends State<_SettingsDialog> {
           child: ListView(
             shrinkWrap: true,
             children: [
-              _section('Appearance'),
-              _row(
-                'Interface language',
-                DropdownButton<String>(
-                  value: app.interfaceLanguage,
-                  items: const [
-                    DropdownMenuItem(value: 'en', child: Text('English')),
-                    DropdownMenuItem(value: 'de', child: Text('Deutsch')),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) app.setInterfaceLanguage(value);
-                  },
-                ),
-              ),
-              _row(
-                'Theme',
-                SegmentedButton<ThemeMode>(
-                  showSelectedIcon: false,
-                  style: const ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                    textStyle: WidgetStatePropertyAll(TextStyle(fontSize: 11)),
-                  ),
-                  segments: const [
-                    ButtonSegment(
-                      value: ThemeMode.system,
-                      label: AppText('System'),
-                    ),
-                    ButtonSegment(
-                      value: ThemeMode.light,
-                      label: AppText('Light'),
-                    ),
-                    ButtonSegment(
-                      value: ThemeMode.dark,
-                      label: AppText('Dark'),
-                    ),
-                  ],
-                  selected: {app.themeMode},
-                  onSelectionChanged: (s) => app.setThemeMode(s.first),
-                ),
-              ),
-              if (WindowsWindowFrame.of(context) case final window?) ...[
+              _card('Appearance', [
                 _row(
-                  'Start maximized',
-                  _toggle(app.startMaximized, app.setStartMaximized),
+                  'Interface language',
+                  DropdownButton<String>(
+                    value: app.interfaceLanguage,
+                    items: const [
+                      DropdownMenuItem(value: 'en', child: Text('English')),
+                      DropdownMenuItem(value: 'de', child: Text('Deutsch')),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) app.setInterfaceLanguage(value);
+                    },
+                  ),
                 ),
-                TextButton.icon(
-                  icon: const Icon(Icons.crop_square),
-                  label: const AppText('Maximize / restore (F11)'),
-                  onPressed: window.maximize,
+                _row(
+                  'Theme',
+                  SegmentedButton<ThemeMode>(
+                    showSelectedIcon: false,
+                    style: const ButtonStyle(
+                      visualDensity: VisualDensity.compact,
+                      textStyle:
+                          WidgetStatePropertyAll(TextStyle(fontSize: 11)),
+                    ),
+                    segments: const [
+                      ButtonSegment(
+                          value: ThemeMode.system, label: AppText('System')),
+                      ButtonSegment(
+                          value: ThemeMode.light, label: AppText('Light')),
+                      ButtonSegment(
+                          value: ThemeMode.dark, label: AppText('Dark')),
+                    ],
+                    selected: {app.themeMode},
+                    onSelectionChanged: (s) => app.setThemeMode(s.first),
+                  ),
+                ),
+              ]),
+              _card('Storage', [
+                _row(
+                  'Recycle bin retention',
+                  DropdownButton<int>(
+                    value: app.recycleRetentionDays,
+                    items: const [
+                      DropdownMenuItem(value: 7, child: Text('7 days')),
+                      DropdownMenuItem(value: 14, child: Text('14 days')),
+                      DropdownMenuItem(value: 30, child: Text('30 days')),
+                      DropdownMenuItem(value: 60, child: Text('60 days')),
+                      DropdownMenuItem(value: 90, child: Text('90 days')),
+                      DropdownMenuItem(value: 365, child: Text('1 year')),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) app.setRecycleRetentionDays(value);
+                    },
+                  ),
                 ),
                 const AppText(
-                  'Maximized mode keeps the Windows taskbar available.',
+                  'Deleted notebooks, sections and pages can be restored until this time expires.',
                   style: TextStyle(fontSize: 11),
                 ),
-              ],
-              _section('Storage'),
-              _row(
-                'Recycle bin retention',
-                DropdownButton<int>(
-                  value: app.recycleRetentionDays,
-                  items: const [
-                    DropdownMenuItem(value: 7, child: Text('7 days')),
-                    DropdownMenuItem(value: 14, child: Text('14 days')),
-                    DropdownMenuItem(value: 30, child: Text('30 days')),
-                    DropdownMenuItem(value: 60, child: Text('60 days')),
-                    DropdownMenuItem(value: 90, child: Text('90 days')),
-                    DropdownMenuItem(value: 365, child: Text('1 year')),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) app.setRecycleRetentionDays(value);
-                  },
-                ),
-              ),
-              const AppText(
-                'Deleted notebooks, sections and pages can be restored until this time expires.',
-                style: TextStyle(fontSize: 11),
-              ),
-              _section('Navigation'),
-              _row(
-                'Pan sensitivity',
-                SizedBox(
-                  width: 240,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Slider(
-                          value: app.panSensitivity,
-                          min: 0.2,
-                          max: 2.0,
-                          divisions: 18,
-                          label: '${app.panSensitivity.toStringAsFixed(1)}×',
-                          onChanged: app.setPanSensitivity,
+              ]),
+              _card('Navigation', [
+                _row(
+                  'Pan sensitivity',
+                  SizedBox(
+                    width: 240,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Slider(
+                            value: app.panSensitivity,
+                            min: 0.5,
+                            max: 3.5,
+                            divisions: 12,
+                            label: '${app.panSensitivity.toStringAsFixed(1)}×',
+                            onChanged: app.setPanSensitivity,
+                          ),
                         ),
-                      ),
-                      SizedBox(
-                        width: 38,
-                        child: Text(
-                          '${app.panSensitivity.toStringAsFixed(1)}×',
-                          textAlign: TextAlign.right,
-                          style: const TextStyle(fontSize: 12),
+                        SizedBox(
+                          width: 38,
+                          child: Text(
+                            '${app.panSensitivity.toStringAsFixed(1)}×',
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(fontSize: 12),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              const AppText(
-                'Controls page movement with touch, touchpad and mouse wheel. Zoom speed stays the same.',
-                style: TextStyle(fontSize: 11),
-              ),
-              _section('Writing and drawing'),
-              _row(
-                'Draw with finger',
-                DropdownButton<TouchDrawing>(
-                  value: app.touchDrawing,
-                  items: [
-                    for (final value in TouchDrawing.values)
-                      DropdownMenuItem(
-                        value: value,
-                        child: AppText(value.label),
-                      ),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) app.setTouchDrawing(value);
-                  },
+                const AppText(
+                  'Controls page movement with touch, touchpad and mouse wheel. Zoom speed stays the same.',
+                  style: TextStyle(fontSize: 11),
                 ),
-              ),
-              _row(
-                'Spell check',
-                _toggle(app.spellCheckEnabled, app.setSpellCheck),
-              ),
-              _row(
-                'Writing language',
-                DropdownButton<String>(
-                  value: app.writingLanguage,
-                  items: const [
-                    DropdownMenuItem(value: 'en-US', child: Text('English')),
-                    DropdownMenuItem(value: 'de-DE', child: Text('Deutsch')),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) app.setWritingLanguage(value);
-                  },
+                _row(
+                  'Show sections above the page',
+                  _toggle(
+                    app.sectionTabsAbovePage,
+                    app.setSectionTabsAbovePage,
+                  ),
                 ),
-              ),
-              _row(
-                'Check handwriting',
-                _toggle(
-                  app.handwritingSpellCheck,
-                  app.setHandwritingSpellCheck,
+              ]),
+              _card('Writing and drawing', [
+                _row(
+                  'Draw with finger',
+                  DropdownButton<TouchDrawing>(
+                    value: app.touchDrawing,
+                    items: [
+                      for (final value in TouchDrawing.values)
+                        DropdownMenuItem(
+                          value: value,
+                          child: AppText(value.label),
+                        ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) app.setTouchDrawing(value);
+                    },
+                  ),
                 ),
-              ),
-              const AppText(
-                'Local Windows language packs are required. No notes are uploaded.',
-                style: TextStyle(fontSize: 11),
-              ),
-              const AppText(
-                'Recognition may misread handwriting; marks are suggestions, not corrections.',
-                style: TextStyle(fontSize: 11),
-              ),
-              TextButton.icon(
-                onPressed: _checkingLanguage ? null : _checkLanguage,
-                icon: const Icon(Icons.spellcheck, size: 16),
-                label: const AppText('Check language support'),
-              ),
-              if (app.writingServiceProblem != null)
-                AppText(
-                  app.writingServiceProblem!,
-                  style: const TextStyle(fontSize: 11),
+                _row(
+                  'Spell check',
+                  _toggle(app.spellCheckEnabled, app.setSpellCheck),
                 ),
-              _section('Integrations'),
-              _row(
-                'Show browser shortcut',
-                _toggle(
-                    app.browserShortcutEnabled, app.setBrowserShortcutEnabled),
-              ),
-              const AppText(
-                'Opens Google in your default browser.',
-                style: TextStyle(fontSize: 11),
-              ),
-              _row(
-                'Show Anki shortcut',
-                _toggle(app.ankiShortcutEnabled, app.setAnkiShortcutEnabled),
-              ),
-              const AppText(
-                'Opens your local Anki app. Openote never reads or changes Anki cards.',
-                style: TextStyle(fontSize: 11),
-              ),
-              if (app.ankiShortcutEnabled)
+                _row(
+                  'Writing language',
+                  DropdownButton<String>(
+                    value: app.writingLanguage,
+                    items: const [
+                      DropdownMenuItem(value: 'en-US', child: Text('English')),
+                      DropdownMenuItem(value: 'de-DE', child: Text('Deutsch')),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) app.setWritingLanguage(value);
+                    },
+                  ),
+                ),
+                _row(
+                  'Check handwriting',
+                  _toggle(
+                    app.handwritingSpellCheck,
+                    app.setHandwritingSpellCheck,
+                  ),
+                ),
+                const AppText(
+                  'Local Windows language packs are required. No notes are uploaded.',
+                  style: TextStyle(fontSize: 11),
+                ),
+                const AppText(
+                  'Recognition may misread handwriting; marks are suggestions, not corrections.',
+                  style: TextStyle(fontSize: 11),
+                ),
                 TextButton.icon(
-                  icon: const Icon(Icons.folder_open_outlined, size: 16),
-                  label: Text(app.ankiExecutablePath == null
-                      ? 'Choose Anki app (optional)'
-                      : 'Change Anki app'),
-                  onPressed: _chooseAnkiApp,
+                  onPressed: _checkingLanguage ? null : _checkLanguage,
+                  icon: const Icon(Icons.spellcheck, size: 16),
+                  label: const AppText('Check language support'),
                 ),
-              /* _section('Connections'),
+                if (app.writingServiceProblem != null)
+                  AppText(
+                    app.writingServiceProblem!,
+                    style: const TextStyle(fontSize: 11),
+                  ),
+              ]),
+              _card('Integrations', [
+                _row(
+                  'Show browser shortcut',
+                  _toggle(app.browserShortcutEnabled,
+                      app.setBrowserShortcutEnabled),
+                ),
+                const AppText(
+                  'Opens Google in your default browser.',
+                  style: TextStyle(fontSize: 11),
+                ),
+                _row(
+                  'Show Anki shortcut',
+                  _toggle(app.ankiShortcutEnabled, app.setAnkiShortcutEnabled),
+                ),
+                const AppText(
+                  'Opens your local Anki app. Openote never reads or changes Anki cards.',
+                  style: TextStyle(fontSize: 11),
+                ),
+                if (app.ankiShortcutEnabled)
+                  TextButton.icon(
+                    icon: const Icon(Icons.folder_open_outlined, size: 16),
+                    label: Text(app.ankiExecutablePath == null
+                        ? 'Choose Anki app (optional)'
+                        : 'Change Anki app'),
+                    onPressed: _chooseAnkiApp,
+                  ),
+                /* _section('Connections'),
               _door(
                 Icons.smart_toy_outlined,
                 'AI access',
@@ -375,7 +349,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 () => showMcpDialog(context, app),
               ),
               */
-              /* _section('Keyboard'),
+                /* _section('Keyboard'),
               _door(
                 Icons.keyboard_outlined,
                 'Keyboard shortcuts',
@@ -383,54 +357,56 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 () => showShortcutOverlay(context),
               ),
               */
-              _section('About'),
-              _row(
-                'Openote $kAppVersion',
-                _checking
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : TextButton(
-                        onPressed: _checkNow,
-                        child: const AppText(
-                          'Check for updates',
-                          style: TextStyle(fontSize: 12),
+              ]),
+              _card('About', [
+                _row(
+                  'Openote $kAppVersion',
+                  _checking
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : TextButton(
+                          onPressed: _checkNow,
+                          child: const AppText(
+                            'Check for updates',
+                            style: TextStyle(fontSize: 12),
+                          ),
                         ),
-                      ),
-              ),
-              if (_updateNote != null)
-                AppText(
-                  _updateNote!,
-                  style: const TextStyle(
-                    fontSize: 11.5,
-                    color: OnoteColors.graphite400,
+                ),
+                if (_updateNote != null)
+                  AppText(
+                    _updateNote!,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      color: OnoteColors.graphite400,
+                    ),
+                  ),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton(
+                    onPressed: () => PlatformOpen.url(
+                      'https://github.com/$kUpdateRepository/releases',
+                    ),
+                    child: const AppText(
+                      "What's new",
+                      style: TextStyle(fontSize: 12),
+                    ),
                   ),
                 ),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton(
-                  onPressed: () => PlatformOpen.url(
-                    'https://github.com/$kUpdateRepository/releases',
-                  ),
-                  child: const AppText(
-                    "What's new",
-                    style: TextStyle(fontSize: 12),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () => PlatformOpen.url(
+                      'https://github.com/$kUpdateRepository/issues/new',
+                    ),
+                    icon: const Icon(Icons.bug_report_outlined, size: 16),
+                    label: const AppText('Report a bug',
+                        style: TextStyle(fontSize: 12)),
                   ),
                 ),
-              ),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: () => PlatformOpen.url(
-                    'https://github.com/$kUpdateRepository/issues/new',
-                  ),
-                  icon: const Icon(Icons.bug_report_outlined, size: 16),
-                  label: const AppText('Report a bug',
-                      style: TextStyle(fontSize: 12)),
-                ),
-              ),
+              ]),
             ],
           ),
         ),

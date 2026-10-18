@@ -76,7 +76,7 @@ include(flutter/generated_plugins.cmake)
 
 
 # === onote_core (Rust): build the native core with the app ==================
-# Ends the stale-library trap (rust/onote_core/INTEGRATION.md): every
+# Ends the stale-library trap (LEARNINGS.md): every
 # `flutter build linux` / `flutter run` rebuilds the crate, and the install
 # rule at the END of this file bundles the .so next to the executable.
 set(ONOTE_CORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../rust/onote_core")
@@ -165,7 +165,7 @@ endif()
 # bare name from the engine .so is not guaranteed to search bundle/lib.
 # Declared LAST on purpose: the install sequence above STARTS by
 # REMOVE_RECURSE-ing the whole bundle directory, so any earlier copy —
-# including the POST_BUILD variant INTEGRATION.md used to sketch — would be
+# including the POST_BUILD variant older integration notes used to sketch — would be
 # wiped. OPTIONAL covers the no-cargo build (see the guard above).
 install(FILES "${ONOTE_CORE_LIB}" DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime OPTIONAL)

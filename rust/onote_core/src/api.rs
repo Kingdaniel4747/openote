@@ -3,7 +3,7 @@
 //! Every function here is a plain Rust function so `cargo test` exercises it
 //! directly. When the crate is built with `--features bridge`, the `#[frb]`
 //! attributes tell `flutter_rust_bridge_codegen` how to generate the Dart
-//! bindings (see `rust/onote_core/README.md`). With the feature off, the
+//! bindings (see `ARCHITECTURE.md`). With the feature off, the
 //! attributes vanish and the functions are ordinary Rust — so the default
 //! build never depends on the bridge machinery.
 //!

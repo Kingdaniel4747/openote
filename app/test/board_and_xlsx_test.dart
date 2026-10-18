@@ -1,4 +1,4 @@
-// Items 4 and 5 of PLANNING.md, the shipped slices:
+// Board and spreadsheet import regression coverage:
 //
 //   Tables — "import data (xlxs)": the minimal xlsx reader, tested against a
 //   file BUILT FROM RAW PARTS in the test, so every branch (shared strings,

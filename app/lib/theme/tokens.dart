@@ -15,9 +15,7 @@
 /// question is whether the design needs a new token — decided once, here — not
 /// whether this one widget can have its own number.
 ///
-/// Normative source: [docs/05-style-guide.md] §3.7 (surface roles and
-/// interaction alphas), §4.2a (the chrome type ramp), §5.1–5.3 (spacing,
-/// radius, elevation), §6 (icon sizes), §10 (motion).
+/// Shared surface, typography, spacing and motion values live here.
 library;
 
 import 'package:flutter/material.dart';

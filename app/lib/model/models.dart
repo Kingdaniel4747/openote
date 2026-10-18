@@ -1,4 +1,4 @@
-/// Data model per docs/specs/11-data-model-spec.md. Field names match the
+/// Data model (see ARCHITECTURE.md). Field names match the
 /// Page JSON schema exactly, so `toJson` output IS the mirror format.
 library;
 

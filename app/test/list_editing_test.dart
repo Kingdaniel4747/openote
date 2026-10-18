@@ -285,10 +285,10 @@ void main() {
   // against the first cut of this engine.
   group('selections that are not left-to-right, and edges', () {
     test('a BACKWARDS selection keeps its direction and its characters', () {
-      final v = TextEditingValue(
+      const v = TextEditingValue(
         text: 'a\nb',
         // Dragged right-to-left, or Shift+Up: base is the LATER offset.
-        selection: const TextSelection(baseOffset: 3, extentOffset: 0),
+        selection: TextSelection(baseOffset: 3, extentOffset: 0),
       );
       final r = toggleListOverSelection(v, ListKind.bullet);
       expect(r.text, '- a\n- b');
@@ -299,9 +299,9 @@ void main() {
     });
 
     test('Tab with a backwards selection indents both lines', () {
-      final v = TextEditingValue(
+      const v = TextEditingValue(
         text: '- a\n- b',
-        selection: const TextSelection(baseOffset: 6, extentOffset: 2),
+        selection: TextSelection(baseOffset: 6, extentOffset: 2),
       );
       final r = handleListTab(v, outdent: false)!;
       expect(r.text, '  - a\n  - b');
@@ -309,9 +309,9 @@ void main() {
 
     test('a selection ending AT a line start does not drag that line in', () {
       // Exactly what Shift+Down and a triple-click produce.
-      final v = TextEditingValue(
+      const v = TextEditingValue(
         text: '- a\n- b',
-        selection: const TextSelection(baseOffset: 0, extentOffset: 4),
+        selection: TextSelection(baseOffset: 0, extentOffset: 4),
       );
       // Only line 1 is selected, and it is the first item — nothing to nest
       // under, so nothing should move.
@@ -344,9 +344,9 @@ void main() {
 
   group('the caret never gets lost', () {
     test('renumbering carries the caret with its words', () {
-      final v = TextEditingValue(
+      const v = TextEditingValue(
         text: '1. a\n1. bcd',
-        selection: const TextSelection.collapsed(offset: 10), // after 'bc'
+        selection: TextSelection.collapsed(offset: 10), // after 'bc'
       );
       final r = renumberValue(v);
       expect(r.text, '1. a\n2. bcd');

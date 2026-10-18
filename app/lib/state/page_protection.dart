@@ -14,12 +14,8 @@
 /// A padlock that lies about what it protects is worse than no padlock,
 /// because someone will trust it with something that matters.
 ///
-/// [ADR-0008](../../docs/adr/ADR-0008-page-protection.md) designs the real
-/// thing — node-level encryption at rest — and explains
-/// why a gate alone cannot be called security. This file is the interim answer
-/// to "just basic password protection in app at a minimum would be fine too
-/// for now", built deliberately and labelled honestly, not a substitute for
-/// that work.
+/// This gate does not implement encryption at rest. Keep that limitation
+/// explicit when changing the feature; see ARCHITECTURE.md.
 ///
 /// # Why the passcode is still hashed
 ///
@@ -33,7 +29,7 @@
 /// offline guessing attack on the hash — and an attacker who can read the hash
 /// (it is in `workspace.json`) can equally read the notes themselves, so the
 /// work factor would protect nothing here. Argon2id belongs with the
-/// encryption in ADR-0008, where the derived key actually guards something.
+/// encryption at rest, where the derived key actually guards something.
 library;
 
 import 'dart:convert';

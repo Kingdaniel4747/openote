@@ -264,23 +264,23 @@ void main() {
     // the one class of defect a drawing can have that a person cannot get
     // out of, so it is refused at the door.
     test('is refused, so the last sensible window stays', () {
-      final lost = GraphView(x0: 1e12, x1: 1e12 + 0.01, y0: -1, y1: 1);
+      const lost = GraphView(x0: 1e12, x1: 1e12 + 0.01, y0: -1, y1: 1);
       expect(lost.width, greaterThan(1e-9), reason: 'wide enough on its own');
       expect(lost.isSane, isFalse);
     });
 
     test('a small window near zero is still fine', () {
-      expect(GraphView(x0: -1e-8, x1: 1e-8, y0: -1e-8, y1: 1e-8).isSane,
+      expect(const GraphView(x0: -1e-8, x1: 1e-8, y0: -1e-8, y1: 1e-8).isSane,
           isTrue);
     });
 
     test('a big window far out is still fine', () {
-      expect(GraphView(x0: 1e10, x1: 1e10 + 100, y0: -50, y1: 50).isSane,
+      expect(const GraphView(x0: 1e10, x1: 1e10 + 100, y0: -50, y1: 50).isSane,
           isTrue);
     });
 
     test('zooming in stops rather than losing the numbers', () {
-      var v = GraphView(x0: 1e9, x1: 1e9 + 20, y0: -10, y1: 10);
+      var v = const GraphView(x0: 1e9, x1: 1e9 + 20, y0: -10, y1: 10);
       for (var i = 0; i < 400; i++) {
         final next = v.zoomed(0.8, aboutX: 1e9 + 10, aboutY: 0);
         if (!next.isSane) break;

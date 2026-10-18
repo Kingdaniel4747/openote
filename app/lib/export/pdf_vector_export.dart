@@ -314,8 +314,9 @@ double? _slideHeight(List<Block> blocks, double widthPx) {
   Block? found;
   for (final b in blocks) {
     if (b.type != BlockType.image) continue;
-    if (b.content['background'] != true || b.content['locked'] != true)
+    if (b.content['background'] != true || b.content['locked'] != true) {
       continue;
+    }
     if (found != null) return null; // two backgrounds: not a slide page
     found = b;
   }
@@ -1180,7 +1181,7 @@ pw.Font? _mono;
 ///
 /// BORROWED, not bundled, and that is a trade made deliberately: a CJK face
 /// alone is 16 MB or more, which would roughly double an install already
-/// larger than the user wants (docs/planning/install-size-findings.md). Every
+/// larger than the user wants. Every
 /// desktop that can DISPLAY these scripts already has a font for them, so the
 /// export reads one off disk when it needs one and embeds only the glyphs used.
 ///

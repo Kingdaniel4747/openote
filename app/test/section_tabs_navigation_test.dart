@@ -46,12 +46,18 @@ void main() {
       await app.selectPage(
           app.pagesOf(section.id).firstWhere((p) => p.id != secondPage.id).id);
     });
-    addTearDown(() async {
+    addTearDown(() {
+      // This navigation test does not assert persistence. Discard pending
+      // writes before disposing its temporary workspace; waiting for a write
+      // queued in fake async would deadlock cleanup after a failed assertion.
       app.cancelPendingSave();
       app.dispose();
-      await repo.flushWorkspace();
-      repo.dispose();
-      await directory.delete(recursive: true);
+      try {
+        directory.deleteSync(recursive: true);
+      } on FileSystemException {
+        // A failed widget assertion may leave an in-flight save holding a
+        // Windows file handle. Keep that temporary fixture for inspection.
+      }
     });
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1;
@@ -167,7 +173,10 @@ void main() {
     expect(app.planner.agenda(now: now).single.subtitle, 'Live page title');
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.pumpAndSettle();
+    app.cancelPendingSave();
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
+    app.cancelPendingSave();
+    app.dispose(); // Cancel the reminder timer before binding verification.
   });
 }

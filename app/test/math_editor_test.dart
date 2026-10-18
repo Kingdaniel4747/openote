@@ -1,4 +1,4 @@
-// The visual maths editor's engine (plan: docs/planning/v0.18-visual-maths.md).
+// The visual maths editor's engine (see math/math_editor.dart).
 //
 // These are the promises the editor makes to a student who has never heard of
 // LaTeX: type `1/2` and it becomes a fraction; press Backspace and it comes
@@ -53,12 +53,12 @@ void main() {
     });
 
     test('a BACKSLASH command becomes its symbol on space', () {
-      expect(type(bs + 'alpha ').latex, r'\alpha ');
+      expect(type('${bs}alpha ').latex, r'\alpha ');
     });
 
     test('an operator finishes a command too, without a space', () {
       // Nobody types a space before the plus.
-      expect(type(bs + 'pi+1').latex, r'\pi +1');
+      expect(type('${bs}pi+1').latex, r'\pi +1');
     });
 
     test('but a bare word is just a word', () {
@@ -82,7 +82,7 @@ void main() {
 
     test('an unknown command stays as the characters typed', () {
       // Never an error, and never silently eaten.
-      expect(type(bs + 'notacommand ').latex, contains('notacommand'));
+      expect(type('${bs}notacommand ').latex, contains('notacommand'));
     });
 
     test('<= becomes one symbol the moment it is complete', () {
@@ -94,7 +94,7 @@ void main() {
     });
 
     test('sqrt opens a root with the caret under the sign', () {
-      final e = type(bs + 'sqrt ');
+      final e = type('${bs}sqrt ');
       expect(e.latex, r'\sqrt{}');
       expect(e.caretRow.owner, isA<MSqrt>());
       expect(e.caretRow.name, 'radicand');
@@ -103,7 +103,7 @@ void main() {
     });
 
     test('sum opens with the caret in the lower limit', () {
-      final e = type(bs + 'sum ');
+      final e = type('${bs}sum ');
       expect(e.caretRow.name, 'sub');
       type('n=1', into: e);
       expect(e.latex, contains(r'\sum'));
@@ -111,7 +111,7 @@ void main() {
     });
 
     test('a function name goes upright when the bracket arrives', () {
-      final e = type(bs + 'sin(x');
+      final e = type('${bs}sin(x');
       expect(e.latex, startsWith(r'\sin '));
       expect(e.latex, contains(r'\left( x'));
     });
@@ -237,7 +237,7 @@ void main() {
     });
 
     test('a square root keeps everything under it', () {
-      final e = type(bs + 'sqrt ');
+      final e = type('${bs}sqrt ');
       type('x+1', into: e);
       e.placeAtEnd();
       expect(e.backspace(), isTrue);
@@ -245,7 +245,7 @@ void main() {
     });
 
     test('deleting off the FRONT unwraps, keeping the contents', () {
-      final e = type(bs + 'sqrt ');
+      final e = type('${bs}sqrt ');
       type('x+1', into: e);
       e.caretIndex = 0; // start of the radicand
       expect(e.backspace(), isTrue);
@@ -320,7 +320,7 @@ void main() {
     });
 
     test('backspacing a symbol gives back the command that produced it', () {
-      final e = type(bs + 'alpha ');
+      final e = type('${bs}alpha ');
       expect(e.backspace(), isTrue);
       expect(e.latex, contains('alpha'));
     });

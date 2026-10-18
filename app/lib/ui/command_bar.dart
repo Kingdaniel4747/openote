@@ -209,7 +209,7 @@ class _CommandBarState extends State<CommandBar> {
             fillAvailable: true,
             controls: [
               // Update-through-app: the "little update button" of
-              // PLANNING.md. Exists only when launch found a newer
+              // the original update feature request. Exists only when launch found a newer
               // release, and leads with the version so the tooltip
               // answers "to what?" before the click.
               if (app.updateAvailable != null)
@@ -415,48 +415,64 @@ class _CommandBarState extends State<CommandBar> {
           // ── Tab row ──
           SizedBox(
             height: 32,
-            child: Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.fullscreen, size: 18),
-                  tooltip: tr(context, 'Writing mode'),
-                  visualDensity: VisualDensity.compact,
-                  onPressed: () => app.setWritingMode(true),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.undo, size: 18),
-                  tooltip: tr(context, 'Undo  (Ctrl+Z)'),
-                  visualDensity: VisualDensity.compact,
-                  onPressed: app.canUndo ? app.undo : null,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.redo, size: 18),
-                  tooltip: tr(context, 'Redo  (Ctrl+Y)'),
-                  visualDensity: VisualDensity.compact,
-                  onPressed: app.canRedo ? app.redo : null,
-                ),
-                const SizedBox(width: 4),
-                // **No leading gutter.** A fixed chrome region runs to the edge
-                // of the region it owns (§7d); the first control's own padding
-                // is the optical margin. An extra 6px here made the toolbar
-                // look inset from the window — a floating strip rather than
-                // part of the frame — and cost hit area at the screen edge,
-                // which is the one place a pointer can be thrown at infinitely
-                // fast (Fitts's law) and always land.
-                for (var i = 0; i < _tabs.length; i++)
-                  _tabButton(scheme, i, _tabs[i]),
-                // **A badge, not a tab.** It says what the row below is
-                // about and it cannot be pressed, so there is nothing here to
-                // be moved onto and nothing to be moved back from. It sits
-                // where the old Maths tab sat, deliberately: same place,
-                // opposite kind.
-                if (objectFaceOf(app) == ObjectFace.equation)
-                  const _SubjectBadge(icon: Icons.functions, label: 'Equation'),
-                const Spacer(),
-                if (WindowsWindowFrame.of(context)?.customChrome != true)
-                  ..._utilityControls(context, scheme),
-              ],
-            ),
+            child: LayoutBuilder(builder: (context, constraints) {
+              final compactTabRow = constraints.maxWidth < 700;
+              return Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.fullscreen, size: 18),
+                    tooltip: tr(context, 'Writing mode'),
+                    visualDensity: VisualDensity.compact,
+                    constraints: compactTabRow
+                        ? const BoxConstraints.tightFor(width: 36, height: 32)
+                        : null,
+                    padding: compactTabRow ? EdgeInsets.zero : null,
+                    onPressed: () => app.setWritingMode(true),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.undo, size: 18),
+                    tooltip: tr(context, 'Undo  (Ctrl+Z)'),
+                    visualDensity: VisualDensity.compact,
+                    constraints: compactTabRow
+                        ? const BoxConstraints.tightFor(width: 36, height: 32)
+                        : null,
+                    padding: compactTabRow ? EdgeInsets.zero : null,
+                    onPressed: app.canUndo ? app.undo : null,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.redo, size: 18),
+                    tooltip: tr(context, 'Redo  (Ctrl+Y)'),
+                    visualDensity: VisualDensity.compact,
+                    constraints: compactTabRow
+                        ? const BoxConstraints.tightFor(width: 36, height: 32)
+                        : null,
+                    padding: compactTabRow ? EdgeInsets.zero : null,
+                    onPressed: app.canRedo ? app.redo : null,
+                  ),
+                  const SizedBox(width: 4),
+                  // **No leading gutter.** A fixed chrome region runs to the edge
+                  // of the region it owns (§7d); the first control's own padding
+                  // is the optical margin. An extra 6px here made the toolbar
+                  // look inset from the window — a floating strip rather than
+                  // part of the frame — and cost hit area at the screen edge,
+                  // which is the one place a pointer can be thrown at infinitely
+                  // fast (Fitts's law) and always land.
+                  for (var i = 0; i < _tabs.length; i++)
+                    _tabButton(scheme, i, _tabs[i], compact: compactTabRow),
+                  // **A badge, not a tab.** It says what the row below is
+                  // about and it cannot be pressed, so there is nothing here to
+                  // be moved onto and nothing to be moved back from. It sits
+                  // where the old Maths tab sat, deliberately: same place,
+                  // opposite kind.
+                  if (objectFaceOf(app) == ObjectFace.equation)
+                    const _SubjectBadge(
+                        icon: Icons.functions, label: 'Equation'),
+                  const Spacer(),
+                  if (WindowsWindowFrame.of(context)?.customChrome != true)
+                    ..._utilityControls(context, scheme),
+                ],
+              );
+            }),
           ),
           // ── Command row ──
           // Horizontally scrollable so a narrow window scrolls the controls
@@ -835,7 +851,8 @@ class _CommandBarState extends State<CommandBar> {
 
   // ── INSERT ────────────────────────────────────────────────────────────
 
-  Widget _tabButton(ColorScheme scheme, int i, String label) {
+  Widget _tabButton(ColorScheme scheme, int i, String label,
+      {bool compact = false}) {
     final on = _tab == i;
     return InkWell(
       borderRadius: BorderRadius.circular(6),
@@ -843,7 +860,7 @@ class _CommandBarState extends State<CommandBar> {
       // which is the whole of the answer to "don't force any navigation".
       onTap: () => setState(() => _tab = i),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+        padding: EdgeInsets.symmetric(horizontal: compact ? 4 : 12),
         alignment: Alignment.center,
         decoration: BoxDecoration(
           border: Border(
@@ -1018,7 +1035,7 @@ class _CommandBarState extends State<CommandBar> {
         ),
       ],
     );
-    if (!mounted || action == null) return;
+    if (!context.mounted || action == null) return;
     switch (action) {
       case 'edit':
         final edited = await showOnoteColorPicker(

@@ -138,7 +138,9 @@ class _ImageBlockViewState extends State<ImageBlockView> {
           widget.app, pdf, page, bucket.toDouble());
       if (!mounted ||
           request != _qualityRequest ||
-          widget.block.content['pdf'] != pdf) return;
+          widget.block.content['pdf'] != pdf) {
+        return;
+      }
       setState(() {
         _zoomRendering = false;
         if (png != null) {

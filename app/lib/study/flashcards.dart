@@ -242,7 +242,7 @@ List<Flashcard> cardsFromBlock(
 /// The answer body following a question line: every deeper-indented line, or
 /// failing that the single next non-empty line.
 String _answerFollowing(List<String> lines, int at) {
-  final indentOf = (String l) => l.length - l.trimLeft().length;
+  int indentOf(String l) => l.length - l.trimLeft().length;
   final base = indentOf(lines[at]);
   final deeper = <String>[];
   for (var i = at + 1; i < lines.length; i++) {

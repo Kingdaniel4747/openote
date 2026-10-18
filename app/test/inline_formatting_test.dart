@@ -18,6 +18,7 @@ import 'package:openote/store/repository.dart';
 import 'support/sqlite.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   var haveSqlite = false;
   setUpAll(() => haveSqlite = initSqliteForTests());
 

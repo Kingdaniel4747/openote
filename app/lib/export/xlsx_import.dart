@@ -1,4 +1,4 @@
-/// Minimal .xlsx → rows reader ("import data (xlsx)" from PLANNING.md).
+/// Minimal .xlsx → rows reader ("import data (xlsx)" in PRODUCT.md).
 ///
 /// An .xlsx is a zip of XML, and both the unzip and the XML parse were
 /// ALREADY in this app's dependency tree — so this is a hand-rolled reader

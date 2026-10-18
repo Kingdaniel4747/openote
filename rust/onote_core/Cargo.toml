@@ -7,7 +7,7 @@ description = "Openote core: the CRDT-ready page-document model, deterministic m
 # Apache-2.0, NOT the application's AGPL: this crate is the permissive tier of
 # ADR-0005 (ratified 2026-07-27) so that any tool, including proprietary ones,
 # can read and write .onote files without friction. Adding a copyleft dependency
-# here would silently break that promise — see LICENSING.md.
+# here would silently break that promise — see ../../README.md (licenses).
 license = "Apache-2.0"
 repository = "https://github.com/openote/openote"
 publish = false
@@ -20,7 +20,7 @@ crate-type = ["cdylib", "staticlib", "lib"]
 
 [features]
 default = []
-# Enable only when generating/serving the Flutter bindings (see README).
+# Enable only when generating/serving the Flutter bindings (see ../../ARCHITECTURE.md).
 bridge = ["dep:flutter_rust_bridge"]
 
 [dependencies]

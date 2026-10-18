@@ -19,7 +19,7 @@ import 'package:openote/ui/alert_popup.dart';
 import 'package:openote/ui/app_shell.dart';
 import 'package:openote/ui/command_bar.dart';
 import 'package:openote/ui/sidebar.dart';
-import 'package:openote/ui/study_panel.dart';
+import 'package:openote/ui/planner_panel.dart';
 
 import 'support/sqlite.dart';
 
@@ -80,6 +80,7 @@ void main() {
   tearDown(() {
     if (!haveSqlite) return;
     app.cancelPendingSave();
+    app.dispose();
     repo.dispose();
     try {
       tmp.deleteSync(recursive: true);
@@ -174,19 +175,17 @@ void main() {
     testWidgets('an open panel joins the rotation, and F6 lands on its body',
         (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-      app.showPanel(SidePanelKind.study);
+      app.showPanel(SidePanelKind.planner);
       await pumpShell(tester);
 
       // Page → panel is one step forward once a panel is open.
       await key(tester, LogicalKeyboardKey.f6);
-      expect(focusIsUnder<StudyPanel>(), isTrue);
+      expect(focusIsUnder<PlannerPanel>(), isTrue);
 
-      // …and specifically on the node that OWNS Space and 1-4, not on the
-      // header's Close button. Landing on Close would mean the first key a
-      // student presses in the study panel shuts it.
-      expect(FocusManager.instance.primaryFocus?.debugLabel, 'study');
+      // The planner body participates in keyboard navigation. Space must
+      // not land on the panel header's Close button and close the panel.
       await key(tester, LogicalKeyboardKey.space);
-      expect(app.openPanel, SidePanelKind.study,
+      expect(app.openPanel, SidePanelKind.planner,
           reason: 'Space in the panel must not hit Close');
 
       await key(tester, LogicalKeyboardKey.f6);
@@ -316,8 +315,12 @@ void main() {
               'continue');
       expect(app.editingBlockId, list.id);
 
+      // This test checks Enter handling, not persistence. Cancel before the
+      // save debounce starts disk I/O in testWidgets' fake async zone.
+      app.cancelPendingSave();
       await tester.pump(const Duration(milliseconds: 900));
       await tester.pumpAndSettle();
+      app.cancelPendingSave();
     });
 
     testWidgets('a letter types instead of switching tool', (tester) async {
@@ -421,10 +424,10 @@ void main() {
       await key(tester, LogicalKeyboardKey.f6);
       expect(rings(tester), 1, reason: 'exactly one region is marked');
 
-      // The status bar, not the canvas: a click on the page with the text
-      // tool live makes a box and arms the autosave debounce, and this test
-      // is about the marker, not about what the click did.
+      // Click the writing surface; the old bottom status bar no longer
+      // exists. Cancel any edit debounce because this tests focus, not saving.
       await tester.tapAt(const Offset(700, 890));
+      app.cancelPendingSave();
       await tester.pumpAndSettle();
       expect(rings(tester), 0,
           reason: 'steering with the mouse retires the keyboard marker');

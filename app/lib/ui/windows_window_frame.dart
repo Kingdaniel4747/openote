@@ -86,6 +86,21 @@ class WindowsWindowController extends ChangeNotifier {
     }
   }
 
+  /// Put the window in its normal maximized state without ever restoring it.
+  /// The runner has already done this before Flutter draws its first frame;
+  /// this call only keeps older runners and hot restarts consistent.
+  Future<void> ensureMaximized() async {
+    if (!enabled) return;
+    try {
+      await channel.invokeMethod<void>('ensureMaximized');
+    } on MissingPluginException {
+      // Older local runners only know the toggle command.
+      await maximize();
+    } on PlatformException {
+      // The native caption buttons remain available if this cannot be applied.
+    }
+  }
+
   Future<void> minimize() async {
     if (!enabled) return;
     try {
@@ -180,7 +195,7 @@ class _WindowsWindowFrameState extends State<WindowsWindowFrame> {
       // Openote is a writing surface. On Windows it always starts maximized
       // (not borderless fullscreen), so the normal taskbar remains available
       // and no old per-install setting can accidentally restore a tiny window.
-      await _window.maximize();
+      await _window.ensureMaximized();
     });
   }
 

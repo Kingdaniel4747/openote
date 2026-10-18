@@ -1,6 +1,6 @@
 // The visual editor as a student meets it: keys go in, notation comes out,
 // and the LaTeX never appears unless they ask for it.
-// (plan: docs/planning/v0.18-visual-maths.md §5, §6)
+// (see math/math_field.dart)
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -88,7 +88,7 @@ void main() {
     await typeKeys(tester, 'sin(');
     expect(editor.latex, contains(r'\sin'),
         reason: 'the ( makes the intent unambiguous, so the no-greedy rule '
-            '(alpha stays letters, \alpha converts) is not violated — and '
+            '(alpha stays letters, alpha converts) is not violated — and '
             'the old code called the backslash path twice, so plain sin( '
             'never went upright at all');
     expect(editor.latex, isNot(contains('s i n')));

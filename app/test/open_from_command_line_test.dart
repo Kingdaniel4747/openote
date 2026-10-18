@@ -279,8 +279,10 @@ void main() {
       final dir = tempDir('onote_open_');
       final (repo, app) = await workspace(dir);
       final alpha = repo.notebooks.firstWhere((n) => n.title == 'Alpha');
-      Directory(p.join(dir.path, 'sub')).createSync();
-      final roundabout = p.join(dir.path, 'sub', '..', p.basename(alpha.file));
+      final notebookDir = p.dirname(alpha.file);
+      Directory(p.join(notebookDir, 'sub')).createSync();
+      final roundabout =
+          p.join(notebookDir, 'sub', '..', p.basename(alpha.file));
       final before = repo.notebooks.length;
 
       final result = await app.openNotebookFile(roundabout);

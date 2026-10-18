@@ -1,7 +1,7 @@
 // The two structures that keep the summary surfaces (tags rollup, planner,
 // flashcard deck) off the decode-every-page path: the SQL tag prefilter and
 // the shared decoded-page cache. See Repository.readPageShared for the
-// reasoning; PLANNING.md carries the report that motivated it ("opening the
+// reasoning; the original report described the issue ("opening the
 // tab is very slow").
 
 import 'dart:io';
@@ -83,7 +83,6 @@ void main() {
       // exact in practice, not merely safe.
       expect(repo.pageIdsWithTags(nb), isEmpty);
       expect(app.allTags(), isEmpty);
-      expect(app.study.deck(), isEmpty);
     });
   });
 
@@ -263,15 +262,15 @@ void main() {
     });
   });
 
-  group('the deck fast path', () {
-    test('builds the same deck as a full walk, reading only tagged pages',
+  group('the tag rollup fast path', () {
+    test('finds the tagged pages without walking untagged page contents',
         () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final (_, _, app, _) =
           await notebook('onote_deckfast_', 40, taggedAt: {5, 21, 33});
-      final deck = app.study.deck();
-      expect(deck, hasLength(3));
-      expect(deck.map((c) => c.pageTitle).toSet(),
+      final tags = app.allTags();
+      expect(tags, hasLength(3));
+      expect(tags.map((c) => c.pageTitle).toSet(),
           {'Page 5', 'Page 21', 'Page 33'});
     });
 
@@ -293,10 +292,9 @@ void main() {
       ]);
       app.study.noteContentChanged();
       app.docRevision++;
-      expect(app.study.deck(), hasLength(1),
+      expect(app.allTags(), hasLength(1),
           reason: 'the open page bypasses the prefilter — its memory is '
               'fresher than the container');
-      expect(app.allTags(), hasLength(1));
     });
   });
 }

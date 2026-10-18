@@ -64,7 +64,7 @@ include(flutter/generated_plugins.cmake)
 
 
 # === onote_core (Rust): build the native core with the app ==================
-# Ends the stale-DLL trap (rust/onote_core/INTEGRATION.md): every
+# Ends the stale-DLL trap (LEARNINGS.md): every
 # `flutter build windows` / `flutter run` rebuilds the crate, and the install
 # rule at the END of this file bundles the DLL next to openote.exe.
 set(ONOTE_CORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../rust/onote_core")

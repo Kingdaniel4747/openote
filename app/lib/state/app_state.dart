@@ -228,7 +228,8 @@ class AppState extends ChangeNotifier
   final Repository _repo;
   final DocumentEngine engine;
 
-  Directory get poolDirectory => Directory(p.join(_repo.workspaceDir.path, 'Pool'));
+  Directory get poolDirectory =>
+      Directory(p.join(_repo.workspaceDir.path, 'Pool'));
 
   String? resolvePoolFile(String relative) {
     relative = relative.replaceAll('\\', '/');
@@ -239,11 +240,14 @@ class AppState extends ChangeNotifier
 
   void linkPoolFile(String path) {
     if (pageId == null || !p.isWithin(poolDirectory.path, path)) return;
-    final at = canvas.screenToPage(Offset(canvas.viewport.width / 2,
-        canvas.viewport.height / 2));
-    final block = addBlock(Block(type: BlockType.file, x: at.dx, y: at.dy,
-        w: 320, content: {'poolPath': p.relative(path, from: poolDirectory.path).replaceAll('\\', '/'),
-          'name': p.basename(path)}));
+    final at = canvas.screenToPage(
+        Offset(canvas.viewport.width / 2, canvas.viewport.height / 2));
+    final block = addBlock(
+        Block(type: BlockType.file, x: at.dx, y: at.dy, w: 320, content: {
+      'poolPath':
+          p.relative(path, from: poolDirectory.path).replaceAll('\\', '/'),
+      'name': p.basename(path)
+    }));
     select(block.id);
   }
 
@@ -262,6 +266,7 @@ class AppState extends ChangeNotifier
       .._editorOwner = owner
       ..spellCheckEnabled = spellCheckEnabled
       ..tool = tool
+      .._preferredInkTool = _preferredInkTool
       ..penColor = penColor
       ..highlighterColor = highlighterColor
       ..penCustomColor = penCustomColor
@@ -1132,11 +1137,13 @@ class AppState extends ChangeNotifier
   // Canvas settings
   /// Multiplier for page movement from touch, touchpad and mouse wheel.
   /// Zoom speed is deliberately independent of this preference.
-  double panSensitivity = 1.0;
+  // 2× is the comfortable middle setting; the slider still offers slower and
+  // faster movement for a mouse, touchpad or tablet.
+  double panSensitivity = 2.0;
 
   void setPanSensitivity(double value) {
     if (!value.isFinite) return;
-    final next = value.clamp(0.2, 2.0);
+    final next = value.clamp(0.5, 3.5);
     if (panSensitivity == next) return;
     panSensitivity = next;
     _repo.setSetting('panSensitivity', next);
@@ -1144,6 +1151,11 @@ class AppState extends ChangeNotifier
   }
 
   Tool tool = Tool.select;
+  // A pen contact starts writing even when Select or Text is active. Remember
+  // only the two ordinary writing tools: a highlighter or eraser must always
+  // be chosen deliberately.
+  Tool _preferredInkTool = Tool.pen;
+  Tool get preferredInkTool => _preferredInkTool;
   bool writingMode = false;
   bool shapeRecognition = true;
   bool rulerVisible = false;
@@ -2086,14 +2098,6 @@ class AppState extends ChangeNotifier
   // Retained for older plug-ins and tests which assign this setting directly.
   // Hover no longer reads it: switching to ink is now strictly contact-based.
   bool penProximitySwitch = false;
-
-  bool startMaximized = true;
-
-  void setStartMaximized(bool value) {
-    startMaximized = value;
-    _repo.setSetting('startMaximized', value);
-    notifyListeners();
-  }
 
   /// True when the selection is ink and can therefore be recoloured (INK-7).
   bool get hasInkSelection =>
@@ -3392,11 +3396,8 @@ class AppState extends ChangeNotifier
     }
     final storedPanSensitivity = _repo.getSetting('panSensitivity');
     if (storedPanSensitivity is num && storedPanSensitivity.isFinite) {
-      panSensitivity = storedPanSensitivity.toDouble().clamp(0.2, 2.0);
+      panSensitivity = storedPanSensitivity.toDouble().clamp(0.5, 3.5);
     }
-    final maximized = _repo.getSetting('startMaximized') ??
-        _repo.getSetting('startFullscreen');
-    if (maximized is bool) startMaximized = maximized;
     final eraser = _repo.getSetting('eraserSize');
     if (eraser is num && eraser.isFinite) {
       eraserSize = eraser.toDouble().clamp(4.0, 80.0);
@@ -3406,6 +3407,12 @@ class AppState extends ChangeNotifier
       eraserMode =
           EraserMode.values.asNameMap()[storedEraserMode] ?? eraserMode;
     }
+    final storedPreferredInkTool = _repo.getSetting('preferredInkTool');
+    if (storedPreferredInkTool == Tool.pen.name ||
+        storedPreferredInkTool == Tool.ballpoint.name) {
+      _preferredInkTool = Tool.values.byName(storedPreferredInkTool as String);
+    }
+    tool = _preferredInkTool;
     final retention = _repo.getSetting('recycleRetentionDays');
     if (retention is num) {
       _recycleRetentionDays = retention.toInt().clamp(1, 3650).toInt();
@@ -3445,8 +3452,9 @@ class AppState extends ChangeNotifier
       'hiddenHighlighterPresets': hiddenHighlighterPresets
     }.entries) {
       final stored = _repo.getSetting(entry.key);
-      if (stored is List)
+      if (stored is List) {
         entry.value.addAll(stored.whereType<int>().where((i) => i >= 0));
+      }
     }
     final penColour = _repo.getSetting('penCustomColor');
     if (penColour is String &&
@@ -4099,8 +4107,9 @@ class AppState extends ChangeNotifier
   /// Content-based page size (used off-view, e.g. export). The on-screen page
   /// additionally grows to fill the viewport — computed in the canvas widget.
   Size pageSize() {
-    if (pageProps.pdfOnly)
+    if (pageProps.pdfOnly) {
       return Size(pageProps.pageWidth, pageProps.pdfPageHeight);
+    }
     final e = contentExtent();
     if (pageProps.isPaged) {
       // A sheet does not grow sideways, ever — that is what makes it a sheet.
@@ -4335,7 +4344,8 @@ class AppState extends ChangeNotifier
 
   Rect blockVisualBounds(Block b) {
     final h = b.h ?? renderSizes[b.id]?.height ?? estimatedHeight(b);
-    final radians = b.type == BlockType.image ? b.rotation * math.pi / 180 : 0.0;
+    final radians =
+        b.type == BlockType.image ? b.rotation * math.pi / 180 : 0.0;
     final c = math.cos(radians).abs(), s = math.sin(radians).abs();
     return Rect.fromCenter(
       center: Offset(b.x + b.w / 2, b.y + h / 2),
@@ -4442,6 +4452,7 @@ class AppState extends ChangeNotifier
       TreeNode(
         kind: NodeKind.sectionGroup,
         title: 'Group ${count + 1}',
+        color: _sectionColors[count % _sectionColors.length],
         position: _nextPosition(),
       ),
     );
@@ -5370,8 +5381,9 @@ class AppState extends ChangeNotifier
 
   /// Arrange selected media in page order, preserving their sizes and angles.
   void arrangeSelectedMedia({required bool horizontal}) {
-    final media = blocks.where((b) => selectedIds.contains(b.id) &&
-        b.type == BlockType.image).toList();
+    final media = blocks
+        .where((b) => selectedIds.contains(b.id) && b.type == BlockType.image)
+        .toList();
     if (media.length < 2) return;
     pushUndo();
     var x = media.map((b) => b.x).reduce(math.min);
@@ -5477,8 +5489,9 @@ class AppState extends ChangeNotifier
     final copies = <String>[];
     for (final id in ids) {
       duplicateBlock(id, recordUndo: false);
-      if (selectedBlockId != null && selectedBlockId != id)
+      if (selectedBlockId != null && selectedBlockId != id) {
         copies.add(selectedBlockId!);
+      }
     }
     selectMany(copies);
   }
@@ -5606,6 +5619,10 @@ class AppState extends ChangeNotifier
 
   void setTool(Tool t, {bool temporary = false}) {
     if (!temporary) toolChoiceRevision++;
+    if (!temporary && (t == Tool.pen || t == Tool.ballpoint)) {
+      _preferredInkTool = t;
+      _repo.setSetting('preferredInkTool', t.name);
+    }
     if (t == tool) {
       notifyListeners();
       return;

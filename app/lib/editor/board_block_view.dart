@@ -6,7 +6,7 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'wrap_selection.dart';
 
-/// A trello-style task board on the page (PLANNING.md: "having the ability
+/// A trello-style task board on the page (original feature request: "having the ability
 /// to have a trello like task board would be incredibly helpful").
 ///
 /// content: `{'columns': [{'title': 'To do', 'cards': ['…', …]}, …]}`

@@ -82,8 +82,9 @@ abstract final class PdfPages {
       final generation = _generation;
       final notebook = app.notebookId;
       final result = (_pageQueue ?? Future<void>.value()).then<Uint8List?>((_) {
-        if (generation != _generation || notebook != app.notebookId)
+        if (generation != _generation || notebook != app.notebookId) {
           return null;
+        }
         return _render(app, hash, page, key, scale: scale);
       }).whenComplete(() {
         if (generation == _generation) _renders.remove(key);

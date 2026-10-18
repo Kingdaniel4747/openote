@@ -118,7 +118,7 @@ Future<bool> showAnswerMenu(
       child: Row(children: [
         Icon(Icons.refresh, size: OnoteIcon.sm, color: surfaces.textSecondary),
         const SizedBox(width: 8),
-        Text('Work it out again', style: OnoteType.ui),
+        const Text('Work it out again', style: OnoteType.ui),
         if (angleBound) ...[
           const Spacer(),
           // The one place the mode is named. It is here and not on the page
@@ -139,7 +139,7 @@ Future<bool> showAnswerMenu(
         Icon(Icons.copy_outlined,
             size: OnoteIcon.sm, color: surfaces.textSecondary),
         const SizedBox(width: 8),
-        Text('Copy', style: OnoteType.ui),
+        const Text('Copy', style: OnoteType.ui),
       ]),
     ),
     PopupMenuItem<String>(
@@ -149,7 +149,7 @@ Future<bool> showAnswerMenu(
         Icon(Icons.close,
             size: OnoteIcon.sm, color: surfaces.textSecondary),
         const SizedBox(width: 8),
-        Text('Remove', style: OnoteType.ui),
+        const Text('Remove', style: OnoteType.ui),
       ]),
     ),
   ];
@@ -230,7 +230,7 @@ class _FiguresRowState extends State<_FiguresRow> {
             surfaces: widget.surfaces,
             accent: widget.accent,
             onTap: () =>
-                Navigator.of(context).pop('sf:${f == null ? 'auto' : f}'),
+                Navigator.of(context).pop('sf:${f ?? 'auto'}'),
           ),
       ]),
     );

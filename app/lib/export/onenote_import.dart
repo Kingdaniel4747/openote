@@ -505,6 +505,10 @@ Future<int?> importOneNoteFile(AppState app,
   var imported = 0;
   String? firstPageId;
   final message = ValueNotifier<String>('Reading the section…');
+  if (progressContext != null && !progressContext.mounted) {
+    message.dispose();
+    return null;
+  }
   await _withBusyDialog(progressContext, message, () async {
     Map<String, dynamic> result;
     try {

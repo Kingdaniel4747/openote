@@ -21,6 +21,9 @@ import 'package:openote/store/repository.dart';
 /// repository would drag SQLite into a pure widget test.
 class _NoopRepo implements Repository {
   @override
+  final notebooksChanged = ChangeNotifier();
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => null;
 }
 
@@ -29,9 +32,15 @@ void main() {
   late Block table;
 
   setUp(() {
-    app = AppState(_NoopRepo())
+    final repo = _NoopRepo();
+    app = AppState(repo)
       ..notebookId = 'nb'
       ..pageId = 'pg';
+    addTearDown(() {
+      app.cancelPendingSave();
+      app.dispose();
+      repo.notebooksChanged.dispose();
+    });
     table = Block(type: BlockType.table, x: 0, y: 0, content: {
       'cells': [
         ['Speed', r'$x^2$'],

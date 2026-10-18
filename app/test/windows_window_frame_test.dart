@@ -29,6 +29,7 @@ void main() {
     messenger.setMockMethodCallHandler(WindowsWindowController.channel,
         (call) async {
       calls.add(call);
+      if (call.method == 'customChrome') return true;
       return null;
     });
   });
@@ -51,7 +52,7 @@ void main() {
     addTearDown(controller.dispose);
     await tester.pumpWidget(host(controller));
     await tester.pumpAndSettle();
-    expect(calls.where((c) => c.method == 'maximize'), hasLength(1));
+    expect(calls.where((c) => c.method == 'ensureMaximized'), hasLength(1));
     expect(find.byTooltip('Minimize'), findsOneWidget);
     expect(find.byTooltip('Close Openote'), findsOneWidget);
     await tester.tap(find.byTooltip('Minimize'));
@@ -59,7 +60,7 @@ void main() {
     expect(calls.last.method, 'minimize');
     await tester.tap(find.byTooltip('Maximize / restore'));
     await tester.pumpAndSettle();
-    expect(calls.where((c) => c.method == 'maximize'), hasLength(2));
+    expect(calls.where((c) => c.method == 'maximize'), hasLength(1));
     expect(find.byKey(const ValueKey('window-top-edge')), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
@@ -116,9 +117,11 @@ void main() {
     addTearDown(controller.dispose);
     messenger.setMockMethodCallHandler(WindowsWindowController.channel, null);
     await controller.maximize();
+    await controller.ensureMaximized();
     messenger.setMockMethodCallHandler(WindowsWindowController.channel,
         (_) async => throw PlatformException(code: 'resize failed'));
     await controller.maximize();
+    await controller.ensureMaximized();
     await controller.minimize();
   });
 

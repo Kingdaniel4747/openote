@@ -213,8 +213,9 @@ class NoteTag {
     final oldLines = before.split('\n');
     final newLines = after.split('\n');
     final delta = newLines.length - oldLines.length;
-    if (delta == 0)
+    if (delta == 0) {
       return const {}; // same shape: indices still point at themselves
+    }
 
     final tags = listFrom(content);
     if (tags.isEmpty) return const {};

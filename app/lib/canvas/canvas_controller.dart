@@ -29,7 +29,9 @@ class CanvasController extends ChangeNotifier {
     if (!pdfPresentation ||
         page == null ||
         viewport.width <= 0 ||
-        page.width <= 0) return minScale;
+        page.width <= 0) {
+      return minScale;
+    }
     final fit = (viewport.width - pdfSideMargin * 2) / page.width;
     return math.min(minScale, fit.clamp(0.01, maxScale));
   }
@@ -57,8 +59,8 @@ class CanvasController extends ChangeNotifier {
       !pdfPresentation && (offset.dx > .01 || offset.dy > .01);
 
   Matrix4 get matrix => Matrix4.identity()
-    ..translate(offset.dx, offset.dy)
-    ..scale(scale);
+    ..translateByDouble(offset.dx, offset.dy, 0, 1)
+    ..scaleByDouble(scale, scale, scale, 1);
 
   Offset screenToPage(Offset screen) => (screen - offset) / scale;
   Offset pageToScreen(Offset page) => page * scale + offset;
@@ -320,8 +322,9 @@ class CanvasController extends ChangeNotifier {
         return (pos, speed, spring);
       }
 
-      if (_growsTrailingEdges)
+      if (_growsTrailingEdges) {
         _growTrailingRunway(offset + Offset(vx, vy) * dt);
+      }
       final bounds = _pageSize;
       final minX = bounds == null
           ? -double.infinity

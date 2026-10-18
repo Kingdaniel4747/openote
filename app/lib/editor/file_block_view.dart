@@ -28,7 +28,7 @@ import '../ui/onote_dialog.dart';
 ///   * `BlockType.embed` looks free but is not — the data-model spec and the
 ///     PRD reserve it for live page transclusion, which is the "read-only
 ///     version of one page visible inside another" ask sitting a few lines
-///     further down PLANNING.md. Taking it for video would collide head-on.
+///     in the original feature request. Taking it for video would collide head-on.
 ///   * A brand-new enum value would be the honest choice, and it is now safe
 ///     to add one (see `Block.rawType`) — but it is still not free: every
 ///     build older than that fix renders it as "Unsupported block". A `file`
@@ -56,8 +56,10 @@ class FileBlockView extends StatelessWidget {
         subtitle: Text('Pool / $poolPath', overflow: TextOverflow.ellipsis),
         onTap: () async {
           final opened = path != null && await PlatformOpen.file(path);
-          if (!opened && context.mounted) _toast(context,
+          if (!opened && context.mounted) {
+            _toast(context,
               'Die verknüpfte Datei fehlt im Datenpool.');
+          }
         },
         trailing: IconButton(
           tooltip: 'Im Explorer zeigen',
@@ -346,8 +348,9 @@ class FileBlockView extends StatelessWidget {
 
   Future<void> _openLink(BuildContext context, String url) async {
     final ok = await PlatformOpen.url(url);
-    if (!ok && context.mounted)
+    if (!ok && context.mounted) {
       _toast(context, "That link couldn't be opened.");
+    }
   }
 
   /// MEDIA-2: open the attachment in whatever application owns its type.

@@ -26,7 +26,7 @@ Widget editField(String text, TextStyle style) => TextField(
       maxLines: null,
       style: style,
       strutStyle: StrutStyle.fromTextStyle(style, forceStrutHeight: false),
-      inputFormatters: [WrapSelectionFormatter()],
+      inputFormatters: const [WrapSelectionFormatter()],
       // The SHARED token, not a hand-copy: this decoration and the engine's
       // must be the same object or this test measures something the app does
       // not render. `OnoteInput.bare` turns every border off in every state,

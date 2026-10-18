@@ -575,7 +575,7 @@ void main() {
   });
 
   group('the wheel over a graph', () {
-    testWidgets('scrolls the page without a zoom modifier', (tester) async {
+    testWidgets('zooms the page without a modifier', (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final g = app.insertGraph(latex: 'y=x^2', at: const Offset(120, 120));
       app.addBlock(Block(
@@ -589,12 +589,12 @@ void main() {
       ));
       await tester.pump();
       final where = tester.getCenter(find.byType(GraphBlockView).first);
-      final before = app.canvas.offset.dy;
+      final before = app.canvas.scale;
       final pointer = TestPointer(1, PointerDeviceKind.mouse);
       pointer.hover(where);
       await tester.sendEventToBinding(pointer.scroll(const Offset(0, 120)));
       await tester.pump();
-      expect(app.canvas.offset.dy, lessThan(before));
+      expect(app.canvas.scale, lessThan(before));
       expect(
           GraphView.fromJson(g.content['view']).width, GraphView.initial.width);
       app.cancelPendingSave();
@@ -626,10 +626,10 @@ void main() {
       final wasOffset = app.canvas.offset;
       final pointer = TestPointer(1, PointerDeviceKind.mouse);
       pointer.hover(where);
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
       await tester.sendEventToBinding(pointer.scroll(const Offset(0, 120)));
       await tester.pump();
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
 
       expect(GraphView.fromJson(g.content['view']).width,
           greaterThan(GraphView.initial.width),
@@ -786,7 +786,7 @@ void main() {
       await tester.pump();
 
       final wasScale = app.canvas.scale;
-      final farAway = const Offset(1100, 850); // empty canvas, off the graph
+      const farAway = Offset(1100, 850); // empty canvas, off the graph
       pointer = TestPointer(2, PointerDeviceKind.trackpad);
       await tester.sendEventToBinding(pointer.panZoomStart(farAway));
       await tester

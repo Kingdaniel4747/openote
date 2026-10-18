@@ -1,10 +1,11 @@
-// Two canvas-feel asks from PLANNING.md, pinned:
+// Canvas touch and block-resize regression coverage:
 //
 //   "On touch screens, by default dragging with a finger should pan around
 //    the page, it shouldn't be the selector tool."
 //   "[Boxes] should automatically stop growing before going off the screen
 //    (with a small amount of buffer room)."
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart'
     show PointerDeviceKind, kMiddleMouseButton;
@@ -97,10 +98,11 @@ void main() {
       app.setPdfEditorView(true);
     }
 
-    testWidgets('top-right rotation handle rotates media and supports undo', (t) async {
+    testWidgets('top-right rotation handle rotates media and supports undo',
+        (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-      final image = app.addBlock(Block(type: BlockType.image,
-          x: 200, y: 200, w: 180, h: 120));
+      final image = app.addBlock(
+          Block(type: BlockType.image, x: 200, y: 200, w: 180, h: 120));
       app.select(image.id);
       await pump(t);
       final handle = find.byTooltip('Rotate');
@@ -118,19 +120,151 @@ void main() {
       app.cancelPendingSave();
     });
 
-    testWidgets('rotation handles share the image frame and resizing keeps its corner', (t) async {
+    testWidgets('top-right rotation starts gently from a straight object',
+        (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-      final image = app.addBlock(Block(type: BlockType.image,
-          x: 250, y: 250, w: 180, h: 120, rotation: 90));
+      final image = app.addBlock(Block(
+          type: BlockType.image, x: 250, y: 250, w: 180, h: 120, rotation: 90));
+      app.select(image.id);
+      await pump(t);
+      final frame = find.ancestor(
+          of: find.byType(ImageBlockView),
+          matching: find
+              .byWidgetPredicate((w) => w is SizedBox && w.key is GlobalKey));
+      final center = t.getCenter(frame);
+      final handle = t.widget<GestureDetector>(find
+          .descendant(
+              of: find.byTooltip('Rotate'),
+              matching: find.byType(GestureDetector))
+          .first);
+      // Exercise exact sub-degree updates independently of drag slop.
+      handle.onPanStart!(
+          DragStartDetails(globalPosition: center + const Offset(100, 0)));
+      void turn(double degrees) {
+        final angle = degrees * math.pi / 180;
+        handle.onPanUpdate!(DragUpdateDetails(
+            globalPosition:
+                center + Offset(math.cos(angle), math.sin(angle)) * 100));
+      }
+
+      turn(.8);
+      expect(image.rotation, 90);
+      turn(1.2);
+      expect(image.rotation, closeTo(91.2, .001));
+      turn(1.4);
+      expect(image.rotation, closeTo(91.4, .001));
+      turn(2.2);
+      expect(image.rotation, closeTo(92.2, .001));
+      turn(1.4);
+      expect(image.rotation, 90);
+      turn(1.8);
+      expect(image.rotation, 90);
+      turn(2.2);
+      expect(image.rotation, closeTo(92.2, .001));
+      handle.onPanEnd!(DragEndDetails());
+      app.undo();
+      expect(app.blocks.firstWhere((b) => b.id == image.id).rotation, 90);
+      await t.pump();
+      app.cancelPendingSave();
+    });
+
+    for (final pdf in [false, true]) {
+      for (final target in [0.0, 90.0, 180.0, 270.0]) {
+        testWidgets(
+            '${pdf ? 'PDF' : 'image'} rotation snaps at $target degrees and releases in both directions',
+            (t) async {
+          if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+          final initial = (target - 30) % 360;
+          // PDF pages use the same persistent image preview as normal images.
+          final preview = app.addBlob(
+              File('assets/icon/openote_icon.png').readAsBytesSync(),
+              'image/png');
+          final image = app.addBlock(Block(
+              type: BlockType.image,
+              x: 250,
+              y: 250,
+              w: 180,
+              h: 120,
+              rotation: initial,
+              content: {
+                'blob': 'sha256:$preview',
+                if (pdf) ...{'pdf': 'sha256:fixture', 'page': 0}
+              }));
+          app.select(image.id);
+          await t.pumpWidget(MaterialApp(
+              home: Scaffold(
+                  body: AnimatedBuilder(
+            animation: app,
+            builder: (context, _) => Stack(children: [
+              BlockView(block: image, app: app, controller: app.canvas),
+            ]),
+          ))));
+          await t.pumpAndSettle();
+          final mediaFrame = find.ancestor(
+              of: find.byType(ImageBlockView),
+              matching: find.byWidgetPredicate(
+                  (w) => w is SizedBox && w.key is GlobalKey));
+          final center = t.getCenter(mediaFrame);
+          final start = t.getCenter(find.byTooltip('Rotate'));
+          final gesture = await t.startGesture(start);
+          // Cross pan slop before measuring the gesture's starting direction.
+          await gesture.moveTo(start + const Offset(0, 25));
+          // The first accepted drag update can be adjusted by pan slop.
+          // A subsequent event supplies an exact pointer position.
+          final pointer = start + const Offset(0, 30);
+          await gesture.moveTo(pointer);
+          await t.pump();
+          final vector = pointer - center;
+          final pointerAngle = math.atan2(vector.dy, vector.dx);
+          final startDegrees = image.rotation;
+          Future<void> turnTo(double degrees) async {
+            final angle =
+                pointerAngle + (degrees - startDegrees) * math.pi / 180;
+            await gesture.moveTo(center +
+                Offset(math.cos(angle), math.sin(angle)) * vector.distance);
+            await t.pump();
+          }
+
+          await turnTo(target - 1.4);
+          expect(image.rotation, target);
+          await turnTo(target + 1.8);
+          expect(image.rotation, target,
+              reason: 'small movements must not jitter');
+          await turnTo(target + 2.2);
+          expect(image.rotation, closeTo((target + 2.2) % 360, .001));
+          await turnTo(target + 1.4);
+          expect(image.rotation, target);
+          await turnTo(target - 2.2);
+          expect(image.rotation, closeTo((target - 2.2) % 360, .001));
+          await turnTo(target - 1);
+          await gesture.up();
+          expect(image.rotation, target);
+          expect(Block.fromJson(image.toJson()).rotation, target);
+          app.undo();
+          expect(
+              app.blocks.firstWhere((b) => b.id == image.id).rotation, initial);
+          await t.pump();
+          app.cancelPendingSave();
+        });
+      }
+    }
+
+    testWidgets(
+        'rotation handles share the image frame and resizing keeps its corner',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final image = app.addBlock(Block(
+          type: BlockType.image, x: 250, y: 250, w: 180, h: 120, rotation: 90));
       app.select(image.id);
       await pump(t);
       final handleTransforms = t.widgetList<Transform>(find.ancestor(
           of: find.byTooltip('Rotate'), matching: find.byType(Transform)));
-      expect(handleTransforms.any((w) => w.transform.storage[1].abs() > .9), isTrue);
+      expect(handleTransforms.any((w) => w.transform.storage[1].abs() > .9),
+          isTrue);
       final content = find.byType(ImageBlockView);
       final corner = t.getTopLeft(content);
-      final resize = find.byWidgetPredicate((w) => w is MouseRegion &&
-          w.cursor == SystemMouseCursors.resizeDownRight);
+      final resize = find.byWidgetPredicate((w) =>
+          w is MouseRegion && w.cursor == SystemMouseCursors.resizeDownRight);
       await t.drag(resize, const Offset(-30, 40));
       await t.pump();
       expect((t.getTopLeft(content) - corner).distance, lessThan(.01));
@@ -138,20 +272,25 @@ void main() {
       app.cancelPendingSave();
     });
 
-    testWidgets('mouse cursor returns after pen hover while drawing', (t) async {
+    testWidgets('mouse cursor returns after pen hover while drawing',
+        (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       app.setTool(Tool.pen);
       await pump(t);
       final pen = TestPointer(91, PointerDeviceKind.stylus);
       await t.sendEventToBinding(pen.hover(const Offset(400, 400)));
       await t.pump();
-      expect(find.byWidgetPredicate((w) => w is MouseRegion &&
-          w.cursor == SystemMouseCursors.none), findsOneWidget);
+      expect(
+          find.byWidgetPredicate(
+              (w) => w is MouseRegion && w.cursor == SystemMouseCursors.none),
+          findsOneWidget);
       final mouse = TestPointer(92, PointerDeviceKind.mouse);
       await t.sendEventToBinding(mouse.hover(const Offset(420, 400)));
       await t.pump();
-      expect(find.byWidgetPredicate((w) => w is MouseRegion &&
-          w.cursor == SystemMouseCursors.none), findsNothing);
+      expect(
+          find.byWidgetPredicate(
+              (w) => w is MouseRegion && w.cursor == SystemMouseCursors.none),
+          findsNothing);
     });
 
     testWidgets('PDF title moves with the page instead of staying fixed',
@@ -256,7 +395,8 @@ void main() {
       await t.pump(const Duration(seconds: 1));
     });
 
-    testWidgets('three resting contacts cannot pan or zoom the page', (t) async {
+    testWidgets('three resting contacts cannot pan or zoom the page',
+        (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       makePdfPage();
       await pump(t);
@@ -280,7 +420,7 @@ void main() {
       expect(app.canvas.scale, scale);
     });
 
-    testWidgets('PDF precision scroll signal gets a short coast', (t) async {
+    testWidgets('PDF mouse wheel stops with its last notch', (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       makePdfPage();
       await pump(t);
@@ -289,11 +429,9 @@ void main() {
       await t.sendEventToBinding(pointer.scroll(const Offset(0, 32)));
       final afterSignal = app.canvas.offset.dy;
       await t.pump(const Duration(milliseconds: 100));
-      await t.pump(const Duration(milliseconds: 50));
-      expect(app.canvas.offset.dy, lessThan(afterSignal));
-      app.canvas.stopMotion();
-      await t.pump(const Duration(seconds: 1));
-      await t.pump(const Duration(milliseconds: 500));
+      expect(app.canvas.offset.dy, afterSignal,
+          reason: 'a mouse wheel movement must not continue after release');
+      app.cancelPendingSave();
     });
 
     testWidgets('A FINGER DRAG PANS; IT DOES NOT MARQUEE', (t) async {
@@ -394,7 +532,7 @@ void main() {
     });
 
     testWidgets(
-        'wheel scrolls; Shift-wheel zooms; middle drag pans over a block',
+        'wheel zooms; Ctrl-wheel scrolls; middle drag pans over a block',
         (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       app.addBlock(Block(
@@ -414,15 +552,21 @@ void main() {
 
       final wheel = TestPointer(1, PointerDeviceKind.mouse);
       await t.sendEventToBinding(wheel.hover(const Offset(400, 300)));
+      final scale = app.canvas.scale;
       await t.sendEventToBinding(wheel.scroll(const Offset(0, 120)));
       await t.pump();
-      expect(app.canvas.offset.dy, lessThan(0));
-      final scale = app.canvas.scale;
-      await t.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      expect(app.canvas.scale, lessThan(scale));
+      final beforeScroll = app.canvas.offset;
+      await t.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await t.sendEventToBinding(wheel.scroll(const Offset(0, 120)));
+      await t.pump();
+      await t.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      expect(app.canvas.offset.dy, lessThan(beforeScroll.dy));
+      final afterRelease = app.canvas.scale;
       await t.sendEventToBinding(wheel.scroll(const Offset(0, -120)));
       await t.pump();
-      await t.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
-      expect(app.canvas.scale, greaterThan(scale));
+      expect(app.canvas.scale, greaterThan(afterRelease),
+          reason: 'the next wheel event after Ctrl releases must zoom again');
 
       final from = app.canvas.pageToScreen(const Offset(250, 250));
       final middle =

@@ -140,11 +140,11 @@ void main() {
     // the bullet, the sentence, then the equation between two dollars.
     const markdown =
         '  - We can define the bijection f(n) = \$$kImportedPiecewiseTex\$';
-    await tester.pumpWidget(MaterialApp(
+    await tester.pumpWidget(const MaterialApp(
       home: Scaffold(
         body: Align(
           alignment: Alignment.topLeft,
-          child: const SizedBox(
+          child: SizedBox(
             width: 900,
             child: MarkdownView(
               text: markdown,

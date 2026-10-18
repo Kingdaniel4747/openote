@@ -98,8 +98,8 @@ class MathFieldState extends State<MathField> {
   }
 
   @override
-  void didUpdateWidget(MathField old) {
-    super.didUpdateWidget(old);
+  void didUpdateWidget(MathField oldWidget) {
+    super.didUpdateWidget(oldWidget);
     // **A different equation means a different baseline.** The inline host
     // mounts this field under a persistent GlobalKey and swaps the tree
     // underneath it in one synchronous call, so no frame is built in
@@ -107,7 +107,7 @@ class MathFieldState extends State<MathField> {
     // survives. The new equation's first edit was then compared against the
     // old one's LaTeX and, when the two matched (the same worked line twice
     // in a sentence), suppressed: the screen changed and the note did not.
-    if (!identical(old.editor, widget.editor)) {
+    if (!identical(oldWidget.editor, widget.editor)) {
       _committed = _e.latex;
       // The SAME State surviving into a DIFFERENT equation is also how a
       // click that closes one inline equation and immediately opens another

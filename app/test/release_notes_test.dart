@@ -24,7 +24,7 @@ import 'package:openote/update/app_update.dart';
 
 /// A real upstream release body, retained after removing release publication.
 String releaseBodyTemplate() =>
-    File('test/fixtures/upstream_release_0_8_0.md').readAsStringSync();
+    File('test/fixtures/upstream_release_0_8_0.txt').readAsStringSync();
 
 /// Every string the widget tree actually draws.
 String visibleText(WidgetTester tester) {
@@ -248,8 +248,7 @@ void main() {
     // Eric, 2026-08-17: "we only show the first few lines in the app which is
     // where most people will see it. We want to keep the overview compact and
     // have the most important/exciting changes for a user right at the top
-    // every time." The rule is written down in docs/RELEASING.md; this is
-    // what stops the next release quietly breaking it.
+    // every time." Keep that compact release-body structure covered here.
     test('the first section is a handful of one-line bullets', () {
       final lines = releaseBodyTemplate().split('\n');
       final first = lines.indexWhere((l) => l.startsWith('## '));

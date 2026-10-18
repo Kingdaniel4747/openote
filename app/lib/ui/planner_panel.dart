@@ -300,31 +300,6 @@ class _PlannerPanelState extends State<PlannerPanel> {
       DateTime(day.year, day.month, day.day)
           .isBefore(DateTime(now.year, now.month, now.day));
 
-  Widget _sectionHeader(AgendaBucket bucket, DateTime now) {
-    final isToday = bucket == AgendaBucket.today;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 3),
-      child: Row(children: [
-        Text(bucket.title.toUpperCase(),
-            style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                letterSpacing: .6,
-                color: bucket == AgendaBucket.overdue
-                    ? OnoteColors.danger
-                    : context.surfaces.textSecondary)),
-        // The date, once, beside TODAY — the one heading where knowing the
-        // actual date is worth the pixels.
-        if (isToday) ...[
-          const Spacer(),
-          Text(formatDayFull(now),
-              style: TextStyle(
-                  fontSize: 11, color: context.surfaces.textSecondary)),
-        ],
-      ]),
-    );
-  }
-
   Widget _row(BuildContext context, DatedItem it, DateTime now) {
     final scheme = Theme.of(context).colorScheme;
     final overdue = bucketFor(it, now) == AgendaBucket.overdue;
@@ -453,33 +428,6 @@ class _PlannerPanelState extends State<PlannerPanel> {
 
   // ── Footer ───────────────────────────────────────────────────────────
 
-  Widget _footer(BuildContext context, DateTime now) {
-    return Padding(
-      padding: const EdgeInsets.all(4),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: PopupMenuButton<String>(
-          tooltip: 'Add homework, to-do or exam',
-          position: PopupMenuPosition.over,
-          onSelected: (v) => _onAdd(v, now),
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'homework', child: Text('Homework…')),
-            PopupMenuItem(value: 'reminder', child: Text('To-do…')),
-            PopupMenuItem(value: 'exam', child: Text('Exam…')),
-          ],
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.add_task_outlined, size: 18),
-              SizedBox(width: 6),
-              Text('Add task', style: TextStyle(fontSize: 12)),
-            ]),
-          ),
-        ),
-      ),
-    );
-  }
-
   // ── Actions ──────────────────────────────────────────────────────────
 
   void _open(DatedItem it) {
@@ -581,17 +529,6 @@ class _PlannerPanelState extends State<PlannerPanel> {
         homework: entry.category == 'homework',
         exam: entry.category == 'exam',
         undatedEditing: entry);
-  }
-
-  Future<void> _onAdd(String choice, DateTime now) async {
-    switch (choice) {
-      case 'homework':
-        await _addReminder(now, homework: true);
-      case 'reminder':
-        await _addReminder(now);
-      case 'exam':
-        await _addExam();
-    }
   }
 
   Future<void> _chooseDayAction(DateTime? day) async {
@@ -724,22 +661,6 @@ class _PlannerPanelState extends State<PlannerPanel> {
                 'Openote will nudge you if it is open — and tell you if it wasn’t.')));
   }
 
-  Future<DateTime?> _pickDay(
-      {required DateTime initial, required DateTime now, String? help}) {
-    // A date already past cannot be the picker's opening date — `showDatePicker`
-    // asserts when the initial date precedes the first one — but the planner
-    // must be able to re-date something overdue, so the FIRST date reaches back
-    // rather than the initial one jumping forward.
-    final first = DateTime(now.year, now.month, now.day - 365);
-    return showDatePicker(
-      context: context,
-      initialDate: initial.isBefore(first) ? first : initial,
-      firstDate: first,
-      lastDate: DateTime(now.year + 5, now.month, now.day),
-      helpText: help ?? 'Pick a date',
-      confirmText: 'Set',
-    );
-  }
 }
 
 /// Snooze, offered on the alert itself.
@@ -838,22 +759,6 @@ class _ReminderDialogState extends State<_ReminderDialog> {
     _subject.dispose();
     _text.dispose();
     super.dispose();
-  }
-
-  void _shift(Duration d) => setState(() => _at = _round(widget.now.add(d)));
-
-  /// A preset time of day, rolled to tomorrow when today's has already gone.
-  ///
-  /// Without the roll, tapping "This evening" at 9pm sets 7pm *today* — a
-  /// reminder in the past, which fires the instant you save it. A preset button
-  /// promising a time it cannot deliver is worse than not offering it.
-  void _setTimeOfDay(int hour, int minute, {int dayOffset = 0}) {
-    final d = widget.now;
-    var at = DateTime(d.year, d.month, d.day + dayOffset, hour, minute);
-    if (!at.isAfter(widget.now)) {
-      at = DateTime(at.year, at.month, at.day + 1, hour, minute);
-    }
-    setState(() => _at = at);
   }
 
   Future<void> _pickTime() async {

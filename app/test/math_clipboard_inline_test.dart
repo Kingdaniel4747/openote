@@ -121,9 +121,9 @@ void main() {
       // rule, and the thing that stops two prices in one sentence becoming an
       // equation. An equation ending in a typed space would have printed its
       // own source.
-      final wrapped = MathClipboard.wrapInline('x' + r'\ ');
+      final wrapped = MathClipboard.wrapInline('x' r'\ ');
       expect(wrapped, r'$x$');
-      expect(mdInlineRe.firstMatch('a ' + wrapped + ' b'), isNotNull);
+      expect(mdInlineRe.firstMatch('a $wrapped b'), isNotNull);
     });
 
     test('every flavour of delimiter comes off on the way in', () {

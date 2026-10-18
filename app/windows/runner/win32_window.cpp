@@ -150,7 +150,10 @@ bool Win32Window::Create(const std::wstring& title,
 }
 
 bool Win32Window::Show() {
-  return ShowWindow(window_handle_, SW_SHOWNORMAL);
+  // Keep the window hidden until Flutter has painted its loading screen, then
+  // reveal it at its final size.  Showing it normally here and maximizing it
+  // later from Dart produced the visible small, white window on every launch.
+  return ShowWindow(window_handle_, SW_SHOWMAXIMIZED);
 }
 
 // static

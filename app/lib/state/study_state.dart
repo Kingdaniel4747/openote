@@ -78,8 +78,9 @@ class StudyState extends ChangeNotifier {
     if (_document.notebookId == null) return;
     final key = _key(sectionId);
     if (date == null) {
-      final changed = _dates.remove(key) != null || _times.remove(key) != null;
-      if (!changed) return;
+      final hadDate = _dates.remove(key) != null;
+      final hadTime = _times.remove(key) != null;
+      if (!hadDate && !hadTime) return;
     } else {
       final value = dayKey(date);
       if (_dates[key] == value) return;

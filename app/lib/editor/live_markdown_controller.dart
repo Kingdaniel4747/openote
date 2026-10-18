@@ -150,7 +150,7 @@ class LiveMarkdownController extends TextEditingController {
     // very editor the student is typing into. The pair is swept on close.
     final wrap = r'$' * dollars;
     final next =
-        tidy.isEmpty ? (keepEmptyPair ? '\$\$' : '') : '${wrap}${tidy}${wrap}';
+        tidy.isEmpty ? (keepEmptyPair ? '\$\$' : '') : '$wrap$tidy$wrap';
     value = TextEditingValue(
       text: text.replaceRange(start, end, next),
       selection:
@@ -1020,8 +1020,9 @@ class LiveMarkdownController extends TextEditingController {
   static String? _markerGlyph(String marker) {
     if (marker.startsWith('>')) return null;
     final m = marker.trimRight();
-    if (m.endsWith(']'))
+    if (m.endsWith(']')) {
       return m.contains(RegExp('[xX]')) ? '\u2611' : '\u2610';
+    }
     if (RegExp(r'^\d').hasMatch(m)) return m; // `12.` keeps its number
     return '•';
   }

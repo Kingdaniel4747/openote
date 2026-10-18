@@ -25,11 +25,8 @@ import 'unicode_input.dart';
 /// The engine we own: a [TextField] driven by [LiveMarkdownController] for the
 /// live container, [MarkdownView] for the read-only ones.
 ///
-/// This is the ADR-0004 incumbent. It already satisfies the spike's demo scope
-/// (see `docs/adr/ADR-0004-editor-engine.md` for the decision and the evidence),
-/// and it is a few hundred lines we control end-to-end rather than a dev-channel
-/// dependency. It sits behind [OnoteTextEditor] all the same, so replacing it
-/// stays a one-line swap.
+/// The app owns this implementation behind [OnoteTextEditor]. See
+/// ARCHITECTURE.md for its role in the editor and the stored document format.
 class LiveMarkdownEngine extends OnoteTextEditor {
   const LiveMarkdownEngine();
 
@@ -463,7 +460,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
     // the dollars would unmount the very editor the student is typing into.
     // The pair is swept on close.
     final wrap = r'$' * _mathDollars;
-    final written = tidy.isEmpty ? '\$\$' : '${wrap}${tidy}${wrap}';
+    final written = tidy.isEmpty ? '\$\$' : '$wrap$tidy$wrap';
     _mathSelfEditing = true;
     try {
       controller.replaceMathAt(start, _mathEnd, tidy,
@@ -673,7 +670,7 @@ class _LiveMarkdownSession extends OnoteEditSession {
       latex: latex,
       onChanged: (next) {
         final tidy = next.trim();
-        final written = tidy.isEmpty ? '' : '\$${tidy}\$';
+        final written = tidy.isEmpty ? '' : '\$$tidy\$';
         // Re-derived when possible: an edit the panel did not make (undo
         // under the open panel) leaves `current` stale, and a write against
         // a stale end lands on the words AFTER the equation.
@@ -876,9 +873,6 @@ class _LiveMarkdownSession extends OnoteEditSession {
 
   @override
   TextEditingController? get commandController => controller;
-
-  @override
-  Offset? pendingCaretGlobal;
 
   @override
   String get text => controller.text;

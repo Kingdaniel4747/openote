@@ -1,44 +1,15 @@
-<p align="center">
-  <img src="docs/assets/openote-logo-with-wordmark.png" alt="Openote" width="360">
-</p>
-
 # Openote
 
-Openote is a local-first, freeform note-taking app for Windows. It is built
-for schoolwork: write anywhere on a page, work with a pen or touchpad, keep
-homework and dates together, and keep every notebook in files you control.
+Lokale Notizen für Windows: frei schreiben, mit dem Stift zeichnen, PDFs
+beschriften und Materialien für Schule und Studium organisieren.
+Die Android-Begleitapp **Openote Scanner** überträgt Dokumente direkt auf
+die ausgewählte Seite. Beide Apps bleiben in diesem Repository.
 
-## What it does
+## Windows starten
 
-- **Freeform pages** with text, handwriting, equations, tables, code, images,
-  PDFs, videos and file attachments.
-- **Handwriting and spell checking**: write naturally with a pen; misspelled
-  words can be corrected directly where they appear.
-- **Planner** for homework, reminders, exam dates and a subscribed read-only
-  iCalendar timetable.
-- **draw.io links**: add a diagram file to a page without copying it into the
-  notebook. The original remains editable in draw.io; PNG exports can also be
-  previewed and zoomed in Openote.
-- **Open local storage**: notebooks live on your device. Create and restore
-  complete backups from the notebook manager whenever you choose.
-- **Import and export** for Markdown, PDFs and common note material.
-
-## Deliberately not part of this project
-
-Openote is a notes and planning app, not an all-in-one learning platform.
-There is no built-in flashcard workflow and no AI or MCP integration. For
-spaced repetition, use a dedicated app such as Anki; for AI, an external tool
-or a future self-hosted service can work alongside your notes without being a
-dependency of the editor.
-
-## Platforms
-
-The current project is Windows-first. Linux source support is retained.
-`scanner/` contains the separate Android companion app for scanning documents.
-
-## Run locally
-
-Install Flutter with Windows desktop support, then run:
+Benötigt: Flutter mit Windows-Desktop-Unterstützung und Visual Studio mit
+C++-Desktopwerkzeugen. Lokal geprüft: Flutter 3.47.7 / Dart 3.13.5 und
+Visual Studio Community 2026 Insiders mit CMake 4.3.1.
 
 ```powershell
 cd app
@@ -46,34 +17,76 @@ flutter pub get
 flutter run -d windows
 ```
 
-Run the application tests with:
+Im Flutter-Terminal: `r` für Hot Reload, `R` für Hot Restart, `q` zum Beenden.
+Native C++-/Rust-Änderungen brauchen einen neuen Build. Der Repository-Hauptordner
+selbst ist kein Flutter-Paket.
 
-```powershell
-cd app
-flutter test
-```
+Rust/Cargo baut den optionalen nativen Kern, insbesondere für den OneNote-Import.
+Ohne ihn startet die App mit dem Dart-Kern. Endnutzer benötigen keine separate
+Rust-Installation. Die lokalen Plugin-Overrides in `app/pubspec.yaml` gehören
+zum funktionierenden Build.
+Für OneNote-Import Rust/Cargo bereitstellen, in `rust/onote_core/` mit
+`cargo build --release` prüfen und anschließend die Windows-App neu bauen.
 
-The optional Rust core is built automatically when Rust is available. The app
-falls back to its Dart implementation if the native library is unavailable.
-Further platform and release details are in [app/README.md](app/README.md)
-and [docs/WINDOWS-FORK.md](docs/WINDOWS-FORK.md).
+## Scanner verbinden
 
-## Project layout
+1. In Openote die Zielseite öffnen und „Scan from phone“ wählen.
+2. Mit Openote Scanner auf Android den angezeigten QR-Code scannen.
+3. Dokumente scannen und auf die Seite übertragen.
 
-```text
-app/                 Flutter desktop application
-scanner/             Android document-scanner companion
-rust/onote_core/     Optional native Rust core
-docs/                Technical notes and file-format documentation
-```
+Beide Geräte brauchen ein gegenseitig erreichbares lokales Netzwerk,
+normalerweise dasselbe WLAN. Die Windows-Firewall muss private eingehende
+Verbindungen erlauben. Website und Cloudserver sind dafür nicht erforderlich.
+Das Schließen des Kopplungsdialogs beendet den Empfänger.
 
-## Data and privacy
+## Ordner und Projektwissen
 
-There is no account requirement, cloud connection or background sync. Your
-notebooks remain local files. The manual backup contains the complete workspace
-and can itself be stored with tools such as Nextcloud Desktop.
+| Pfad | Aufgabe |
+|---|---|
+| `app/` | Windows-App; Linux-Quellcode bleibt erhalten |
+| `scanner/` | Android-Scanner |
+| `rust/onote_core/` | Optionaler nativer Kern und OneNote-Import |
+| `packaging/` | Windows-Installer und spätere Linux-Pakete |
+| `.github/workflows/` | Gemeinsamer Build-/Release-Ablauf |
 
-## License
+Ergänzend: [AGENTS.md](AGENTS.md), [PRODUCT.md](PRODUCT.md),
+[ARCHITECTURE.md](ARCHITECTURE.md), [TASKS.md](TASKS.md) und
+[LEARNINGS.md](LEARNINGS.md). Compilerdateien wie `app/build/` werden neu erzeugt.
 
-See [LICENSING.md](LICENSING.md) for the licensing model and the individual
-component licences.
+## Prüfen und bauen
+
+In `app/`: `flutter analyze`, passende Tests mit
+`flutter test test/<datei>_test.dart`, Release-Build mit
+`flutter build windows --release`. Die Gesamtsuite ist noch nicht vollständig
+grün; siehe TASKS.md. Die manuelle Geräteprüfung übernimmt der Nutzer.
+In `scanner/` gelten dieselben Analyse-/Testbefehle; ein APK-Build benötigt
+zusätzlich Android SDK und Java.
+Den Rust-Kern bei Änderungen separat mit `cargo test` in `rust/onote_core/` prüfen.
+
+Der bestehende GitHub-Workflow veröffentlicht bei einem Push auf jeden Branch
+eine gemeinsame Version mit Windows-Installer und Scanner-APK. Dieser Ablauf
+bleibt unverändert. Kein Push oder Release ohne ausdrücklichen Auftrag.
+
+Für signierte APKs benötigt er `ANDROID_KEYSTORE_BASE64`,
+`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` und `ANDROID_KEY_PASSWORD`.
+Für Updates den gleichen Signaturschlüssel behalten und extern sicher sichern.
+Keystore und `scanner/android/key.properties` gehören nicht ins Repository.
+
+## Lizenzen
+
+| Bestandteil | Bestehende Lizenz |
+|---|---|
+| App, Scanner und allgemeiner Projektcode | AGPL-3.0-or-later, siehe [LICENSE](LICENSE) |
+| Eigener Rust-Kern | Apache-2.0; `rust/onote_core/LICENSE` und `NOTICE` |
+| Lokale Plugins und `rust/onote_core/vendor/cab/` | MIT; jeweilige Lizenz und Patchhinweise bleiben dort |
+| Inter / JetBrains Mono | OFL-1.1; Lizenztexte neben den Schriftdateien |
+
+Fremdcode behält seine Lizenztexte. Der frühere CC0-Lizenztext der entfernten
+Formatspezifikation liegt in `licenses/format-spec-CC0.txt`.
+Der Rust-Kern bleibt unabhängig vom AGPL-Appcode; Abhängigkeiten entsprechend
+prüfen. Beiträge unterliegen der jeweiligen Komponentenlizenz;
+bestehende DCO-Konvention: `git commit -s`.
+
+Der OneNote-Reader basiert auf Microsofts Spezifikationen MS-ONESTORE/MS-ONE.
+`onenote.rs` (MPL-2.0) diente als externe Referenz; es ist keine Abhängigkeit
+und kein Code daraus wird im Rust-Kern eingebunden.

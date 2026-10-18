@@ -4,7 +4,7 @@
 //! executable, and the app loads whatever is there. So "my source is on the
 //! right branch" and "the behaviour I am seeing is that source" are two
 //! different claims, and the second one has been wrong several times in this
-//! project's history — the stale-DLL trap that `INTEGRATION.md` warns about and
+//! project's history — the stale-DLL trap that `LEARNINGS.md` warns about and
 //! that has cost whole sessions chasing fixes that were never running.
 //!
 //! Git tells you about the source. Nothing told you about the library. Now the

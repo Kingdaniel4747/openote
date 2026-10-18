@@ -9,7 +9,7 @@ import '../theme/onote_theme.dart';
 import '../update/app_update.dart';
 import 'onote_dialog.dart';
 
-/// The update flow (PLANNING.md: "make a popup to stop them interacting
+/// The update flow (original feature request: "make a popup to stop them interacting
 /// further, save everything, … prevent them from using the app during the
 /// process … automatically apply the update and relaunch").
 ///
@@ -64,7 +64,7 @@ class ReleaseNotesView extends StatefulWidget {
   final String notes;
 
   /// Height of the panel when folded. About eight lines — enough for the
-  /// compact overview the body is required to open with (docs/RELEASING.md).
+  /// compact overview at the start of the release body.
   static const double collapsedHeight = 200;
 
   /// Longer than this and the panel offers to open out.

@@ -157,7 +157,7 @@ Plot plotFunction(
     return Plot(pieces: const [], view: view, error: f.error);
   }
   if (!view.isSane) {
-    return Plot(pieces: const [], view: GraphView.initial, error: null);
+    return const Plot(pieces: [], view: GraphView.initial, error: null);
   }
   final at = f.at!;
   final n = samples.clamp(2, 4000);
@@ -422,7 +422,7 @@ GraphSource graphSourceFromLatex(String latex) {
   if (t.isEmpty) return const GraphSource.failed('nothing to graph yet');
   final parsed = parseLatex(t);
   if (!parsed.supported || parsed.root == null) {
-    return GraphSource.failed(
+    return const GraphSource.failed(
         'this equation uses something the grapher cannot read yet');
   }
   final linear = rowToLinear(parsed.root!).trim();

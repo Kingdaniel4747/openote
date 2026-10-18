@@ -1445,7 +1445,7 @@ class MathEditor {
     }
     if (buf.isEmpty) return false;
     final word = String.fromCharCodes(buf.toString().codeUnits.reversed);
-    final item = mathItemsById['fn-${word}'];
+    final item = mathItemsById['fn-$word'];
     if (item == null) return false;
     for (var i = caretIndex; i > k; i--) {
       caretRow.removeAt(i - 1);

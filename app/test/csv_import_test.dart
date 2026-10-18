@@ -1,4 +1,4 @@
-// CSV → table block ("import data (csv)" from PLANNING.md).
+// CSV → table block ("import data (csv)" see PRODUCT.md).
 //
 // The parser is where real files go to die, so it gets the awkward cases:
 // quoted commas, escaped quotes, embedded newlines, CRLF, European

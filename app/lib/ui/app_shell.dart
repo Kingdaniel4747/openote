@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -9,7 +8,6 @@ import '../canvas/media_drop.dart';
 import '../canvas/page_canvas.dart';
 import '../math/math_field.dart';
 import '../model/models.dart';
-import '../core/onote_ffi.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'alert_popup.dart';
@@ -21,7 +19,6 @@ import 'open_notice_dialog.dart';
 import 'planner_panel.dart';
 import 'side_panel.dart';
 import 'protect_dialog.dart';
-import 'save_problem_dialog.dart';
 import 'shortcut_overlay.dart';
 import 'sidebar.dart';
 import '../export/print_page.dart';
@@ -70,9 +67,10 @@ class _AppShellState extends State<AppShell> {
       if (second != null) {
         await second.flushSave();
         if (second.saveError != null) {
-          if (mounted)
+          if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(content: Text(second.saveError!.message)));
+          }
           return;
         }
         if (!mounted) return;
@@ -2108,203 +2106,6 @@ class _LinksPanel extends StatelessWidget {
       ),
     );
   }
-}
-
-/// One line naming the loaded core's build, for the engine tooltip.
-String _coreBuildLine() {
-  final id = OnoteCore.instance?.buildId;
-  if (id == null) {
-    return 'This library predates the build stamp — it is an OLD core. '
-        'Rebuild it with flutter build before '
-        'trusting any importer or repair behaviour.';
-  }
-  final t = id.built.toLocal();
-  String two(int v) => v.toString().padLeft(2, '0');
-  // The path matters as much as the timestamp: the loader picks the NEWEST of
-  // several candidates, so "which file won" is half of any stale-library
-  // question.
-  final from = OnoteCore.loadedFrom;
-  return 'Core built ${t.year}-${two(t.month)}-${two(t.day)} '
-      '${two(t.hour)}:${two(t.minute)} from ${id.commit}.'
-      '${from == null ? '' : '\nLoaded: $from'}';
-}
-
-class _StatusBar extends StatelessWidget {
-  const _StatusBar({required this.app});
-  final AppState app;
-
-  @override
-  Widget build(BuildContext context) {
-    final saved = !app.hasUnsavedChanges;
-    final rust = app.engineLabel.startsWith('Rust');
-    final hash = app.pageContentHash;
-    // A failed save must never read as "Saved" — it stays dirty and says so.
-    //
-    // The chip carries the SHORT form and the tooltip the whole sentence;
-    // neither is allowed to contain the exception, which is what
-    // `'${app.saveError}'` used to put on the status bar. Clicking opens the
-    // dialog that keeps the technical half behind an Advanced fold.
-    final problem = app.saveError;
-    final failed = problem != null;
-    return Container(
-      height: 24,
-      // Tighter at the trailing edge than the leading one, on purpose. The
-      // left-hand cluster is a run of icon-and-label pairs whose glyphs need
-      // breathing room from the frame; the right-hand end is the shortcut
-      // cheat-sheet, which is a single line of text and reads as *detached*
-      // when it floats 12px in from the window edge — the "the UI doesn't
-      // reach the sides" complaint. 6px is the optical match.
-      padding: const EdgeInsets.only(left: OnoteSpace.x5, right: OnoteSpace.x3),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        border: Border(top: BorderSide(color: Theme.of(context).dividerColor)),
-      ),
-      child: Row(
-        children: [
-          Tooltip(
-            message: failed
-                ? '${problem.message}\n\nMore detail.'
-                : saved
-                    ? 'This page is saved to your local .onote file.'
-                    : 'Saving…',
-            child: MouseRegion(
-              cursor: failed ? SystemMouseCursors.click : MouseCursor.defer,
-              child: GestureDetector(
-                onTap: failed
-                    ? () => showSaveProblemDialog(context, problem)
-                    : null,
-                child: Row(children: [
-                  Icon(
-                      failed
-                          ? Icons.error_outline
-                          : saved
-                              ? Icons.check_circle_outline
-                              : Icons.sync,
-                      size: OnoteIcon.sm,
-                      color: failed
-                          ? OnoteColors.danger
-                          : saved
-                              ? OnoteColors.success
-                              : context.surfaces.textSecondary),
-                  const SizedBox(width: 5),
-                  Text(
-                      failed
-                          ? problem.short
-                          : saved
-                              ? 'Saved on this device'
-                              : 'Saving…',
-                      style: TextStyle(
-                          fontSize: 11,
-                          color: failed
-                              ? OnoteColors.danger
-                              : context.surfaces.textSecondary)),
-                ]),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Active compute engine (§ADR-0002): green chip when the Rust core
-          // is linked, with the live page content-hash it computed on save.
-          //
-          // DEBUG BUILDS ONLY. The stale-library trap this chip exists for
-          // is a developer problem; a student reading "Rust · a3f9c210"
-          // learns nothing except that the app is talking to itself. The
-          // user-facing saved-state signal stays.
-          if (kDebugMode)
-            Tooltip(
-              // The build stamp is here because the stale-library trap keeps
-              // costing real time: the app loads a compiled artefact, so being on
-              // the right branch says nothing about what is actually running.
-              // Importer and repair fixes live in that library, so "I pulled and
-              // it still does the old thing" is answered by reading this line.
-              message: rust
-                  ? 'The Rust core (onote-core) is linked and computing this '
-                      "page's content hash on save.\n${_coreBuildLine()}"
-                  : 'Running the pure-Dart engine. Build the onote-core library '
-                      'to link the Rust core.',
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.memory,
-                    size: 16,
-                    color: rust
-                        ? OnoteColors.success
-                        : context.surfaces.textSecondary),
-                const SizedBox(width: 4),
-                Text(
-                  rust && hash != null && hash.length >= 8
-                      ? '${app.engineLabel} · ${hash.substring(0, 8)}'
-                      : app.engineLabel,
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: rust
-                          ? OnoteColors.success
-                          : context.surfaces.textSecondary),
-                ),
-              ]),
-            ),
-          // The cheat-sheet (§7a.4), dropped whole rather than ellipsised
-          // (§7d). Truncating it produces "V select · T text · P pen · H…",
-          // which is not a shorter version of the message — it is a different,
-          // useless one, and it also drags the state cluster on its left into
-          // truncation with it. Below the threshold the shortcuts are still on
-          // every button's tooltip, which is where they are actually read.
-          //
-          // **One flex child, not a `Spacer` plus a `Flexible`.** That pairing
-          // splits the free space evenly between them, so the measurement ran
-          // against half the width the text was then allowed to occupy — the
-          // text passed the fits-whole check and was clipped anyway, which is
-          // precisely the outcome this widget exists to prevent. `Expanded` +
-          // right alignment gives the measurement and the layout the same
-          // number.
-          Expanded(
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: _DropIfTight(
-                text: 'V select · T text · P pen · H highlight · E erase · '
-                    'Ctrl+Z undo · Ctrl+scroll zoom',
-                style: OnoteType.caption
-                    .copyWith(color: context.surfaces.textSecondary),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Renders [text] only when it fits whole, and nothing at all when it doesn't.
-///
-/// The status bar's rule (§7d): **drop, never truncate.** "V select · T text ·
-/// P pen · H…" is not a shorter version of the cheat-sheet, it is a different
-/// and useless message — and letting it ellipsise also drags the state cluster
-/// beside it into competing for the same pixels.
-///
-/// Measured against the constraints this actually receives rather than against
-/// the window width: the right-hand panel slot takes 320px out of the row, so
-/// a window-width threshold is wrong exactly when a panel is open.
-class _DropIfTight extends StatelessWidget {
-  const _DropIfTight({required this.text, required this.style});
-  final String text;
-  final TextStyle style;
-
-  @override
-  Widget build(BuildContext context) => LayoutBuilder(
-        builder: (context, c) {
-          final tp = TextPainter(
-            text: TextSpan(text: text, style: style),
-            maxLines: 1,
-            textDirection: Directionality.of(context),
-            textScaler: MediaQuery.textScalerOf(context),
-          )..layout();
-          // A pixel of slack. `TextPainter` and the `Text` that follows it lay
-          // out the same string with the same style, but they round
-          // independently, and a sub-pixel disagreement at exactly the
-          // threshold is the difference between "dropped cleanly" and "one
-          // glyph sliced off at the window edge".
-          if (tp.width > c.maxWidth - 1) return const SizedBox.shrink();
-          return Text(text, style: style, maxLines: 1, softWrap: false);
-        },
-      );
 }
 
 class _EmptyState extends StatelessWidget {

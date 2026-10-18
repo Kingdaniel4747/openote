@@ -1,1 +1,9 @@
+analyzer:
+  exclude:
+    - build/**
+    - windows/**
+    - linux/**
+    # Unchanged third-party Dart/Rust tooling; only its PowerShell resolver is patched.
+    # Like a hosted dependency, it is outside the application's Dart lint scope.
+    - third_party/super_native_extensions/**
 include: package:flutter_lints/flutter.yaml

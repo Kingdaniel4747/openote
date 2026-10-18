@@ -1,6 +1,6 @@
 // Del / Backspace on a navigator row — Eric: "Pressing 'Del' when clicking on
 // a page or group doesnt delete it - only way to delete is right click and
-// press delete" (PLANNING.md).
+// press delete" (original feature request).
 //
 // Every claim here is made by pressing a REAL key at a REAL [Sidebar] over a
 // REAL repository. The change is entirely about focus and key dispatch, and

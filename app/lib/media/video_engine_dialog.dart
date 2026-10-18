@@ -8,10 +8,9 @@
 /// where the video is, before it says anything about a download, and the
 /// offline message says the same thing again.
 ///
-/// Jargon rule (PLANNING, "no jargon"): nothing the student reads names
+/// Language rule: nothing the student reads names
 /// libmpv, ANGLE, a codec, a DLL or a URL. Those live under **Details
-/// (advanced)**, folded away, the same shape as `open_notice_dialog.dart` and
-/// `save_problem_dialog.dart`.
+/// (advanced)**, folded away, like `open_notice_dialog.dart`.
 library;
 
 import 'package:flutter/material.dart';

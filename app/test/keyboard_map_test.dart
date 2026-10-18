@@ -1,4 +1,4 @@
-// The keyboard map (docs/planning/v0.16-keyboard-control.md §1): one table,
+// The keyboard map (ui/keyboard_map.dart): one table,
 // two consumers. These tests pin the table's invariants, that the Ctrl+/
 // overlay renders ALL of it (the documentation cannot silently show less
 // than the map), and that the chord works from the real shell — including

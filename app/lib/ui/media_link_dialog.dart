@@ -155,7 +155,7 @@ class _MediaLinkDialogState extends State<MediaLinkDialog> {
 /// half file behind. Cancel is real: it stops the stream, and MediaStore
 /// removes what it had written.
 class MediaCopyDialog extends StatelessWidget {
-  const MediaCopyDialog({
+  const MediaCopyDialog({super.key,
     required this.name,
     required this.bytes,
     required this.progress,

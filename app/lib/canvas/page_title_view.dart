@@ -36,8 +36,9 @@ class _PageTitleViewState extends State<PageTitleView> {
 
   /// Write the in-flight title back to the page it belongs to.
   void _commitTo(String pageId) {
-    if (widget.app.node(pageId) == null)
+    if (widget.app.node(pageId) == null) {
       return; // page gone — nothing to rename
+    }
     final t = _controller.text.trim();
     widget.app.renameNode(pageId, t.isEmpty ? 'Untitled page' : t);
   }

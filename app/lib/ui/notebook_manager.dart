@@ -46,6 +46,8 @@ class _NotebookManagerState extends State<_NotebookManager> {
   AppState get app => widget.app;
 
   String? _busyId;
+  final _searchController = TextEditingController();
+  final _searchFocus = FocusNode();
   final _counts = <String, ({int sections, int pages})>{};
   bool _countsLoading = false;
 
@@ -82,6 +84,8 @@ class _NotebookManagerState extends State<_NotebookManager> {
   @override
   void dispose() {
     app.removeListener(_changed);
+    _searchController.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -202,29 +206,60 @@ class _NotebookManagerState extends State<_NotebookManager> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final notebooks = app.notebooks;
+    final query = _searchController.text.trim().toLowerCase();
+    final visibleNotebooks = notebooks
+        .where((nb) => nb.title.toLowerCase().contains(query))
+        .toList();
     return AlertDialog(
-      title: Row(
+      title: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.menu_book_outlined, size: 18, color: scheme.primary),
-          const SizedBox(width: 9),
-          const AppText('Notebooks'),
-          if (_busyId != null)
-            const Padding(
-              padding: EdgeInsets.only(left: 12),
-              child: SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
+          Row(
+            children: [
+              Icon(Icons.menu_book_outlined, size: 18, color: scheme.primary),
+              const SizedBox(width: 9),
+              const AppText('Notebooks'),
+              if (_busyId != null)
+                const Padding(
+                  padding: EdgeInsets.only(left: 12),
+                  child: SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              const Spacer(),
+              Text(
+                '${notebooks.length} open',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: context.surfaces.textSecondary,
+                ),
+              ),
+            ],
+          ),
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: TextField(
+                controller: _searchController,
+                focusNode: _searchFocus,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  labelText: tr(context, 'Search notebooks'),
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  suffixIcon: query.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: tr(context, 'Clear search'),
+                          icon: const Icon(Icons.close, size: 18),
+                          onPressed: () {
+                            setState(() => _searchController.clear());
+                            _searchFocus.requestFocus();
+                          },
+                        ),
+                ),
               ),
             ),
-          const Spacer(),
-          Text(
-            '${notebooks.length} open',
-            style: TextStyle(
-              fontSize: 12,
-              color: context.surfaces.textSecondary,
-            ),
-          ),
         ],
       ),
       contentPadding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
@@ -234,6 +269,11 @@ class _NotebookManagerState extends State<_NotebookManager> {
           constraints: const BoxConstraints(maxHeight: 680),
           child: ListView(
             children: [
+              if (visibleNotebooks.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: AppText('No notebooks found.', textAlign: TextAlign.center),
+                ),
               GridView.count(
                 crossAxisCount: 4,
                 shrinkWrap: true,
@@ -242,7 +282,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
                 crossAxisSpacing: 18,
                 childAspectRatio: .72,
                 children: [
-                  for (final nb in notebooks)
+                  for (final nb in visibleNotebooks)
                     RepaintBoundary(child: _coverCard(nb, scheme)),
                 ],
               ),
@@ -313,7 +353,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
                     children: [
                       Icon(Icons.inventory_2_outlined, size: 18),
                       SizedBox(width: 8),
-                      Text('Back up all notebooks'),
+                      Flexible(child: Text('Back up all notebooks')),
                     ],
                   ),
                 ),
@@ -427,8 +467,9 @@ class _NotebookManagerState extends State<_NotebookManager> {
                             okLabel: 'Save',
                             hintText: nb.title,
                           );
-                          if (title != null)
+                          if (title != null) {
                             await app.renameNotebook(nb.id, title);
+                          }
                         }
                         if (value == 'delete') {
                           await _confirmDeleteCard(nb);
@@ -688,7 +729,7 @@ void _say(ScaffoldMessengerState m, String msg, {int seconds = 4}) =>
 
 const _coreMissing =
     'OneNote import needs the Rust core — build onote_core.dll '
-    '(see rust/onote_core/INTEGRATION.md).';
+    '(see README.md: Windows starten).';
 
 /// One sentence when the parser dropped undecodable ink (~0.02 % of strokes on
 /// the reference notebook). The notes LOOK complete when a stroke vanishes,

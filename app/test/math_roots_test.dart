@@ -32,7 +32,7 @@ MathEditor typed(String chars) {
 void main() {
   group('the commands', () {
     test(r'\rt opens a root with an empty index box', () {
-      final e = typed(bs + 'rt ');
+      final e = typed('${bs}rt ');
       expect(e.latex, r'\sqrt[]{}');
       final root = e.root.children.single as MSqrt;
       expect(root.degree, isNotNull);
@@ -42,7 +42,7 @@ void main() {
     });
 
     test(r'\cbrt is a cube root, with the three already in it', () {
-      final e = typed(bs + 'cbrt ');
+      final e = typed('${bs}cbrt ');
       expect(e.latex, r'\sqrt[3]{}');
       final root = e.root.children.single as MSqrt;
       expect(identical(e.caretRow, root.radicand), isTrue,
@@ -51,24 +51,24 @@ void main() {
 
     test(r'\2rt draws the two, even though a bare radical already means two',
         () {
-      final e = typed(bs + '2rt ');
+      final e = typed('${bs}2rt ');
       expect(e.latex, r'\sqrt[2]{}');
     });
 
     test('and the family runs as far as the numbers do', () {
       for (final n in ['3', '4', '5', '7', '10', '12']) {
-        final e = typed(bs + n + 'rt ');
-        expect(e.latex, r'\sqrt[' + n + ']{}', reason: n);
+        final e = typed('$bs${n}rt ');
+        expect(e.latex, '${bs}sqrt[$n]{}', reason: n);
       }
     });
 
     test(r'\sqrt still means a plain square root', () {
-      expect(typed(bs + 'sqrt ').latex, r'\sqrt{}');
+      expect(typed('${bs}sqrt ').latex, r'\sqrt{}');
     });
 
     test(r'\root and \nrt still reach the generic one', () {
-      expect(typed(bs + 'root ').latex, r'\sqrt[]{}');
-      expect(typed(bs + 'nrt ').latex, r'\sqrt[]{}',
+      expect(typed('${bs}root ').latex, r'\sqrt[]{}');
+      expect(typed('${bs}nrt ').latex, r'\sqrt[]{}',
           reason: 'a student who reads "nrt" as a command should get one');
     });
 
@@ -82,23 +82,23 @@ void main() {
     test('and widening the walk to digits took nothing away', () {
       // A digit used to stop the walk dead, so `\alpha2` converted nothing.
       // It still converts nothing — it is simply no longer a command.
-      expect(typed(bs + 'alpha2 ').latex, isNot(contains(bs + 'alpha')),
+      expect(typed('${bs}alpha2 ').latex, isNot(contains('${bs}alpha')),
           reason: 'the letters are still letters, as they always were');
-      expect(typed(bs + 'alpha ').latex, contains('alpha'),
+      expect(typed('${bs}alpha ').latex, contains('alpha'),
           reason: 'and the ordinary case is untouched');
     });
   });
 
   group('what a typed root then does', () {
     test('it works out, which the projection already knew how to do', () {
-      final e = typed(bs + '3rt ');
+      final e = typed('${bs}3rt ');
       e.insertChar('8');
       expect(rowToLinear(e.root).replaceAll(' ', ''), '((8)^(1/(3)))');
       expect(evaluateLinear(rowToLinear(e.root)).display, '2');
     });
 
     test('and answers at the caret like anything else', () {
-      final e = typed(bs + '4rt ');
+      final e = typed('${bs}4rt ');
       e.insertChar('1');
       e.insertChar('6');
       e.placeAtEnd();
@@ -111,14 +111,14 @@ void main() {
       for (final tex in [r'\sqrt[3]{8}', r'\sqrt[]{x}', r'\sqrt{2}']) {
         final reopened = MathEditor.open(tex);
         expect(reopened, isNotNull, reason: tex);
-        expect(reopened!.latex, tex, reason: 'byte for byte: ' + tex);
+        expect(reopened!.latex, tex, reason: 'byte for byte: $tex');
       }
     });
   });
 
   group('an empty index takes itself away', () {
     test('backspace in an empty index leaves an ordinary square root', () {
-      final e = typed(bs + '3rt ');
+      final e = typed('${bs}3rt ');
       // Caret is in the radicand; write something worth keeping.
       e.insertChar('x');
       // Back up into the index and empty it.

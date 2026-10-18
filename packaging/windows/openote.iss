@@ -1,8 +1,8 @@
 ; Openote — Windows installer (Inno Setup)
 ;
 ; Produces the single setup .exe that the release workflow ships beside the
-; portable zip. See docs/planning/v0.7-packaging.md for why Inno Setup and why
-; a per-user install.
+; portable zip. Uses Inno Setup and
+; a per-user install. Project entry point: README.md.
 ;
 ; Built in CI as:
 ;   iscc /DAppVersion=<x.y.z> /DStageDir=<staged build dir> openote.iss

@@ -95,12 +95,12 @@ void main() {
   });
 
   testWidgets('a folded control keeps its selected state visible', (tester) async {
-    final selected = ToolbarControl(
+    const selected = ToolbarControl(
       width: itemWidth,
       icon: Icons.circle,
       label: 'on',
       selected: true,
-      inline: const IconButton(
+      inline: IconButton(
           icon: Icon(Icons.circle, size: 18), isSelected: true, onPressed: null),
     );
     await pump(tester, 145, [control('a'), control('b'), selected]);

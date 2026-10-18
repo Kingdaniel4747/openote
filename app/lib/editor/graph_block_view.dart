@@ -159,8 +159,11 @@ class _GraphBlockViewState extends State<GraphBlockView> {
   void _wheel(PointerSignalEvent e) {
     if (e is! PointerScrollEvent || _lastSize.isEmpty) return;
     final keys = HardwareKeyboard.instance;
-    if (!keys.isControlPressed && !keys.isMetaPressed && !keys.isShiftPressed)
+    // Ctrl-wheel belongs to the page: it is the desktop navigation gesture
+    // that scrolls the canvas. Keep graph zoom available with Shift-wheel.
+    if (!keys.isShiftPressed) {
       return;
+    }
     // **Sideways is not a zoom.** A trackpad's horizontal swipe, a tilt
     // wheel and Shift+wheel all arrive here with dy of zero, and the
     // up-or-down test had no middle: five sideways flicks magnified the

@@ -431,54 +431,86 @@ class _SidebarState extends State<Sidebar> {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final color = _sectionColor(section.color, dark);
     final pages = _pageEntriesFor(app, section);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(10, 8, 4, 2),
-          child: Row(
-            children: [
-              Container(
-                width: 3.5,
-                height: 14,
-                decoration: BoxDecoration(
-                    color: color, borderRadius: BorderRadius.circular(4)),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  section.title.toUpperCase(),
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: .6,
-                    color: dark ? OnoteColors.moon300 : OnoteColors.graphite500,
+    void dropAtPaneEnd(String pageId) {
+      final moving = app.node(pageId);
+      if (moving?.kind != NodeKind.page || moving?.parentId != section.id) {
+        return;
+      }
+      // A nested page uses the same one-level promotion as “Move back out”.
+      if (moving!.level > 0) {
+        app.indentPage(pageId, -1);
+        return;
+      }
+      // A top-level page dropped on the empty pane belongs after the last
+      // top-level page. Its own subpages travel with it in reorderNode.
+      final others = app
+          .pagesOf(section.id)
+          .where((page) => page.level == 0 && page.id != pageId)
+          .toList();
+      if (others.isNotEmpty) {
+        app.reorderNode(pageId, others.last.id, after: true);
+      }
+    }
+
+    // The free part of this pane is a generous end-of-list target. It also
+    // exposes the existing “Move back out” operation without a context menu.
+    return DragTarget<String>(
+      onWillAcceptWithDetails: (d) {
+        final moving = app.node(d.data);
+        return moving?.kind == NodeKind.page && moving?.parentId == section.id;
+      },
+      onAcceptWithDetails: (d) => dropAtPaneEnd(d.data),
+      builder: (context, _, __) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 4, 2),
+            child: Row(
+              children: [
+                Container(
+                  width: 3.5,
+                  height: 14,
+                  decoration: BoxDecoration(
+                      color: color, borderRadius: BorderRadius.circular(4)),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    section.title.toUpperCase(),
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: .6,
+                      color:
+                          dark ? OnoteColors.moon300 : OnoteColors.graphite500,
+                    ),
                   ),
                 ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.add, size: 16),
-                visualDensity: VisualDensity.compact,
-                tooltip: 'New page in ${section.title}',
-                onPressed: () => app.addPage(sectionId: section.id),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: pages.isEmpty
-              ? Center(
-                  child: AppText('No pages yet',
-                      style: TextStyle(
-                          fontSize: 12, color: context.surfaces.textSecondary)),
-                )
-              : ListView(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  children: pages,
+                IconButton(
+                  icon: const Icon(Icons.add, size: 16),
+                  visualDensity: VisualDensity.compact,
+                  tooltip: 'New page in ${section.title}',
+                  onPressed: () => app.addPage(sectionId: section.id),
                 ),
-        ),
-      ],
+              ],
+            ),
+          ),
+          Expanded(
+            child: pages.isEmpty
+                ? Center(
+                    child: AppText('No pages yet',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: context.surfaces.textSecondary)),
+                  )
+                : ListView(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    children: pages,
+                  ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -486,6 +518,7 @@ class _SidebarState extends State<Sidebar> {
 
   Widget _sectionsColumn(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
+    final scheme = Theme.of(context).colorScheme;
     final groups = app.nodes
         .where((n) => n.kind == NodeKind.sectionGroup && n.parentId == null)
         .toList();
@@ -505,47 +538,76 @@ class _SidebarState extends State<Sidebar> {
     Widget row(TreeNode s) => _SectionHeader(
         app: app, section: s, dark: dark, active: app.activeSectionId == s.id);
 
+    void dropAtPaneEnd(String sectionId) {
+      final moving = app.node(sectionId);
+      if (moving?.kind != NodeKind.section) return;
+      // Keep the existing group move, then order the section after every
+      // other top-level section. This makes the whole blank pane a true
+      // “put it last” target rather than a no-op below the final row.
+      final others = looseSections.where((section) => section.id != sectionId);
+      if (moving!.parentId != null) app.moveSectionToGroup(sectionId, null);
+      if (others.isNotEmpty) {
+        app.reorderNode(sectionId, others.last.id, after: true);
+      }
+    }
+
     return DragTarget<String>(
       onWillAcceptWithDetails: (d) =>
           app.node(d.data)?.kind == NodeKind.section,
-      onAcceptWithDetails: (d) => app.moveSectionToGroup(d.data, null),
-      builder: (context, candidates, _) => ListView(
-        padding: const EdgeInsets.only(bottom: 8),
-        children: [
-          for (final g in groups) ...[
-            _GroupHeader(app: app, group: g),
-            // Indented AND railed. Indentation alone says "these are children";
-            // the rail is what says where the group ENDS — with several groups
-            // in a column, an indent that just stops is ambiguous, because the
-            // next group's header looks like an outdented sibling either way.
-            _Reveal(
-              open: !app.collapsedGroups.contains(g.id),
-              child: Padding(
-                padding: const EdgeInsets.only(left: 13),
-                child: Container(
-                  decoration: BoxDecoration(
-                    border: Border(
-                      left: BorderSide(
-                          color: dark
-                              ? OnoteColors.night300
-                              : OnoteColors.paper300),
+      onAcceptWithDetails: (d) => dropAtPaneEnd(d.data),
+      builder: (context, candidates, _) {
+        // The outer target represents taking a section out of its group.
+        // A light pane tells the user that dropping here makes it a top-level
+        // section, while group targets themselves only receive an outline.
+        final movingOutOfGroup = candidates.any((id) {
+          final node = app.node(id);
+          return node?.kind == NodeKind.section && node?.parentId != null;
+        });
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+          decoration: movingOutOfGroup
+              ? BoxDecoration(color: scheme.primary.withValues(alpha: .045))
+              : null,
+          child: ListView(
+            padding: const EdgeInsets.only(bottom: 8),
+            children: [
+              for (final g in groups) ...[
+                _GroupHeader(app: app, group: g),
+                // Indented AND railed. Indentation alone says "these are children";
+                // the rail is what says where the group ENDS — with several groups
+                // in a column, an indent that just stops is ambiguous, because the
+                // next group's header looks like an outdented sibling either way.
+                _Reveal(
+                  open: !app.collapsedGroups.contains(g.id),
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 13),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        border: Border(
+                          left: BorderSide(
+                              color: dark
+                                  ? OnoteColors.night300
+                                  : OnoteColors.paper300),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (final s in app.nodes.where((n) =>
+                              n.kind == NodeKind.section && n.parentId == g.id))
+                            row(s),
+                        ],
+                      ),
                     ),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      for (final s in app.nodes.where((n) =>
-                          n.kind == NodeKind.section && n.parentId == g.id))
-                        row(s),
-                    ],
-                  ),
                 ),
-              ),
-            ),
-          ],
-          for (final s in looseSections) row(s),
-        ],
-      ),
+              ],
+              for (final s in looseSections) row(s),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -609,16 +671,17 @@ class _GroupHeaderState extends State<_GroupHeader> {
     final dark = Theme.of(context).brightness == Brightness.dark;
     // Drop a section ONTO a group → move it into the group (ORG-1).
     return DragTarget<String>(
-      onWillAcceptWithDetails: (d) =>
-          app.node(d.data)?.kind == NodeKind.section,
+      onWillAcceptWithDetails: (d) {
+        final moving = app.node(d.data);
+        // Its current group cannot be a destination: it already contains the
+        // section, so showing it as a drop target would suggest a move that
+        // changes nothing.
+        return moving?.kind == NodeKind.section && moving?.parentId != group.id;
+      },
       onAcceptWithDetails: (d) => app.moveSectionToGroup(d.data, group.id),
       builder: (ctx, cand, rej) {
         final target = cand.isNotEmpty;
-        final labelStyle = TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            fontStyle: target ? FontStyle.italic : FontStyle.normal,
-            color: target ? scheme.primary : null);
+        const labelStyle = TextStyle(fontSize: 13, fontWeight: FontWeight.w600);
         return InkWell(
           focusNode: _rowFocus,
           onFocusChange: (has) {
@@ -643,11 +706,12 @@ class _GroupHeaderState extends State<_GroupHeader> {
           onLongPress: () => showNodeMenu(context, app, group,
               canIndent: false, position: _downPos),
           child: Container(
-            decoration: target
+            // A foreground border paints over the row instead of taking up
+            // layout space, so its title and icons stay perfectly still.
+            foregroundDecoration: target
                 ? BoxDecoration(
                     border: Border.all(color: scheme.primary, width: 1.5),
-                    borderRadius: BorderRadius.circular(6),
-                    color: scheme.primary.withValues(alpha: .06))
+                    borderRadius: BorderRadius.circular(6))
                 : null,
             padding: const EdgeInsets.fromLTRB(8, 10, 8, 2),
             child: Row(
@@ -671,7 +735,7 @@ class _GroupHeaderState extends State<_GroupHeader> {
                             if (mounted) setState(() => _renaming = false);
                           },
                         )
-                      : Text(target ? 'move section here' : group.title,
+                      : Text(group.title,
                           overflow: TextOverflow.ellipsis, style: labelStyle),
                 ),
               ],
@@ -786,147 +850,8 @@ class _HomePane extends StatelessWidget {
   }
 }
 
-/// The planner, in the Home pane (v0.5 §3).
-///
-/// **A summary, not the planner.** The navigator is 96–320px wide and is a
-/// place you pass through; the planner is a working surface where dates get
-/// re-dated. So Home answers "have I got anything on" in three rows and hands
-/// off. That split is also what let the exam countdown stop hiding: this is the
-/// first surface in the app where a date is visible without having navigated to
-/// the thing it belongs to.
-///
-/// Hidden entirely when there is nothing dated — an empty heading over an empty
-/// list is the "row of zeroes" the study stats deliberately avoid.
-/* Removed unused home-pane summary.
-class _ComingUp extends StatelessWidget {
-  const _ComingUp({required this.app});
-  final AppState app;
-
-  /// Rows before it defers to the panel. Three fits above the fold beside
-  /// favourites and recents, and "what's next" is a shorter question than
-  /// "what have I got".
-  static const _max = 3;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final now = DateTime.now();
-    final sections = app.planner.sections(now: now);
-    // Overdue and today first, then whatever is next — the same order the
-    // panel shows, truncated rather than re-sorted so the two never disagree.
-    final rows = <DatedItem>[];
-    var total = 0;
-    for (final s in sections) {
-      if (s.bucket == AgendaBucket.done) continue;
-      total += s.items.length;
-      for (final it in s.items) {
-        if (rows.length < _max) rows.add(it);
-      }
-    }
-    final alerts = app.planner.pendingAlerts.length;
-    if (rows.isEmpty && alerts == 0) return const SizedBox.shrink();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 12, 6, 4),
-          child: Row(children: [
-            AppText('COMING UP',
-                style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: .6,
-                    color: context.surfaces.textSecondary)),
-            const Spacer(),
-            InkWell(
-              onTap: app.openPlanner,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                child: Text(total > _max ? 'All $total' : 'Open',
-                    style: TextStyle(fontSize: 11, color: scheme.primary)),
-              ),
-            ),
-          ]),
-        ),
-        if (alerts > 0)
-          InkWell(
-            onTap: app.openPlanner,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 3, 12, 3),
-              child: Row(children: [
-                Icon(Icons.notifications_active_outlined,
-                    size: 16, color: scheme.primary),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                      '$alerts reminder${alerts == 1 ? '' : 's'} waiting',
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: scheme.primary)),
-                ),
-              ]),
-            ),
-          ),
-        for (final it in rows)
-          InkWell(
-            onTap: () {
-              if (it.pageId != null) {
-                app.selectPage(it.pageId!);
-              } else {
-                app.openPlanner();
-              }
-            },
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 3, 12, 3),
-              child: Row(children: [
-                Icon(_icon(it.kind),
-                    size: OnoteIcon.sm,
-                    color: _colour(it.kind, scheme, context.surfaces)),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(it.title,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 12,
-                          decoration:
-                              it.done ? TextDecoration.lineThrough : null)),
-                ),
-                const SizedBox(width: 6),
-                Text(plannerWhen(it, now),
-                    style: TextStyle(
-                        fontSize: 11,
-                        color: bucketFor(it, now) == AgendaBucket.overdue
-                            ? OnoteColors.danger
-                            : context.surfaces.textSecondary)),
-              ]),
-            ),
-          ),
-      ],
-    );
-  }
-
-  static IconData _icon(DatedKind k) => switch (k) {
-        DatedKind.exam => Icons.flag_outlined,
-        DatedKind.task => Icons.check_box_outline_blank,
-        DatedKind.reminder => Icons.notifications_none,
-        DatedKind.event => Icons.schedule,
-      };
-
-  static Color _colour(DatedKind k, ColorScheme scheme, OnoteSurfaces s) =>
-      switch (k) {
-        DatedKind.exam => OnoteColors.brass500,
-        DatedKind.task => scheme.primary,
-        DatedKind.reminder => OnoteColors.ink400,
-        DatedKind.event => s.textSecondary,
-      };
-}
-
 /// The collapsed navigator: a 44px rail that keeps every destination one
 /// click away — expand, notebooks, Home, and a chip per section.
-*/
 class _NavRail extends StatelessWidget {
   const _NavRail({required this.app, required this.dark});
   final AppState app;
@@ -988,57 +913,61 @@ class _NavRail extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: 8),
               children: [
                 for (final s in destinations)
-                  NavigatorDragEntry(app: app, node: s, child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Center(
-                      child: Tooltip(
-                        message: s.title,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(6),
-                          onTap: () {
-                            if (s.kind == NodeKind.page) {
-                              app.selectPage(s.id);
-                            } else {
-                              app.toggleNavCollapsed();
-                              app.activateSection(s.id);
-                            }
-                          },
-                          child: Container(
-                            width: 24,
-                            height: 24,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: _sectionColor(s.color, dark)
-                                  .withValues(alpha: .18),
+                  NavigatorDragEntry(
+                      app: app,
+                      node: s,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Center(
+                          child: Tooltip(
+                            message: s.title,
+                            child: InkWell(
                               borderRadius: BorderRadius.circular(6),
-                              border: (s.kind == NodeKind.page
-                                      ? app.pageId == s.id
-                                      : app.activeSectionId == s.id)
-                                  ? Border.all(color: scheme.primary)
-                                  : null,
+                              onTap: () {
+                                if (s.kind == NodeKind.page) {
+                                  app.selectPage(s.id);
+                                } else {
+                                  app.toggleNavCollapsed();
+                                  app.activateSection(s.id);
+                                }
+                              },
+                              child: Container(
+                                width: 24,
+                                height: 24,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: _sectionColor(s.color, dark)
+                                      .withValues(alpha: .18),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: (s.kind == NodeKind.page
+                                          ? app.pageId == s.id
+                                          : app.activeSectionId == s.id)
+                                      ? Border.all(color: scheme.primary)
+                                      : null,
+                                ),
+                                child: s.kind == NodeKind.page
+                                    ? Icon(Icons.description_outlined,
+                                        size: 16,
+                                        color: app.pageId == s.id
+                                            ? scheme.primary
+                                            : context.surfaces.textSecondary)
+                                    : Text(
+                                        s.title.isEmpty
+                                            ? '·'
+                                            : s.title.characters.first
+                                                .toUpperCase(),
+                                        style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: dark
+                                                ? OnoteColors.moon100
+                                                : OnoteColors.graphite700),
+                                      ),
+                              ),
                             ),
-                            child: s.kind == NodeKind.page
-                                ? Icon(Icons.description_outlined,
-                                    size: 16,
-                                    color: app.pageId == s.id
-                                        ? scheme.primary
-                                        : context.surfaces.textSecondary)
-                                : Text(
-                                    s.title.isEmpty
-                                        ? '·'
-                                        : s.title.characters.first.toUpperCase(),
-                                    style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                        color: dark
-                                            ? OnoteColors.moon100
-                                            : OnoteColors.graphite700),
-                                  ),
                           ),
                         ),
-                      ),
-                    ),
-                  )),
+                      )),
                 IconButton(
                   tooltip: tr(context, 'New page'),
                   icon: const Icon(Icons.add, size: 20),
@@ -1058,8 +987,13 @@ class _NavRail extends StatelessWidget {
 /// Shared drag/drop and context-menu behavior for rail icons and section tabs.
 /// Mouse dragging stays immediate; holding a touch opens the existing node menu.
 class NavigatorDragEntry extends StatefulWidget {
-  const NavigatorDragEntry({super.key, required this.app, required this.node,
-    required this.child, this.horizontal = false, this.draggable = true});
+  const NavigatorDragEntry(
+      {super.key,
+      required this.app,
+      required this.node,
+      required this.child,
+      this.horizontal = false,
+      this.draggable = true});
   final AppState app;
   final TreeNode node;
   final Widget child;
@@ -1073,52 +1007,71 @@ class _NavigatorDragEntryState extends State<NavigatorDragEntry> {
   bool after = false;
   bool accepts(String id) {
     final moving = widget.app.node(id);
-    return id != widget.node.id && moving != null &&
+    return id != widget.node.id &&
+        moving != null &&
         (moving.kind == widget.node.kind ||
-         moving.kind == NodeKind.page && widget.node.kind == NodeKind.section);
+            moving.kind == NodeKind.page &&
+                widget.node.kind == NodeKind.section);
   }
 
   @override
   Widget build(BuildContext context) => DragTarget<String>(
-    onWillAcceptWithDetails: (d) => accepts(d.data),
-    onMove: (d) {
-      final box = context.findRenderObject() as RenderBox;
-      final point = box.globalToLocal(d.offset);
-      final next = widget.horizontal ? point.dx > box.size.width / 2
-          : point.dy > box.size.height / 2;
-      if (next != after) setState(() => after = next);
-    },
-    onAcceptWithDetails: (d) {
-      if (widget.app.node(d.data)?.kind == NodeKind.page &&
-          widget.node.kind == NodeKind.section) {
-        widget.app.movePageToSection(d.data, widget.node.id);
-      } else {
-        widget.app.reorderNode(d.data, widget.node.id, after: after);
-      }
-    },
-    builder: (context, candidates, rejected) {
-      final color = candidates.isEmpty ? Colors.transparent : Theme.of(context).colorScheme.primary;
-      final line = BorderSide(color: color, width: 2);
-      final entry = GestureDetector(
-        onSecondaryTapUp: (d) => showNodeMenu(context, widget.app, widget.node,
-            canIndent: widget.node.kind == NodeKind.page, position: d.globalPosition),
-        onLongPressStart: (d) => showNodeMenu(context, widget.app, widget.node,
-            canIndent: widget.node.kind == NodeKind.page, position: d.globalPosition),
-        child: DecoratedBox(decoration: BoxDecoration(border: widget.horizontal
-            ? Border(left: after ? BorderSide.none : line, right: after ? line : BorderSide.none)
-            : Border(top: after ? BorderSide.none : line, bottom: after ? line : BorderSide.none)),
-            child: widget.child),
+        onWillAcceptWithDetails: (d) => accepts(d.data),
+        onMove: (d) {
+          final box = context.findRenderObject() as RenderBox;
+          final point = box.globalToLocal(d.offset);
+          final next = widget.horizontal
+              ? point.dx > box.size.width / 2
+              : point.dy > box.size.height / 2;
+          if (next != after) setState(() => after = next);
+        },
+        onAcceptWithDetails: (d) {
+          if (widget.app.node(d.data)?.kind == NodeKind.page &&
+              widget.node.kind == NodeKind.section) {
+            widget.app.movePageToSection(d.data, widget.node.id);
+          } else {
+            widget.app.reorderNode(d.data, widget.node.id, after: after);
+          }
+        },
+        builder: (context, candidates, rejected) {
+          final color = candidates.isEmpty
+              ? Colors.transparent
+              : Theme.of(context).colorScheme.primary;
+          final line = BorderSide(color: color, width: 2);
+          final entry = GestureDetector(
+            onSecondaryTapUp: (d) => showNodeMenu(
+                context, widget.app, widget.node,
+                canIndent: widget.node.kind == NodeKind.page,
+                position: d.globalPosition),
+            onLongPressStart: (d) => showNodeMenu(
+                context, widget.app, widget.node,
+                canIndent: widget.node.kind == NodeKind.page,
+                position: d.globalPosition),
+            child: DecoratedBox(
+                decoration: BoxDecoration(
+                    border: widget.horizontal
+                        ? Border(
+                            left: after ? BorderSide.none : line,
+                            right: after ? line : BorderSide.none)
+                        : Border(
+                            top: after ? BorderSide.none : line,
+                            bottom: after ? line : BorderSide.none)),
+                child: widget.child),
+          );
+          return Draggable<String>(
+            data: widget.node.id,
+            maxSimultaneousDrags: widget.draggable ? 1 : 0,
+            feedback: dragChip(
+                context,
+                widget.node.title,
+                widget.node.kind == NodeKind.page
+                    ? Icons.description_outlined
+                    : Icons.folder_outlined),
+            childWhenDragging: Opacity(opacity: .4, child: widget.child),
+            child: entry,
+          );
+        },
       );
-      return Draggable<String>(
-        data: widget.node.id,
-        maxSimultaneousDrags: widget.draggable ? 1 : 0,
-        feedback: dragChip(context, widget.node.title,
-            widget.node.kind == NodeKind.page ? Icons.description_outlined : Icons.folder_outlined),
-        childWhenDragging: Opacity(opacity: .4, child: widget.child),
-        child: entry,
-      );
-    },
-  );
 }
 
 /// The notebook bar: shows the current notebook and opens the notebook manager.
@@ -1324,15 +1277,19 @@ class _SectionHeaderState extends State<_SectionHeader> {
           canIndent: false, position: _downPos),
       child: Container(
         decoration: pageTarget
-            ? BoxDecoration(
-                border: Border.all(color: scheme.primary, width: 1.5),
-                borderRadius: BorderRadius.circular(6),
-                color: scheme.primary.withValues(alpha: .06))
+            ? BoxDecoration(color: scheme.primary.withValues(alpha: .06))
             : active
                 ? BoxDecoration(
                     color: scheme.primary.withValues(alpha: .09),
                     borderRadius: BorderRadius.circular(6))
                 : null,
+        // Paint the drop frame over the row. A border in [decoration] takes
+        // layout space and made the “move here” row jump under the pointer.
+        foregroundDecoration: pageTarget
+            ? BoxDecoration(
+                border: Border.all(color: scheme.primary, width: 1.5),
+                borderRadius: BorderRadius.circular(6))
+            : null,
         padding: const EdgeInsets.fromLTRB(6, 7, 6, 7),
         child: Row(
           children: [
@@ -1783,16 +1740,23 @@ class _PageTileState extends State<_PageTile> {
         final active = cand.isNotEmpty;
         final tile =
             _tile(context, subpageTarget: active && _zone == _DropZone.into);
-        if (active && (_zone == _DropZone.before || _zone == _DropZone.after)) {
-          // An insertion line, the universal "it will land here" signal.
-          final line = Container(
-            height: 2,
-            color: Theme.of(context).colorScheme.primary,
-          );
-          return Column(mainAxisSize: MainAxisSize.min, children: [
-            if (_zone == _DropZone.before) line,
+        if (active && _zone == _DropZone.before) {
+          // Every between-page drop is represented by the top edge of its
+          // target page. This gives the user one stable insertion line rather
+          // than two competing top/bottom lines in the same visual gap.
+          return Stack(children: [
             tile,
-            if (_zone == _DropZone.after) line,
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              child: IgnorePointer(
+                child: Container(
+                  height: 2,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ),
           ]);
         }
         // Don't wrap in a Draggable while renaming — the text field needs the
@@ -1812,16 +1776,15 @@ class _PageTileState extends State<_PageTile> {
   /// Where in the tile a drag currently hovers.
   _DropZone _zone = _DropZone.none;
 
-  /// Edges reorder, middle nests. A quarter each end is enough to hit without
-  /// making nesting hard to reach.
+  /// The upper third is the one visual insertion target for the page. The
+  /// rest is the subpage target; after the final row, the free pane appends.
   _DropZone _dropZoneAt(Offset globalOffset) {
     final box = context.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) return _DropZone.into;
     final local = box.globalToLocal(globalOffset);
     final h = box.size.height;
     if (h <= 0) return _DropZone.into;
-    if (local.dy < h * 0.25) return _DropZone.before;
-    if (local.dy > h * 0.75) return _DropZone.after;
+    if (local.dy < h / 3) return _DropZone.before;
     return _DropZone.into;
   }
 
@@ -1861,11 +1824,15 @@ class _PageTileState extends State<_PageTile> {
         onLongPress: () => showNodeMenu(context, app, page,
             canIndent: true, position: _downPos),
         child: Container(
+          // Paint the border over the tile so the “make subpage” destination
+          // never nudges the label or icons down and right.
           decoration: subpageTarget
+              ? BoxDecoration(color: scheme.primary.withValues(alpha: .06))
+              : null,
+          foregroundDecoration: subpageTarget
               ? BoxDecoration(
                   border: Border.all(color: scheme.primary, width: 1.5),
-                  borderRadius: BorderRadius.circular(6),
-                  color: scheme.primary.withValues(alpha: .06))
+                  borderRadius: BorderRadius.circular(6))
               : null,
           padding: EdgeInsets.only(
               left: 8.0 + page.level * 15, right: 4, top: 6, bottom: 6),
@@ -1963,7 +1930,9 @@ PopupMenuItem<String> _nodeItem(String v, IconData icon, String label,
     child: Row(children: [
       Icon(icon, size: 16, color: color),
       const SizedBox(width: 10),
-      AppText(label, style: TextStyle(fontSize: 13, color: color)),
+      Flexible(
+        child: AppText(label, style: TextStyle(fontSize: 13, color: color)),
+      ),
     ]),
   );
 }
@@ -2275,25 +2244,6 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
   }
 }
 
-/* Removed unused saved-template command.
-Future<void> _promptSaveTemplate(BuildContext context, AppState app) async {
-  // Through [promptForText], which owns the field's controller in the dialog's
-  // own State. This used to build the field here and `controller.dispose()`
-  // straight after the await — the route is popped by then but its 150 ms exit
-  // transition has not finished, so the field was still mounted and still
-  // rebuilding against a dead controller. Same defect as the new-notebook
-  // prompt, which is what crashed the app.
-  final name = await promptForText(context,
-      title: 'Save as template', okLabel: 'Save', hintText: 'Template name');
-  if (name == null) return;
-  app.saveCurrentAsTemplate(name);
-  if (context.mounted) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text('Template "$name" saved')));
-  }
-}
-
-*/
 /// The colour swatches inside a section's context menu.
 ///
 /// Lives in a disabled `PopupMenuItem` so the row itself isn't a menu action —
@@ -2363,35 +2313,6 @@ String _examMenuLabel(
   return 'Exam $when · ${formatCountdown(daysBetween(now, exam))}…';
 }
 
-/// Lay a saved template over this page.
-///
-/// Offered here AND on the Insert ribbon. This menu is where the app already
-/// talks about templates, and where its own "no templates yet" message sends
-/// people; the ribbon is where a student who has used the app for a term
-/// looks. One command, two entrances, which is why this is public.
-/* Removed unused saved-template command.
-Future<void> promptApplyTemplate(BuildContext context, AppState app) async {
-  final names = app.templateNames();
-  if (names.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: AppText('No templates yet — "Save as template…" first.')));
-    return;
-  }
-  final choice = await showOnoteDialog<String>(
-    context: context,
-    builder: (ctx) => SimpleDialog(
-      title: const AppText('Apply template'),
-      children: [
-        for (final n in names)
-          SimpleDialogOption(
-              onPressed: () => Navigator.pop(ctx, n), child: Text(n)),
-      ],
-    ),
-  );
-  if (choice != null) app.applyTemplate(choice);
-}
-
-*/
 /// Do something that needs [pageId] open, then go back to where you were.
 ///
 /// `selectPage` also clears the undo stack, so the cost of the detour is not

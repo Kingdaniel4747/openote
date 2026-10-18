@@ -22,7 +22,6 @@ import '../l10n/app_strings.dart';
 
 import '../math/active_math.dart';
 import '../math/evaluate.dart';
-import '../model/page_stats.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/tokens.dart';
@@ -156,10 +155,7 @@ class EquationFace extends StatelessWidget {
 
 /// The page's own controls, when nothing else is being written.
 ///
-/// These are the page half of what used to be the View tab. They belong here
-/// because "when nothing is selected, the thing you are touching is the page"
-/// — and once they live here, the View tab holds nothing but four preferences
-/// that Settings already carries, so the tab goes.
+/// These controls sit in the View tab because they change the current page.
 class PageFace extends StatelessWidget {
   const PageFace({super.key, required this.app});
 
@@ -179,23 +175,6 @@ class PageFace extends StatelessWidget {
         );
     final paged = app.pageProps.isPaged;
     return FixedToolbar(children: [
-      TextButton.icon(
-        key: const ValueKey('section-tabs-layout'),
-        style: TextButton.styleFrom(
-          foregroundColor:
-              app.sectionTabsAbovePage ? scheme.primary : surfaces.textPrimary,
-        ),
-        icon: Icon(
-          app.sectionTabsAbovePage
-              ? Icons.view_sidebar_outlined
-              : Icons.vertical_split_outlined,
-          size: 18,
-        ),
-        label: Text(app.sectionTabsAbovePage
-            ? 'Sections above page'
-            : 'Sections on left'),
-        onPressed: () => app.setSectionTabsAbovePage(!app.sectionTabsAbovePage),
-      ),
       TextButton.icon(
         key: const ValueKey('split-screen'),
         style: TextButton.styleFrom(
@@ -222,28 +201,81 @@ class PageFace extends StatelessWidget {
           label: Text(app.pageProps.pdfOnly ? 'PDF slides' : 'PDF editor'),
           onPressed: () => app.setPdfEditorView(!app.pageProps.pdfOnly),
         ),
+      PopupMenuButton<bool>(
+        tooltip: tr(context, 'Arrange selected images and PDFs'),
+        enabled: app.blocks
+                .where((b) =>
+                    app.selectedIds.contains(b.id) && b.type == BlockType.image)
+                .length >
+            1,
+        onSelected: (horizontal) =>
+            app.arrangeSelectedMedia(horizontal: horizontal),
+        itemBuilder: (_) => const [
+          PopupMenuItem(
+            value: false,
+            child: Row(children: [
+              Icon(Icons.view_agenda_outlined, size: 18),
+              SizedBox(width: 9),
+              AppText('Arrange vertically'),
+            ]),
+          ),
+          PopupMenuItem(
+            value: true,
+            child: Row(children: [
+              Icon(Icons.view_week_outlined, size: 18),
+              SizedBox(width: 9),
+              AppText('Arrange horizontally'),
+            ]),
+          ),
+        ],
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.view_module_outlined, size: 18),
+            SizedBox(width: 5),
+            AppText('Arrange'),
+          ]),
+        ),
+      ),
       const SizedBox(width: 2),
-      bg('blank', Icons.crop_din, 'blank'),
-      bg('grid', Icons.grid_4x4, 'grid'),
-      bg('dotted', Icons.apps, 'dotted'),
-      bg('ruled', Icons.notes, 'ruled'),
+      Container(
+        padding: const EdgeInsets.only(left: 7, right: 2),
+        decoration: BoxDecoration(
+          color: scheme.primary.withValues(alpha: .055),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: scheme.outline.withValues(alpha: .22)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          const AppText('Background', style: TextStyle(fontSize: 11)),
+          bg('blank', Icons.crop_din, 'blank'),
+          bg('grid', Icons.grid_4x4, 'grid'),
+          bg('dotted', Icons.apps, 'dotted'),
+          bg('ruled', Icons.notes, 'ruled'),
+        ]),
+      ),
       const _Sep(),
       // Canvas or paper. Per page, not per notebook: one notebook holds the
       // lecture you scribble on and the essay you hand in, and making you
       // choose once for both is why people keep two apps.
       if (!app.pageProps.pdfOnly)
-        IconButton(
-          icon: Icon(paged ? Icons.description : Icons.dashboard_customize,
-              size: OnoteIcon.md),
-          tooltip: paged
+        Tooltip(
+          message: paged
               ? 'Page mode: ${app.pageProps.paper.name}'
                   '${app.pageProps.landscape ? ' landscape' : ''} '
                   '— click for canvas'
               : 'Canvas mode: boundless — click for pages',
-          isSelected: paged,
-          visualDensity: VisualDensity.compact,
-          color: paged ? scheme.primary : null,
-          onPressed: () => app.setPageLayout(paged ? 'canvas' : 'paged'),
+          child: TextButton.icon(
+            icon: Icon(paged ? Icons.description : Icons.dashboard_customize,
+                size: OnoteIcon.md),
+            label: AppText(paged ? 'Pages' : 'Canvas'),
+            style: TextButton.styleFrom(
+              foregroundColor: paged ? scheme.primary : null,
+              backgroundColor:
+                  paged ? scheme.primary.withValues(alpha: .14) : null,
+              visualDensity: VisualDensity.compact,
+            ),
+            onPressed: () => app.setPageLayout(paged ? 'canvas' : 'paged'),
+          ),
         ),
       // At the END of its group, so its arrival displaces nothing.
       if (paged)
@@ -331,126 +363,8 @@ class PageFace extends StatelessWidget {
         visualDensity: VisualDensity.compact,
         onPressed: () => app.canvas.fitTo(app.contentBounds().inflate(24)),
       ),
-      PopupMenuButton<bool>(
-        tooltip: tr(context, 'Arrange selected images and PDFs'),
-        enabled: app.blocks.where((b) => app.selectedIds.contains(b.id) &&
-            b.type == BlockType.image).length > 1,
-        icon: const Icon(Icons.view_module_outlined, size: OnoteIcon.md),
-        onSelected: (horizontal) => app.arrangeSelectedMedia(horizontal: horizontal),
-        itemBuilder: (_) => const [
-          PopupMenuItem(value: false, child: AppText('Arrange vertically')),
-          PopupMenuItem(value: true, child: AppText('Arrange horizontally')),
-        ],
-      ),
-      const _Sep(),
-      _WordCount(app: app),
       const SizedBox(width: 4),
     ]);
-  }
-}
-
-/// **How much have I written?**
-///
-/// PLANNING: *"Word counter, char count, estimated reading time."* Every
-/// essay has a word limit on it, and until now the only way to find out was
-/// to export the page and paste it somewhere else.
-///
-/// The count is on the row, because that is where things about the PAGE live
-/// and a word limit is a thing about the page. The other two are one click
-/// behind it: a bare number is what a student checks twenty times an hour,
-/// and characters and reading time are not.
-class _WordCount extends StatefulWidget {
-  const _WordCount({required this.app});
-
-  final AppState app;
-
-  @override
-  State<_WordCount> createState() => _WordCountState();
-}
-
-class _WordCountState extends State<_WordCount> {
-  /// **Stateful only for this.** Counting the whole page from scratch is 68 ms
-  /// on a page of eight hundred blocks — four dropped frames — and this row
-  /// rebuilds on every keystroke. The cache re-counts only the block that
-  /// changed; the rest are string comparisons. Measured after: 0.2 ms.
-  final _cache = PageStatsCache();
-
-  @override
-  Widget build(BuildContext context) {
-    final app = widget.app;
-    final s = context.surfaces;
-    final stats = _cache.of(app.blocks);
-    return Tooltip(
-      message: 'Words on this page — click for characters and reading time',
-      child: PopupMenuButton<void>(
-        position: PopupMenuPosition.under,
-        tooltip: '',
-        // Wide enough for the longest label and the longest number a page
-        // will realistically carry, so the four rows line up as a column of
-        // figures rather than four ragged pairs.
-        constraints: const BoxConstraints(minWidth: 224, maxWidth: 260),
-        itemBuilder: (_) => [
-          PopupMenuItem<void>(
-            enabled: false,
-            height: 34,
-            child: _row('Words', _n(stats.words)),
-          ),
-          PopupMenuItem<void>(
-            enabled: false,
-            height: 34,
-            child: _row('Characters', _n(stats.characters)),
-          ),
-          PopupMenuItem<void>(
-            enabled: false,
-            height: 34,
-            child: _row('Without spaces', _n(stats.charactersNoSpaces)),
-          ),
-          const PopupMenuDivider(),
-          PopupMenuItem<void>(
-            enabled: false,
-            height: 34,
-            // Rounded UP and never zero: "0 min" reads as a failure, and
-            // anything written at all takes a moment to read.
-            child: _row('Reading time',
-                stats.words == 0 ? '—' : '${stats.readingMinutes} min'),
-          ),
-        ],
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          child: Text(
-            // Singular when it is one, because "1 words" is the sort of thing
-            // that makes a student trust nothing else the app tells them.
-            '${_n(stats.words)} ${stats.words == 1 ? 'word' : 'words'}',
-            style: OnoteType.small.copyWith(color: s.textSecondary),
-          ),
-        ),
-      ),
-    );
-  }
-
-  static Widget _row(String label, String value) => Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Flexible(
-            child: Text(label,
-                style: OnoteType.small, overflow: TextOverflow.ellipsis),
-          ),
-          const SizedBox(width: 16),
-          Text(value,
-              style: OnoteType.small.copyWith(fontWeight: FontWeight.w600)),
-        ],
-      );
-
-  /// Thousands separated, because 12480 and 1248 are one glance apart and a
-  /// word limit is exactly the number you are squinting at.
-  static String _n(int v) {
-    final digits = v.toString();
-    final out = StringBuffer();
-    for (var i = 0; i < digits.length; i++) {
-      if (i > 0 && (digits.length - i) % 3 == 0) out.write(',');
-      out.write(digits[i]);
-    }
-    return out.toString();
   }
 }
 

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'tokens.dart';
 
-/// Style-guide tokens (docs/05-style-guide.md §3). Single source of truth for color.
+/// Style-guide tokens (see ARCHITECTURE.md). Single source of truth for color.
 /// Fallback families searched, in order, for glyphs the chosen font lacks.
 ///
 /// This is what makes imported OneNote notes legible. A maths note is full of

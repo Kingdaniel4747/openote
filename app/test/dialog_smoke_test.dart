@@ -32,6 +32,7 @@ void main() {
     late Repository repo;
     final tmp = Directory.systemTemp.createTempSync('onote_dialogs_');
     addTearDown(() {
+      app.cancelPendingSave();
       repo.dispose();
       try {
         tmp.deleteSync(recursive: true);
@@ -95,9 +96,71 @@ void main() {
       expect(find.text('Smoke'), findsWidgets,
           reason: 'the notebook is listed');
       // Every action it offers must be reachable, not clipped off the edge.
-      for (final label in ['New', 'Import']) {
+      for (final label in ['New', 'Import', 'Backup']) {
         expect(find.text(label), findsOneWidget, reason: '"$label" is missing');
       }
+      expect(find.byType(TextField), findsOneWidget);
+      expect(find.text('Search'), findsNothing);
+    });
+
+    testWidgets('notebook search filters, clears and keeps backups complete ($label)',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final app = await newApp(tester);
+      await tester.runAsync(() async {
+        await app.createNotebook('Mathematik');
+        await app.createNotebook('Biologie');
+      });
+      await openDialog(tester, app, showNotebookManager, window: size);
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.byType(TextField));
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(find.byType(TextField)).focusNode!.hasFocus,
+          isTrue);
+      expect(tester.takeException(), isNull);
+      await tester.enterText(find.byType(TextField), '  MATHE  ');
+      await tester.pumpAndSettle();
+      expect(find.text('Mathematik'), findsOneWidget);
+      expect(find.text('Biologie'), findsNothing);
+      expect(find.text('Smoke'), findsNothing);
+
+      // Filtering the cards must not restrict the backup menu's notebooks.
+      await tester.tap(find.byTooltip('Create a portable ZIP backup'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: 'backup menu must fit');
+      expect(find.text('Biologie'), findsOneWidget);
+      expect(find.text('Smoke'), findsOneWidget);
+      await tester.tapAt(const Offset(2, 2));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'no such notebook');
+      await tester.pumpAndSettle();
+      expect(find.text('No notebooks found.'), findsOneWidget);
+      await tester.tap(find.byTooltip('Clear search'));
+      await tester.pumpAndSettle();
+      expect(find.text('Mathematik'), findsOneWidget);
+      expect(find.text('Biologie'), findsOneWidget);
+      expect(find.text('Smoke'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), 'Biologie');
+      // Reopening starts with an empty, permanently visible search field.
+      await tester.tapAt(const Offset(2, 2));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      await tester.tap(find.text('open'));
+      await tester.pump(const Duration(milliseconds: 450));
+      await tester.pumpAndSettle();
+      expect(find.byType(TextField), findsOneWidget);
+      expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, '');
+      expect(find.text('Mathematik'), findsOneWidget);
+      expect(find.text('Biologie'), findsOneWidget);
+      // Closing with the field focused must dispose its controller safely.
+      await tester.tap(find.byType(TextField));
+      await tester.tapAt(const Offset(2, 2));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(app.notebooks, hasLength(3));
+      expect(tester.takeException(), isNull);
     });
   }
 

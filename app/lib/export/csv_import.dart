@@ -1,4 +1,4 @@
-/// CSV → a table block. "Import data (csv)" from PLANNING.md — drop a file
+/// CSV → a table block. "Import data (csv)" (see PRODUCT.md) — drop a file
 /// exported from Excel, a bank, a lab instrument, onto the page and get the
 /// same table the table button makes, editable like any other.
 ///

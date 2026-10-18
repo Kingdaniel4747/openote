@@ -146,6 +146,15 @@ void main() {
         tmp.deleteSync(recursive: true);
       } catch (_) {}
     });
+    test('last selected writing tool is restored at startup', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      app.setTool(Tool.ballpoint);
+      final restored = AppState(repo);
+      await restored.init();
+      expect(restored.tool, Tool.ballpoint);
+      expect(restored.preferredInkTool, Tool.ballpoint);
+      restored.dispose();
+    });
     testWidgets('writing toolbar starts centred, docks vertically and exits',
         (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
@@ -178,7 +187,7 @@ void main() {
       expect(t.takeException(), isNull);
 
       await t.tap(find.byTooltip('Pen  (P)'));
-      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
       expect(app.tool, Tool.pen);
       await t.tap(find.byTooltip('Leave writing mode').last);
       await t.pump();
@@ -261,8 +270,12 @@ void main() {
       app.setTool(Tool.pen);
       app.setInkSize(7);
       app.setTool(Tool.ballpoint);
+      expect(app.preferredInkTool, Tool.ballpoint);
+      expect(repo.getSetting('preferredInkTool'), Tool.ballpoint.name);
       app.setInkSize(4);
       app.setTool(Tool.highlighter);
+      expect(app.preferredInkTool, Tool.ballpoint,
+          reason: 'a highlighter must not become the automatic pen tool');
       app.setInkSize(26);
       app.setEraserMode(EraserMode.stroke);
       expect(app.inkSizeFor(Tool.pen), 7);
@@ -408,6 +421,7 @@ void main() {
         (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       app.setTool(Tool.pen);
+      await t.pump(const Duration(milliseconds: 500));
       app.setRulerVisible(true);
       await t.pumpWidget(MaterialApp(
           home: Scaffold(
@@ -420,8 +434,8 @@ void main() {
       final scale = app.canvas.scale;
       final body = find.byKey(const ValueKey('ruler-body'));
       final rulerBefore = t.getCenter(body);
-      final g = await t.startGesture(const Offset(400, 210),
-          kind: PointerDeviceKind.touch);
+      final g =
+          await t.startGesture(rulerBefore, kind: PointerDeviceKind.touch);
       for (var i = 0; i < 6; i++) {
         await g.moveBy(const Offset(-12, 8));
         await t.pump();

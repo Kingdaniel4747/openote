@@ -261,9 +261,9 @@ void main() {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (app, b) = await openEditing(tester, r'so $x^2$ then');
 
-    final end = r'so $x^2$'.length;
+    const end = r'so $x^2$'.length;
     app.activeEditor!.controller.selection =
-        TextSelection.collapsed(offset: end);
+        const TextSelection.collapsed(offset: end);
     await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
     await settle(tester);
 
@@ -282,7 +282,7 @@ void main() {
     final (app, _) = await openEditing(tester, r'so $x$ then');
 
     app.activeEditor!.controller.selection =
-        TextSelection.collapsed(offset: r'so $x$'.length);
+        const TextSelection.collapsed(offset: r'so $x$'.length);
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
     await settle(tester);
 
@@ -297,7 +297,7 @@ void main() {
     final (app, _) = await openEditing(tester, r'so $x$ then');
 
     app.activeEditor!.controller.selection =
-        TextSelection.collapsed(offset: r'so $x$'.length);
+        const TextSelection.collapsed(offset: r'so $x$'.length);
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft); // step in, at end
     await settle(tester);
     // x is one atom: one Left reaches the equation's start, one more leaves.

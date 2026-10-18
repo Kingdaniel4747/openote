@@ -1,4 +1,4 @@
-/// The .onote container — File Format Spec (docs/specs/10-file-format-spec.md).
+/// The .onote container — see ARCHITECTURE.md.
 ///
 /// `page_mirror` is the authoritative page store. There is one durable copy of
 /// a page in its local `.onote` container.

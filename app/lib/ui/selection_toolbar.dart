@@ -55,7 +55,10 @@ class SelectionToolbar extends StatelessWidget {
     final selected = app.blocks.where((b) => app.selectedIds.contains(b.id) &&
         (b.type == BlockType.image || b.content['kind'] == 'drawio')).toList();
     final targets = app.selectedIds.contains(block.id) ? selected : [block];
-    _saveQueue = _saveQueue.then((_) => _saveOriginals(context, app, targets));
+    _saveQueue = _saveQueue.then((_) async {
+      if (!context.mounted) return;
+      await _saveOriginals(context, app, targets);
+    });
     await _saveQueue;
   }
 

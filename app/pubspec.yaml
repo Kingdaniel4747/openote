@@ -29,14 +29,14 @@ dependencies:
   # xlsx import: an .xlsx is a zip of XML, and both halves were ALREADY in
   # the dependency tree transitively — promoting them adds no new third-party
   # code to the build, which is why the reader is hand-rolled rather than a
-  # spreadsheet package. Licences audited per LICENSING.md.
+  # spreadsheet package. Licences audited per the root README.md (licenses).
   archive: ^4.0.9
   xml: ^6.6.1
 
   # PDF export (pure Dart)
   pdf: ^3.10.0
   # Printing (P13) — drives the OS print dialog with the same vector page the
-  # exporter builds. Apache-2.0, same author as `pdf`; audited per LICENSING.md.
+  # exporter builds. Apache-2.0, same author as `pdf`; audited per the root README.md (licenses).
   printing: ^5.13.0
   # FFI to the Rust core (onote-core) — optional at runtime; the app falls
   # back to the pure-Dart engine when the native library isn't present.
@@ -52,6 +52,8 @@ dependencies:
   qr_flutter: ^4.1.0
 
 dev_dependencies:
+  # Direct access to the native range cache in the compatibility regression test.
+  pdfrx_engine: 0.3.9
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
@@ -60,15 +62,19 @@ dev_dependencies:
 
 # pub.dev's current Windows video-library package (1.0.11) still downloads a
 # retired 2023 MPV archive, so release builds can fail its own checksum check.
-# Use the upstream's unreleased 1.0.12 Windows package until that fix reaches
-# pub.dev. The immutable commit keeps every build reproducible; it uses the
-# maintained 2024 archive and its matching checksum.
+# Vendor only upstream's 1.0.12 Windows package, retaining its 2024 archive
+# and checksum, with a small CMake compatibility fix for builds without 7-Zip.
+# Provenance and the exact patch are in third_party/media_kit_libs_windows_video/OPENOTE.md.
 dependency_overrides:
+  # Resolve hidden Windows path components (such as AppData) reliably.
+  super_native_extensions:
+    path: third_party/super_native_extensions
+  # Backport the non-null cache binding without changing PDFium or PDF APIs.
+  # See third_party/pdfrx_engine/OPENOTE.md.
+  pdfrx_engine:
+    path: third_party/pdfrx_engine
   media_kit_libs_windows_video:
-    git:
-      url: https://github.com/media-kit/media-kit.git
-      ref: c533e446755f51cf53c7e57aea873f2aa5355f81
-      path: libs/windows/media_kit_libs_windows_video
+    path: third_party/media_kit_libs_windows_video
 
 # Run once after changing the icon source:
 #   dart run flutter_launcher_icons
@@ -90,7 +96,7 @@ flutter:
   # Bundled type (style guide §4.1): the app previously rendered in each OS's
   # system font, so no two platforms looked alike. Inter is the UI + note face,
   # JetBrains Mono the code face; both OFL-1.1 (texts beside the assets, rows
-  # in LICENSING.md). The onoteFontFallback chain stays BEHIND these — it is
+  # in the root README.md (licenses)). The onoteFontFallback chain stays BEHIND these — it is
   # what resolves math/symbol glyphs the primary faces lack.
   fonts:
     - family: Inter

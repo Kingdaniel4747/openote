@@ -148,7 +148,7 @@ void main() {
     });
 
     test(r'typing \gcd then a space gives the same thing', () {
-      final e = typed(bs + 'gcd ');
+      final e = typed('${bs}gcd ');
       expect(e.latex, r'\mathrm{gcd}\left( ,\right) ');
     });
 

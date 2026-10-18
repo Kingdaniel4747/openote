@@ -16,10 +16,11 @@ void main() {
     messenger.setMockMethodCallHandler(WritingServices.channel, (call) async {
       calls.add(call);
       if (call.method == 'start') return 7;
-      if (call.method == 'poll')
+      if (call.method == 'poll') {
         return [
           {'start': 3, 'length': 4}
         ];
+      }
       return null;
     });
     final errors =
@@ -47,8 +48,9 @@ void main() {
     messenger.setMockMethodCallHandler(WritingServices.channel, (call) async {
       calls.add(call.method);
       if (call.method == 'start') return 9;
-      if (call.method == 'poll')
+      if (call.method == 'poll') {
         return {'error': 'handwriting_language_missing'};
+      }
       return null;
     });
     await expectLater(

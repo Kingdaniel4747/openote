@@ -1,4 +1,4 @@
-/// Update through the app (PLANNING.md, shipped v0.7.0).
+/// Update through the app (see README.md).
 ///
 /// The shape: a silent check against GitHub's latest-release API on every
 /// launch; when something newer exists, a button appears in the command

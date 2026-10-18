@@ -120,7 +120,7 @@ void main() {
     // boxes. Same groups, same heights, same accumulation — so the ONLY
     // acceptable difference is the awaits. A paced restack that drifted would
     // misplace imported content depending on which path measured it.
-    final make = () => <dynamic>[
+    List<dynamic> make() => <dynamic>[
           text(
               1,
               100.0,

@@ -72,7 +72,7 @@ void main() {
     return (repo, tmp, app, section);
   }
 
-  group('deck counts are cached', () {
+  group('tag counts are cached', () {
     test('repeated calls do not re-read the notebook', () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final (repo, tmp, app, _) =
@@ -85,13 +85,13 @@ void main() {
       });
 
       // First call populates the cache.
-      final first = app.study.deckCounts();
-      expect(first.$2, greaterThan(0), reason: 'the fixture has cards');
+      final first = app.allTags();
+      expect(first.length, greaterThan(0), reason: 'the fixture has cards');
 
       // Simulate what the command bar does: many rebuilds with no edit.
       final before = Repository.debugSharedPageReads;
       for (var i = 0; i < 200; i++) {
-        app.study.deckCounts();
+        app.allTags();
       }
       final reads = Repository.debugSharedPageReads - before;
 
@@ -113,7 +113,7 @@ void main() {
         } catch (_) {}
       });
 
-      final beforeCount = app.study.deckCounts().$2;
+      final beforeCount = app.allTags().length;
       // Tag another line on the open page — docRevision bumps, so the deck
       // must be rebuilt. A cache that never invalidates is worse than none.
       final b = app.blocks.first;
@@ -130,7 +130,7 @@ void main() {
       // and the cache guard would be worthless. Here the same counter must
       // MOVE, on the same call, for the same fixture.
       final before = Repository.debugSharedPageReads;
-      expect(app.study.deckCounts().$2, greaterThan(beforeCount),
+      expect(app.allTags().length, greaterThan(beforeCount),
           reason: 'a new tagged line must produce a new card');
       expect(Repository.debugSharedPageReads, greaterThan(before),
           reason: 'an invalidated deck must actually re-read the notebook — '

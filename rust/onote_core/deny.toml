@@ -6,7 +6,7 @@
 # quiet — nothing breaks, the guarantee just stops being true. So it's checked
 # mechanically rather than remembered.
 #
-# See ../../LICENSING.md and ../../docs/adr/ADR-0005-licensing.md.
+# See ../../README.md (licenses).
 
 [licenses]
 # Every licence here is permissive. Adding to this list is a licensing decision,

@@ -363,8 +363,7 @@ void main() {
       // room than there was, and the next thing that wants a place on it has
       // to take something else off.
       expect(w, lessThan(1240),
-          reason: 'measured ' + w.toString() + ' px; the row has to fit the '
-              'smallest window the app opens, which is 1280');
+          reason: 'measured $w px; the row has to fit the smallest window the app opens, which is 1280');
     });
 
     testWidgets('the row carries no answer readout at all any more',
@@ -387,9 +386,9 @@ void main() {
         // sentence with an instruction buried in the middle of it.
         final tip = item.typeIt == null
             ? item.name
-            : item.name + ' (' + item.typeIt! + ')';
+            : '${item.name} (${item.typeIt!})';
         expect(find.byTooltip(tip), findsOneWidget,
-            reason: id + ' is missing from the quick shapes');
+            reason: '$id is missing from the quick shapes');
       }
     });
 
@@ -401,8 +400,7 @@ void main() {
         widths.add(tester.getSize(find.byWidget(chip.widget)).width);
       }
       expect(widths.length, 1,
-          reason: 'ragged widths were half of what read as chaotic: ' +
-              widths.toString());
+          reason: 'ragged widths were half of what read as chaotic: $widths');
     });
 
     testWidgets('a door opens a GRID and inserts on tap', (tester) async {
@@ -420,8 +418,7 @@ void main() {
       }
       final chips = find.byType(MathChip).evaluate().length;
       expect(rows.length, lessThan(chips),
-          reason: chips.toString() + ' chips on ' + rows.length.toString() +
-              ' rows is a column, not a grid');
+          reason: '$chips chips on ${rows.length} rows is a column, not a grid');
 
       // `\rt` is the advertised route now; `\root` still works but is not
       // what the tooltip teaches.
@@ -439,9 +436,9 @@ void main() {
       await pumpBar(tester, onInsert: (_) {});
       for (final door in kMathDoors) {
         expect(find.text(door.label), findsOneWidget,
-            reason: door.label + ' is missing from the row');
+            reason: '${door.label} is missing from the row');
         expect(mathDoorItems(door), isNotEmpty,
-            reason: door.label + ' opens on nothing');
+            reason: '${door.label} opens on nothing');
       }
     });
 
@@ -493,7 +490,7 @@ void main() {
           reason: 'one tap has to land on the second door, not just dismiss '
               'the first');
       // And the Sets panel really is the one showing.
-      expect(find.byTooltip('is in (' + bs + 'in)'), findsOneWidget);
+      expect(find.byTooltip('is in (${bs}in)'), findsOneWidget);
     });
 
     testWidgets('clicking the open door again closes it', (tester) async {
