@@ -38,7 +38,11 @@ Nur Erkenntnisse behalten, die künftige Fehler verhindern. Keine Sitzungsprotok
 - Den lokalen `cab`-Patch für effizientes Entpacken von `.onepkg` erhalten;
   Details stehen direkt in `rust/onote_core/vendor/cab/OPENOTE-PATCH.md`.
 - Speicherungen vor dem Schließen abwarten; fehlgeschlagene Saves nicht als
-  Erfolg anzeigen. Bei Formatänderungen alte Dateien erhalten.
+  Erfolg anzeigen. `exit(0)` umgeht den Widget-Abbau: nach erfolgreichen Saves
+  App/Repository ausdrücklich schließen, damit SQLite den WAL-Checkpoint
+  ausführt. Autosave: 1 s Schreibpause, spätestens nach 5 s Änderungen;
+  gleichzeitig angeforderte Speicherungen nacheinander ausführen.
+  Bei Formatänderungen alte Dateien erhalten.
 - SQLite-DLLs in Tests aus einer Kopie laden, damit Windows den nächsten
   App-Build nicht durch gesperrte Runner-Dateien blockiert.
 - Lange Menütexte innerhalb der Zeile begrenzen/umbrechen lassen.

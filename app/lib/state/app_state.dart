@@ -3292,13 +3292,17 @@ class AppState extends ChangeNotifier
 
   // Save & undo
   Timer? _saveDebounce;
+  Timer? _saveDeadline;
+  Future<void>? _saveInFlight;
   // A save can still be awaiting disk I/O when a widget test tears its app
   // down. The generation prevents that old save from arming a fresh workspace
   // debounce after the test has cancelled every timer it knew about.
   int _saveCancellationGeneration = 0;
   bool _dirty = false;
   int _dirtyRevision = 0;
-  bool get hasUnsavedChanges => _dirty;
+  bool get hasUnsavedChanges =>
+      _dirty ||
+      _editors.any((editor) => !editor._disposed && editor.hasUnsavedChanges);
   final List<String> _undo = [];
   final List<String> _redo = [];
   bool get canUndo => _undo.isNotEmpty;
@@ -5754,6 +5758,9 @@ class AppState extends ChangeNotifier
     study.noteContentChanged();
     _saveDebounce?.cancel();
     _saveDebounce = Timer(const Duration(seconds: 1), flushSave);
+    // Continuous writing keeps postponing the idle save, but must not defer
+    // persistence indefinitely. Each successful save starts a fresh window.
+    _saveDeadline ??= Timer(const Duration(seconds: 5), flushSave);
     notifyListeners();
   }
 
@@ -5781,11 +5788,33 @@ class AppState extends ChangeNotifier
       );
 
   Future<void> flushSave({bool closing = false}) async {
+    // The idle timer, maximum-delay timer and explicit saves share one writer.
+    // A slow save must finish before a newer revision is written over it.
+    while (_saveInFlight != null) {
+      await _saveInFlight;
+    }
+    if (_disposed) return;
+    final saving = _flushSave(closing: closing);
+    _saveInFlight = saving;
+    try {
+      await saving;
+    } finally {
+      _saveInFlight = null;
+    }
+  }
+
+  void _cancelSaveTimers() {
+    _saveDebounce?.cancel();
+    _saveDeadline?.cancel();
+    _saveDeadline = null;
+  }
+
+  Future<void> _flushSave({required bool closing}) async {
     for (final editor in _editors.toList()) {
       if (!editor._disposed) await editor.flushSave(closing: closing);
     }
     final saveCancellationGeneration = _saveCancellationGeneration;
-    _saveDebounce?.cancel();
+    _cancelSaveTimers();
     if (!_dirty || pageId == null || notebookId == null) return;
 
     final id = pageId!;
@@ -5815,7 +5844,7 @@ class AppState extends ChangeNotifier
   /// Awaited by the app's [AppLifecycleListener]; without it, up to one debounce
   /// interval of edits was silently lost on every close.
   Future<void> shutdown() async {
-    _saveDebounce?.cancel();
+    _cancelSaveTimers();
     final neededPageSave = _dirty;
     try {
       await flushSave(closing: true);
@@ -5844,7 +5873,7 @@ class AppState extends ChangeNotifier
   @visibleForTesting
   void cancelPendingSave() {
     _saveCancellationGeneration++;
-    _saveDebounce?.cancel();
+    _cancelSaveTimers();
     // And navigating (selectPage → _persistSession) arms the repository's
     // debounced workspace write, which is the same shape of pending timer.
     _repo.cancelPendingWorkspaceWrite();
@@ -5867,7 +5896,7 @@ class AppState extends ChangeNotifier
     // one is a leak that only shows up as a confusing failure in the next.
     _watchedEditor?.removeListener(_onEditorChanged);
     _watchedEditor = null;
-    _saveDebounce?.cancel();
+    _cancelSaveTimers();
     // The planner owns a Timer. A `late final` touched here is constructed
     // just to be torn down, which costs nothing; a live timer left behind
     // keeps the isolate awake, which does.

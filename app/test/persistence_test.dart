@@ -9,6 +9,7 @@
 //  * restoring a page from the bin left it orphaned under a still-deleted
 //    section;
 //  * `workspace.json` could be torn by concurrent writes.
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -30,6 +31,7 @@ class _FlakyEngine implements DocumentEngine {
   final Repository repo;
   bool fail = false;
   int saves = 0;
+  Future<void>? saveBarrier;
 
   @override
   String get label => 'Test engine';
@@ -41,10 +43,11 @@ class _FlakyEngine implements DocumentEngine {
       repo.readPage(nb, pageId);
 
   @override
-  Future<void> savePage(String nb, String pageId, List<Block> blocks,
-      PageProps props) async {
+  Future<void> savePage(
+      String nb, String pageId, List<Block> blocks, PageProps props) async {
     saves++;
     if (fail) throw const FileSystemException('disk full (simulated)');
+    await saveBarrier;
     repo.writePage(nb, pageId, blocks, props);
   }
 }
@@ -140,6 +143,157 @@ void main() {
   });
 
   group('save path', () {
+    testWidgets('continuous edits save at five seconds without an idle pause',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final fixture =
+          (await tester.runAsync(() => freshRepo('onote_continuous_save_')))!;
+      final (repo, tmp) = fixture;
+      final nb = (await tester.runAsync(() => repo.createNotebook('Writing')))!;
+      final engine = _FlakyEngine(repo);
+      final app = AppState(repo, documentEngine: engine)
+        ..notebookId = nb.id
+        ..nodes = repo.loadNodes(nb.id);
+      final pageId = app.nodes.firstWhere((n) => n.kind == NodeKind.page).id;
+      app.pageId = pageId;
+      addTearDown(() {
+        app.cancelPendingSave();
+        app.dispose();
+        tmp.deleteSync(recursive: true);
+      });
+      void edit(String text) {
+        app.blocks = [
+          Block(type: BlockType.text, x: 0, y: 0, content: {'text': text})
+        ];
+        app.markDirty();
+      }
+
+      edit('0');
+      for (var tick = 1; tick <= 20; tick++) {
+        await tester.pump(const Duration(milliseconds: 500));
+        // This test checks page persistence, not asynchronous registry I/O.
+        repo.cancelPendingWorkspaceWrite();
+        expect(engine.saves, tick ~/ 10);
+        if (tick % 10 == 0) {
+          expect(repo.readPage(nb.id, pageId).blocks.single.content['text'],
+              '${tick - 1}');
+        }
+        edit('$tick');
+      }
+      await tester.pump(const Duration(milliseconds: 999));
+      expect(engine.saves, 2);
+      await tester.pump(const Duration(milliseconds: 1));
+      repo.cancelPendingWorkspaceWrite();
+      expect(engine.saves, 3, reason: 'the one-second idle save remains');
+      expect(app.hasUnsavedChanges, false);
+      await tester.pump(const Duration(seconds: 5));
+      expect(engine.saves, 3, reason: 'the old deadline must be cancelled');
+    });
+
+    test('overlapping saves finish in revision order', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, tmp) = await freshRepo('onote_ordered_save_');
+      final nb = await repo.createNotebook('Ordered');
+      final barrier = Completer<void>();
+      final engine = _FlakyEngine(repo)..saveBarrier = barrier.future;
+      final app = AppState(repo, documentEngine: engine)
+        ..notebookId = nb.id
+        ..nodes = repo.loadNodes(nb.id);
+      app.pageId = app.nodes.firstWhere((n) => n.kind == NodeKind.page).id;
+      addTearDown(() {
+        app.cancelPendingSave();
+        app.dispose();
+        tmp.deleteSync(recursive: true);
+      });
+      app.blocks = [
+        Block(type: BlockType.text, x: 0, y: 0, content: {'text': 'first'})
+      ];
+      app.markDirty();
+      final first = app.flushSave();
+      app.blocks = [
+        Block(type: BlockType.text, x: 0, y: 0, content: {'text': 'latest'})
+      ];
+      app.markDirty();
+      final second = app.flushSave();
+      expect(engine.saves, 1);
+      barrier.complete();
+      await Future.wait([first, second]);
+      expect(engine.saves, 2);
+      expect(app.hasUnsavedChanges, false);
+      expect(repo.readPage(nb.id, app.pageId!).blocks.single.content['text'],
+          'latest');
+      await repo.flushWorkspace();
+    });
+
+    test('successful exit closes and checkpoints saved notebooks', () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, tmp) = await freshRepo('onote_close_checkpoint_');
+      final nb = await repo.createNotebook('Close');
+      final app = AppState(repo)..notebookId = nb.id;
+      app.nodes = repo.loadNodes(nb.id);
+      final pageId = app.nodes.firstWhere((n) => n.kind == NodeKind.page).id;
+      app.pageId = pageId;
+      app.blocks = [
+        Block(
+            type: BlockType.text,
+            x: 0,
+            y: 0,
+            content: {'text': 'saved before exit'})
+      ];
+      addTearDown(() {
+        app.dispose();
+        tmp.deleteSync(recursive: true);
+      });
+      app.markDirty();
+      await app.shutdown();
+      expect(app.hasUnsavedChanges, false);
+      final wal = File('${nb.file}-wal');
+      expect(wal.existsSync() && wal.lengthSync() > 0, true);
+      app.dispose(); // The successful lifecycle path calls this before exit(0).
+      expect(!wal.existsSync() || wal.lengthSync() == 0, true);
+      final db = sqlite3.open(nb.file);
+      try {
+        final row = db.select(
+            'SELECT json FROM page_mirror WHERE page_id=?', [pageId]).single;
+        expect(row['json'], contains('saved before exit'));
+        expect(db.select('PRAGMA integrity_check').single.values.single, 'ok');
+      } finally {
+        db.dispose();
+      }
+    });
+
+    test('failed shutdown keeps the notebook available for a save retry',
+        () async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (repo, tmp) = await freshRepo('onote_exit_retry_');
+      final nb = await repo.createNotebook('Retry');
+      final engine = _FlakyEngine(repo)..fail = true;
+      final app = AppState(repo, documentEngine: engine)..notebookId = nb.id;
+      app.nodes = repo.loadNodes(nb.id);
+      app.pageId = app.nodes.firstWhere((n) => n.kind == NodeKind.page).id;
+      app.blocks = [
+        Block(
+            type: BlockType.text,
+            x: 0,
+            y: 0,
+            content: {'text': 'keep these edits'})
+      ];
+      addTearDown(() {
+        app.cancelPendingSave();
+        app.dispose();
+        tmp.deleteSync(recursive: true);
+      });
+      app.markDirty();
+      await app.shutdown();
+      expect(app.hasUnsavedChanges, true);
+      expect(app.saveError, isNotNull);
+      engine.fail = false;
+      await app.shutdown();
+      expect(app.hasUnsavedChanges, false);
+      expect(repo.readPage(nb.id, app.pageId!).blocks.single.content['text'],
+          'keep these edits');
+    });
+
     test('a failed save stays dirty and reports the error', () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final (repo, tmp) = await freshRepo('onote_save_');
@@ -154,8 +308,7 @@ void main() {
       final engine = _FlakyEngine(repo);
       app.notebookId = nb.id;
       app.nodes = repo.loadNodes(nb.id);
-      app.pageId =
-          app.nodes.firstWhere((n) => n.kind == NodeKind.page).id;
+      app.pageId = app.nodes.firstWhere((n) => n.kind == NodeKind.page).id;
       app.blocks = [
         Block(type: BlockType.text, x: 0, y: 0, content: {'text': 'hi'})
       ];
@@ -248,30 +401,45 @@ void main() {
 
       // A: the explicit form. B: the bare form the PRD documents — this used to
       // produce no backlink because the indexer skipped links without an id.
-      repo.writePage(nb.id, srcA.id, [
-        Block(
-            type: BlockType.text,
-            x: 0,
-            y: 0,
-            content: {'text': 'see [[Target Page|${target.id}]]'})
-      ], PageProps());
-      repo.writePage(nb.id, srcB.id, [
-        Block(
-            type: BlockType.text,
-            x: 0,
-            y: 0,
-            content: {'text': 'also see [[Target Page]]'})
-      ], PageProps());
+      repo.writePage(
+          nb.id,
+          srcA.id,
+          [
+            Block(
+                type: BlockType.text,
+                x: 0,
+                y: 0,
+                content: {'text': 'see [[Target Page|${target.id}]]'})
+          ],
+          PageProps());
+      repo.writePage(
+          nb.id,
+          srcB.id,
+          [
+            Block(
+                type: BlockType.text,
+                x: 0,
+                y: 0,
+                content: {'text': 'also see [[Target Page]]'})
+          ],
+          PageProps());
 
       final back = repo.backlinkPageIds(nb.id, target.id).toSet();
       expect(back, containsAll([srcA.id, srcB.id]),
           reason: 'both link forms must produce a backlink');
 
       // Removing the link must remove the row (proves the DELETE-then-INSERT).
-      repo.writePage(nb.id, srcB.id, [
-        Block(
-            type: BlockType.text, x: 0, y: 0, content: {'text': 'no link now'})
-      ], PageProps());
+      repo.writePage(
+          nb.id,
+          srcB.id,
+          [
+            Block(
+                type: BlockType.text,
+                x: 0,
+                y: 0,
+                content: {'text': 'no link now'})
+          ],
+          PageProps());
       expect(repo.backlinkPageIds(nb.id, target.id).toSet(), {srcA.id});
     });
 
@@ -285,18 +453,21 @@ void main() {
         } catch (_) {}
       });
       final nb = await repo.createNotebook('Blobs');
-      final page = repo.loadNodes(nb.id).firstWhere((n) => n.kind == NodeKind.page);
+      final page =
+          repo.loadNodes(nb.id).firstWhere((n) => n.kind == NodeKind.page);
       final hash = repo.putBlob(
           nb.id, Uint8List.fromList(List.filled(16, 7)), 'image/png');
 
       // The exact dialect the OneNote importer writes for an in-flow image.
-      repo.writePage(nb.id, page.id, [
-        Block(
-            type: BlockType.text,
-            x: 0,
-            y: 0,
-            content: {'text': 'before\n![img](sha256:$hash =320x200)\nafter'})
-      ], PageProps());
+      repo.writePage(
+          nb.id,
+          page.id,
+          [
+            Block(type: BlockType.text, x: 0, y: 0, content: {
+              'text': 'before\n![img](sha256:$hash =320x200)\nafter'
+            })
+          ],
+          PageProps());
 
       // blob_refs has no public reader, so assert via the page mirror + blob.
       expect(repo.getBlob(nb.id, hash), isNotNull);
@@ -458,17 +629,16 @@ void main() {
     // this release would lock every existing user out of their own notebook
     // list on first launch.
     for (final (name, format) in <(String, Object?)>[
-      ('the shape every existing workspace already has', {
-        'major': 1,
-        'minor': 0
-      }),
+      (
+        'the shape every existing workspace already has',
+        {'major': 1, 'minor': 0}
+      ),
       ('a flat integer, as a future build may write it', 1),
       ('no format field at all', null),
     ]) {
       test('negative control — $name still saves', () async {
         if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-        final (tmp, ws, before) =
-            await registryWith('onote_ws_ok_', format);
+        final (tmp, ws, before) = await registryWith('onote_ws_ok_', format);
         final repo = await Repository.openAt(tmp);
         addTearDown(() {
           repo.dispose();
@@ -505,8 +675,7 @@ void main() {
 int _blobRefCount(String notebookFile, String pageId) {
   final db = sqlite3.open(notebookFile, mode: OpenMode.readOnly);
   try {
-    return db.select(
-        'SELECT COUNT(*) AS c FROM blob_refs WHERE page_id=?',
+    return db.select('SELECT COUNT(*) AS c FROM blob_refs WHERE page_id=?',
         [pageId]).first['c'] as int;
   } finally {
     db.dispose();

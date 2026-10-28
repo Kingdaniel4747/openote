@@ -153,6 +153,11 @@ class _OpenoteBootState extends State<OpenoteBoot> {
               return AppExitResponse.cancel;
             }
             await widget.instance?.dispose();
+            // exit(0) does not tear down the widget tree. Explicitly close the
+            // saved workspace so SQLite checkpoints its WAL and releases every
+            // notebook handle before the process terminates. Keep this after
+            // all awaited/fallible saves and their unsaved-change check.
+            app.dispose();
             // Flutter's normal exit waits for native PDF workers even after
             // their Dart futures were cancelled. At this point every save and
             // lock release above has completed, so terminate the process
