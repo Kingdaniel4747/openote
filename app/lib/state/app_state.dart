@@ -3603,6 +3603,47 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
+  /// Resolve stable IDs before changing the editor. Older reminders may lack
+  /// a notebook ID; accept those only when their target is unambiguous.
+  Future<String?> openPlannerTarget({
+    String? targetNotebookId,
+    String? targetPageId,
+    String? targetSectionId,
+  }) async {
+    final targetId = targetPageId ?? targetSectionId;
+    if (targetId == null) return null; // A standalone entry has no note.
+    final candidates = notebooks
+        .where((nb) => targetNotebookId == null || nb.id == targetNotebookId);
+    final matches = <String>[];
+    for (final nb in candidates) {
+      final tree = readNodesOf(nb.id);
+      final target = tree.where((n) => n.id == targetId).firstOrNull;
+      if (target == null ||
+          target.kind !=
+              (targetPageId == null ? NodeKind.section : NodeKind.page)) {
+        continue;
+      }
+      if (targetPageId != null &&
+          !tree.any(
+              (n) => n.id == target.parentId && n.kind == NodeKind.section)) {
+        continue;
+      }
+      matches.add(nb.id);
+    }
+    if (matches.length != 1) {
+      return matches.isEmpty
+          ? 'The linked note or notebook is no longer available. It may have been deleted.'
+          : 'The linked note is ambiguous. Please link this entry again.';
+    }
+    if (notebookId != matches.single) await selectNotebook(matches.single);
+    if (targetPageId != null) {
+      await selectPage(targetPageId); // Also selects the page's actual section.
+    } else {
+      await activateSection(targetSectionId!);
+    }
+    return null;
+  }
+
   Future<void> createNotebook(String title) async {
     await flushSave();
     final ref = await _repo.createNotebook(title);

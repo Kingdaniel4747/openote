@@ -1,6 +1,6 @@
 # Aufgaben
 
-Stand: 18.10.2026. Nur aktuelle Arbeit und bekannte Grenzen, keine Versionschronik.
+Stand: 09.11.2026. Nur aktuelle Arbeit und bekannte Grenzen, keine Versionschronik.
 
 ## Als Nächstes
 
@@ -34,7 +34,6 @@ Verhalten. Entfernte Messproben ändern zukünftige Testzahlen.
 | `math_click_position_test.dart` | Zweiter Klick im offenen Formelblock (1) |
 | `marker_chord_test.dart` | Tastaturkürzel statt Marker-Eingabe (1) |
 | `notebook_menu_test.dart` | Heutige Notebook-Verwaltung statt alter Erwartung (1) |
-| `planner_panel_test.dart` | To-do-/Hausaufgaben-/Prüfungsdialoge und Tagesauswahl (5) |
 | `school_input_test.dart` | Langdruck auf gesperrtes Objekt; schmale Fensterknöpfe (2) |
 | `windows_window_frame_test.dart` | Custom-Chrome-Mock bei Maximieren und Stift-Hover (2) |
 
@@ -53,7 +52,15 @@ ein lokaler APK-Build brauchen diese Werkzeuge.
 ## Erledigt
 
 - Notebook-Verwaltung: dauerhaftes Suchfeld oben filtert Namen direkt; Leeren und erneutes Öffnen
-  setzen die Suche zurück. Fünf Dialogtests und Analyse bestanden.
+  setzen die Suche zurück. Beim Öffnen erhält es automatisch den Fokus;
+  zusätzliche Dialoge behalten ihren eigenen Eingabefokus.
+- Planer: Anlegen nur per Kalendertag, neue Einträge mit reinem Datum ohne
+  Uhrzeit; Liste zeigt Titel ohne Metadaten. Navigation prüft Notebook- und
+  Seiten-ID und übernimmt die tatsächliche Sektion; Bearbeiten erhält das Ziel.
+  Alte datierte und undatierte Einträge bleiben erhalten und bearbeitbar.
+  118 gezielte Planer-/Erinnerungs-/Notebook-Dialogtests bestanden;
+  `flutter analyze --no-pub` sauber, Windows-Release-Build erfolgreich
+  (Dart-Kern, lokal kein Cargo). Geräteprüfung bleibt beim Nutzer.
 - Quellcode-Audit: drei nicht kompilierte Seitenleisten-Reste entfernt. Alte
   Notiz-/Medienformate bleiben absichtlich unterstützt. Eine nicht erreichbare
   Fehlerdialog-Datei entfernt; alle 148 Dart-Dateien sind vom App-Einstieg aus

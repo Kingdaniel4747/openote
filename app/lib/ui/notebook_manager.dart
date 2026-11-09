@@ -238,28 +238,29 @@ class _NotebookManagerState extends State<_NotebookManager> {
               ),
             ],
           ),
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: TextField(
-                controller: _searchController,
-                focusNode: _searchFocus,
-                onChanged: (_) => setState(() {}),
-                decoration: InputDecoration(
-                  labelText: tr(context, 'Search notebooks'),
-                  prefixIcon: const Icon(Icons.search, size: 20),
-                  suffixIcon: query.isEmpty
-                      ? null
-                      : IconButton(
-                          tooltip: tr(context, 'Clear search'),
-                          icon: const Icon(Icons.close, size: 18),
-                          onPressed: () {
-                            setState(() => _searchController.clear());
-                            _searchFocus.requestFocus();
-                          },
-                        ),
-                ),
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: TextField(
+              controller: _searchController,
+              focusNode: _searchFocus,
+              autofocus: true,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                labelText: tr(context, 'Search notebooks'),
+                prefixIcon: const Icon(Icons.search, size: 20),
+                suffixIcon: query.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: tr(context, 'Clear search'),
+                        icon: const Icon(Icons.close, size: 18),
+                        onPressed: () {
+                          setState(() => _searchController.clear());
+                          _searchFocus.requestFocus();
+                        },
+                      ),
               ),
             ),
+          ),
         ],
       ),
       contentPadding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
@@ -272,7 +273,8 @@ class _NotebookManagerState extends State<_NotebookManager> {
               if (visibleNotebooks.isEmpty)
                 const Padding(
                   padding: EdgeInsets.all(24),
-                  child: AppText('No notebooks found.', textAlign: TextAlign.center),
+                  child: AppText('No notebooks found.',
+                      textAlign: TextAlign.center),
                 ),
               GridView.count(
                 crossAxisCount: 4,

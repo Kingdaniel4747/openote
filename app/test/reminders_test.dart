@@ -75,6 +75,44 @@ void main() {
 
   setUp(() => settings = FakeSettings());
 
+  test('all-day dates and stable targets survive restart without a time zone',
+      () {
+    final store = build();
+    final entry = store.add(
+        text: 'Exam',
+        at: DateTime(2026, 10, 25, 17, 30),
+        allDay: true,
+        notebookId: 'nb',
+        pageId: 'page');
+    expect(entry.at, DateTime(2026, 10, 25));
+    expect(entry.toJson()['at'], '2026-10-25');
+    settings.restart();
+    final restored = build().byId(entry.id)!;
+    expect(restored.allDay, isTrue);
+    expect(restored.at, DateTime(2026, 10, 25));
+    expect(restored.notebookId, 'nb');
+    expect(restored.pageId, 'page');
+    store.reschedule(entry.id, DateTime(2026, 10, 26, 23));
+    expect(entry.at, DateTime(2026, 10, 26));
+  });
+
+  test('legacy timed entries retain their original day, time and IDs', () {
+    settings.values[ReminderStore.settingsKey] = [
+      {
+        'id': 'old',
+        'text': 'Homework',
+        'at': '2026-03-29T17:30:00.000',
+        'notebookId': 'nb',
+        'pageId': 'page'
+      }
+    ];
+    final entry = build().byId('old')!;
+    expect(entry.at, DateTime(2026, 3, 29, 17, 30));
+    expect(entry.allDay, isFalse);
+    expect(entry.toJson()['pageId'], 'page');
+    expect(entry.toJson()['at'], '2026-03-29T17:30:00.000');
+  });
+
   test('an edited exam keeps its identity, subject and comment after restart',
       () {
     final store = build();

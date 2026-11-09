@@ -60,6 +60,7 @@ class Reminder {
     required this.id,
     required this.text,
     required this.at,
+    this.allDay = false,
     this.notebookId,
     this.pageId,
     this.blockId,
@@ -91,6 +92,9 @@ class Reminder {
   /// [DateTime] — [toJson] preserves the `Z` and [fromJson] reads it back as
   /// UTC, so comparisons stay correct either way.
   DateTime at;
+
+  /// Calendar dates are written as yyyy-MM-dd; old timed reminders stay intact.
+  bool allDay;
 
   /// Where it came from, for click-through. **All four may be null**: v0.5 §7
   /// leaves free-standing reminders ("call the tutor at 3") an open decision,
@@ -149,7 +153,8 @@ class Reminder {
   Map<String, Object?> toJson() => {
         'id': id,
         'text': text,
-        'at': _encodeTime(at),
+        'at': allDay ? at.toIso8601String().substring(0, 10) : _encodeTime(at),
+        if (allDay) 'allDay': true,
         if (notebookId != null) 'notebookId': notebookId,
         if (pageId != null) 'pageId': pageId,
         if (blockId != null) 'blockId': blockId,
@@ -186,7 +191,8 @@ class Reminder {
     return Reminder(
       id: id is String && id.isNotEmpty ? id : newId(),
       text: raw['text'] is String ? raw['text'] as String : '',
-      at: at,
+      at: raw['allDay'] == true ? DateTime(at.year, at.month, at.day) : at,
+      allDay: raw['allDay'] == true,
       notebookId: _decodeId(raw['notebookId']),
       pageId: _decodeId(raw['pageId']),
       blockId: _decodeId(raw['blockId']),
@@ -354,6 +360,7 @@ class ReminderStore {
   Reminder add({
     required String text,
     required DateTime at,
+    bool allDay = false,
     String? notebookId,
     String? pageId,
     String? blockId,
@@ -367,7 +374,8 @@ class ReminderStore {
       // Trimmed once, here, so that "  " and "" cannot produce two rows that
       // look identical in the planner.
       text: text.trim(),
-      at: at,
+      at: allDay ? DateTime(at.year, at.month, at.day) : at,
+      allDay: allDay,
       notebookId: notebookId,
       pageId: pageId,
       blockId: blockId,
@@ -384,13 +392,15 @@ class ReminderStore {
       {required String text,
       required DateTime at,
       required String category,
+      bool? allDay,
       String? pageId,
       String? notebookId}) {
     final r = byId(id);
     if (r == null) return;
     r
       ..text = text.trim()
-      ..at = at
+      ..allDay = allDay ?? r.allDay
+      ..at = (allDay ?? r.allDay) ? DateTime(at.year, at.month, at.day) : at
       ..category = _category(category)
       ..pageId = pageId
       ..notebookId = notebookId
@@ -438,7 +448,7 @@ class ReminderStore {
     final r = byId(id);
     if (r == null) return;
     r
-      ..at = at
+      ..at = r.allDay ? DateTime(at.year, at.month, at.day) : at
       ..fired = false
       ..firedAt = null;
     _persist(now);

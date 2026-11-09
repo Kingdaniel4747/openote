@@ -29,7 +29,6 @@ import '../l10n/app_strings.dart';
 import '../state/app_state.dart';
 import '../state/planner_state.dart';
 import '../theme/onote_theme.dart';
-import 'exam_date.dart';
 import 'month_grid.dart';
 import 'side_panel.dart';
 import 'planner_format.dart';
@@ -63,13 +62,8 @@ class _PlannerPanelState extends State<PlannerPanel> {
   }
 
   Future<void> _pickCalendarDay(DateTime day) async {
-    final now = DateTime.now();
-    final alreadySelected = _pickedDay != null && daysEqual(_pickedDay!, day);
-    final hasItems = planner
-        .itemsOn(day, now: now)
-        .any((item) => !_isPastDay(item.when, now));
     setState(() => _pickedDay = day);
-    if (!hasItems || alreadySelected) await _chooseDayAction(day);
+    await _chooseDayAction(day);
   }
 
   @override
@@ -88,14 +82,6 @@ class _PlannerPanelState extends State<PlannerPanel> {
         title: SidePanelKind.planner.label,
         icon: Icons.event_note_outlined,
         onClose: app.closePanel,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add, size: 18),
-            tooltip: tr(context, 'Add entry'),
-            visualDensity: VisualDensity.compact,
-            onPressed: () => _chooseDayAction(null),
-          ),
-        ],
         // The alerts sit in the banner slot, above the scroll region, because a
         // reminder you have to scroll to find has not reminded you.
         banner: planner.pendingAlerts.isNotEmpty ? _alerts(context) : null,
@@ -179,10 +165,14 @@ class _PlannerPanelState extends State<PlannerPanel> {
               child:
                   Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Expanded(
-                  child: Text('${r.title}  ·  ${formatClock(r.at)}',
+                  child: Text(
+                      planner.reminders.byId(r.id)?.allDay == true
+                          ? r.title.split(' — ').first
+                          : '${r.title}  ·  ${formatClock(r.at)}',
                       style: const TextStyle(fontSize: 12, height: 1.35)),
                 ),
-                if (r.source == AlertSource.reminder)
+                if (r.source == AlertSource.reminder &&
+                    planner.reminders.byId(r.id)?.allDay != true)
                   _SnoozeButton(
                     // Measured from now, not from the reminder's own time —
                     // snoozing something that came due yesterday "by ten
@@ -225,32 +215,30 @@ class _PlannerPanelState extends State<PlannerPanel> {
                     fontSize: 11, color: context.surfaces.textSecondary)),
           ),
           for (final entry in planner.undatedEntries)
-            ListTile(
-              key: ValueKey(entry.id),
-              dense: true,
-              contentPadding: const EdgeInsets.only(left: 4, right: 4),
-              leading: entry.category == 'exam'
-                  ? const Icon(Icons.flag_outlined)
-                  : Checkbox(
-                      value: entry.done,
-                      onChanged: (done) =>
-                          planner.updateUndatedEntry(entry.id, done: done),
-                    ),
-              title: Text(entry.text,
-                  style: TextStyle(
-                      fontSize: 13,
-                      decoration:
-                          entry.done ? TextDecoration.lineThrough : null)),
-              subtitle: AppText(switch (entry.category) {
-                'homework' => 'Homework',
-                'exam' => 'Exam',
-                _ => 'To-do',
-              }),
-              onTap: () => _editUndatedEntry(entry),
-              trailing: IconButton(
-                icon: const Icon(Icons.delete_outline, size: 16),
-                tooltip: tr(context, 'Delete'),
-                onPressed: () => planner.removeUndatedEntry(entry.id),
+            Material(
+              type: MaterialType.transparency,
+              child: ListTile(
+                key: ValueKey(entry.id),
+                dense: true,
+                contentPadding: const EdgeInsets.only(left: 4, right: 4),
+                leading: entry.category == 'exam'
+                    ? const Icon(Icons.flag_outlined)
+                    : Checkbox(
+                        value: entry.done,
+                        onChanged: (done) =>
+                            planner.updateUndatedEntry(entry.id, done: done),
+                      ),
+                title: Text(entry.text.split(' — ').first,
+                    style: TextStyle(
+                        fontSize: 13,
+                        decoration:
+                            entry.done ? TextDecoration.lineThrough : null)),
+                onTap: () => _editUndatedEntry(entry),
+                trailing: IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 16),
+                  tooltip: tr(context, 'Delete'),
+                  onPressed: () => planner.removeUndatedEntry(entry.id),
+                ),
               ),
             ),
           const Divider(height: 1),
@@ -301,8 +289,6 @@ class _PlannerPanelState extends State<PlannerPanel> {
           .isBefore(DateTime(now.year, now.month, now.day));
 
   Widget _row(BuildContext context, DatedItem it, DateTime now) {
-    final scheme = Theme.of(context).colorScheme;
-    final overdue = bucketFor(it, now) == AgendaBucket.overdue;
     return InkWell(
       onTap: () => _open(it),
       onTapDown: (details) => _rowPressPosition = details.globalPosition,
@@ -318,7 +304,10 @@ class _PlannerPanelState extends State<PlannerPanel> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(it.title,
+                Text(
+                    it.kind == DatedKind.reminder
+                        ? it.title.split(' — ').first
+                        : it.title,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -327,23 +316,8 @@ class _PlannerPanelState extends State<PlannerPanel> {
                         decoration: it.done ? TextDecoration.lineThrough : null,
                         color:
                             it.done ? context.surfaces.textSecondary : null)),
-                if (it.subtitle case final s?)
-                  Text(s,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 11, color: context.surfaces.textSecondary)),
               ],
             ),
-          ),
-          const SizedBox(width: 6),
-          Padding(
-            padding: const EdgeInsets.only(top: 1),
-            child: Text(plannerWhen(it, now),
-                style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: overdue ? FontWeight.w700 : FontWeight.w400,
-                    color: overdue ? OnoteColors.danger : scheme.primary)),
           ),
           // A visible way to be finished with a reminder.
           //
@@ -430,13 +404,25 @@ class _PlannerPanelState extends State<PlannerPanel> {
 
   // ── Actions ──────────────────────────────────────────────────────────
 
-  void _open(DatedItem it) {
-    if (it.pageId != null) {
-      app.selectPage(it.pageId!);
-      return;
+  Future<void> _open(DatedItem it) async {
+    try {
+      final problem = await app.openPlannerTarget(
+        targetNotebookId: it.notebookId,
+        targetPageId: it.pageId,
+        targetSectionId: PlannerState.examSectionOf(it),
+      );
+      if (problem != null && mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(problem)));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'The linked notebook could not be opened. Check that its file is available.'),
+        ));
+      }
     }
-    final section = PlannerState.examSectionOf(it);
-    if (section != null) app.activateSection(section);
   }
 
   Future<void> _edit(DatedItem it, DateTime now) async {
@@ -447,7 +433,16 @@ class _PlannerPanelState extends State<PlannerPanel> {
     } else if (it.kind == DatedKind.exam) {
       final section = PlannerState.examSectionOf(it);
       if (section != null) {
-        await pickExamDate(context, app, section, initialDay: it.when);
+        final day = await showDatePicker(
+          context: context,
+          initialDate: it.when,
+          firstDate: DateTime(1900),
+          lastDate: DateTime(DateTime.now().year + 5, 12, 31),
+        );
+        if (day != null) {
+          app.study.setExamDate(section, day);
+          app.study.setExamTime(section, null);
+        }
       }
     } else if (it.kind == DatedKind.task) {
       _open(it);
@@ -470,8 +465,6 @@ class _PlannerPanelState extends State<PlannerPanel> {
       items: [
         if (planner.canRedate(it)) ...[
           const PopupMenuItem(value: 'edit', child: Text('Edit')),
-          if (it.kind == DatedKind.reminder)
-            const PopupMenuItem(value: 'delay', child: Text('Delay…')),
           const PopupMenuItem(value: 'delete', child: Text('Delete')),
         ] else
           // Said, not hidden. A calendar row with no menu at all reads as a
@@ -488,39 +481,9 @@ class _PlannerPanelState extends State<PlannerPanel> {
     switch (choice) {
       case 'edit':
         await _edit(it, now);
-      case 'delay':
-        await _delayReminder(it);
       case 'delete':
         planner.redate(it, null);
     }
-  }
-
-  Future<void> _delayReminder(DatedItem it) async {
-    final id = PlannerState.reminderIdOf(it);
-    if (id == null) return;
-    final minutes = await showOnoteDialog<int>(
-      context: context,
-      builder: (dialogContext) => SimpleDialog(
-        title: const Text('Delay reminder'),
-        children: [
-          for (final (label, value) in [
-            ('10 minutes', 10),
-            ('1 hour', 60),
-            ('Tomorrow', 1440),
-          ])
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(dialogContext, value),
-              child: Text(label),
-            ),
-        ],
-      ),
-    );
-    if (minutes == null) return;
-    final reminder = planner.reminders.byId(id);
-    if (reminder == null) return;
-    final now = DateTime.now();
-    final from = reminder.at.isAfter(now) ? reminder.at : now;
-    planner.reminders.reschedule(id, from.add(Duration(minutes: minutes)));
   }
 
   Future<void> _editUndatedEntry(UndatedEntry entry) async {
@@ -531,14 +494,12 @@ class _PlannerPanelState extends State<PlannerPanel> {
         undatedEditing: entry);
   }
 
-  Future<void> _chooseDayAction(DateTime? day) async {
+  Future<void> _chooseDayAction(DateTime day) async {
     final choice = await showOnoteDialog<String>(
       context: context,
       builder: (dialogContext) => SimpleDialog(
         title: Text(
-          day == null
-              ? tr(context, 'Add entry')
-              : MaterialLocalizations.of(context).formatMediumDate(day),
+          MaterialLocalizations.of(context).formatMediumDate(day),
           style: const TextStyle(fontSize: 15),
         ),
         children: [
@@ -568,13 +529,6 @@ class _PlannerPanelState extends State<PlannerPanel> {
     );
     if (choice == null || !mounted) return;
     final now = DateTime.now();
-    if (day == null) {
-      await _addReminder(now,
-          withoutDate: true,
-          homework: choice == 'homework',
-          exam: choice == 'exam');
-      return;
-    }
     switch (choice) {
       case 'homework':
         await _addReminder(now, initialDay: day, homework: true);
@@ -622,13 +576,8 @@ class _PlannerPanelState extends State<PlannerPanel> {
         : r.text.isEmpty
             ? r.subject
             : '${r.subject} — ${r.text}';
-    if (withoutDate) {
-      if (undatedEditing != null) {
-        planner.updateUndatedEntry(undatedEditing.id, text: title);
-      } else {
-        planner.addUndatedEntry(title,
-            category: exam ? 'exam' : homework ? 'homework' : 'todo');
-      }
+    if (undatedEditing != null) {
+      planner.updateUndatedEntry(undatedEditing.id, text: title);
       _resetCalendar();
       return;
     }
@@ -637,30 +586,29 @@ class _PlannerPanelState extends State<PlannerPanel> {
           text: title,
           at: r.at,
           category: editing.category,
-          notebookId: app.notebookId,
+          allDay: true,
+          notebookId: r.openPage
+              ? (editing.pageId != null ? editing.notebookId : app.notebookId)
+              : null,
           pageId: r.openPage ? (editing.pageId ?? page?.id) : null);
     } else {
       planner.reminders.add(
         text: title,
         at: r.at,
+        allDay: true,
         category: exam
             ? 'exam'
             : homework
                 ? 'homework'
                 : 'todo',
-        notebookId: app.notebookId,
+        notebookId: r.openPage && page != null ? app.notebookId : null,
         pageId: r.openPage ? page?.id : null,
       );
     }
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(homework
-            ? 'Homework added for ${relativeWhen(DatedItem(id: '', kind: DatedKind.reminder, title: '', when: r.at, allDay: true), now)}.'
-            : 'Reminder set for ${formatClock(r.at)} '
-                '${relativeWhen(DatedItem(id: '', kind: DatedKind.reminder, title: '', when: r.at, allDay: true), now)}. '
-                'Openote will nudge you if it is open — and tell you if it wasn’t.')));
+    ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Entry saved for ${formatDayFull(r.at)}.')));
   }
-
 }
 
 /// Snooze, offered on the alert itself.
@@ -687,12 +635,7 @@ class _SnoozeButton extends StatelessWidget {
       );
 }
 
-/// Setting a reminder: what, and when.
-///
-/// **Relative buttons first, an exact time second.** "In an hour" is what a
-/// student actually means when they think "come back to this", and making them
-/// compute 15:40 from 14:40 is the friction that stops the thought being
-/// captured at all.
+/// Edit a calendar date and title, retaining descriptions and legacy entries.
 class _ReminderDialog extends StatefulWidget {
   const _ReminderDialog({
     required this.now,
@@ -719,17 +662,8 @@ class _ReminderDialogState extends State<_ReminderDialog> {
   final _subject = TextEditingController();
   final _text = TextEditingController();
   bool _openPage = true;
-  late DateTime _at = widget.editing?.at ??
-      (widget.initialDay == null
-          ? _round(widget.now.add(const Duration(hours: 1)))
-          : DateTime(
-              widget.initialDay!.year,
-              widget.initialDay!.month,
-              widget.initialDay!.day,
-              widget.homework || widget.exam ? 17 : widget.now.hour,
-              widget.homework || widget.exam ? 0 : widget.now.minute,
-            ));
-
+  late DateTime _at =
+      DateUtils.dateOnly(widget.editing?.at ?? widget.initialDay ?? widget.now);
   @override
   void initState() {
     super.initState();
@@ -746,27 +680,11 @@ class _ReminderDialogState extends State<_ReminderDialog> {
     _openPage = editing?.pageId != null;
   }
 
-  /// Snapped to the next five minutes. A reminder at 15:43 is a time nobody
-  /// chose; it is an artefact of when the dialog happened to open.
-  static DateTime _round(DateTime d) {
-    final m = ((d.minute + 4) ~/ 5) * 5;
-    return DateTime(d.year, d.month, d.day, d.hour, 0)
-        .add(Duration(minutes: m));
-  }
-
   @override
   void dispose() {
     _subject.dispose();
     _text.dispose();
     super.dispose();
-  }
-
-  Future<void> _pickTime() async {
-    final t = await showTimePicker(
-        context: context, initialTime: TimeOfDay.fromDateTime(_at));
-    if (t == null || !mounted) return;
-    setState(
-        () => _at = DateTime(_at.year, _at.month, _at.day, t.hour, t.minute));
   }
 
   Future<void> _pickDate() async {
@@ -778,8 +696,7 @@ class _ReminderDialogState extends State<_ReminderDialog> {
       lastDate: DateTime(today.year + 5, today.month, today.day),
     );
     if (d == null || !mounted) return;
-    setState(
-        () => _at = DateTime(d.year, d.month, d.day, _at.hour, _at.minute));
+    setState(() => _at = DateTime(d.year, d.month, d.day));
   }
 
   @override
@@ -812,7 +729,8 @@ class _ReminderDialogState extends State<_ReminderDialog> {
           style: const TextStyle(fontSize: 15)),
       content: SizedBox(
         width: 420,
-        child: Column(
+        child: SingleChildScrollView(
+            child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -855,12 +773,6 @@ class _ReminderDialogState extends State<_ReminderDialog> {
                       style: const TextStyle(fontSize: 12)),
                   onPressed: _pickDate,
                 ),
-                TextButton.icon(
-                  icon: const Icon(Icons.schedule, size: 16),
-                  label: Text(formatClock(_at),
-                      style: const TextStyle(fontSize: 12)),
-                  onPressed: _pickTime,
-                ),
               ]),
               SwitchListTile.adaptive(
                 contentPadding: EdgeInsets.zero,
@@ -873,18 +785,9 @@ class _ReminderDialogState extends State<_ReminderDialog> {
                     style: TextStyle(fontSize: 11)),
               ),
               const SizedBox(height: 4),
-              // A nudge is only promised for entries with a scheduled time.
-              Text(
-                'Openote nudges you while it is open. If it was closed when the '
-                'time came, the reminder is waiting when you next open it.',
-                style: TextStyle(
-                    fontSize: 11,
-                    height: 1.4,
-                    color: context.surfaces.textSecondary),
-              ),
             ],
           ],
-        ),
+        )),
       ),
       actions: [
         TextButton(

@@ -33,6 +33,7 @@ import '../planner/event_kinds.dart';
 import '../planner/agenda.dart';
 import '../state/app_state.dart';
 import '../theme/tokens.dart';
+import 'planner_format.dart';
 
 /// How many cards are shown before the rest collapse into a count.
 ///
@@ -169,6 +170,8 @@ class _AlertCard extends StatelessWidget {
     final s = context.surfaces;
     final scheme = Theme.of(context).colorScheme;
     final now = DateTime.now();
+    final allDay = alert.source == AlertSource.reminder &&
+        app.planner.reminders.byId(alert.id)?.allDay == true;
     return Material(
       color: s.raised,
       elevation: 6,
@@ -198,7 +201,7 @@ class _AlertCard extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis),
                     const SizedBox(height: OnoteSpace.x1),
-                    Text(_when(alert, now),
+                    Text(allDay ? formatDayFull(alert.at) : _when(alert, now),
                         style:
                             OnoteType.small.copyWith(color: s.textSecondary)),
                     if (alert.subtitle case final sub? when sub.isNotEmpty) ...[
@@ -239,15 +242,28 @@ class _AlertCard extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(right: OnoteSpace.x3),
                   child: TextButton(
-                    onPressed: () {
-                      app.selectPage(alert.pageId!);
-                      app.planner.dismissAlert(alert.id);
+                    onPressed: () async {
+                      String? problem;
+                      try {
+                        problem = await app.openPlannerTarget(
+                            targetNotebookId: alert.notebookId,
+                            targetPageId: alert.pageId);
+                      } catch (_) {
+                        problem =
+                            'The linked notebook could not be opened. Check that its file is available.';
+                      }
+                      if (problem == null) {
+                        app.planner.dismissAlert(alert.id);
+                      } else if (context.mounted) {
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(SnackBar(content: Text(problem)));
+                      }
                     },
                     child: const Text('Go to the note'),
                   ),
                 ),
               const Spacer(),
-              if (alert.source == AlertSource.reminder)
+              if (alert.source == AlertSource.reminder && !allDay)
                 _SnoozeMenu(
                   onSnooze: (d) => app.planner.snoozeAlert(alert.id, d),
                 ),

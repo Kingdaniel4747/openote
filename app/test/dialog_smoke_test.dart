@@ -103,7 +103,8 @@ void main() {
       expect(find.text('Search'), findsNothing);
     });
 
-    testWidgets('notebook search filters, clears and keeps backups complete ($label)',
+    testWidgets(
+        'notebook search filters, clears and keeps backups complete ($label)',
         (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final app = await newApp(tester);
@@ -113,10 +114,29 @@ void main() {
       });
       await openDialog(tester, app, showNotebookManager, window: size);
       expect(tester.takeException(), isNull);
-      await tester.tap(find.byType(TextField));
-      await tester.pumpAndSettle();
-      expect(tester.widget<TextField>(find.byType(TextField)).focusNode!.hasFocus,
+      expect(
+          tester.widget<TextField>(find.byType(TextField)).focusNode!.hasFocus,
           isTrue);
+      final searchFocus =
+          tester.widget<TextField>(find.byType(TextField)).focusNode!;
+      await tester.tap(find.text('New'));
+      await tester.pumpAndSettle();
+      expect(searchFocus.hasFocus, isFalse);
+      final prompt = find.widgetWithText(AlertDialog, 'New notebook');
+      final promptField =
+          find.descendant(of: prompt, matching: find.byType(TextField));
+      expect(
+          tester
+              .widget<EditableText>(find.descendant(
+                  of: promptField, matching: find.byType(EditableText)))
+              .focusNode
+              .hasFocus,
+          isTrue);
+      app.refresh();
+      await tester.pumpAndSettle();
+      expect(searchFocus.hasFocus, isFalse);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       await tester.enterText(find.byType(TextField), '  MATHE  ');
       await tester.pumpAndSettle();
@@ -151,7 +171,11 @@ void main() {
       await tester.pump(const Duration(milliseconds: 450));
       await tester.pumpAndSettle();
       expect(find.byType(TextField), findsOneWidget);
-      expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, '');
+      expect(tester.widget<TextField>(find.byType(TextField)).controller!.text,
+          '');
+      expect(
+          tester.widget<TextField>(find.byType(TextField)).focusNode!.hasFocus,
+          isTrue);
       expect(find.text('Mathematik'), findsOneWidget);
       expect(find.text('Biologie'), findsOneWidget);
       // Closing with the field focused must dispose its controller safely.

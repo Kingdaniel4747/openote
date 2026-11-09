@@ -24,6 +24,7 @@ import 'package:openote/markdown/md_render.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/study/study_stats.dart';
 import 'package:openote/ui/planner_panel.dart';
+import 'package:openote/ui/alert_popup.dart';
 
 import 'support/sqlite.dart';
 
@@ -100,76 +101,188 @@ void main() {
     }
   }
 
-  testWidgets('header plus creates an editable checklist without a date',
+  for (final category in ['to-do', 'homework', 'exam']) {
+    testWidgets('calendar creates and edits an all-day $category',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final (app, _) = await newApp(tester);
+      final originalNotebook = app.notebookId!;
+      late String otherNotebook;
+      await tester.runAsync(() async {
+        await app.createNotebook('Another notebook');
+        otherNotebook = app.notebookId!;
+        await app.selectNotebook(originalNotebook);
+      });
+      await tester.pumpWidget(host(app));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Add entry'), findsNothing);
+      final today = DateUtils.dateOnly(DateTime.now());
+      await tester.tap(find.text('${today.day}').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Add $category'));
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.schedule), findsNothing);
+      expect(find.byType(TimePickerDialog), findsNothing);
+      await tester.enterText(find.byType(TextField).first, 'Mathematics');
+      await tester.enterText(
+          find.byType(TextField).last, 'Private description');
+      await tester.tap(find.text('Save'));
+      await settle(tester);
+      final entry = app.planner.reminders.all.single;
+      expect(entry.category, category == 'to-do' ? 'todo' : category);
+      expect(entry.at, today);
+      expect(entry.allDay, isTrue);
+      expect(app.planner.agenda().single.allDay, isTrue);
+      expect(entry.toJson()['at'], dayKey(today));
+      expect(
+          find.descendant(
+              of: find.byType(ListView), matching: find.text('Mathematics')),
+          findsOneWidget);
+      expect(find.textContaining('Private description'), findsNothing);
+      final notebook = entry.notebookId;
+      final page = entry.pageId;
+      await tester.runAsync(() => app.selectNotebook(otherNotebook));
+      await tester.pumpAndSettle();
+      await tester.tapAt(
+          tester.getCenter(find.descendant(
+              of: find.byType(ListView), matching: find.text('Mathematics'))),
+          buttons: 2);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Edit'));
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.schedule), findsNothing);
+      expect(
+          tester
+              .widget<TextField>(find.byType(TextField).last)
+              .controller!
+              .text,
+          'Private description');
+      await tester.enterText(find.byType(TextField).first, 'Updated title');
+      await tester.tap(find.text('Save'));
+      await settle(tester);
+      expect(entry.notebookId, notebook);
+      expect(entry.pageId, page);
+      expect(entry.at, today);
+      await tester.runAsync(() => app.openPlannerTarget(
+          targetNotebookId: entry.notebookId, targetPageId: entry.pageId));
+      expect(app.notebookId, notebook);
+      expect(app.pageId, page);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await settle(tester);
+      app.cancelPendingSave();
+      app.dispose();
+    });
+  }
+  testWidgets('planner resolves notebook, section and page by IDs',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (app, section) = await newApp(tester);
+    final notebook = app.notebookId!;
+    final page = app.pageId!;
+    app.renameNode(section, 'Same section');
+    app.renameNode(page, 'Same page');
+    await tester.runAsync(() async {
+      await app.createNotebook('Other Planner');
+      app.renameNode(app.activeSectionId!, 'Same section');
+      app.renameNode(app.pageId!, 'Same page');
+    });
+    final otherNotebook = app.notebookId;
+    app.planner.reminders.add(
+        text: 'Go to original',
+        at: DateTime.now(),
+        notebookId: notebook,
+        pageId: page);
+    await tester.pumpWidget(host(app));
+    await settle(tester);
+    expect(find.text('Same page'), findsNothing);
+    await tester.runAsync(() => tester.tap(find.text('Go to original')));
+    await settle(tester);
+    expect(app.notebookId, notebook);
+    expect(app.activeSectionId, section);
+    expect(app.pageId, page);
+    await tester.runAsync(() async {
+      await app.selectNotebook(otherNotebook!);
+      // Legacy entries with no notebook ID resolve only a unique page ID.
+      expect(await app.openPlannerTarget(targetPageId: page), isNull);
+    });
+    expect(app.pageId, page);
+    app.planner.reminders.add(
+        text: 'Deleted target',
+        at: DateTime.now(),
+        notebookId: notebook,
+        pageId: 'missing-page');
+    await settle(tester);
+    await tester.tap(find.text('Deleted target'));
+    await settle(tester);
+    expect(find.textContaining('no longer available'), findsOneWidget);
+    expect(app.pageId, page);
+    await tester.runAsync(() async {
+      expect(
+          await app.openPlannerTarget(
+              targetNotebookId: 'missing-notebook', targetPageId: page),
+          isNotNull);
+    });
+    expect(app.notebookId, notebook);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await settle(tester);
+    app.cancelPendingSave();
+    app.dispose();
+  });
+
+  testWidgets('all-day alerts have a date and no time or snooze picker',
       (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (app, _) = await newApp(tester);
-    await tester.pumpWidget(host(app));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('${DateTime.now().day}').first);
-    await tester.pumpAndSettle();
-    await tester.tapAt(const Offset(790, 590));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Add entry'));
-    await tester.pumpAndSettle();
-    expect(find.text('Add homework'), findsOneWidget);
-    expect(find.text('Add to-do'), findsOneWidget);
-    expect(find.text('Add exam'), findsOneWidget);
-    await tester.tap(find.text('Add to-do'));
-    await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.schedule), findsNothing);
-    expect(find.byType(SwitchListTile), findsNothing);
-    await tester.enterText(find.byType(TextField).first, 'Buy paper');
-    await tester.enterText(find.byType(TextField).last, 'Ask the tutor');
-    await tester.tap(find.text('Save'));
+    final day = DateUtils.dateOnly(DateTime.now());
+    app.planner.reminders.add(text: 'All-day exam', at: day, allDay: true);
+    app.planner.startScheduler();
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(body: Stack(children: [AlertPopup(app: app)]))));
     await settle(tester);
-    expect(find.text('Without a date'), findsOneWidget);
-    expect(find.text('Buy paper — Ask the tutor'), findsOneWidget);
-    expect(app.planner.undatedEntries.single.category, 'todo');
-    expect(app.planner.reminders.all, isEmpty);
-    await tester.tap(find.byType(Checkbox).first);
+    expect(find.text('All-day exam'), findsOneWidget);
+    expect(find.text('Snooze'), findsNothing);
+    expect(find.textContaining('00:00'), findsNothing);
+    expect(find.textContaining('Was due at'), findsNothing);
+    await tester.tap(find.text('Done'));
+    expect(app.planner.reminders.all.single.dismissed, isTrue);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await settle(tester);
+    app.cancelPendingSave();
+    app.dispose();
+  });
+
+  testWidgets('legacy undated entries remain editable and completable',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (app, _) = await newApp(tester);
+    app.planner.addUndatedEntry('Buy paper — Keep this description',
+        category: 'homework');
+    await tester.pumpWidget(host(app));
+    await settle(tester);
+    expect(find.text('Buy paper'), findsOneWidget);
+    expect(find.textContaining('Keep this description'), findsNothing);
+    await tester.tap(find.byType(Checkbox));
     await settle(tester);
     expect(app.planner.undatedEntries.single.done, isTrue);
-    await tester.tap(find.text('Buy paper — Ask the tutor'));
+    await tester.tap(find.text('Buy paper'));
     await tester.pumpAndSettle();
+    expect(
+        tester.widget<TextField>(find.byType(TextField).last).controller!.text,
+        'Keep this description');
     await tester.enterText(find.byType(TextField).first, 'Buy notebooks');
-    await tester.enterText(find.byType(TextField).last, '');
     await tester.tap(find.text('Save'));
     await settle(tester);
-    expect(find.text('Buy notebooks'), findsOneWidget);
+    expect(app.planner.undatedEntries.single.text,
+        'Buy notebooks — Keep this description');
+    expect(app.planner.undatedEntries.single.category, 'homework');
     await tester.tap(find.byTooltip('Delete'));
     await settle(tester);
     expect(app.planner.undatedEntries, isEmpty);
     await tester.pumpWidget(const SizedBox.shrink());
     await settle(tester);
     app.cancelPendingSave();
+    app.dispose();
   });
-
-  for (final category in ['homework', 'exam']) {
-    testWidgets('planner plus creates undated $category with the usual form',
-        (tester) async {
-      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-      final (app, _) = await newApp(tester);
-      await tester.pumpWidget(host(app));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Add entry'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Add $category'));
-      await tester.pumpAndSettle();
-      expect(find.byIcon(Icons.schedule), findsNothing);
-      await tester.enterText(find.byType(TextField).first, 'Mathematics');
-      await tester.enterText(find.byType(TextField).last, 'Practice chapter 2');
-      await tester.tap(find.text('Save'));
-      await settle(tester);
-      expect(app.planner.undatedEntries.single.category, category);
-      expect(app.planner.undatedEntries.single.text,
-          'Mathematics — Practice chapter 2');
-      expect(app.planner.reminders.all, isEmpty);
-      await tester.pumpWidget(const SizedBox.shrink());
-      await settle(tester);
-      app.cancelPendingSave();
-    });
-  }
 
   testWidgets('an empty planner offers actions from a calendar day',
       (tester) async {
@@ -211,7 +324,7 @@ void main() {
     expect(find.text('Pick a date…'), findsNothing);
   });
 
-  testWidgets('an occupied day opens its entries before the add menu',
+  testWidgets('an occupied day immediately offers the add menu',
       (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final (app, _) = await newApp(tester);
@@ -223,10 +336,7 @@ void main() {
     await tester.tap(find.text('${now.day}').first);
     await tester.pumpAndSettle();
     expect(find.text('Biology'), findsOneWidget);
-    expect(find.text('Add homework'), findsNothing);
-    expect(find.text('Show all'), findsOneWidget);
-    await tester.tap(find.text('${now.day}').first);
-    await tester.pumpAndSettle();
+
     expect(find.text('Add homework'), findsOneWidget);
   });
 

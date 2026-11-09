@@ -201,8 +201,8 @@ class PlannerState extends ChangeNotifier {
 
   void addUndatedEntry(String text, {String category = 'todo'}) {
     if (text.trim().isEmpty) return;
-    _undatedEntries.add(UndatedEntry(
-        id: newId(), text: text.trim(), category: category));
+    _undatedEntries
+        .add(UndatedEntry(id: newId(), text: text.trim(), category: category));
     _persistUndatedEntries();
   }
 
@@ -538,7 +538,7 @@ class PlannerState extends ChangeNotifier {
               kind: DatedKind.reminder,
               title: r.text.isEmpty ? 'Reminder' : r.text,
               when: r.at,
-              allDay: false,
+              allDay: r.allDay,
               notebookId: r.notebookId,
               pageId: r.pageId,
               blockId: r.blockId,

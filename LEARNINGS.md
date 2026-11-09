@@ -24,6 +24,11 @@ Nur Erkenntnisse behalten, die künftige Fehler verhindern. Keine Sitzungsprotok
 
 ## Daten und Bedienung
 
+- Planer-Seiten-IDs gehören zu einem Notebook: vor `selectPage` das Ziel dort
+  prüfen und gegebenenfalls das Notebook wechseln. Die Sektion aus der Seite
+  ableiten; beim Bearbeiten niemals die Ziel-Notebook-ID durch die aktuelle ersetzen.
+  Neue ganztägige Erinnerungen speichern `allDay: true` und `at: yyyy-MM-dd`;
+  alte Zeitstempel ohne Migration erhalten.
 - Windows-Stifttaste: Hover-Nähe, Spitzenkontakt und Seitentaste getrennt
   auswerten. Flutter kann `invertedStylus` bis zum Verlassen der Nähe behalten;
   das darf ein aktuelles natives Loslassen nicht überstimmen. Physische Taste
