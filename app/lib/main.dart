@@ -7,6 +7,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'l10n/app_strings.dart';
 
 import 'core/single_instance.dart';
+import 'canvas/writing_touch_guard.dart';
 import 'core/startup_args.dart';
 import 'media/video_playback.dart';
 import 'media/pdf_pages.dart';
@@ -17,7 +18,7 @@ import 'ui/app_shell.dart';
 import 'ui/windows_window_frame.dart';
 
 Future<void> main(List<String> args) async {
-  WidgetsFlutterBinding.ensureInitialized();
+  OpenoteWidgetsBinding();
   // The notebook file we were launched to open, for example by a double-click
   // in the file manager. Parse it before the single-instance hand-off below so
   // an already-running window receives the requested path.

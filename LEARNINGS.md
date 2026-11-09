@@ -24,6 +24,11 @@ Nur Erkenntnisse behalten, die künftige Fehler verhindern. Keine Sitzungsprotok
 
 ## Daten und Bedienung
 
+- Windows-Handballenschutz muss vor dem Hit-Test greifen, nicht nur im Canvas:
+  sonst reagieren Scrollbalken und Fensterknöpfe bereits auf den Kontakt.
+  Bei Stiftkontakt alte Touch-Sequenzen abbrechen und bis zum Abheben verwerfen.
+  Frische, bestätigte Fingergesten separat weiterreichen, auch bei Stift-Hover;
+  aufliegende Handkontakte dürfen nicht als zusätzliche Pinch-Finger zählen.
 - Planer-Seiten-IDs gehören zu einem Notebook: vor `selectPage` das Ziel dort
   prüfen und gegebenenfalls das Notebook wechseln. Die Sektion aus der Seite
   ableiten; beim Bearbeiten niemals die Ziel-Notebook-ID durch die aktuelle ersetzen.

@@ -26,6 +26,7 @@ import 'ink_painter.dart';
 import 'shape_geometry.dart';
 import 'page_title_view.dart';
 import 'windows_pen_buttons.dart';
+import 'writing_touch_guard.dart';
 
 /// The page canvas (CANVAS-1 v0.3): an auto-growing page surface on a neutral
 /// backdrop. Select-mode input model (style guide §8):
@@ -57,6 +58,17 @@ class _PageCanvasState extends State<PageCanvas> {
   bool _invertedInkContact = false;
   bool _penCursorActive = false;
 
+  bool _deliberateTouch(int pointer) {
+    final binding = WidgetsBinding.instance;
+    return binding is WritingTouchBinding &&
+        (binding as WritingTouchBinding)
+            .writingTouchGuard
+            .isNavigationPointer(pointer);
+  }
+
+  bool get _deliberateTouchGesture =>
+      _touches.isNotEmpty && _touches.keys.every(_deliberateTouch);
+
   void _trackCursorDevice(PointerEvent event) {
     if (event.kind == PointerDeviceKind.touch) return;
     final pen = event.kind == PointerDeviceKind.stylus ||
@@ -75,7 +87,9 @@ class _PageCanvasState extends State<PageCanvas> {
   void _windowsPenChanged() {
     if (!mounted) return;
     if (_windowsPen.nativeInRange) _penCursorActive = true;
-    if (_windowsPen.nativeInRange && _touches.isNotEmpty) {
+    if (_windowsPen.nativeInRange &&
+        _touches.isNotEmpty &&
+        !_deliberateTouchGesture) {
       _rejectTouchSequence = true;
       app.touchCanvasGesture = true;
       _touchVelocity = Offset.zero;
@@ -1127,7 +1141,9 @@ class _PageCanvasState extends State<PageCanvas> {
     _touchVelocity = Offset.zero;
     _lastTouchMove = DateTime.now();
     if (_touches.length == 1) {
-      _rejectTouchSequence = _windowsPen.nativeInRange || _inkContactActive;
+      _rejectTouchSequence =
+          (_windowsPen.nativeInRange && !_deliberateTouch(e.pointer)) ||
+              _inkContactActive;
       _touchPanStart = e.localPosition;
       _touchPanActive = false;
     }
@@ -1275,7 +1291,9 @@ class _PageCanvasState extends State<PageCanvas> {
 
   void _touchMove(PointerMoveEvent e) {
     if (!_touches.containsKey(e.pointer)) return;
-    if (_windowsPen.nativeInRange || _inkContactActive || e.radiusMajor > 30) {
+    if ((_windowsPen.nativeInRange && !_deliberateTouch(e.pointer)) ||
+        _inkContactActive ||
+        e.radiusMajor > 30) {
       _rejectTouchSequence = true;
     }
     if (_rejectTouchSequence) {
@@ -1349,7 +1367,7 @@ class _PageCanvasState extends State<PageCanvas> {
   void _applyPinchTransform() {
     if (_rejectTouchSequence ||
         _touches.length != 2 ||
-        _windowsPen.nativeInRange ||
+        (_windowsPen.nativeInRange && !_deliberateTouchGesture) ||
         _inkContactActive) {
       return;
     }

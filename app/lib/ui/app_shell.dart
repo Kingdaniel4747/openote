@@ -3,9 +3,12 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/gestures.dart' show HitTestResult;
 
 import '../canvas/media_drop.dart';
 import '../canvas/page_canvas.dart';
+import '../canvas/windows_pen_buttons.dart';
+import '../canvas/writing_touch_guard.dart';
 import '../math/math_field.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
@@ -45,6 +48,33 @@ class AppShell extends StatefulWidget {
 enum _WritingToolbarDock { floating, left, right }
 
 class _AppShellState extends State<AppShell> {
+  final _touchPen = WindowsPenButtons();
+  WritingTouchGuard? _touchGuard;
+
+  void _penRangeChanged() =>
+      _touchGuard?.setPenInRange(_touchPen.nativeInRange);
+
+  bool _touchNavigationTarget(PointerDownEvent event) {
+    // Exclude the canvas scroll track, whose absolute position jump is not a
+    // swipe. Other controls and dialogs still receive deliberate finger drags.
+    final hit = HitTestResult();
+    WidgetsBinding.instance.hitTestInView(hit, event.position, event.viewId);
+    for (final editor in [
+      widget.app,
+      if (_splitEditor != null) _splitEditor!
+    ]) {
+      final surface = editor.canvasKey.currentContext?.findRenderObject();
+      if (surface is! RenderBox ||
+          !surface.hasSize ||
+          !hit.path.any((entry) => entry.target == surface)) {
+        continue;
+      }
+      final local = surface.globalToLocal(event.position);
+      return local.dx < surface.size.width - 20;
+    }
+    return true;
+  }
+
   AppState get app => _activeEditor ?? widget.app;
   AppState? _activeEditor;
   AppState? _splitEditor;
@@ -162,6 +192,17 @@ class _AppShellState extends State<AppShell> {
   @override
   void initState() {
     super.initState();
+    final binding = WidgetsBinding.instance;
+    if (binding is WritingTouchBinding) {
+      _touchGuard = (binding as WritingTouchBinding).writingTouchGuard;
+      _touchGuard!.writingContext = () =>
+          app.pageId != null &&
+          app.tool != Tool.select &&
+          app.tool != Tool.text;
+      _touchGuard!.navigationTarget = _touchNavigationTarget;
+      _touchPen.addListener(_penRangeChanged);
+      unawaited(_touchPen.attach());
+    }
     HardwareKeyboard.instance.addHandler(_onKey);
     // The OneNote-style pending caret's arrow keys (live_markdown_engine.dart)
     // reuse this same block-nudge rather than reimplementing it.
@@ -213,6 +254,8 @@ class _AppShellState extends State<AppShell> {
 
   @override
   void dispose() {
+    _touchGuard?.detach();
+    _touchPen.dispose();
     widget.app.toggleSplitView = null;
     widget.app.activateEditor = null;
     HardwareKeyboard.instance.removeHandler(_onKey);

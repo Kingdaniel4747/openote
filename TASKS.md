@@ -6,6 +6,9 @@ Stand: 09.11.2026. Nur aktuelle Arbeit und bekannte Grenzen, keine Versionschron
 
 - Windows am Gerät prüfen: Schreiben, Speichern/Neustart, Undo/Redo, Stift- und
   Radierer-Taste, Lasso, Pinch-Zoom und Zweifinger-Lineal.
+- Automatischen Handballenschutz am Gerät prüfen: Hand vor dem Stift auflegen,
+  Ärmel am Scrollbalken, Schreibpausen und bewusstes Wischen/Zoomen bei weiter
+  aufliegender Hand. Keine manuelle Touch-Sperre und keine neue Einstellung.
 - PDF-Import, Beschriften, wiederholtes Öffnen und Export real prüfen.
 - QR-Scanner im gemeinsamen WLAN am Ziel-PC prüfen.
 - Große Notizbücher und laufende Medien beim Schließen/Backup beobachten.
@@ -23,7 +26,7 @@ Verhalten. Entfernte Messproben ändern zukünftige Testzahlen.
 
 | Testdatei in `app/test/` | Noch zu prüfen |
 |---|---|
-| `canvas_interaction_test.dart` | Rotierter Resize-Anker; Timer bei Touch-Swipe und drei Kontakten (3) |
+| `canvas_interaction_test.dart` | Rotierter Resize-Anker; Timer bei Touch-Swipe, Maus nach Stift-Hover und drei Kontakten (4; auch im unveränderten Vergleichsstand) |
 | `command_bar_compact_test.dart` | Heutiges Planersymbol/-Badge statt alter Erwartung (2) |
 | `drawing_regressions_test.dart` | Lineal bewegen/strecken ohne Kamerabewegung (1) |
 | `draw_tools_test.dart` | Schmale Tab-Leiste läuft über (1) |
@@ -51,6 +54,12 @@ ein lokaler APK-Build brauchen diese Werkzeuge.
 
 ## Erledigt
 
+- Automatischer Windows-Handballenschutz vor der UI-Ereignisverarbeitung:
+  Stift hat Vorrang, alte Handkontakte bleiben bis zum Abheben ausgeschlossen;
+  frische klare Fingerbewegungen erlauben weiter Wischen und Pinch-Zoom.
+  16 neue Tests bestanden; breiter Eingabelauf: 81 bestanden, vier bestehende
+  Canvas-Fehler im unveränderten Vergleich bestätigt. Analyse sauber,
+  Windows-Release-Build erfolgreich (Dart-Kern, lokal kein Cargo).
 - Notebook-Verwaltung: dauerhaftes Suchfeld oben filtert Namen direkt; Leeren und erneutes Öffnen
   setzen die Suche zurück. Beim Öffnen erhält es automatisch den Fokus;
   zusätzliche Dialoge behalten ihren eigenen Eingabefokus.
