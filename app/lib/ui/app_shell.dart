@@ -15,7 +15,6 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'alert_popup.dart';
 import 'import_progress.dart';
-import 'learning_access_dialog.dart';
 import 'command_bar.dart';
 import 'context_menus.dart';
 import 'object_row.dart';
@@ -2018,8 +2017,6 @@ class _PageHeader extends StatelessWidget {
             child: Text(page.title,
                 overflow: TextOverflow.ellipsis, style: crumbStyle),
           ),
-          const Spacer(),
-          LearningAccessButton(app: app),
         ],
       ),
     );

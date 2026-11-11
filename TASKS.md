@@ -11,9 +11,8 @@ Stand: 11.11.2026. Nur aktuelle Arbeit und bekannte Grenzen, keine Versionschron
   aufliegender Hand. Keine manuelle Touch-Sperre und keine neue Einstellung.
 - PDF-Import, Beschriften, wiederholtes Öffnen und Export real prüfen.
 - QR-Scanner im gemeinsamen WLAN am Ziel-PC prüfen.
-- MCP am Gerät mit einem Desktop-KI-Client verbinden: aktuelle Seite, Buch,
-  Seiten-/Buchwechsel, Handschrift, PDF-Anmerkungen und Bildausschnitte prüfen.
-  PDFium-Seitenbilder brauchen diese Prüfung außerhalb der Headless-Tests.
+- MCP dauerhaft im gewünschten Desktop-KI-Client konfigurieren; Buchwechsel
+  außerhalb der Freigabe und gesperrte Seiten zusätzlich am Gerät prüfen.
 - Große Notizbücher und laufende Medien beim Schließen/Backup beobachten.
 - Wortlaut des noch nicht identifizierten VS-Code-Auto-Fix-Dialogs aufnehmen;
   Explorer-Farben können Git-Status oder Diagnosen bedeuten.
@@ -44,6 +43,13 @@ Verhalten. Entfernte Messproben ändern zukünftige Testzahlen.
 | `windows_window_frame_test.dart` | Custom-Chrome-Mock bei Maximieren und Stift-Hover (2) |
 
 ## Bereits geprüft
+
+Live-MCP an der installierten Windows-App: aktuelle Seite mit Aufgabenbildern,
+Handschrift und Detailausschnitten gelesen; Seitenwechsel sperrt die vorherige
+Seite. Buchmodus listet 18 Seiten portionsweise und liest eine andere Seite,
+ohne zu navigieren; lange Notiz mit 40 Bildabschnitten erkannt und nur einen
+Abschnitt abgerufen. Unveränderter Text erkannt; Ausschalten beendet den
+Server (Verbindung abgewiesen). Keine Notizen geändert.
 
 Windows startet; sichtbare Dart-Änderung und Rücknahme per Hot Reload geprüft.
 App-/Scanner-Analyse waren sauber. Gezielte Editor-/PDF-/Cache-/Tastaturtests:

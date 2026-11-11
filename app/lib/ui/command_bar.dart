@@ -27,6 +27,7 @@ import 'insert_catalog.dart';
 import 'object_face.dart';
 import 'object_row.dart';
 import 'settings_dialog.dart';
+import 'learning_access_dialog.dart';
 import 'scanner_pairing_dialog.dart';
 import 'update_dialog.dart';
 import '../theme/tokens.dart';
@@ -327,6 +328,7 @@ class _CommandBarState extends State<CommandBar> {
             onPressed: () => _openBrowser(context),
           ),
         _PlannerButton(app: app),
+        LearningAccessButton(app: app),
         IconButton(
           icon: const Icon(Icons.settings_outlined, size: 18),
           tooltip: tr(context, 'Settings…'),
@@ -385,6 +387,7 @@ class _CommandBarState extends State<CommandBar> {
                 onPressed: () => _openBrowser(context),
               ),
             _PlannerButton(app: app),
+            LearningAccessButton(app: app),
             IconButton(
               icon: const Icon(Icons.settings_outlined, size: 18),
               tooltip: tr(context, 'Settings…'),

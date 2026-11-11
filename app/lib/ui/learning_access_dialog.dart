@@ -35,17 +35,15 @@ class LearningAccessButton extends StatelessWidget {
             LearningScope.page => 'AI: current page',
             LearningScope.notebook => 'AI: shared notebook',
           };
-          return TextButton.icon(
-            style: TextButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                textStyle: const TextStyle(fontSize: 11)),
+          return IconButton(
+            tooltip: tr(context, label),
+            visualDensity: VisualDensity.compact,
+            isSelected: scope != LearningScope.off,
             icon: Icon(
                 scope == LearningScope.off
                     ? Icons.shield_outlined
                     : Icons.visibility_outlined,
-                size: 14),
-            label: AppText(label),
+                size: 18),
             onPressed: () => showLearningAccessDialog(context, app),
           );
         },

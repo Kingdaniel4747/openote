@@ -41,8 +41,8 @@ Das Schließen des Kopplungsdialogs beendet den Empfänger.
 
 ## KI zum Lernen verbinden
 
-1. In Openote auf „KI: aus“ neben dem Seitentitel klicken oder in den
-   Einstellungen „KI-Lernzugriff“ öffnen.
+1. In Openote auf das KI-Symbol oben rechts neben den Einstellungen klicken
+   oder in den Einstellungen „KI-Lernzugriff“ öffnen.
 2. „Aktuelle Seite“ oder „Dieses Notizbuch“ freigeben. Der Seitenmodus folgt
    der aktiven Seite, auch im geteilten Fenster. Die Buchfreigabe bleibt an das
    ausgewählte Buch gebunden; beim Wechsel in ein anderes Buch ruht der Zugriff.
