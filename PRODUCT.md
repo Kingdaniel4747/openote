@@ -15,11 +15,14 @@ Der Android-Scanner ist eine Begleitapp, kein zweiter Notizeditor.
 - Sicherung und Wiederherstellung der vollständigen Notizbücher.
 - QR-Kopplung und direkte Scan-Übertragung vom Android-Handy im lokalen Netz.
 - OneNote-Import über den optionalen Rust-Kern.
+- Optionaler, rein lesender MCP-Lernzugriff für die aktuelle Seite oder ein
+  ausdrücklich freigegebenes Notizbuch; Text, Handschrift, Bilder und PDFs.
 
 ## Grenzen
 
 Keine Projektwebsite, kein Benutzerkonto und kein benötigter Cloudserver.
-Keine eingebaute KI-/MCP-Anbindung und kein Lernkarten-Workflow.
+Kein eingebautes KI-Modell und kein neuer Lernkarten-Workflow. MCP verbindet
+einen externen Desktop-KI-Client; Freigaben sind nach einem App-Neustart aus.
 Alte Sync-, CRDT- oder Plattformpläne sind keine aktuellen Anforderungen.
 Kompatibilitätsleser für ältere Notizbücher bleiben erhalten.
 Linux-Quellcode und Packaging bleiben für später bestehen.

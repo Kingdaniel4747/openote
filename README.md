@@ -39,6 +39,34 @@ normalerweise dasselbe WLAN. Die Windows-Firewall muss private eingehende
 Verbindungen erlauben. Website und Cloudserver sind dafür nicht erforderlich.
 Das Schließen des Kopplungsdialogs beendet den Empfänger.
 
+## KI zum Lernen verbinden
+
+1. In Openote auf „KI: aus“ neben dem Seitentitel klicken oder in den
+   Einstellungen „KI-Lernzugriff“ öffnen.
+2. „Aktuelle Seite“ oder „Dieses Notizbuch“ freigeben. Der Seitenmodus folgt
+   der aktiven Seite, auch im geteilten Fenster. Die Buchfreigabe bleibt an das
+   ausgewählte Buch gebunden; beim Wechsel in ein anderes Buch ruht der Zugriff.
+3. Im Desktop-KI-Client einen MCP-Server mit **Streamable HTTP** hinzufügen.
+   URL und Authorization-Wert mit den Schaltflächen aus Openote übernehmen.
+   Für Codex alternativ „Codex-Konfiguration kopieren“ und den Abschnitt in
+   die persönliche `~/.codex/config.toml` einfügen; danach den Client neu verbinden.
+   Diese Konfiguration enthält ein geheimes Token und gehört nicht ins Repository.
+4. Beispielsweise fragen: „Erkläre meine aktuelle Seite“ oder „Lies alle Seiten
+   dieses Buchs und frage mich dazu ab“.
+
+Openote muss geöffnet bleiben. Der Server ist nur über `127.0.0.1` erreichbar;
+ein reiner Web-Client kann diese lokale Adresse nicht abrufen. Ein belegter
+Port wird im Dialog als Verbindungsfehler angezeigt. Nach einem Neustart ist
+die Freigabe aus; die Verbindungsdaten bleiben für die nächste Freigabe erhalten.
+
+Der Zugriff ist ausschließlich lesend und schließt gesperrte Seiten aus.
+Text einschließlich PDF-Text wird portionsweise geliefert, Handschrift, Bilder
+und PDF-Anmerkungen als begrenzte Seitenbilder mit Detailausschnitten. Buchlisten
+und Textsuche helfen beim gezielten Nachlesen; Handschrift wird nicht automatisch
+per OCR durchsuchbar. Videos, Dateianhänge und verknüpfte Seiten werden nicht
+automatisch geöffnet. Bereits übertragene Inhalte bleiben im Chat; eine
+Cloud-KI verarbeitet sie bei ihrem Anbieter.
+
 ## Ordner und Projektwissen
 
 | Pfad | Aufgabe |
@@ -63,9 +91,10 @@ In `scanner/` gelten dieselben Analyse-/Testbefehle; ein APK-Build benötigt
 zusätzlich Android SDK und Java.
 Den Rust-Kern bei Änderungen separat mit `cargo test` in `rust/onote_core/` prüfen.
 
-Der bestehende GitHub-Workflow veröffentlicht bei einem Push auf jeden Branch
-eine gemeinsame Version mit Windows-Installer und Scanner-APK. Dieser Ablauf
-bleibt unverändert. Kein Push oder Release ohne ausdrücklichen Auftrag.
+Der GitHub-Workflow **Release packages** wird unter Actions manuell gestartet
+und veröffentlicht eine gemeinsame Version mit Windows-Setup-`.exe` und
+Scanner-APK. Normale Pushes lösen keinen Release aus. Diesen Ablauf unverändert
+lassen; kein Push oder Release ohne ausdrücklichen Auftrag.
 
 Für signierte APKs benötigt er `ANDROID_KEYSTORE_BASE64`,
 `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` und `ANDROID_KEY_PASSWORD`.

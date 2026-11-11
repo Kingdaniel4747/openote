@@ -15,6 +15,7 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'alert_popup.dart';
 import 'import_progress.dart';
+import 'learning_access_dialog.dart';
 import 'command_bar.dart';
 import 'context_menus.dart';
 import 'object_row.dart';
@@ -82,6 +83,7 @@ class _AppShellState extends State<AppShell> {
 
   void _activateEditor(AppState editor) {
     if (app == editor) return;
+    widget.app.focusLearningEditor(editor);
     editor.navSectionsW = app.navSectionsW;
     editor.navPagesW = app.navPagesW;
     editor.navCollapsed = app.navCollapsed;
@@ -106,6 +108,7 @@ class _AppShellState extends State<AppShell> {
         if (!mounted) return;
         setState(() {
           _activeEditor = widget.app;
+          widget.app.focusLearningEditor(widget.app);
           _splitEditor = null;
           widget.app.splitViewEnabled = false;
         });
@@ -2015,6 +2018,8 @@ class _PageHeader extends StatelessWidget {
             child: Text(page.title,
                 overflow: TextOverflow.ellipsis, style: crumbStyle),
           ),
+          const Spacer(),
+          LearningAccessButton(app: app),
         ],
       ),
     );

@@ -20,7 +20,9 @@
 /// cut at the fold, which is what a printer does and what the reader expects.
 library;
 
+import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' show Rect, Size;
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -35,6 +37,7 @@ import 'package:pdf/widgets.dart' as pw;
 import '../canvas/ink_painter.dart' show colorFromHex;
 import '../math/latex_compat.dart';
 import '../media/pdf_pages.dart';
+import '../media/pdf_runtime.dart';
 import '../math/graph_plot.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
@@ -118,10 +121,135 @@ Future<String?> exportSectionPdfVector(AppState app, String sectionId) async {
 /// re-export can reuse it, and so it is testable without a UI.
 Future<Uint8List> buildPagePdf(AppState app, String pageId,
     {required String title}) async {
+  return buildSnapshotPdf(PdfPageSnapshot.capture(app, pageId), title: title);
+}
+
+/// Frozen input: asynchronous exports never borrow another notebook's blobs
+/// or a newly selected page. Also used by the read-only learning interface.
+class PdfPageSnapshot {
+  PdfPageSnapshot._(this.pageId, this.blocks, this.pageProps, this._nodes,
+      this._blobs, this.renderSizes, this._heights, this._bounds, this.region);
+
+  factory PdfPageSnapshot.capture(AppState app, String pageId,
+      {PageData? data,
+      bool linkedTitles = true,
+      bool expandCanvas = false,
+      Rect? region}) {
+    data ??= pageId == app.pageId
+        ? PageData(app.blocks, app.pageProps)
+        : app.readPage(pageId);
+    final blocks =
+        (jsonDecode(jsonEncode(data.blocks.map((b) => b.toJson()).toList()))
+                as List)
+            .map((b) => Block.fromJson((b as Map).cast<String, dynamic>()))
+            .toList();
+    final nodes = <String, TreeNode>{};
+    for (final n in app.nodes) {
+      if (n.id == pageId || linkedTitles) {
+        nodes[n.id] = TreeNode(
+            id: n.id, kind: n.kind, title: n.title, createdAt: n.createdAt);
+      }
+    }
+    final blobs = <String, Uint8List>{};
+    void captureBlob(Object? ref) {
+      if (ref is! String || blobs.containsKey(ref)) return;
+      final bytes = app.blob(ref);
+      if (bytes != null) blobs[ref] = bytes;
+    }
+    // Freeze only bytes the renderer actually needs. A PDF preview is enough:
+    // do not read a 200 MB deck, or re-read ink already decoded in the blocks,
+    // just to show one page to the learning client.
+    for (final b in blocks) {
+      if (b.type == BlockType.image) {
+        captureBlob(b.content['blob']);
+        if (!blobs.containsKey(b.content['blob'])) captureBlob(b.content['pdf']);
+      }
+      if (b.type == BlockType.text && b.content['text'] is String) {
+        for (final line in (b.content['text'] as String).split('\n')) {
+          final image = _imageLineRe.firstMatch(line);
+          if (image != null) captureBlob(image.group(1));
+        }
+      }
+    }
+    final props = PageProps.fromJson(data.props.toJson());
+    if (expandCanvas && !props.isPaged && !props.pdfOnly) {
+      for (final block in blocks) {
+        props.pageWidth =
+            math.max(props.pageWidth, app.blockVisualBounds(block).right + 24);
+      }
+    }
+    return PdfPageSnapshot._(
+        pageId,
+        blocks,
+        props,
+        nodes,
+        blobs,
+        Map.of(app.renderSizes),
+        {for (final b in blocks) b.id: app.estimatedHeight(b)},
+        {for (final b in blocks) b.id: app.blockVisualBounds(b)},
+        region);
+  }
+
+  final String pageId;
+  final List<Block> blocks;
+  final PageProps pageProps;
+  final Map<String, TreeNode> _nodes;
+  final Map<String, Uint8List> _blobs;
+  final Map<String, Size> renderSizes;
+  final Map<String, double> _heights;
+  final Map<String, Rect> _bounds;
+  final Rect? region;
+  Rect get contentBounds {
+    var bounds = Rect.fromLTWH(
+        0,
+        0,
+        pageProps.isPaged ? pageProps.paper.width : pageProps.pageWidth,
+        pageProps.pdfOnly ? pageProps.pdfPageHeight : 1);
+    for (final rect in _bounds.values) {
+      bounds = bounds.expandToInclude(rect);
+    }
+    return bounds;
+  }
+
+  TreeNode? node(String id) => _nodes[id];
+  Uint8List? blob(String hash) => _blobs[hash];
+  double estimatedHeight(Block b) => _heights[b.id] ?? 60;
+  Rect blockVisualBounds(Block b) => _bounds[b.id] ?? Rect.zero;
+}
+
+/// With [sheetIndex], render only one sheet of a long note, keeping learning
+/// requests bounded without moving the user's canvas or selection.
+Future<Uint8List> buildSnapshotPdf(PdfPageSnapshot snapshot,
+    {required String title, int? sheetIndex}) async {
   final doc = pw.Document(title: title, creator: 'Openote');
   final theme = await _theme();
-  await _addPageSheets(doc, app, pageId, theme);
+  await _addPageSheets(doc, snapshot, snapshot.pageId, theme,
+      sheetIndex: sheetIndex);
   return doc.save();
+}
+
+int snapshotSheetCount(PdfPageSnapshot snapshot) {
+  if (snapshot.region != null) return 1;
+  final props = snapshot.pageProps;
+  if (props.pdfOnly) return 1;
+  final width = props.isPaged ? props.paper.width : props.pageWidth;
+  var bottom = 0.0;
+  for (final b in snapshot.blocks) {
+    bottom = math.max(
+        bottom,
+        b.y +
+            (b.h ??
+                snapshot.renderSizes[b.id]?.height ??
+                snapshot.estimatedHeight(b)));
+  }
+  if (bottom <= 0) bottom = _sheetHeight(width);
+  final slide = props.isPaged ? null : _slideHeight(snapshot.blocks, width);
+  final height = props.isPaged
+      ? props.paper.height
+      : slide == null
+          ? _sheetHeight(width)
+          : math.max(bottom, slide);
+  return (bottom / height).ceil().clamp(1, 500);
 }
 
 /// Build one PDF from every page of a section, in navigator order.
@@ -130,7 +258,7 @@ Future<Uint8List> buildDeckPdf(AppState app, String sectionId,
   final doc = pw.Document(title: title, creator: 'Openote');
   final theme = await _theme();
   for (final p in app.pagesOf(sectionId)) {
-    await _addPageSheets(doc, app, p.id, theme);
+    await _addPageSheets(doc, PdfPageSnapshot.capture(app, p.id), p.id, theme);
   }
   return doc.save();
 }
@@ -141,32 +269,10 @@ Future<Uint8List> buildDeckPdf(AppState app, String sectionId,
 /// a section means most of these pages are closed, and borrowing the open
 /// page's width would have laid every one of them out at the wrong size.
 Future<void> _addPageSheets(
-    pw.Document doc, AppState app, String pageId, pw.ThemeData? theme) async {
-  final data = app.pageId == pageId ? null : app.readPage(pageId);
-  final blocks = data?.blocks ?? app.blocks;
-  final props = data?.props ?? app.pageProps;
-
-  // Equations are painted BEFORE the document is laid out: rasterising a
-  // widget is asynchronous and the sheet builder below is not. One image per
-  // math block, keyed by block id. PDF slides join the same map for the same
-  // reason — an on-demand slide (storage wave 1c) has no stored pixels until
-  // something renders them, and the sheet builder cannot await.
-  final maths = await _renderMaths(blocks);
-  for (final b in blocks) {
-    final pdf = b.content['pdf'];
-    if (b.type != BlockType.image || pdf is! String) continue;
-    final preview = b.content['blob'];
-    if (preview is String) {
-      final bytes = app.blob(preview);
-      if (bytes != null) {
-        maths[b.id] = bytes;
-        continue;
-      }
-    }
-    final png = await PdfPages.pageImage(
-        app, pdf, (b.content['page'] as num?)?.toInt() ?? 0);
-    if (png != null) maths[b.id] = png;
-  }
+    pw.Document doc, PdfPageSnapshot app, String pageId, pw.ThemeData? theme,
+    {int? sheetIndex}) async {
+  final blocks = app.blocks;
+  final props = app.pageProps;
 
   // Content bounds in page px. The page's own width wins over the content's, so
   // a note narrower than its page still exports at the page size the user set.
@@ -198,17 +304,65 @@ Future<void> _addPageSheets(
       (slide == null
           ? _sheetHeight(widthPx)
           : (bottomPx > slide ? bottomPx : slide));
-  final sheets = props.pdfOnly ? 1 : (bottomPx / sheetPx).ceil().clamp(1, 500);
-  final format = PdfPageFormat(widthPx / _pxPerPoint,
-      (props.pdfOnly ? props.pdfPageHeight : sheetPx) / _pxPerPoint);
+  final region = app.region;
+  final sheets = props.pdfOnly || region != null
+      ? 1
+      : (bottomPx / sheetPx).ceil().clamp(1, 500);
+  if (sheetIndex != null && (sheetIndex < 0 || sheetIndex >= sheets)) {
+    throw RangeError('Sheet outside page (0..${sheets - 1})');
+  }
+  final format = PdfPageFormat(
+      (region?.width ?? widthPx) / _pxPerPoint,
+      (region?.height ?? (props.pdfOnly ? props.pdfPageHeight : sheetPx)) /
+          _pxPerPoint);
+
+  final renderingBlocks = region != null
+      ? blocks.where((b) => app.blockVisualBounds(b).overlaps(region)).toList()
+      : sheetIndex == null
+          ? blocks
+          : blocks
+              .where((b) => _overlaps(
+                  app, b, sheetIndex * sheetPx, (sheetIndex + 1) * sheetPx))
+              .toList();
+  // Equations are painted BEFORE the document is laid out: rasterising a
+  // widget is asynchronous and the sheet builder below is not. One image per
+  // math block, keyed by block id. PDF slides join the same map for the same
+  // reason — an on-demand slide (storage wave 1c) has no stored pixels until
+  // something renders them, and the sheet builder cannot await.
+  final maths = await _renderMaths(renderingBlocks);
+  for (final b in renderingBlocks) {
+    final pdf = b.content['pdf'];
+    if (b.type != BlockType.image || pdf is! String) continue;
+    final preview = b.content['blob'];
+    if (preview is String) {
+      final bytes = app.blob(preview);
+      if (bytes != null) {
+        maths[b.id] = bytes;
+        continue;
+      }
+    }
+    final bytes = app.blob(pdf);
+    if (bytes == null) continue;
+    final source = await PdfRuntime.open(bytes, pdf);
+    try {
+      final index = (b.content['page'] as num?)?.toInt() ?? 0;
+      if (index >= 0 && index < source.pages.length) {
+        final png = await renderPdfPageToPng(source.pages[index]);
+        if (png != null) maths[b.id] = png.png;
+      }
+    } finally {
+      await source.dispose();
+    }
+  }
 
   for (var sheet = 0; sheet < sheets; sheet++) {
-    final top = sheet * sheetPx;
-    final bottom = top + sheetPx;
+    if (sheetIndex != null && sheet != sheetIndex) continue;
+    final top = region?.top ?? sheet * sheetPx;
+    final bottom = top + (region?.height ?? sheetPx);
     // Only what this sheet shows. A block straddling the fold is drawn on both
     // sheets and clipped by the page edge, which is how a printout works.
     final visible = [
-      for (final b in blocks)
+      for (final b in renderingBlocks)
         if (_overlaps(app, b, top, bottom)) b
     ]..sort((a, b) {
         // Match the canvas: annotation ink stays above images, PDFs and tables.
@@ -216,7 +370,7 @@ Future<void> _addPageSheets(
             (b.type == BlockType.ink ? 1 : 0);
         return inkOrder != 0 ? inkOrder : a.z.compareTo(b.z);
       });
-    if (visible.isEmpty && sheet > 0) continue;
+    if (visible.isEmpty && sheet > 0 && sheetIndex == null) continue;
 
     doc.addPage(pw.Page(
       pageFormat: format,
@@ -230,9 +384,15 @@ Future<void> _addPageSheets(
           // TreeNode. So a PDF of a note came out with no indication of which
           // note it was, which is most of what you need from a page you have
           // shared or handed in.
-          if (sheet == 0 && !props.pdfOnly) ..._titleBand(app, pageId, widthPx),
+          if (sheet == 0 &&
+              top == 0 &&
+              (region?.left ?? 0) == 0 &&
+              !props.pdfOnly)
+            ..._titleBand(app, pageId, widthPx),
           for (final b in visible)
-            if (_blockWidget(app, b, top, maths) case final w?) w,
+            if (_blockWidget(app, b, top, maths, originX: region?.left ?? 0)
+                case final w?)
+              w,
         ],
       ),
     ));
@@ -327,7 +487,7 @@ double? _slideHeight(List<Block> blocks, double widthPx) {
   return found.y + h;
 }
 
-bool _overlaps(AppState app, Block b, double top, double bottom) {
+bool _overlaps(PdfPageSnapshot app, Block b, double top, double bottom) {
   final bounds = app.blockVisualBounds(b);
   return bounds.top < bottom && bounds.bottom > top;
 }
@@ -337,9 +497,10 @@ bool _overlaps(AppState app, Block b, double top, double bottom) {
 /// Returns null for a block this exporter has nothing useful to say about, so
 /// an unknown future block type is skipped rather than drawn as a placeholder.
 pw.Widget? _blockWidget(
-    AppState app, Block b, double sheetTop, Map<String, Uint8List> maths) {
+    PdfPageSnapshot app, Block b, double sheetTop, Map<String, Uint8List> maths,
+    {double originX = 0}) {
   final h = b.h ?? app.renderSizes[b.id]?.height ?? app.estimatedHeight(b);
-  final left = b.x / _pxPerPoint;
+  final left = (b.x - originX) / _pxPerPoint;
   final top = (b.y - sheetTop) / _pxPerPoint;
   final w = b.w / _pxPerPoint;
 
@@ -370,7 +531,7 @@ pw.Widget? _blockWidget(
 /// A page window (live embed). Print cannot be live, and v1 keeps no
 /// snapshot to inline (EMBED-8's fallback), so the export draws the frame
 /// with its attribution rather than pretending the content was here.
-pw.Widget _embedWidget(AppState app, Block b, double h) {
+pw.Widget _embedWidget(PdfPageSnapshot app, Block b, double h) {
   final ref = (b.content['ref'] as Map?)?.cast<String, dynamic>();
   final title = (app.node(ref?['pageId'] as String? ?? '')?.title ?? '').trim();
   return pw.Container(
@@ -390,7 +551,7 @@ pw.Widget _embedWidget(AppState app, Block b, double h) {
 /// Positions come from the same constants the screen uses
 /// (`AppState.pageLeftMargin`, `titleBandHeight`), so the exported band lines
 /// up with the content beneath it rather than being a header invented here.
-List<pw.Widget> _titleBand(AppState app, String pageId, double widthPx) {
+List<pw.Widget> _titleBand(PdfPageSnapshot app, String pageId, double widthPx) {
   final node = app.node(pageId);
   final title = (node?.title ?? '').trim();
   if (title.isEmpty) return const [];
@@ -453,7 +614,7 @@ String _dateLine(int ms) {
 /// different text model; the thing that matters for a shared or printed note is
 /// that the words are *there*, selectable and searchable, at roughly the right
 /// size. Headings keep their weight because that carries the structure.
-pw.Widget? _textWidget(AppState app, Block b,
+pw.Widget? _textWidget(PdfPageSnapshot app, Block b,
     [Map<String, Uint8List> maths = const {}]) {
   // A text block is a container of MIXED content (Data Model §5.1): pictures
   // and flashcards live on their own lines inside the prose. The exporter used
@@ -471,7 +632,7 @@ pw.Widget? _textWidget(AppState app, Block b,
 /// A block whose text carries in-flow pictures or cards, as a column of real
 /// widgets. Null when it is ordinary prose, which is the overwhelming majority
 /// and keeps the simple path simple.
-pw.Widget? _mixedFlow(AppState app, Block b,
+pw.Widget? _mixedFlow(PdfPageSnapshot app, Block b,
     [Map<String, Uint8List> maths = const {}]) {
   final text = b.content['text'] as String? ?? '';
   if (!text.contains('![') && !text.contains('?[')) return null;
@@ -905,7 +1066,7 @@ pw.Widget? _tableWidget(Block b) {
   );
 }
 
-pw.Widget? _imageWidget(AppState app, Block b, double h,
+pw.Widget? _imageWidget(PdfPageSnapshot app, Block b, double h,
     {Uint8List? prerendered}) {
   final wPt = b.w / _pxPerPoint;
   final hPt = h / _pxPerPoint;

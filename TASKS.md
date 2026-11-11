@@ -1,6 +1,6 @@
 # Aufgaben
 
-Stand: 09.11.2026. Nur aktuelle Arbeit und bekannte Grenzen, keine Versionschronik.
+Stand: 11.11.2026. Nur aktuelle Arbeit und bekannte Grenzen, keine Versionschronik.
 
 ## Als Nächstes
 
@@ -11,6 +11,9 @@ Stand: 09.11.2026. Nur aktuelle Arbeit und bekannte Grenzen, keine Versionschron
   aufliegender Hand. Keine manuelle Touch-Sperre und keine neue Einstellung.
 - PDF-Import, Beschriften, wiederholtes Öffnen und Export real prüfen.
 - QR-Scanner im gemeinsamen WLAN am Ziel-PC prüfen.
+- MCP am Gerät mit einem Desktop-KI-Client verbinden: aktuelle Seite, Buch,
+  Seiten-/Buchwechsel, Handschrift, PDF-Anmerkungen und Bildausschnitte prüfen.
+  PDFium-Seitenbilder brauchen diese Prüfung außerhalb der Headless-Tests.
 - Große Notizbücher und laufende Medien beim Schließen/Backup beobachten.
 - Wortlaut des noch nicht identifizierten VS-Code-Auto-Fix-Dialogs aufnehmen;
   Explorer-Farben können Git-Status oder Diagnosen bedeuten.
@@ -54,6 +57,14 @@ ein lokaler APK-Build brauchen diese Werkzeuge.
 
 ## Erledigt
 
+- Lesender MCP-Lernzugriff: aus/aktive Seite/freigegebenes Buch, lokaler
+  Token-Zugriff, begrenzte Textantworten, Buchsuche und Seitenbilder mit
+  Handschrift/PDF-Anmerkungen und Detailausschnitten. Ungespeicherte Texte aus
+  beiden Editorflächen bleiben lesbar; Freigabewechsel und neue Sperren
+  widerrufen laufende Bildantworten. 97 gezielte MCP-/Schutz-/Handschrift-/PDF-/
+  Navigationstests bestanden, drei bekannte Headless-PDFium-Fälle übersprungen.
+  Analyse sauber, Windows-Release-Build erfolgreich (Dart-Kern, lokal kein Cargo).
+  Der manuell startbare GitHub-Release-Workflow bleibt unverändert.
 - Automatischer Windows-Handballenschutz vor der UI-Ereignisverarbeitung:
   Stift hat Vorrang, alte Handkontakte bleiben bis zum Abheben ausgeschlossen;
   frische klare Fingerbewegungen erlauben weiter Wischen und Pinch-Zoom.

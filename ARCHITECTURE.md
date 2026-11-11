@@ -52,6 +52,25 @@ sendet Bilder an `/v1/scan` und den Abschluss an `/v1/complete`.
 Der Empfänger prüft Token, Größe und Typ; er bietet keinen Notebook-Lesezugriff.
 `scanner/lib/main.dart` enthält Kamera, QR-Auswertung und Upload.
 
+## Lesender MCP-Lernzugriff
+
+`app/lib/api/mcp_server.dart` bietet zustandsloses Streamable HTTP unter
+`http://127.0.0.1:27191/mcp`: JSON-RPC, Bearer-Token, begrenzte Anfragen,
+keine Browser-Origin und keine Bindung ins LAN. Keine neuen Abhängigkeiten.
+`learning_access.dart` prüft für jedes Werkzeug den Freigabebereich: aus,
+aktive Seite oder das ausgewählte Buch. Buchwechsel erweitern keine Freigabe;
+gesperrte Seiten, beliebige Dateipfade und schreibende Werkzeuge sind ausgeschlossen.
+Freigaben leben nur in der Sitzung, Port und Token lokal in `learningMcp`.
+
+Werkzeuge: `get_context`, `list_pages`, `search_pages`, `read_page` und
+`read_page_image`. Textantworten haben Fortsetzungen und Inhaltsrevisionen;
+Bildantworten sind auf 1600 Pixel standardmäßig, höchstens 2400 Pixel begrenzt.
+Seitenbilder und Detailausschnitte verwenden eingefrorene Eingaben der bestehenden
+Vektor-PDF-Ausgabe, einschließlich ungespeicherter Texte aus beiden Editorflächen.
+Asynchrone Bildantworten prüfen die Freigabe vor der Rückgabe erneut. Der Bildcache
+ist auf sechs Einträge/12 MiB begrenzt. Handschrift bleibt Bildinhalt, keine OCR.
+PDF-Quellen werden nicht als vollständiges mehrseitiges Dokument herausgegeben.
+
 ## Build und Abhängigkeiten
 
 Windows-Runner: `app/windows/`; Linux-Runner: `app/linux/`.

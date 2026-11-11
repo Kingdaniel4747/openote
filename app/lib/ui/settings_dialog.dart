@@ -8,6 +8,7 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../update/app_update.dart';
 import 'onote_dialog.dart';
+import 'learning_access_dialog.dart';
 import 'update_dialog.dart';
 
 /// The centralised settings page (PLANNING "Consistency/UX"): one place
@@ -153,6 +154,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
           child: ListView(
             shrinkWrap: true,
             children: [
+              _card('AI learning access', [LearningAccessPanel(app: app)]),
               _card('Appearance', [
                 _row(
                   'Interface language',

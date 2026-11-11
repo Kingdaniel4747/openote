@@ -12,6 +12,7 @@ import 'package:super_clipboard/super_clipboard.dart'
     show Formats, SystemClipboard;
 
 import '../canvas/align_guides.dart';
+import '../api/learning_access.dart';
 import '../canvas/canvas_controller.dart';
 import '../core/engine.dart';
 import '../core/ids.dart';
@@ -228,6 +229,54 @@ class AppState extends ChangeNotifier
   final Repository _repo;
   final DocumentEngine engine;
 
+  LearningAccess? _learning;
+  LearningAccess get learning =>
+      (_editorOwner ?? this)._learning ??= LearningAccess(_editorOwner ?? this,
+          readSettings: () => _repo.getSetting('learningMcp'),
+          writeSettings: (settings) =>
+              _repo.setSetting('learningMcp', settings));
+  AppState? _learningEditor;
+  AppState get learningEditor =>
+      (_editorOwner ?? this)._learningEditor ?? (_editorOwner ?? this);
+  void focusLearningEditor(AppState editor) {
+    final owner = _editorOwner ?? this;
+    if (owner.learningEditor == editor) return;
+    owner._learningEditor = editor;
+    owner._learning?.editorChanged();
+  }
+
+  String? _learningNotebook;
+  String? _learningPage;
+  bool get learningNavigationBusy =>
+      _disposed || notebookId != _learningNotebook || pageId != _learningPage;
+
+  /// Include unsaved content from either split pane, without selecting or
+  /// saving it. Pending text is copied from the controller, never committed
+  /// as a side effect of a read request.
+  PageData learningPageData(String id) {
+    final owner = _editorOwner ?? this;
+    final live = [owner, ...owner._editors]
+        .where((editor) =>
+            !editor.learningNavigationBusy &&
+            editor.notebookId == notebookId &&
+            editor.pageId == id)
+        .firstOrNull;
+    if (live == null) return readPageShared(id);
+    final active = live.activeEditor;
+    if (active == null) return PageData(live.blocks, live.pageProps);
+    return PageData([
+      for (final b in live.blocks)
+        if (b.id == active.block.id)
+          Block.fromJson(b.toJson()
+            ..['content'] = {
+              ...b.content,
+              active.contentKey: active.controller.text,
+            })
+        else
+          b,
+    ], live.pageProps);
+  }
+
   // Split editors own their selection, undo stack and camera, but share one
   // repository.
   AppState? _editorOwner;
@@ -400,54 +449,6 @@ class AppState extends ChangeNotifier
   ) =>
       _repo.searchPageContent(nb, query);
 
-  // ── The MCP server (spec 14): AI tools reading and writing notes ──────
-
-  /* McpServer? _mcpServer;
-  bool mcpEnabled = false;
-  String? mcpToken;
-  int? mcpPort;
-  String? mcpError;
-
-  /// Turn the local MCP server on or off. Off is the default forever; on
-  /// generates a bearer token once and binds 127.0.0.1 (spec 14 §4). The
-  /// chosen port persists so pasted client configs stay valid.
-  Future<void> setMcpEnabled(bool on) async {
-    mcpError = null;
-    if (!on) {
-      mcpEnabled = false;
-      await _mcpServer?.stop();
-      _repo.setSetting('mcp', {'enabled': false, 'token': mcpToken});
-      notifyListeners();
-      return;
-    }
-    mcpToken ??= '${newId()}${newId()}'.replaceAll('-', '');
-    _mcpServer ??= McpServer(this);
-    try {
-      mcpPort = await _mcpServer!.start(
-        token: mcpToken!,
-        preferredPort: mcpPort ?? 27191,
-      );
-      mcpEnabled = true;
-      _repo.setSetting('mcp', {
-        'enabled': true,
-        'token': mcpToken,
-        'port': mcpPort,
-      });
-      // Keep any connection the user made current — the port can move
-      // when another app holds it. No-op for everyone who never pressed
-      // Connect.
-      refreshConnectedClients(port: mcpPort!, token: mcpToken!);
-    } catch (e) {
-      mcpEnabled = false;
-      mcpError = '$e';
-    }
-    notifyListeners();
-  }
-
-  /// Update-through-app: set when launch found a newer release. The
-  /// command bar shows its button off this; null means current or the
-  /// check failed (offline etc.), which deliberately look identical.
-  */
   UpdateInfo? updateAvailable;
 
   Future<void> checkForAppUpdate() async {
@@ -457,22 +458,12 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
-  /// Restore the server on launch when the user left it on.
-  /* Future<void> _restoreMcp() async {
-    final s = _repo.getSetting('mcp');
-    if (s is! Map) return;
-    mcpToken = s['token'] as String?;
-    mcpPort = (s['port'] as num?)?.toInt();
-    if (s['enabled'] == true) await setMcpEnabled(true);
-  }
-
   // ── Passcode gating (interim; ADR-0008 designs the real thing) ────────
   //
   // A lock on the app's doors, NOT on the file. See page_protection.dart for
   // what that does and does not mean; the wording there is the wording the
   // user is shown.
 
-  */
   String _protectKey(String nodeId) => 'protect:${notebookId ?? ''}:$nodeId';
 
   /// Cheap "is anything protected at all" check, so the common notebook pays
@@ -491,6 +482,29 @@ class AppState extends ChangeNotifier
   int get gateRevision => _gateRevision;
 
   bool isPageLocked(String pageId) => isLocked(pageId);
+
+  final Map<String, String> _learningUnlockRecords = {};
+
+  /// Consult persisted protection as well as the focused pane's unlocks.
+  /// A lock changed in the other split pane must take effect immediately.
+  bool isLearningPageLocked(String pageId) {
+    String? current = pageId;
+    final visited = <String>{};
+    while (current != null && visited.add(current)) {
+      final raw = _repo.getSetting(_protectKey(current));
+      if (raw != null) {
+        final record = ProtectionRecord.fromJson(raw);
+        if (record == null || !_unlocked.containsKey(current) ||
+            _learningUnlockRecords[current] != jsonEncode(record.toJson())) {
+          return true;
+        }
+        final until = _unlocked[current];
+        return until != null && !DateTime.now().isBefore(until);
+      }
+      current = _protectionParent(node(current));
+    }
+    return current != null; // Corrupt ancestry fails closed.
+  }
 
   /// Re-read which nodes are protected, for the notebook that is open now.
   ///
@@ -511,6 +525,7 @@ class AppState extends ChangeNotifier
   void reloadProtection() {
     _protectedIds.clear();
     _unlocked.clear();
+    _learningUnlockRecords.clear();
     if (notebookId == null) return;
     final prefix = 'protect:${notebookId!}:';
     for (final k in _repo.settingKeys()) {
@@ -597,6 +612,7 @@ class AppState extends ChangeNotifier
     // `always` is not cached at all: the next open asks again.
     if (rec.policy != UnlockPolicy.always) {
       _unlocked[root] = d == null ? null : DateTime.now().add(d);
+      _learningUnlockRecords[root] = jsonEncode(rec.toJson());
     }
     _gateRevision++;
     notifyListeners();
@@ -3929,6 +3945,8 @@ class AppState extends ChangeNotifier
       _recordRecent(id);
     }
     docRevision++;
+    _learningNotebook = notebookId;
+    _learningPage = pageId;
     _persistSession();
     notifyListeners();
   }
@@ -5885,6 +5903,7 @@ class AppState extends ChangeNotifier
   /// Awaited by the app's [AppLifecycleListener]; without it, up to one debounce
   /// interval of edits was silently lost on every close.
   Future<void> shutdown() async {
+    await _learning?.stop();
     _cancelSaveTimers();
     final neededPageSave = _dirty;
     try {
@@ -5927,6 +5946,10 @@ class AppState extends ChangeNotifier
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    _learning?.dispose();
+    if (_editorOwner?._learningEditor == this) {
+      _editorOwner!.focusLearningEditor(_editorOwner!);
+    }
     for (final editor in _editors.toList()) {
       editor.dispose();
     }

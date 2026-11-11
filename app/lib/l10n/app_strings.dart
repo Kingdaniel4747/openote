@@ -34,6 +34,35 @@ class AppText extends StatelessWidget {
 }
 
 const german = <String, String>{
+  'AI learning access': 'KI-Lernzugriff',
+  'AI access': 'KI-Zugriff',
+  'AI: off': 'KI: aus',
+  'AI: current page': 'KI: aktuelle Seite',
+  'AI: shared notebook': 'KI: freigegebenes Buch',
+  'Current page (follows navigation)':
+      'Aktuelle Seite (folgt dem Seitenwechsel)',
+  'This notebook': 'Dieses Notizbuch',
+  'Shared notebook': 'Freigegebenes Notizbuch',
+  'Share the open notebook instead': 'Stattdessen das geöffnete Buch freigeben',
+  'The open notebook is not shared. Access is paused until you return to the shared notebook.':
+      'Das geöffnete Buch ist nicht freigegeben. Der Zugriff ruht, bis du zum freigegebenen Buch zurückkehrst.',
+  'Let a connected AI read your learning materials. It cannot edit, delete or open other notebooks.':
+      'Eine verbundene KI kann deine Lernmaterialien lesen. Sie kann nichts bearbeiten, löschen oder andere Bücher öffnen.',
+  'Reads happen only when the AI requests them. Long pages and books are read in small parts. Handwriting and scans are provided as page images.':
+      'Inhalte werden nur auf Anfrage der KI gelesen. Lange Seiten und Bücher werden in kleinen Teilen abgerufen. Handschrift und Scans werden als Seitenbilder bereitgestellt.',
+  'Openote must stay open. Access is off after restarting. Locked pages are excluded. Content already sent stays in the chat; a cloud AI processes it with its provider.':
+      'Openote muss geöffnet bleiben. Nach einem Neustart ist der Zugriff aus. Gesperrte Seiten sind ausgeschlossen. Bereits übertragene Inhalte bleiben im Chat; eine Cloud-KI verarbeitet sie bei ihrem Anbieter.',
+  'Connect your AI client': 'KI-Client verbinden',
+  'Add an MCP server in your desktop AI client: choose Streamable HTTP, use this URL and set the Authorization header to Bearer followed by the copied token. A web-only client cannot reach this local address.':
+      'Im Desktop-KI-Client einen MCP-Server hinzufügen: Streamable HTTP wählen, diese URL verwenden und den Authorization-Header auf Bearer gefolgt vom kopierten Token setzen. Ein reiner Web-Client erreicht diese lokale Adresse nicht.',
+  'Copy URL': 'URL kopieren',
+  'Copy Authorization value': 'Authorization-Wert kopieren',
+  'Copy Codex configuration': 'Codex-Konfiguration kopieren',
+  'Copied': 'Kopiert',
+  'Last read': 'Zuletzt gelesen',
+  'Open a notebook first.': 'Öffne zuerst ein Notizbuch.',
+  'MCP could not start. The local port may already be in use.':
+      'MCP konnte nicht starten. Der lokale Port wird möglicherweise bereits verwendet.',
   'Rotate': 'Drehen',
   'Arrange selected images and PDFs': 'Ausgewählte Bilder und PDFs anordnen',
   'Arrange': 'Anordnen',
@@ -67,7 +96,6 @@ const german = <String, String>{
   'Check language support': 'Sprachunterstützung prüfen',
   'Pen near the page switches to inking': 'Stiftkontakt aktiviert Schreiben',
   'Connections': 'Verbindungen',
-  'AI access': 'KI-Zugriff',
   'Keyboard': 'Tastatur',
   'Keyboard shortcuts': 'Tastenkürzel',
   'About': 'Über Openote',
