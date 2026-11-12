@@ -58,6 +58,13 @@ const german = <String, String>{
   'Copy URL': 'URL kopieren',
   'Copy Authorization value': 'Authorization-Wert kopieren',
   'Copy Codex configuration': 'Codex-Konfiguration kopieren',
+  'Open Codex configuration': 'Codex-Konfiguration öffnen',
+  'Could not open the Codex configuration. Open config.toml manually.':
+      'Die Codex-Konfiguration konnte nicht geöffnet werden. Öffne die Datei config.toml manuell.',
+  'Choose Current page or This notebook to start the local MCP server.':
+      'Wähle „Aktuelle Seite“ oder „Dieses Notizbuch“, um den lokalen MCP-Server zu starten.',
+  'For Codex, paste the copied configuration into ~/.codex/config.toml (or the config.toml in CODEX_HOME). Replace any existing Openote entry, save the file, and restart Codex while sharing is on.':
+      'Füge die kopierte Konfiguration in ~/.codex/config.toml oder in die config.toml unter CODEX_HOME ein. Ersetze einen vorhandenen Openote-Eintrag, speichere die Datei und starte Codex bei aktiver Freigabe neu.',
   'Copied': 'Kopiert',
   'Last read': 'Zuletzt gelesen',
   'Open a notebook first.': 'Öffne zuerst ein Notizbuch.',

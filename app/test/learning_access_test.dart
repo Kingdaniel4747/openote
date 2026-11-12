@@ -89,6 +89,7 @@ void main() {
     await access.stop();
     access.dispose();
     app.cancelPendingSave();
+    await repo.flushWorkspace();
     app.dispose();
     await Future<void>.delayed(Duration.zero);
     directory.deleteSync(recursive: true);
@@ -153,9 +154,14 @@ void main() {
       () async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     await enable(LearningScope.page);
+    final uri = Uri.parse(access.url!);
     final client = _LoopbackHttp().createHttpClient(null);
     try {
-      final request = await client.postUrl(Uri.parse(access.url!));
+      expect(
+          access.clientConfig,
+          '[mcp_servers.openote]\nurl = "$uri"\n'
+          'http_headers = { Authorization = "${access.authorizationHeader}" }\n');
+      final request = await client.postUrl(uri);
       request.headers.contentType = ContentType.json;
       request.headers.set('Authorization', access.authorizationHeader);
       request.headers.set('Accept', 'application/json, text/event-stream');
@@ -174,6 +180,15 @@ void main() {
     } finally {
       client.close(force: true);
     }
+
+    await enable(LearningScope.off);
+    await expectLater(
+        Socket.connect(uri.host, uri.port, timeout: const Duration(seconds: 2)),
+        throwsA(isA<SocketException>()));
+    await enable(LearningScope.page);
+    expect(access.url, uri.toString());
+    final connection = await Socket.connect(uri.host, uri.port);
+    connection.destroy();
   });
 
   test(
@@ -226,19 +241,23 @@ void main() {
         throwsFormatException);
   });
 
-  test('protection changes in another pane revoke stale learning unlocks', () async {
+  test('protection changes in another pane revoke stale learning unlocks',
+      () async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final split = await app.createSplitEditor();
     await split.selectPage(second);
     app.protectNode(first, 'first-passcode', UnlockPolicy.session);
     app.focusLearningEditor(split);
     await enable(LearningScope.notebook);
-    await expectLater(access.call('read_page', {'pageId': first}), throwsFormatException);
+    await expectLater(
+        access.call('read_page', {'pageId': first}), throwsFormatException);
     split.reloadProtection();
     expect(split.unlockNode(first, 'first-passcode'), true);
-    expect(body(await access.call('read_page', {'pageId': first}))['text'], contains('Unsaved first'));
+    expect(body(await access.call('read_page', {'pageId': first}))['text'],
+        contains('Unsaved first'));
     app.protectNode(first, 'new-passcode', UnlockPolicy.session);
-    await expectLater(access.call('read_page', {'pageId': first}), throwsFormatException);
+    await expectLater(
+        access.call('read_page', {'pageId': first}), throwsFormatException);
     app.focusLearningEditor(app);
   });
 
@@ -430,6 +449,11 @@ void main() {
                     child: SingleChildScrollView(
                         child: LearningAccessPanel(app: app)))))));
     expect(find.text('KI-Zugriff'), findsOneWidget);
+    expect(
+        find.text('Wähle „Aktuelle Seite“ oder „Dieses Notizbuch“, '
+            'um den lokalen MCP-Server zu starten.'),
+        findsOneWidget);
+    expect(find.text('Codex-Konfiguration kopieren'), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     app.cancelPendingSave();

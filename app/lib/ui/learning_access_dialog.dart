@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -64,6 +66,28 @@ class LearningAccessPanel extends StatelessWidget {
       }
     }
 
+    Future<void> openCodexConfig() async {
+      try {
+        final environment = Platform.environment;
+        final home = environment['CODEX_HOME'];
+        final directory = Directory(home != null && home.trim().isNotEmpty
+            ? home
+            : '${environment['USERPROFILE']}\\.codex');
+        if (!await directory.exists()) {
+          throw const FileSystemException('Codex directory not found');
+        }
+        await Process.start(
+          'notepad.exe',
+          ['${directory.path}\\config.toml'],
+          mode: ProcessStartMode.detached,
+        );
+      } on FileSystemException {
+        if (context.mounted) showCodexConfigError(context);
+      } on ProcessException {
+        if (context.mounted) showCodexConfigError(context);
+      }
+    }
+
     return ListenableBuilder(
       listenable: Listenable.merge([app, access]),
       builder: (context, _) => Column(
@@ -94,6 +118,9 @@ class LearningAccessPanel extends StatelessWidget {
                   },
           ),
           if (access.busy) const LinearProgressIndicator(),
+          if (access.scope == LearningScope.off && !access.busy)
+            const AppText('Choose Current page or This notebook to start '
+                'the local MCP server.'),
           if (access.error != null)
             Padding(
                 padding: const EdgeInsets.only(top: 8),
@@ -139,6 +166,16 @@ class LearningAccessPanel extends StatelessWidget {
               TextButton(
                   onPressed: () => copy(access.authorizationHeader),
                   child: const AppText('Copy Authorization value')),
+            ]),
+            const AppText('For Codex, paste the copied configuration into '
+                '~/.codex/config.toml (or the config.toml in CODEX_HOME). '
+                'Replace any existing Openote entry, save the file, and '
+                'restart Codex while sharing is on.'),
+            Wrap(spacing: 6, children: [
+              if (Platform.isWindows)
+                TextButton(
+                    onPressed: openCodexConfig,
+                    child: const AppText('Open Codex configuration')),
               TextButton(
                   onPressed: () => copy(access.clientConfig),
                   child: const AppText('Copy Codex configuration')),
@@ -152,4 +189,11 @@ class LearningAccessPanel extends StatelessWidget {
       ),
     );
   }
+}
+
+void showCodexConfigError(BuildContext context) {
+  ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(
+    content: AppText(
+        'Could not open the Codex configuration. Open config.toml manually.'),
+  ));
 }
