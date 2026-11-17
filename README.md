@@ -43,20 +43,22 @@ Das Schließen des Kopplungsdialogs beendet den Empfänger.
 
 1. In Openote auf das KI-Symbol oben rechts neben den Einstellungen klicken
    oder in den Einstellungen „KI-Lernzugriff“ öffnen.
-2. „Aktuelle Seite“ oder „Dieses Notizbuch“ freigeben. Der Seitenmodus folgt
+2. Den Schalter einschalten und „Nur diese Seite“ oder „Ganzes Buch“ auswählen.
+   Bei ausgeschalteter Freigabe sind Auswahl und Kopieren deaktiviert. Der Seitenmodus folgt
    der aktiven Seite, auch im geteilten Fenster. Die Buchfreigabe bleibt an das
    ausgewählte Buch gebunden; beim Wechsel in ein anderes Buch ruht der Zugriff.
-3. Im Desktop-KI-Client einen MCP-Server mit **Streamable HTTP** hinzufügen.
-   URL und Authorization-Wert mit den Schaltflächen aus Openote übernehmen.
-   Für Codex alternativ „Codex-Konfiguration kopieren“ und den Abschnitt in
-   die persönliche `~/.codex/config.toml` einfügen; danach den Client neu verbinden.
+3. „Für Chat kopieren“ wählen und den Text im Desktop-KI-Chat einfügen.
+   Er enthält Verbindungsdaten mit geheimem Token und eine Einrichtungsanweisung.
+   Der Client muss lokale MCP-Verbindungen unterstützen; gegebenenfalls ist
+   ein Neustart nötig. Für Codex enthält der Text einen Abschnitt für
+   die persönliche `~/.codex/config.toml`; danach den Client neu verbinden.
    Diese Konfiguration enthält ein geheimes Token und gehört nicht ins Repository.
 4. Beispielsweise fragen: „Erkläre meine aktuelle Seite“ oder „Lies alle Seiten
    dieses Buchs und frage mich dazu ab“.
 
 Openote muss geöffnet bleiben. Der Server ist nur über `127.0.0.1` erreichbar;
 ein reiner Web-Client kann diese lokale Adresse nicht abrufen. Ein belegter
-Port wird im Dialog als Verbindungsfehler angezeigt. Nach einem Neustart ist
+Port wird als kurze Fehlermeldung angezeigt. Nach einem Neustart ist
 die Freigabe aus; die Verbindungsdaten bleiben für die nächste Freigabe erhalten.
 
 Der Zugriff ist ausschließlich lesend und schließt gesperrte Seiten aus.

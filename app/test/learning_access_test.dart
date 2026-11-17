@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show SystemChannels;
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:openote/api/learning_access.dart';
@@ -449,11 +450,136 @@ void main() {
                     child: SingleChildScrollView(
                         child: LearningAccessPanel(app: app)))))));
     expect(find.text('KI-Zugriff'), findsOneWidget);
-    expect(
-        find.text('Wähle „Aktuelle Seite“ oder „Dieses Notizbuch“, '
-            'um den lokalen MCP-Server zu starten.'),
-        findsOneWidget);
+    expect(find.text('Für Chat kopieren'), findsOneWidget);
+    expect(tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+        isNull);
+    expect(find.text('Nur diese Seite'), findsOneWidget);
+    expect(find.text('Ganzes Buch'), findsOneWidget);
+    expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
+    expect(find.text('Folgt dem Seitenwechsel'), findsOneWidget);
     expect(find.text('Codex-Konfiguration kopieren'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    app.cancelPendingSave();
+  });
+
+  testWidgets(
+      'switch, scope and copy keep their size and position across state changes',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final learning = app.learning;
+    learning.port = 0;
+    await tester.runAsync(() => learning.setScope(LearningScope.page));
+    expect(learning.error, isNull);
+    String? copied;
+    tester.binding.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        copied = (call.arguments as Map)['text'] as String;
+      }
+      return null;
+    });
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null);
+    });
+    await tester.pumpWidget(MaterialApp(
+        locale: const Locale('de'),
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        supportedLocales: const [Locale('en'), Locale('de')],
+        home: Scaffold(
+            body: Center(
+                child: SizedBox(
+                    width: 280,
+                    child: SingleChildScrollView(
+                        child: LearningAccessPanel(app: app)))))));
+    expect(find.text('Codex-Konfiguration kopieren'), findsNothing);
+    final panelSize = tester.getSize(find.byType(LearningAccessPanel));
+    final copyPosition = tester.getTopLeft(find.byType(FilledButton));
+    await tester.tap(find.text('Für Chat kopieren'));
+    await tester.pump();
+    expect(copied, startsWith('Verbinde dich'));
+    expect(copied, contains(learning.clientConfig));
+    expect(copied, contains(learning.authorizationHeader));
+    expect(copied, contains('get_context'));
+    expect(copied, contains('localhost'));
+    expect(tester.takeException(), isNull);
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Ganzes Buch'));
+      while (learning.busy) {
+        await Future<void>.delayed(Duration.zero);
+      }
+    });
+    await tester.pumpAndSettle();
+    expect(learning.scope, LearningScope.notebook);
+    expect(learning.sharedNotebookId, app.notebookId);
+    expect(tester.getSize(find.byType(LearningAccessPanel)), panelSize);
+    expect(tester.getTopLeft(find.byType(FilledButton)), copyPosition);
+    learning.lastRead = 'Long status that must not change the popup size';
+    learning.editorChanged();
+    await tester.pump();
+    expect(tester.getSize(find.byType(LearningAccessPanel)), panelSize);
+    await tester.runAsync(() async {
+      await tester.tap(find.byType(Switch));
+      while (learning.busy) {
+        await Future<void>.delayed(Duration.zero);
+      }
+    });
+    await tester.pumpAndSettle();
+    expect(learning.scope, LearningScope.off);
+    expect(find.text('Für Chat kopieren'), findsOneWidget);
+    expect(tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+        isNull);
+    expect(tester.getSize(find.byType(LearningAccessPanel)), panelSize);
+    expect(tester.getTopLeft(find.byType(FilledButton)), copyPosition);
+    for (final label in ['Nur diese Seite', 'Ganzes Buch']) {
+      final option =
+          find.ancestor(of: find.text(label), matching: find.byType(InkWell));
+      expect(tester.widget<InkWell>(option).onTap, isNull);
+    }
+    await tester.tap(find.text('Nur diese Seite'));
+    await tester.pump();
+    expect(learning.scope, LearningScope.off);
+    await tester.runAsync(() async {
+      await tester.tap(find.byType(Switch));
+      while (learning.busy) {
+        await Future<void>.delayed(Duration.zero);
+      }
+    });
+    await tester.pumpAndSettle();
+    expect(learning.scope, LearningScope.notebook);
+    for (final label in ['Nur diese Seite', 'Ganzes Buch']) {
+      final option =
+          find.ancestor(of: find.text(label), matching: find.byType(InkWell));
+      expect(tester.widget<InkWell>(option).onTap, isNotNull);
+    }
+    expect(tester.getSize(find.byType(LearningAccessPanel)), panelSize);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.runAsync(learning.stop);
+    app.cancelPendingSave();
+  });
+
+  testWidgets('scope choices fit dark mode with large text and reduced motion',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await tester.pumpWidget(MaterialApp(
+      theme: ThemeData.dark(),
+      locale: const Locale('de'),
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
+      supportedLocales: const [Locale('en'), Locale('de')],
+      home: MediaQuery(
+        data: const MediaQueryData(
+            textScaler: TextScaler.linear(2), disableAnimations: true),
+        child: Scaffold(
+            body: Center(
+                child: SizedBox(
+                    width: 280,
+                    child: SingleChildScrollView(
+                        child: LearningAccessPanel(app: app))))),
+      ),
+    ));
+    expect(find.text('Nur diese Seite'), findsOneWidget);
+    expect(find.text('Ganzes Buch'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     app.cancelPendingSave();

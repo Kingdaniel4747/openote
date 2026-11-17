@@ -34,6 +34,19 @@ class AppText extends StatelessWidget {
 }
 
 const german = <String, String>{
+  'Only this page': 'Nur diese Seite',
+  'Follows page changes': 'Folgt dem Seitenwechsel',
+  'All unlocked pages': 'Alle ungesperrten Seiten',
+  'Turn off': 'Ausschalten',
+  'Whole notebook': 'Ganzes Buch',
+  'Read-only. Keep Openote open. Locked pages stay private.':
+      'Nur lesend. Openote geöffnet lassen. Gesperrte Seiten bleiben privat.',
+  'Copy for chat': 'Für Chat kopieren',
+  'Paste into your desktop AI chat. Contains a secret access token.':
+      'Im Desktop-KI-Chat einfügen. Enthält ein geheimes Zugriffstoken.',
+  'More connection options': 'Weitere Verbindungsoptionen',
+  'Connect to my local Openote MCP server using this Streamable HTTP configuration. In Codex, update only the Openote entry in the personal config.toml (~/.codex or CODEX_HOME), preserving other settings. Keep the token secret and out of repositories. If setup or a restart is needed, tell me the next step. Verify with get_context before claiming success. If this client cannot reach localhost or configure MCP, explain the limitation. Read only the scope shared in Openote; page access follows navigation. Openote must stay open; sharing is off after restarting. Locked pages are excluded. Content sent stays in this chat and may be processed by the AI provider.':
+      'Verbinde dich mit meinem lokalen Openote-MCP-Server über diese Streamable-HTTP-Konfiguration. Aktualisiere in Codex nur den Openote-Eintrag in der persönlichen config.toml (~/.codex oder CODEX_HOME); erhalte alle anderen Einstellungen. Halte das Token geheim und aus Repositorys heraus. Falls eine Einrichtung oder ein Neustart nötig ist, nenne mir den nächsten Schritt. Prüfe die Verbindung mit get_context, bevor du Erfolg meldest. Falls dieser Client localhost nicht erreichen oder MCP nicht konfigurieren kann, erkläre diese Grenze. Lies nur den in Openote freigegebenen Bereich; die Seitenfreigabe folgt dem Seitenwechsel. Openote muss geöffnet bleiben; nach einem Neustart ist die Freigabe aus. Gesperrte Seiten sind ausgeschlossen. Gesendete Inhalte bleiben in diesem Chat und können beim KI-Anbieter verarbeitet werden.',
   'AI learning access': 'KI-Lernzugriff',
   'AI access': 'KI-Zugriff',
   'AI: off': 'KI: aus',

@@ -1,18 +1,21 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../api/learning_access.dart';
 import '../l10n/app_strings.dart';
 import '../state/app_state.dart';
+import '../theme/tokens.dart';
 import 'onote_dialog.dart';
 
 Future<void> showLearningAccessDialog(BuildContext context, AppState app) =>
     showOnoteDialog<void>(
         context: context,
         builder: (_) => AlertDialog(
-              title: const AppText('AI learning access'),
+              title: const Row(children: [
+                Icon(Icons.auto_stories_outlined, size: OnoteIcon.lg),
+                SizedBox(width: OnoteSpace.x5),
+                Expanded(child: AppText('AI learning access')),
+              ]),
               content: SizedBox(
                   width: 460,
                   child: SingleChildScrollView(
@@ -52,148 +55,201 @@ class LearningAccessButton extends StatelessWidget {
       );
 }
 
-class LearningAccessPanel extends StatelessWidget {
+class LearningAccessPanel extends StatefulWidget {
   const LearningAccessPanel({super.key, required this.app});
   final AppState app;
+
+  @override
+  State<LearningAccessPanel> createState() => _LearningAccessPanelState();
+}
+
+class _LearningAccessPanelState extends State<LearningAccessPanel> {
+  late LearningScope _selection;
+  LearningScope? _pendingScope;
+
+  @override
+  void initState() {
+    super.initState();
+    final scope = widget.app.learning.scope;
+    _selection = scope == LearningScope.off ? LearningScope.page : scope;
+  }
+
+  Future<void> _changeScope(LearningScope scope) async {
+    setState(() => _pendingScope = scope);
+    await widget.app.learning.setScope(scope);
+    if (!mounted) return;
+    setState(() => _pendingScope = null);
+    final error = widget.app.learning.error;
+    if (error != null) {
+      ScaffoldMessenger.maybeOf(context)
+          ?.showSnackBar(SnackBar(content: Text(tr(context, error))));
+    }
+  }
+
+  void _select(LearningScope scope) {
+    setState(() => _selection = scope);
+    if (widget.app.learning.scope != LearningScope.off) _changeScope(scope);
+  }
+
+  Future<void> _copy() async {
+    await Clipboard.setData(
+        ClipboardData(text: learningChatText(context, widget.app.learning)));
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(context)
+        ?.showSnackBar(SnackBar(content: Text(tr(context, 'Copied'))));
+  }
+
   @override
   Widget build(BuildContext context) {
+    final app = widget.app;
     final access = app.learning;
-    Future<void> copy(String text) async {
-      await Clipboard.setData(ClipboardData(text: text));
-      if (context.mounted) {
-        ScaffoldMessenger.maybeOf(context)
-            ?.showSnackBar(SnackBar(content: Text(tr(context, 'Copied'))));
-      }
-    }
-
-    Future<void> openCodexConfig() async {
-      try {
-        final environment = Platform.environment;
-        final home = environment['CODEX_HOME'];
-        final directory = Directory(home != null && home.trim().isNotEmpty
-            ? home
-            : '${environment['USERPROFILE']}\\.codex');
-        if (!await directory.exists()) {
-          throw const FileSystemException('Codex directory not found');
-        }
-        await Process.start(
-          'notepad.exe',
-          ['${directory.path}\\config.toml'],
-          mode: ProcessStartMode.detached,
-        );
-      } on FileSystemException {
-        if (context.mounted) showCodexConfigError(context);
-      } on ProcessException {
-        if (context.mounted) showCodexConfigError(context);
-      }
-    }
-
     return ListenableBuilder(
       listenable: Listenable.merge([app, access]),
-      builder: (context, _) => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const AppText('Let a connected AI read your learning materials. '
-              'It cannot edit, delete or open other notebooks.'),
-          const SizedBox(height: 10),
-          DropdownButtonFormField<LearningScope>(
-            key: ValueKey(access.scope),
-            initialValue: access.scope,
-            isExpanded: true,
-            decoration: InputDecoration(labelText: tr(context, 'AI access')),
-            items: const [
-              DropdownMenuItem(value: LearningScope.off, child: AppText('Off')),
-              DropdownMenuItem(
-                  value: LearningScope.page,
-                  child: AppText('Current page (follows navigation)')),
-              DropdownMenuItem(
-                  value: LearningScope.notebook,
-                  child: AppText('This notebook')),
-            ],
-            onChanged: access.busy
-                ? null
-                : (scope) {
-                    if (scope != null) access.setScope(scope);
-                  },
-          ),
-          if (access.busy) const LinearProgressIndicator(),
-          if (access.scope == LearningScope.off && !access.busy)
-            const AppText('Choose Current page or This notebook to start '
-                'the local MCP server.'),
-          if (access.error != null)
-            Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(tr(context, access.error!),
-                    style:
-                        TextStyle(color: Theme.of(context).colorScheme.error))),
-          if (access.scope == LearningScope.notebook) ...[
-            const SizedBox(height: 8),
-            Text(
-                '${tr(context, 'Shared notebook')}: ${access.sharedNotebookTitle}'),
-            if (app.notebookId != access.sharedNotebookId)
-              const AppText('The open notebook is not shared. Access is paused '
-                  'until you return to the shared notebook.'),
-            TextButton(
-                onPressed: access.busy
+      builder: (context, _) {
+        final scope = _pendingScope ?? access.scope;
+        final enabled = scope != LearningScope.off;
+        final selection = enabled ? scope : _selection;
+        final busy = access.busy || _pendingScope != null;
+        final paused = access.scope == LearningScope.notebook &&
+            app.notebookId != access.sharedNotebookId;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(children: [
+              const Expanded(
+                  child: AppText('AI access', style: OnoteType.uiStrong)),
+              Switch(
+                value: enabled,
+                onChanged: busy
                     ? null
-                    : () => access.setScope(LearningScope.notebook),
-                child: const AppText('Share the open notebook instead')),
-          ],
-          const SizedBox(height: 8),
-          const AppText('Reads happen only when the AI requests them. '
-              'Long pages and books are read in small parts. '
-              'Handwriting and scans are provided as page images.'),
-          const SizedBox(height: 8),
-          const AppText(
-              'Openote must stay open. Access is off after restarting. '
-              'Locked pages are excluded. Content already sent stays in the '
-              'chat; a cloud AI processes it with its provider.'),
-          if (access.scope != LearningScope.off && access.url != null) ...[
-            const Divider(height: 24),
-            const AppText('Connect your AI client'),
-            const SizedBox(height: 6),
-            SelectableText(access.url!),
-            const SizedBox(height: 6),
-            const AppText('Add an MCP server in your desktop AI client: '
-                'choose Streamable HTTP, use this URL and set the '
-                'Authorization header to Bearer followed by the copied token. '
-                'A web-only client cannot reach this local address.'),
-            Wrap(spacing: 6, children: [
-              TextButton(
-                  onPressed: () => copy(access.url!),
-                  child: const AppText('Copy URL')),
-              TextButton(
-                  onPressed: () => copy(access.authorizationHeader),
-                  child: const AppText('Copy Authorization value')),
+                    : (value) =>
+                        _changeScope(value ? _selection : LearningScope.off),
+              ),
             ]),
-            const AppText('For Codex, paste the copied configuration into '
-                '~/.codex/config.toml (or the config.toml in CODEX_HOME). '
-                'Replace any existing Openote entry, save the file, and '
-                'restart Codex while sharing is on.'),
-            Wrap(spacing: 6, children: [
-              if (Platform.isWindows)
-                TextButton(
-                    onPressed: openCodexConfig,
-                    child: const AppText('Open Codex configuration')),
-              TextButton(
-                  onPressed: () => copy(access.clientConfig),
-                  child: const AppText('Copy Codex configuration')),
+            const SizedBox(height: OnoteSpace.x4),
+            _ScopeOption(
+              title: 'Only this page',
+              subtitle: 'Follows page changes',
+              icon: Icons.description_outlined,
+              selected: selection == LearningScope.page,
+              onPressed:
+                  !enabled || busy ? null : () => _select(LearningScope.page),
+            ),
+            const SizedBox(height: OnoteSpace.x4),
+            _ScopeOption(
+              title: 'Whole notebook',
+              subtitle: 'All unlocked pages',
+              icon: Icons.menu_book_outlined,
+              selected: selection == LearningScope.notebook,
+              onPressed: !enabled || busy
+                  ? null
+                  : () => _select(LearningScope.notebook),
+            ),
+            const SizedBox(height: OnoteSpace.x6),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: OnoteSpace.x6, vertical: OnoteSpace.x5)),
+              onPressed: !enabled || busy || paused || access.url == null
+                  ? null
+                  : _copy,
+              icon: const Icon(Icons.copy_outlined),
+              label: const AppText('Copy for chat'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _ScopeOption extends StatelessWidget {
+  const _ScopeOption(
+      {required this.title,
+      required this.subtitle,
+      required this.icon,
+      required this.selected,
+      required this.onPressed});
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final disabled = onPressed == null;
+    final disabledForeground =
+        colors.onSurface.withValues(alpha: OnoteAlpha.disabled);
+    return Semantics(
+      selected: selected,
+      enabled: !disabled,
+      child: Material(
+        color: disabled
+            ? colors.onSurface.withValues(alpha: OnoteAlpha.selected)
+            : selected
+                ? colors.primaryContainer
+                : colors.surfaceContainerLow,
+        shape: RoundedRectangleBorder(
+            borderRadius: OnoteRadius.lgAll,
+            side: BorderSide(
+                color: !disabled && selected
+                    ? colors.primary
+                    : colors.outlineVariant)),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onPressed,
+          child: Padding(
+            padding: const EdgeInsets.all(OnoteSpace.x6),
+            child: Row(children: [
+              Icon(icon,
+                  size: OnoteIcon.lg,
+                  color: disabled
+                      ? disabledForeground
+                      : selected
+                          ? colors.onPrimaryContainer
+                          : colors.onSurfaceVariant),
+              const SizedBox(width: OnoteSpace.x5),
+              Expanded(
+                  child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AppText(title,
+                      style: OnoteType.uiStrong.copyWith(
+                          color: disabled
+                              ? disabledForeground
+                              : selected
+                                  ? colors.onPrimaryContainer
+                                  : colors.onSurface)),
+                  const SizedBox(height: OnoteSpace.x2),
+                  AppText(subtitle,
+                      style: OnoteType.small.copyWith(
+                          color: disabled
+                              ? disabledForeground
+                              : selected
+                                  ? colors.onPrimaryContainer
+                                  : colors.onSurfaceVariant)),
+                ],
+              )),
+              const SizedBox(width: OnoteSpace.x4),
+              Icon(selected ? Icons.check_circle : Icons.radio_button_unchecked,
+                  size: OnoteIcon.lg,
+                  color: disabled
+                      ? disabledForeground
+                      : selected
+                          ? colors.primary
+                          : colors.onSurfaceVariant),
             ]),
-          ],
-          if (access.lastRead != null) ...[
-            const SizedBox(height: 6),
-            Text('${tr(context, 'Last read')}: ${access.lastRead}'),
-          ],
-        ],
+          ),
+        ),
       ),
     );
   }
 }
 
-void showCodexConfigError(BuildContext context) {
-  ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(
-    content: AppText(
-        'Could not open the Codex configuration. Open config.toml manually.'),
-  ));
-}
+String learningChatText(BuildContext context, LearningAccess access) =>
+    '${tr(context, 'Connect to my local Openote MCP server using this Streamable HTTP configuration. In Codex, update only the Openote entry in the personal config.toml (~/.codex or CODEX_HOME), preserving other settings. Keep the token secret and out of repositories. If setup or a restart is needed, tell me the next step. Verify with get_context before claiming success. If this client cannot reach localhost or configure MCP, explain the limitation. Read only the scope shared in Openote; page access follows navigation. Openote must stay open; sharing is off after restarting. Locked pages are excluded. Content sent stays in this chat and may be processed by the AI provider.')}\n\n'
+    '```toml\n${access.clientConfig}```\n';
