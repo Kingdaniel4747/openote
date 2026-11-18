@@ -1,38 +1,16 @@
-/// Bringing the already-running Openote to the front.
+/// User-requested activation of the running Openote window.
 ///
-/// Only half of "one Openote per workspace" is safety (see
-/// [SingleInstance] — two processes on one WAL container is the corruption
-/// case ADR-0006 §3 designs against). The other half is that the user
-/// double-clicked a notebook and expects to *see* it. An instance that
-/// silently switches notebooks behind another window is a silent no-op as far
-/// as the person is concerned.
-///
-/// Windows only, deliberately and honestly:
-///
-/// * **Windows** has a documented handshake for this and no plugin is needed —
-///   the launching process calls [allowForegroundHandover], which is what
-///   makes the running process's `SetForegroundWindow` succeed instead of
-///   merely flashing the taskbar button. Both halves are in this file.
-/// * **Linux** cannot be done from Dart. Raising a window is `gtk_window_present`
-///   on a `GtkWindow` this code has no handle on, and on Wayland it is the
-///   compositor's decision anyway. Doing it properly means teaching
-///   `linux/runner/my_application.cc` to be a unique `GApplication` — noted in
-///   the report, not bodged here.
-/// * **macOS** does not reach this code at all: files arrive through
-///   `application(_:open:)`, not argv (backlog #42).
-///
-/// Everywhere except Windows both calls are no-ops that return false, so
-/// callers need no platform check of their own.
-///
-/// **Not verified by running it.** Nothing in this file can be exercised by
-/// `flutter test` beyond "does not throw and does nothing off Windows" — the
-/// real proof is two Openotes on a desktop, which this change has not had.
+/// A second launch grants its foreground right before handing over a request.
+/// The running process uses its own native window channel to show maximized;
+/// older runners fall back to Win32 window lookup. Background MCP reads never
+/// activate or resize the window. Other platforms leave this to the desktop.
 library;
 
 import 'dart:ffi';
 import 'dart:io';
 
 import 'package:ffi/ffi.dart';
+import 'package:flutter/services.dart';
 
 abstract final class WindowFocus {
   /// The class the Flutter Windows runner registers for its top-level window
@@ -43,7 +21,8 @@ abstract final class WindowFocus {
   static const _windowClass = 'FLUTTER_RUNNER_WIN32_WINDOW';
   static const _windowTitles = ['openote', 'Openote'];
 
-  static const int _swRestore = 9;
+  static const int _swShowMaximized = 3;
+  static const channel = MethodChannel('openote/window_controls');
 
   /// `ASFW_ANY` — `(DWORD)-1`.
   static const int _asfwAny = 0xFFFFFFFF;
@@ -66,14 +45,23 @@ abstract final class WindowFocus {
     }
   }
 
-  /// Called by the running Openote when a request arrives: un-minimise and
-  /// come forward.
-  static bool raiseSelf() {
+  /// Called for an explicit launch request, never for background MCP reads.
+  /// Maximize the current process's own window before bringing it forward.
+  static Future<bool> raiseSelf() async {
     if (!Platform.isWindows) return false;
+    try {
+      await channel.invokeMethod<void>('ensureMaximized');
+      await channel.invokeMethod<void>('show');
+      return true;
+    } on MissingPluginException {
+      // Older runners can still be activated through Win32 below.
+    } on PlatformException {
+      // Best effort: the notebook request must remain usable.
+    }
     try {
       final hwnd = _findOpenoteWindow();
       if (hwnd == 0) return false;
-      if (_isIconic(hwnd) != 0) _showWindow(hwnd, _swRestore);
+      _showWindow(hwnd, _swShowMaximized);
       return _setForegroundWindow(hwnd) != 0;
     } catch (_) {
       // A missing user32 export or a hostile window manager must never take
@@ -114,9 +102,6 @@ abstract final class WindowFocus {
 
   static final _showWindow = _user32.lookupFunction<Int32 Function(IntPtr, Int32),
       int Function(int, int)>('ShowWindow');
-
-  static final _isIconic = _user32
-      .lookupFunction<Int32 Function(IntPtr), int Function(int)>('IsIconic');
 
   static final _allowSetForegroundWindow = _user32.lookupFunction<
       Int32 Function(Uint32), int Function(int)>('AllowSetForegroundWindow');

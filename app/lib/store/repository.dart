@@ -169,26 +169,13 @@ class Repository {
       }
     }
     if (j == null) {
-      // Last resort: adopt any .onote files sitting in the workspace folder, so
-      // a lost registry never hides real notebooks.
-      final orphans = workspaceDir
-          .listSync()
-          .whereType<File>()
-          .where((f) => f.path.toLowerCase().endsWith('.onote'))
-          .toList();
-      if (orphans.isNotEmpty) {
-        for (final f in orphans) {
-          final ref = NotebookRef(
-              id: newId(),
-              file: f.path,
-              title: p.basenameWithoutExtension(f.path));
-          notebooks.add(ref);
-          _rememberLegacyAssetFolder(ref, null);
-        }
+      // Recover folders before the caller can seed an empty default notebook.
+      await refreshNotebooks();
+      final recovered = notebooks.length + trashedNotebooks.length;
+      if (recovered > 0) {
         workspaceRecoveryNote =
             'workspace.json was missing or unreadable; recovered '
-            '${orphans.length} notebook${orphans.length == 1 ? '' : 's'} from disk.';
-        await _saveNow();
+            '$recovered notebook${recovered == 1 ? '' : 's'} from disk.';
       }
       return;
     }
@@ -224,13 +211,11 @@ class Repository {
         file = manualMove;
         relocated = true;
       }
-      if (File(file).existsSync()) {
-        final ref = NotebookRef(
-            id: id, file: file, title: m['title'] as String? ?? 'Notebook');
-        notebooks.add(ref);
-        _rememberLegacyAssetFolder(
-            ref, m['legacyAssets'] as String? ?? m['logDir'] as String?);
-      }
+      final ref = NotebookRef(
+          id: id, file: file, title: m['title'] as String? ?? 'Notebook');
+      notebooks.add(ref);
+      _rememberLegacyAssetFolder(
+          ref, m['legacyAssets'] as String? ?? m['logDir'] as String?);
     }
     for (final n in (j['trashed'] as List? ?? const [])) {
       final m = (n as Map).cast<String, dynamic>();
@@ -241,7 +226,7 @@ class Repository {
         file = manualMove;
         relocated = true;
       }
-      if (File(file).existsSync()) {
+      {
         final ref = NotebookRef(
             id: id,
             file: file,
@@ -254,7 +239,7 @@ class Repository {
         // changed this registry list. Move such entries once on startup into
         // the real recycle-bin folder; afterwards the registry points at the
         // moved folder and normal restore/purge paths take over.
-        if (!_isInRecycleBin(ref.file)) {
+        if (File(ref.file).existsSync() && !_isInRecycleBin(ref.file)) {
           try {
             final destination = _recyclePathFor(ref);
             _moveNotebook(ref, destination);
@@ -270,58 +255,179 @@ class Repository {
     // The registry is the fast path. A cloud folder can contain hundreds of
     // containers and `listSync` made opening the notebook overview wait for
     // every Nextcloud file operation. Discover manual copies after the UI is
-    // usable; the scan never opens a database or blocks the event loop.
+    // usable; discovery reads identity metadata, never the stored media.
     if (relocated && registryReadOnly == null) await _saveNow();
-    unawaited(_discoverUnregisteredNotebooks());
+    final needsReconcile = [...notebooks, ...trashedNotebooks].any((ref) =>
+        !File(ref.file).existsSync() ||
+        (_isStructuredNotebook(ref) &&
+            (p.basenameWithoutExtension(p.dirname(ref.file)) != ref.title ||
+                p.basenameWithoutExtension(ref.file) != ref.title)));
+    if (notebooks.isEmpty || needsReconcile) {
+      await refreshNotebooks();
+    } else {
+      unawaited(refreshNotebooks());
+    }
+  }
+
+  Future<void>? _discovery;
+
+  /// A shallow, coalesced scan at startup and when notebook management opens.
+  /// Images and PDF contents are never traversed or decoded for discovery.
+  Future<void> refreshNotebooks() {
+    if (_disposed) return Future.value();
+    return _discovery ??= _discoverUnregisteredNotebooks().whenComplete(() {
+      _discovery = null;
+    });
+  }
+
+  Future<File?> _notebookContainer(FileSystemEntity entry) async {
+    if (entry is File && p.extension(entry.path).toLowerCase() == '.onote') {
+      return entry;
+    }
+    if (entry is! Directory ||
+        p.extension(entry.path).toLowerCase() != '.onotebook') {
+      return null;
+    }
+    final expected = File(
+        p.join(entry.path, '${p.basenameWithoutExtension(entry.path)}.onote'));
+    if (await expected.exists()) return expected;
+    // A manually renamed folder can still contain its original container name.
+    File? found;
+    await for (final child in entry.list(followLinks: false)) {
+      if (child is File && p.extension(child.path).toLowerCase() == '.onote') {
+        if (found != null) return null; // Ambiguous: do not guess a notebook.
+        found = child;
+      }
+    }
+    return found;
+  }
+
+  String? _storedNotebookId(String path) {
+    Database? db;
+    try {
+      db = sqlite3.open(path, mode: OpenMode.readOnly);
+      final raw = db
+          .select("SELECT value FROM notebook_meta WHERE key='notebook_id'")
+          .firstOrNull?['value'];
+      if (raw is String) {
+        final decoded = jsonDecode(raw);
+        if (decoded is String && decoded.isNotEmpty) return decoded;
+      }
+    } catch (_) {
+      // Older containers may lack this metadata. Their content stays readable.
+    } finally {
+      db?.dispose();
+    }
+    return null;
   }
 
   Future<void> _discoverUnregisteredNotebooks() async {
-    final known = <String>{
-      for (final ref in [...notebooks, ...trashedNotebooks])
-        p.normalize(p.absolute(ref.file)),
-    };
     var adopted = false;
-    try {
-      await for (final entry in workspaceDir.list(followLinks: false)) {
-        File? container;
-        if (entry is File &&
-            p.extension(entry.path).toLowerCase() == '.onote') {
-          container = entry;
-        } else if (entry is Directory &&
-            p.extension(entry.path).toLowerCase() == '.onotebook') {
-          final stem = p.basenameWithoutExtension(entry.path);
-          final expected = File(p.join(entry.path, '$stem.onote'));
-          if (await expected.exists()) {
-            container = expected;
-          } else {
-            await for (final child in entry.list(followLinks: false)) {
-              if (child is File &&
-                  p.extension(child.path).toLowerCase() == '.onote') {
-                container = child;
-                break;
+    final renamedTitles = <String>{};
+    // First repair stale display labels from existing, consistently named
+    // folders. This prevents an old duplicate label from renaming the original.
+    for (final ref in [...notebooks, ...trashedNotebooks]) {
+      if (_isStructuredNotebook(ref) && File(ref.file).existsSync()) {
+        final folderTitle = p.basenameWithoutExtension(p.dirname(ref.file));
+        if (folderTitle == p.basenameWithoutExtension(ref.file) &&
+            folderTitle != ref.title) {
+          final legacySuffix = RegExp('^${RegExp.escape(ref.title)}-(\\d+)\$')
+              .firstMatch(folderTitle);
+          ref.title = legacySuffix == null
+              ? folderTitle
+              : '${ref.title} ${legacySuffix.group(1)}';
+          renamedTitles.add(ref.id);
+          adopted = true;
+        }
+      }
+    }
+    for (final directory in [workspaceDir, recycleBinDir]) {
+      try {
+        if (!await directory.exists()) continue;
+        await for (final entry in directory.list(followLinks: false)) {
+          if (_disposed) return;
+          try {
+            final container = await _notebookContainer(entry);
+            if (_disposed) return;
+            if (container == null) continue;
+            if (notebookFileProblem(container.path) != null) continue;
+            var ref = notebookAt(container.path);
+            final storedId = ref?.id ?? _storedNotebookId(container.path);
+            ref ??= [...notebooks, ...trashedNotebooks]
+                .where((n) => n.id == storedId && !File(n.file).existsSync())
+                .firstOrNull;
+            final oldFile = ref?.file;
+            final inTrash = _isInRecycleBin(container.path);
+            final structured =
+                p.extension(container.parent.path).toLowerCase() ==
+                    '.onotebook';
+            final fileWasRenamed = oldFile != null &&
+                !p.equals(oldFile, container.path) &&
+                p.equals(p.dirname(oldFile), container.parent.path);
+            final wantedTitle = ref != null && renamedTitles.contains(ref.id)
+                ? ref.title
+                : structured && !fileWasRenamed
+                    ? p.basenameWithoutExtension(container.parent.path)
+                    : p.basenameWithoutExtension(container.path);
+            final isNew = ref == null;
+            if (ref == null) {
+              var id = storedId ?? newId();
+              if ([...notebooks, ...trashedNotebooks].any((n) => n.id == id)) {
+                id = newId(); // Independently copied book, not a moved book.
+              }
+              ref = NotebookRef(
+                  id: id,
+                  file: container.path,
+                  title: wantedTitle,
+                  deletedAt: inTrash ? nowMs() : null);
+              (inTrash ? trashedNotebooks : notebooks).add(ref);
+            } else if (!p.equals(ref.file, container.path)) {
+              closeNotebook(ref.id);
+              ref.file = container.path;
+              if (inTrash && notebooks.remove(ref)) {
+                ref.deletedAt ??= nowMs();
+                trashedNotebooks.add(ref);
+              } else if (!inTrash && trashedNotebooks.remove(ref)) {
+                ref.deletedAt = null;
+                notebooks.add(ref);
               }
             }
+            final localBlobs =
+                Directory(p.join(container.parent.path, 'blobs'));
+            if (await localBlobs.exists()) {
+              _rememberLegacyAssetFolder(ref, container.parent.path);
+            }
+            final title = availableNotebookTitle(wantedTitle,
+                exceptId: ref.id, currentFile: ref.file);
+            final changed = isNew ||
+                !structured ||
+                oldFile != ref.file ||
+                ref.title != title ||
+                renamedTitles.contains(ref.id) ||
+                (structured && p.basenameWithoutExtension(ref.file) != title);
+            if (changed && registryReadOnly == null) {
+              _renameNotebookFiles(ref, title, structureFlat: !structured);
+              ref.title = title;
+              _writeNotebookIdentity(_db(ref.id), ref.id, title);
+            }
+            adopted = adopted || changed;
+          } catch (_) {
+            // A partial/locked cloud file must not hide the following books.
           }
         }
-        if (container == null) continue;
-        final path = p.normalize(p.absolute(container.path));
-        if (!known.add(path)) continue;
-        final ref = NotebookRef(
-          id: newId(),
-          file: container.path,
-          title: p.basenameWithoutExtension(container.path),
-        );
-        notebooks.add(ref);
-        _rememberLegacyAssetFolder(ref, null);
-        adopted = true;
+      } catch (_) {
+        // An unavailable directory can be retried when management opens.
       }
-      if (adopted) {
-        if (registryReadOnly == null) await _saveNow();
-        _notebooksChanged.changed();
+    }
+    if (adopted && !_disposed) {
+      if (registryReadOnly == null) {
+        try {
+          await _saveNow();
+        } catch (_) {
+          // _enqueueWorkspaceWrite records the failure for the save indicator.
+        }
       }
-    } catch (_) {
-      // Cloud clients can replace a directory while it is being enumerated.
-      // Registered notebooks remain usable; a later start can discover it.
+      if (!_disposed) _notebooksChanged.changed();
     }
   }
 
@@ -619,7 +725,8 @@ class Repository {
   /// and put the handle in `_open` themselves, so none of them comes through
   /// here.
   Database _db(String notebookId) {
-    final nb = notebooks.firstWhere((n) => n.id == notebookId);
+    final nb = [...notebooks, ...trashedNotebooks]
+        .firstWhere((n) => n.id == notebookId);
     return _open.putIfAbsent(notebookId,
         () => openExistingOnote(nb.file, notebookId: nb.id, title: nb.title));
   }
@@ -687,6 +794,54 @@ class Repository {
     return ref;
   }
 
+  Future<NotebookRef> createImportedNotebook(String title) =>
+      createNotebook(availableNotebookTitle(title));
+
+  /// Imports reserve both the visible name and its portable directory.
+  String availableNotebookTitle(String title,
+      {String? exceptId, String? currentFile}) {
+    final base =
+        _validatedNotebookTitle(title.trim().isEmpty ? 'Notebook' : title);
+    bool occupied(String candidate) =>
+        [...notebooks, ...trashedNotebooks].any((n) =>
+            n.id != exceptId &&
+            n.title.trim().toLowerCase() == candidate.toLowerCase()) ||
+        _notebookNameOccupied(candidate, currentFile: currentFile);
+    if (!occupied(base)) return base;
+    var number = 2;
+    final numbered =
+        RegExp('^${RegExp.escape(base)} (\\d+)\$', caseSensitive: false);
+    for (final book in [...notebooks, ...trashedNotebooks]) {
+      if (book.id == exceptId) continue;
+      final match = numbered.firstMatch(book.title);
+      final existingNumber = int.tryParse(match?.group(1) ?? '');
+      if (existingNumber != null && existingNumber >= number) {
+        number = existingNumber + 1;
+      }
+    }
+    var candidate = '$base $number';
+    while (occupied(candidate)) {
+      candidate = '$base ${++number}';
+    }
+    return candidate;
+  }
+
+  bool _notebookNameOccupied(String title, {String? currentFile}) {
+    for (final root in [workspaceDir.path, recycleBinDir.path]) {
+      final folder = p.join(root, '$title.onotebook');
+      final flat = p.join(root, '$title.onote');
+      if (Directory(folder).existsSync() &&
+          (currentFile == null || !p.equals(p.dirname(currentFile), folder))) {
+        return true;
+      }
+      if (File(flat).existsSync() &&
+          (currentFile == null || !p.equals(currentFile, flat))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /// Copy an existing notebook into this workspace.
   Future<NotebookRef> openExistingNotebook(String path, {String? title}) async {
     final file = File(path);
@@ -707,8 +862,9 @@ class Repository {
       return trashed;
     }
 
-    final name = title ?? p.basenameWithoutExtension(path);
-    final local = _freeNotebookPath(name);
+    final name =
+        availableNotebookTitle(title ?? p.basenameWithoutExtension(path));
+    final local = _newNotebookPath(name);
     await Directory(p.dirname(local)).create(recursive: true);
     await file.copy(local);
     if (!File(local).existsSync() ||
@@ -720,6 +876,7 @@ class Repository {
     final ref = NotebookRef(id: id, file: local, title: name);
     notebooks.add(ref);
     _open[id] = openOnote(local, notebookId: id, title: name);
+    _writeNotebookIdentity(_open[id]!, id, name);
     await _saveNow();
     return ref;
   }
@@ -763,12 +920,34 @@ class Repository {
       return already;
     }
     final id = newId();
-    final name = title ?? p.basenameWithoutExtension(path);
+    final name = availableNotebookTitle(
+        title ?? p.basenameWithoutExtension(path),
+        currentFile: path);
     final ref = NotebookRef(id: id, file: path, title: name);
     notebooks.add(ref);
     _open[id] = openOnote(path, notebookId: id, title: name);
+    _writeNotebookIdentity(_open[id]!, id, name);
+    _renameNotebookFiles(ref, name, structureFlat: true);
     await _saveNow();
     return ref;
+  }
+
+  // Copies/restores receive their own portable identity, independent of the
+  // original notebook and of this workspace's disposable registry.
+  void _writeNotebookIdentity(Database db, String id, String title) {
+    db.execute('SAVEPOINT notebook_identity');
+    try {
+      for (final entry in {'notebook_id': id, 'title': title}.entries) {
+        db.execute(
+            'INSERT OR REPLACE INTO notebook_meta(key,value) VALUES (?,?)',
+            [entry.key, jsonEncode(entry.value)]);
+      }
+      db.execute('RELEASE notebook_identity');
+    } catch (_) {
+      db.execute('ROLLBACK TO notebook_identity');
+      db.execute('RELEASE notebook_identity');
+      rethrow;
+    }
   }
 
   /// The page mirror's raw JSON, for tests that assert on what is actually
@@ -835,31 +1014,15 @@ class Repository {
   /// VACUUM works on both, and this runs from an explicit user action rather
   /// than on a timer, so its cost is one the user asked for.
   ///
-  String _freeNotebookPath(String title) {
-    var base = title.replaceAll(RegExp(r'[^\w\- ]'), '').trim();
-    if (base.isEmpty) base = 'Notebook';
-    var folder = p.join(workspaceDir.path, '$base.onotebook');
-    var file = p.join(folder, '$base.onote');
-    var i = 2;
-    while (Directory(folder).existsSync() || File(file).existsSync()) {
-      folder = p.join(workspaceDir.path, '$base-$i.onotebook');
-      file = p.join(folder, '$base-$i.onote');
-      i++;
-    }
-    return file;
-  }
-
   /// The interactive "new notebook" path is deliberately stricter than the
   /// import-copy path above: creating a second user-visible notebook with a
-  /// generated `-2` suffix hides a naming mistake.  An empty structured
+  /// generated numeric suffix hides a naming mistake. An empty structured
   /// directory is the one safe exception â€” older builds left exactly that
   /// behind after a permanent delete, so repair it before making the name
   /// available again.
   String _newNotebookPath(String title) {
-    var base = title.replaceAll(RegExp(r'[^\w\- ]'), '').trim();
-    if (base.isEmpty) base = 'Notebook';
-    final folder = Directory(p.join(workspaceDir.path, '$base.onotebook'));
-    final file = p.join(folder.path, '$base.onote');
+    final folder = Directory(p.join(workspaceDir.path, '$title.onotebook'));
+    final file = p.join(folder.path, '$title.onote');
     if (folder.existsSync()) {
       try {
         if (folder.listSync().isEmpty) folder.deleteSync();
@@ -881,8 +1044,16 @@ class Repository {
   /// Keep this check at the repository boundary as well as in the UI, because
   /// imports and automation create notebooks without going through a dialog.
   String _validatedNotebookTitle(String title) {
-    final value = title.trim();
+    var value = title
+        .trim()
+        .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1f]'), '_')
+        .replaceFirst(RegExp(r'[. ]+$'), '');
     if (value.isEmpty) throw ArgumentError.value(title, 'title', 'is empty');
+    if (RegExp(r'^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)',
+            caseSensitive: false)
+        .hasMatch(value)) {
+      value = 'Notebook $value';
+    }
     return value;
   }
 
@@ -901,22 +1072,36 @@ class Repository {
     final ref = notebooks.firstWhere((n) => n.id == id);
     title = _validatedNotebookTitle(title);
     _ensureNotebookTitleAvailable(title, exceptId: id);
-    final stem = title.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_').trim();
+    _renameNotebookFiles(ref, title, structureFlat: true);
+    ref.title = title;
+    _writeNotebookIdentity(_db(id), id, title);
+    await _saveNow();
+  }
+
+  void _renameNotebookFiles(NotebookRef ref, String title,
+      {bool structureFlat = false}) {
+    if (!File(ref.file).existsSync()) {
+      throw StateError('The notebook file for “${ref.title}” is missing.');
+    }
     final structured =
         p.extension(p.dirname(ref.file)).toLowerCase() == '.onotebook';
-    final destination = structured
-        ? p.join(workspaceDir.path, '$stem.onotebook', '$stem.onote')
-        : p.join(p.dirname(ref.file), '$stem.onote');
+    final root =
+        structured ? p.dirname(p.dirname(ref.file)) : p.dirname(ref.file);
+    final destination = structured || structureFlat
+        ? p.join(root, '$title.onotebook', '$title.onote')
+        : p.join(root, '$title.onote');
     if (p.normalize(destination) != p.normalize(ref.file)) {
-      if (File(destination).existsSync() ||
-          (structured && Directory(p.dirname(destination)).existsSync())) {
+      if ((File(destination).existsSync() &&
+              !p.equals(destination, ref.file)) ||
+          ((structured || structureFlat) &&
+              !p.equals(p.dirname(destination), p.dirname(ref.file)) &&
+              Directory(p.dirname(destination)).existsSync())) {
         throw StateError('A notebook named “$title” already exists.');
       }
       // SQLite can keep the main database open on Windows. Close the cached
       // handle after the caller has flushed edits, then move its companion
       // files and local media as one notebook identity.
-      _open.remove(id)?.dispose();
-      _decodedPages.remove(id);
+      closeNotebook(ref.id);
       if (structured) {
         // Moving only the folder left its database with the old name inside
         // it. The registry then pointed at a non-existent new-name `.onote`
@@ -925,11 +1110,26 @@ class Repository {
         final oldFolder = p.dirname(ref.file);
         final newFolder = p.dirname(destination);
         final oldNameInNewFolder = p.join(newFolder, p.basename(ref.file));
-        Directory(oldFolder).renameSync(newFolder);
-        _renameIfPresent(oldNameInNewFolder, destination);
-        _renameIfPresent('$oldNameInNewFolder-wal', '$destination-wal');
-        _renameIfPresent('$oldNameInNewFolder-shm', '$destination-shm');
+        if (p.normalize(oldFolder) != p.normalize(newFolder)) {
+          Directory(oldFolder).renameSync(newFolder);
+        }
+        try {
+          _renameIfPresent(oldNameInNewFolder, destination);
+          _renameIfPresent('$oldNameInNewFolder-wal', '$destination-wal');
+          _renameIfPresent('$oldNameInNewFolder-shm', '$destination-shm');
+        } catch (_) {
+          // A later scan can finish a partial inner rename. Never reopen the
+          // missing old path and seed an empty notebook over the real data.
+          ref.file =
+              File(destination).existsSync() ? destination : oldNameInNewFolder;
+          rethrow;
+        }
+        final legacy = _legacyAssetRoots[ref.id];
+        if (legacy != null && p.equals(legacy, oldFolder)) {
+          _rememberLegacyAssetFolder(ref, newFolder);
+        }
       } else {
+        if (structureFlat) Directory(p.dirname(destination)).createSync();
         _renameIfPresent(ref.file, destination);
         _renameIfPresent('${ref.file}-wal', '$destination-wal');
         _renameIfPresent('${ref.file}-shm', '$destination-shm');
@@ -937,14 +1137,27 @@ class Repository {
         final moved = NotebookRef(id: ref.id, file: destination, title: title);
         final newMedia = MediaStore.dirFor(moved);
         if (oldMedia.existsSync()) oldMedia.renameSync(newMedia.path);
+        if (structureFlat) {
+          final legacyRoot = ref.legacyAssetRoot ??
+              '${p.withoutExtension(ref.file)}.onotebook';
+          for (final child in ['blobs', 'media']) {
+            final source = Directory(p.join(legacyRoot, child));
+            final target = Directory(p.join(p.dirname(destination), child));
+            if (source.existsSync() &&
+                !target.existsSync() &&
+                !p.equals(source.path, target.path)) {
+              source.renameSync(target.path);
+            }
+          }
+          _rememberLegacyAssetFolder(ref, p.dirname(destination));
+        }
       }
       ref.file = destination;
     }
-    ref.title = title;
-    await _saveNow();
   }
 
   static void _renameIfPresent(String source, String destination) {
+    if (p.normalize(source) == p.normalize(destination)) return;
     final file = File(source);
     if (file.existsSync()) file.renameSync(destination);
   }
@@ -1018,7 +1231,7 @@ class Repository {
   /// Move a notebook's complete folder into the physical recycle-bin folder.
   /// Its file path changes together with the registry entry, so a restart still
   /// knows exactly where to restore it from.
-  Future<void> trashNotebook(String id) async {
+  Future<void> trashNotebook(String id, {int? deletedAt}) async {
     final i = notebooks.indexWhere((n) => n.id == id);
     if (i < 0) return;
     final ref = notebooks[i];
@@ -1027,7 +1240,7 @@ class Repository {
     final destination = _recyclePathFor(ref);
     _moveNotebook(ref, destination);
     ref.file = destination;
-    ref.deletedAt = nowMs();
+    ref.deletedAt = deletedAt ?? nowMs();
     notebooks.removeAt(i);
     trashedNotebooks.add(ref);
     await _saveNow();
@@ -1491,18 +1704,24 @@ class Repository {
         .where((n) => n.id == notebookId)
         .firstOrNull;
     if (ref == null) return null;
-    final root = _legacyAssetRoots[notebookId] ??
-        '${p.withoutExtension(ref.file)}.onotebook';
-    final source = File(p.join(root, 'blobs', bare));
-    if (!source.existsSync()) return null;
-    try {
-      final bytes = source.readAsBytesSync();
-      if (sha256Hex(bytes) != bare) return null;
-      putBlob(notebookId, bytes, _mimeOf(bytes));
-      return bytes;
-    } catch (_) {
-      return null;
+    final roots = {
+      if (_legacyAssetRoots[notebookId] case final legacy?) legacy,
+      if (_isStructuredNotebook(ref)) p.dirname(ref.file),
+      '${p.withoutExtension(ref.file)}.onotebook',
+    };
+    for (final root in roots) {
+      final source = File(p.join(root, 'blobs', bare));
+      if (!source.existsSync()) continue;
+      try {
+        final bytes = source.readAsBytesSync();
+        if (sha256Hex(bytes) != bare) continue;
+        putBlob(notebookId, bytes, _mimeOf(bytes));
+        return bytes;
+      } catch (_) {
+        // Another portable or legacy location may still contain the bytes.
+      }
     }
+    return null;
   }
 
   Uint8List? containerBlob(String notebookId, String hash) {

@@ -6,6 +6,8 @@ Stand: 11.11.2026. Nur aktuelle Arbeit und bekannte Grenzen, keine Versionschron
 
 - Windows am Gerät prüfen: Schreiben, Speichern/Neustart, Undo/Redo, Stift- und
   Radierer-Taste, Lasso, Pinch-Zoom und Zweifinger-Lineal.
+- Start/Update am Gerät prüfen: minimiert schließen, sofort erneut öffnen,
+  während Setup manuell starten, automatischen und manuellen Start nach Setup prüfen.
 - Automatischen Handballenschutz am Gerät prüfen: Hand vor dem Stift auflegen,
   Ärmel am Scrollbalken, Schreibpausen und bewusstes Wischen/Zoomen bei weiter
   aufliegender Hand. Keine manuelle Touch-Sperre und keine neue Einstellung.
@@ -40,7 +42,6 @@ Verhalten. Entfernte Messproben ändern zukünftige Testzahlen.
 | `marker_chord_test.dart` | Tastaturkürzel statt Marker-Eingabe (1) |
 | `notebook_menu_test.dart` | Heutige Notebook-Verwaltung statt alter Erwartung (1) |
 | `school_input_test.dart` | Langdruck auf gesperrtes Objekt; schmale Fensterknöpfe (2) |
-| `windows_window_frame_test.dart` | Custom-Chrome-Mock bei Maximieren und Stift-Hover (2) |
 
 ## Bereits geprüft
 
@@ -63,6 +64,38 @@ ein lokaler APK-Build brauchen diese Werkzeuge.
 
 ## Erledigt
 
+- Notizbuchnamen vereinheitlicht: direkte Importe, OneNote und Backup-Restore
+  vergeben eindeutige Namen mit fortlaufenden Nummern; Anzeigename, eigener
+  `.onotebook`-Ordner und Containername stimmen überein, auch bei Umlauten.
+  Explorer-Umbenennungen werden beim Start/Verwaltungsabgleich anhand der
+  Container-ID zugeordnet; alte doppelte Anzeigenamen werden abgeglichen.
+  Lose Container werden in eigene Ordner übernommen. 74 gezielte Tests
+  bestanden; App-Analyse sauber. Persönliche Notizbücher wurden nicht verändert.
+- Drei Speicher-/Wiederherstellungsfehler behoben: passende Medienpfade im
+  Backup, konsistente Containerkopien auch für den Papierkorb, Erkennung von
+  `.onotebook`-Ordnern ohne Workspace-Datei. Erneuter Abgleich beim Öffnen der
+  Notizbuchverwaltung, keine Dauersuche. Alte externe Originale werden portabel
+  mitgesichert, ohne die Quelle zu bereinigen; Wiederherstellungen erhalten
+  eigene Ordner/Identitäten. 46 gezielte Tests bestanden; Größenbereinigung
+  bestehender Notizbücher ist noch nicht implementiert.
+- Windows-Fensteraktivierung vereinheitlicht: Start, erneutes Öffnen und
+  Wiederanzeigen verwenden Maximieren statt Wiederherstellen/Umschalten.
+  Der alte Toggle-Fallback beim Start entfällt; Hintergrund-MCP liest ohne
+  Fensteraktivierung. Alle neun Fenstersteuerungstests sowie elf Fokus-/
+  Instanztests bestanden; damit sind die beiden alten Fenster-Testfälle erledigt.
+  App-Analyse sauber; Windows-Release-Build erfolgreich (lokal ohne Cargo).
+- Start/Update abgesichert: Schließen wartet auf keinen neuen Fenster-Frame;
+  Sperre bleibt bis Prozessende bestehen. Neustart während des Schließens versucht
+  die Sperre erneut, ohne ungesperrten Fallback. Updates warten auf abschließendes
+  Speichern und schließen SQLite; Netzwerkwartezeiten sind begrenzt. Windows-Runner
+  und Installer koordinieren Starts per Setup-Mutex. App-Analyse sauber,
+  57 gezielte Tests bestanden; Windows-Release-Build erfolgreich
+  (Dart-Kern, lokal kein Cargo). Vollständiger Setup-Neustart noch am Gerät prüfen.
+- Hilfsskripte bereinigt: nachgebauten Handschrift-Diagnosepfad zugunsten der
+  Tests am echten Importer entfernt; ungenutztes Video-Auslagerungsskript entfernt
+  (aktueller Windows-Build bündelt die Bibliotheken). Alle 150 Dart-Dateien der
+  App sind vom Einstieg erreichbar. Video-Lade-/Downloadfunktionen bleiben erhalten.
+  App-Analyse sauber; 39 gezielte Import-/Ink-/Video-/Paketierungstests bestanden.
 - Lesender MCP-Lernzugriff: aus/aktive Seite/freigegebenes Buch, lokaler
   Token-Zugriff, begrenzte Textantworten, Buchsuche und Seitenbilder mit
   Handschrift/PDF-Anmerkungen und Detailausschnitten. Ungespeicherte Texte aus

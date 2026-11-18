@@ -4,6 +4,7 @@
 #include <flutter_windows.h>
 
 #include "resource.h"
+#include "window_state.h"
 
 namespace {
 
@@ -153,7 +154,7 @@ bool Win32Window::Show() {
   // Keep the window hidden until Flutter has painted its loading screen, then
   // reveal it at its final size.  Showing it normally here and maximizing it
   // later from Dart produced the visible small, white window on every launch.
-  return ShowWindow(window_handle_, SW_SHOWMAXIMIZED);
+  return ShowOpenoteMaximized(window_handle_);
 }
 
 // static

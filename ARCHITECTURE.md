@@ -33,6 +33,24 @@ zugehörige Medien bleiben bei ihrem Notizbuch. Keine Dateipfade oder Layouts
 aus alten Sync-Plänen übernehmen. Maßgeblich sind `store/repository.dart`,
 `store/database.dart`, `store/notebook_writer.dart` und `store/media_store.dart`.
 
+Die Workspace-Liste wird bei Verlust aus Containern und `.onotebook`-Ordnern
+einschließlich `Recycle Bin` rekonstruiert. Beim Start und beim Öffnen der
+Notizbuchverwaltung erfolgt ein zusammengefasster, flacher Abgleich ohne
+Medien-Decodierung. Gelöschte Bücher bleiben im Papierkorb; bei unbekanntem
+Löschdatum beginnt eine neue Aufbewahrungsfrist. Container speichern ihre
+Notizbuch-ID auch selbst; wiederhergestellte Kopien bekommen eigene Identitäten.
+Backups enthalten konsistente Containerkopien einschließlich Papierkorb sowie
+passend referenzierte Medien und alte externe Blobs. Restore legt eigene
+`.onotebook`-Ordner an. Diese Sicherung ist keine Größenbereinigung: alte
+Originaldateien werden erhalten und nicht ungeprüft gelöscht.
+
+Importe verwenden eine gemeinsame Namensvergabe (`Informatik`, `Informatik 2`,
+`Informatik 3`); Papierkorb und vorhandene Ordner zählen bei Kollisionen mit.
+Anzeigename, Ordner und Container werden gemeinsam benannt. Beim Abgleich werden
+Explorer-Umbenennungen anhand der internen ID dem bestehenden Buch zugeordnet,
+anstatt ein zweites Buch anzulegen. Der geänderte Ordner- oder Dateiname wird
+auf die übrigen Namen übertragen; lose Container erhalten einen eigenen Ordner.
+
 `page_mirror` enthält den maßgeblichen Seiteninhalt als JSON
 (`onote-page/1`, pageId, Seiteneigenschaften, Blöcke). Unbekannte Blockinhalte
 verlustfrei erhalten. Struktur, Blob-/Referenzindizes und Papierkorb konsistent
@@ -72,6 +90,19 @@ ist auf sechs Einträge/12 MiB begrenzt. Handschrift bleibt Bildinhalt, keine OC
 PDF-Quellen werden nicht als vollständiges mehrseitiges Dokument herausgegeben.
 
 ## Build und Abhängigkeiten
+
+Start/Ende: Pro Workspace hält `core/single_instance.dart` eine Dateisperre;
+beim Schließen werden keine neuen Öffnungsanfragen bestätigt. Ein Neustart
+versucht nach ausbleibender Antwort die Sperre erneut, öffnet aber nie ungesperrt.
+Schließen wartet auf Speichern, nicht auf einen weiteren Fenster-Frame.
+Updates speichern den letzten Zustand und schließen SQLite vor Prozessende.
+Während Setup läuft, verwirft der Windows-Runner manuelle Starts; Setup startet
+die fertige Installation mit `--after-update`. Der Setup-Mutex ist an den
+Installer-Prozess gebunden, keine dauerhafte Startsperre auf der Festplatte.
+Automatisches Anzeigen verwendet unter Windows `runner/window_state.h`:
+Start, erneutes Öffnen, Wiederanzeigen nach Bildschirmaufnahme und Fehlerwiederkehr
+zeigen maximiert mit Taskleiste. Größenumschaltung nur auf ausdrückliche
+Bedienung (Fensterknopf/F11); MCP-Lesezugriffe ändern den Fensterzustand nicht.
 
 Windows-Runner: `app/windows/`; Linux-Runner: `app/linux/`.
 Lokale Plugin-Fixes liegen unter `app/third_party/` und sind über

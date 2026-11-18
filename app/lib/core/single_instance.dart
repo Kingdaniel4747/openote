@@ -31,11 +31,9 @@
 ///    open into `.open-request`, and waits for that file to disappear.
 /// 3. The holder polls, takes the request (deleting it — the delete IS the
 ///    acknowledgement), comes to the front and switches notebooks.
-/// 4. **If nobody acknowledges within [handOffTimeout], the new instance
-///    starts normally anyway.** This is the important safety valve: the worst
-///    case is two Openotes, which is precisely what happened before this file
-///    existed. A wedged or half-dead lock holder must never be able to make
-///    the app unlaunchable.
+/// 4. If nobody acknowledges within [handOffTimeout], retry the lock: the
+///    previous process may have been closing. Never open the workspace without
+///    its lock; an unresponsive live owner is reported instead.
 library;
 
 import 'dart:async';
@@ -51,11 +49,11 @@ class SingleInstance {
 
   final Directory _dir;
 
-  /// Null when we are running WITHOUT the lock — the fallback in step 4 above.
   /// Kept open for the life of the process; closing it releases the lock.
-  final RandomAccessFile? _lock;
+  final RandomAccessFile _lock;
 
   Timer? _poll;
+  bool _disposed = false;
 
   /// How long a new instance waits for the running one to answer before
   /// deciding it is not going to.
@@ -78,7 +76,7 @@ class SingleInstance {
       File(p.join(dir.path, '.open-request'));
 
   /// True when this instance holds the workspace lock.
-  bool get holdsLock => _lock != null;
+  bool get holdsLock => !_disposed;
 
   /// Become the Openote for [dir], or hand [openPath] to the one that already
   /// is.
@@ -88,7 +86,20 @@ class SingleInstance {
   /// not inside the boot widget. A second window that appears and vanishes is
   /// worse than either outcome on its own.
   static Future<SingleInstance?> claim(Directory dir,
-      {String? openPath}) async {
+      {String? openPath, Duration timeout = handOffTimeout}) async {
+    final first = await _tryClaim(dir);
+    if (first != null) return first;
+    if (await handOff(dir, openPath, timeout: timeout)) return null;
+    final retry = await _tryClaim(dir);
+    if (retry != null) return retry;
+    throw FileSystemException(
+        'Openote is already running but did not respond. '
+        'Wait for it to finish closing and try again. '
+        'If it remains unresponsive, close the existing process first.',
+        dir.path);
+  }
+
+  static Future<SingleInstance?> _tryClaim(Directory dir) async {
     RandomAccessFile? lock;
     try {
       // `append`, not `write`: `write` truncates on open, and it would do so
@@ -110,11 +121,7 @@ class SingleInstance {
       } catch (_) {/* already gone */}
       lock = null;
     }
-    if (lock != null) return SingleInstance._(dir, lock);
-
-    if (await handOff(dir, openPath)) return null;
-    // Held, but nothing answered. Start anyway — see step 4.
-    return SingleInstance._(dir, null);
+    return lock == null ? null : SingleInstance._(dir, lock);
   }
 
   /// Ask the running instance to come forward and open [path] (null or empty
@@ -126,7 +133,7 @@ class SingleInstance {
       // Written to a temp file and renamed, so the holder can never read a
       // half-written request. Its poll runs on a timer, not on a file event,
       // so it WILL see the file mid-write otherwise.
-      final tmp = File('${request.path}.tmp');
+      final tmp = File('${request.path}.$pid.${_requestCounter++}.tmp');
       await tmp.writeAsString(
           jsonEncode({
             'path': path ?? '',
@@ -135,7 +142,7 @@ class SingleInstance {
           flush: true);
       await tmp.rename(request.path);
     } catch (_) {
-      return false; // read-only workspace, full disk — start our own instance
+      return false; // The caller may retry the lock, but never open unlocked.
     }
     // Grant the foreground right BEFORE waiting: this process has it now,
     // because the user just launched it, and it loses it the moment it exits.
@@ -153,6 +160,8 @@ class SingleInstance {
     } catch (_) {/* best effort */}
     return false;
   }
+
+  static int _requestCounter = 0;
 
   /// Holder side: take the pending request, if there is one.
   ///
@@ -194,29 +203,36 @@ class SingleInstance {
   /// on the developer's own machine would find the developer's own running
   /// Openote and un-minimise it. A test suite that rearranges your desktop is
   /// a test suite you stop running.
-  void listen(void Function(String path) onOpen, {bool Function()? raise}) {
+  void listen(void Function(String path) onOpen,
+      {FutureOr<bool> Function()? raise}) {
     _poll?.cancel();
     final bringToFront = raise ?? WindowFocus.raiseSelf;
     _poll = Timer.periodic(pollInterval, (_) {
       final path = takeRequest(_dir);
       if (path == null) return;
-      // Front first, then switch. The notebook change is instant and the
-      // window raise is the part the user sees, so doing it first makes the
-      // app feel like it responded to the double-click rather than to
-      // whatever happens next.
-      bringToFront();
+      // Request activation before switching, without making notebook opening
+      // wait for a platform-channel response.
+      final activation = bringToFront();
+      if (activation is Future<bool>) unawaited(activation);
       if (path.isNotEmpty) onOpen(path);
     });
   }
 
-  Future<void> dispose() async {
+  /// A closing process must not acknowledge a launch it cannot service.
+  void stopListening() {
     _poll?.cancel();
     _poll = null;
+  }
+
+  Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
+    stopListening();
     try {
-      await _lock?.unlock();
+      await _lock.unlock();
     } catch (_) {/* the process is going away anyway */}
     try {
-      await _lock?.close();
+      await _lock.close();
     } catch (_) {/* ditto */}
   }
 }

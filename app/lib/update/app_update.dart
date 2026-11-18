@@ -105,13 +105,14 @@ Future<UpdateInfo?> fetchLatestUpdate({String current = kAppVersion}) async {
       final req = await client.getUrl(Uri.parse(_kLatestReleaseApi));
       req.headers.set(HttpHeaders.userAgentHeader, 'openote/$current');
       req.headers.set(HttpHeaders.acceptHeader, 'application/vnd.github+json');
-      final res = await req.close();
+      final res = await req.close().timeout(const Duration(seconds: 15));
       if (res.statusCode != 200) return null;
-      final json = jsonDecode(await utf8.decodeStream(res));
+      final json = jsonDecode(
+          await utf8.decodeStream(res.timeout(const Duration(seconds: 15))));
       if (json is! Map<String, dynamic>) return null;
       return parseLatestRelease(current: current, json: json);
     } finally {
-      client.close();
+      client.close(force: true);
     }
   } catch (_) {
     return null;
@@ -216,7 +217,9 @@ List<String> _reflow(List<String> lines) {
     // too — so refusing to fold it would have made us differ from the page
     // this text is also read on. The guard that matters is the one in
     // [_acceptsContinuation]: nothing gets appended to a code line.
-    if (out.isNotEmpty && _acceptsContinuation(out.last) && !_startsBlock(line)) {
+    if (out.isNotEmpty &&
+        _acceptsContinuation(out.last) &&
+        !_startsBlock(line)) {
       out[out.length - 1] = '${out.last.trimRight()} ${line.trim()}';
     } else {
       out.add(line);
@@ -258,18 +261,19 @@ String tidyReleaseNotes(String raw, {int maxChars = kReleaseNotesMaxChars}) {
 Future<File?> downloadUpdate(String url, String toPath,
     {void Function(int received, int total)? onProgress}) async {
   try {
-    final client = HttpClient();
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
     try {
       final req = await client.getUrl(Uri.parse(url));
       req.headers.set(HttpHeaders.userAgentHeader, 'openote/$kAppVersion');
-      final res = await req.close();
+      final res = await req.close().timeout(const Duration(seconds: 15));
       if (res.statusCode != 200) return null;
       final total = res.contentLength;
       final file = File(toPath);
       final sink = file.openWrite();
       var received = 0;
       try {
-        await for (final chunk in res) {
+        await for (final chunk in res.timeout(const Duration(seconds: 30))) {
           sink.add(chunk);
           received += chunk.length;
           onProgress?.call(received, total);
@@ -286,9 +290,35 @@ Future<File?> downloadUpdate(String url, String toPath,
       }
       return file;
     } finally {
-      client.close();
+      client.close(force: true);
     }
   } catch (_) {
     return null;
   }
+}
+
+/// Save the final editor/workspace state before handing control to Setup.
+/// Failed saves or a failed process launch leave Openote available for retry.
+Future<void> installDownloadedUpdate(File installer,
+    {required Future<void> Function() shutdown,
+    required bool Function() hasUnsavedChanges,
+    required void Function() close,
+    Future<void> Function(File, List<String>)? launch,
+    void Function(int)? quit}) async {
+  await shutdown().timeout(const Duration(seconds: 8));
+  if (hasUnsavedChanges()) {
+    throw StateError('Your changes could not be saved. '
+        'Openote will stay open; try saving before updating again.');
+  }
+  const arguments = ['/SILENT', '/NOCANCEL', '/NORESTART'];
+  if (launch != null) {
+    await launch(installer, arguments);
+  } else {
+    await Process.start(installer.path, arguments,
+        mode: ProcessStartMode.detached);
+  }
+  // exit() skips widget disposal, so checkpoint and close SQLite explicitly.
+  // The OS releases the instance lock only when this process has exited.
+  close();
+  (quit ?? exit)(0);
 }

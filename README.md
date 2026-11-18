@@ -83,6 +83,17 @@ Ergänzend: [AGENTS.md](AGENTS.md), [PRODUCT.md](PRODUCT.md),
 [ARCHITECTURE.md](ARCHITECTURE.md), [TASKS.md](TASKS.md) und
 [LEARNINGS.md](LEARNINGS.md). Compilerdateien wie `app/build/` werden neu erzeugt.
 
+Ein vollständiger `.onotebook`-Ordner lässt sich bei geschlossener App auf einen
+anderen Rechner kopieren. Beim Start und Öffnen der Notizbuchverwaltung werden
+hinzugefügte Bücher erkannt; eine fehlende `workspace.json` wird aus den
+Notizbüchern neu aufgebaut. Mitkopierte Bücher unter `Recycle Bin` bleiben im
+Papierkorb. Die Backup-/Restore-Funktion sichert zusätzlich konsistente
+Datenbankstände und erhält auch Medien aus älteren Speicherlayouts.
+Importierte Kopien heißen bei Bedarf beispielsweise `Informatik 2` und liegen
+in `Informatik 2.onotebook/Informatik 2.onote`. Umbenennen in der App passt beide
+Namen an; Explorer-Umbenennungen werden beim nächsten Start oder erneuten Öffnen
+der Notizbuchverwaltung abgeglichen.
+
 ## Prüfen und bauen
 
 In `app/`: `flutter analyze`, passende Tests mit

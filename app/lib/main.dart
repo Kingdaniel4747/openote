@@ -34,20 +34,18 @@ Future<void> main(List<String> args) async {
   // milliseconds against the "the app takes ages to appear" work below. There
   // is no way to know whether this process is allowed to exist without asking.
   SingleInstance? instance;
+  Object? startupError;
   var handedOver = false;
   try {
     final dir = await Repository.resolveWorkspaceDir();
     instance = await SingleInstance.claim(dir, openPath: requested);
     handedOver = instance == null;
-  } catch (_) {
-    // The workspace folder could not even be resolved. Say nothing here and
-    // carry on: `Repository.open()` is about to fail the same way, and it
-    // fails into the in-window error screen below instead of into a process
-    // that dies with no window at all.
-    instance = null;
+  } catch (error) {
+    // Show the failure without opening an unprotected workspace.
+    startupError = error;
   }
   // Outside the try on purpose. A null `instance` means "we handed over, stop"
-  // on one path and "carry on without a claim" on the other, so the decision
+  // on one path and "show the startup error" on the other, so the decision
   // is spelled with its own flag rather than left for a reader to infer.
   if (handedOver) exit(0);
 
@@ -69,14 +67,18 @@ Future<void> main(List<String> args) async {
   // Paint a window IMMEDIATELY; open the workspace behind it. Blocking runApp
   // on Repository.open + init left the window invisible until SQLite and the
   // restored page were fully loaded ("the app takes ages to appear").
-  runApp(OpenoteBoot(notebookPath: requested, instance: instance));
+  runApp(OpenoteBoot(
+      notebookPath: requested, instance: instance, startupError: startupError));
 }
 
 /// Boots the workspace behind a lightweight splash, then swaps in the app.
 /// Never fails invisibly: a startup error renders in-window (PLAT-9 in
 /// spirit) instead of leaving a ghost process.
 class OpenoteBoot extends StatefulWidget {
-  const OpenoteBoot({super.key, this.notebookPath, this.instance});
+  const OpenoteBoot(
+      {super.key, this.notebookPath, this.instance, this.startupError});
+
+  final Object? startupError;
 
   /// The notebook named on the command line, absolute — or null.
   final String? notebookPath;
@@ -105,6 +107,7 @@ class _OpenoteBootState extends State<OpenoteBoot> {
   Future<void> _open() async {
     try {
       await WidgetsBinding.instance.endOfFrame;
+      if (widget.startupError case final error?) throw error;
       await VideoPlayback.probe();
       final repo = await Repository.open();
       final app = AppState(repo);
@@ -118,17 +121,15 @@ class _OpenoteBootState extends State<OpenoteBoot> {
       _lifecycle = AppLifecycleListener(
         onExitRequested: () async {
           if (_closing) return AppExitResponse.cancel;
+          widget.instance?.stopListening();
           if (mounted) {
             setState(() {
               _closing = true;
               _closeFailed = false;
             });
           }
-          await WidgetsBinding.instance.endOfFrame;
-          // The save remains fully awaited, but the Windows window can leave
-          // the screen at once. If anything cannot be saved it is restored
-          // below with the existing recovery message.
-          await WindowsWindowController.hideForExit();
+          // A minimized window may not produce another frame. Saving and
+          // exiting must never wait for a repaint that might not arrive.
           try {
             // A local SQLite or network-backed workspace may be unavailable.
             // Do not let such an I/O operation leave a windowless process
@@ -144,6 +145,7 @@ class _OpenoteBootState extends State<OpenoteBoot> {
             await PdfPages.reset()
                 .timeout(const Duration(milliseconds: 150), onTimeout: () {});
             if (app.hasUnsavedChanges) {
+              widget.instance?.listen(app.openNotebookFile);
               await WindowsWindowController.restoreAfterFailedExit();
               if (mounted) {
                 setState(() {
@@ -153,7 +155,6 @@ class _OpenoteBootState extends State<OpenoteBoot> {
               }
               return AppExitResponse.cancel;
             }
-            await widget.instance?.dispose();
             // exit(0) does not tear down the widget tree. Explicitly close the
             // saved workspace so SQLite checkpoints its WAL and releases every
             // notebook handle before the process terminates. Keep this after
@@ -165,6 +166,7 @@ class _OpenoteBootState extends State<OpenoteBoot> {
             // explicitly instead of leaving a headless Openote.exe behind.
             exit(0);
           } catch (_) {
+            widget.instance?.listen(app.openNotebookFile);
             await WindowsWindowController.restoreAfterFailedExit();
             if (mounted) {
               setState(() {

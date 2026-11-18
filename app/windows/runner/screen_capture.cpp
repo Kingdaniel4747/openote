@@ -1,4 +1,5 @@
 #include "screen_capture.h"
+#include "window_state.h"
 
 #include <dwmapi.h>
 #include <wincodec.h>
@@ -79,7 +80,7 @@ bool ScreenCapture::Start(std::unique_ptr<Result> result) {
                               kCaptureClass, L"", WS_POPUP, x, y, width,
                               height, nullptr, nullptr, GetModuleHandle(nullptr), this);
   if (overlay_ == nullptr) {
-    ShowWindow(host_, SW_SHOW);
+    ShowOpenoteMaximized(host_);
     pending_->Error("overlay", "Could not show the screen selection overlay.");
     pending_.reset();
     return false;
@@ -115,7 +116,7 @@ void ScreenCapture::Finish(bool accepted) {
     pending_->Success(); // Escape/right-click is an ordinary cancellation.
   }
   pending_.reset();
-  ShowWindow(host_, SW_SHOW);
+  ShowOpenoteMaximized(host_);
   SetForegroundWindow(host_);
 }
 

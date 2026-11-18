@@ -22,10 +22,8 @@ enum VideoUnavailable {
 /// On Linux it is a system library — `mpv-libs` on Fedora, `libmpv2` on Debian
 /// and Ubuntu — declared as a dependency by the .rpm and the .deb, so the
 /// package manager normally installs it alongside Openote. macOS bundles it.
-/// **Windows downloads it the first time somebody plays something**, because
-/// bundling it costs every student 48 MB of install for a feature most of them
-/// never use (see media/video_engine.dart, and tool/split_video_engine.dart
-/// for the build half).
+/// Windows bundles it through media_kit_libs_windows_video and also supports
+/// loading a separately downloaded engine (see media/video_engine.dart).
 ///
 /// None of those is a state a widget may discover by throwing. Availability is
 /// resolved ONCE, at startup, before any block asks to play something: a throw
@@ -66,9 +64,8 @@ abstract final class VideoPlayback {
     _error = null;
     if (VideoEngine.splitOnThisPlatform) {
       await VideoEngine.prepare();
-      // Put the downloaded libraries on the loader's search path BEFORE
-      // media_kit looks for them. The plugin's imports are delay-loaded, so
-      // this is the moment they become resolvable at all.
+      // Put any downloaded libraries on the loader's search path before
+      // media_kit initializes.
       //
       // A failure here is NOT the answer. An installation upgraded from a
       // build that still bundled the engine has the libraries sitting beside

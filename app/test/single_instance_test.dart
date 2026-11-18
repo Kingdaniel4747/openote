@@ -53,8 +53,8 @@ void main() {
 
   test('an empty path is a request to come forward, not nothing', () async {
     final dir = tempDir();
-    unawaited(SingleInstance.handOff(dir, null,
-        timeout: const Duration(seconds: 2)));
+    unawaited(
+        SingleInstance.handOff(dir, null, timeout: const Duration(seconds: 2)));
     await Future<void>.delayed(const Duration(milliseconds: 120));
 
     // '' and null mean different things: '' is "you were launched with no
@@ -62,10 +62,7 @@ void main() {
     expect(SingleInstance.takeRequest(dir), '');
   });
 
-  // The safety valve. A lock holder that is wedged, or a lock the OS somehow
-  // did not release, must never make Openote unlaunchable — the sender gives
-  // up and starts its own instance, which is exactly the behaviour that
-  // existed before any of this.
+  // A timed-out request must not be replayed on a future launch.
   test('an unanswered hand-off gives up, and takes its request back', () async {
     final dir = tempDir();
     final answered = await SingleInstance.handOff(dir, '/tmp/Physics.onote',
@@ -147,5 +144,45 @@ void main() {
         reason: 'null is main() being told to exit without painting a window');
     await Future<void>.delayed(SingleInstance.pollInterval);
     expect(opened, [r'C:\notes\Physics.onote']);
+  });
+
+  test('relaunch during shutdown acquires the released lock', () async {
+    if (!Platform.isWindows) {
+      return markTestSkipped('same-process lock contention needs Windows');
+    }
+    final dir = tempDir();
+    final running = (await SingleInstance.claim(dir))!;
+    addTearDown(running.dispose);
+    final opened = <String>[];
+    running.listen(opened.add, raise: () => false);
+    running.stopListening();
+    final release = Timer(const Duration(milliseconds: 800), () {
+      unawaited(running.dispose());
+    });
+    addTearDown(release.cancel);
+    final next = await SingleInstance.claim(dir,
+        timeout: const Duration(milliseconds: 1000));
+    expect(next, isNotNull);
+    addTearDown(next!.dispose);
+    expect(next.holdsLock, isTrue);
+    expect(opened, isEmpty,
+        reason: 'a closing process must not consume the new launch');
+  });
+
+  test('an unresponsive owner never allows an unlocked workspace', () async {
+    if (!Platform.isWindows) {
+      return markTestSkipped('same-process lock contention needs Windows');
+    }
+    final dir = tempDir();
+    final running = (await SingleInstance.claim(dir))!;
+    addTearDown(running.dispose);
+    await expectLater(
+        SingleInstance.claim(dir, timeout: const Duration(milliseconds: 150)),
+        throwsA(isA<FileSystemException>()));
+    await running.dispose();
+    final retry = (await SingleInstance.claim(dir))!;
+    addTearDown(retry.dispose);
+    expect(retry.holdsLock, isTrue,
+        reason: 'a failed launch must leave no permanent startup block');
   });
 }

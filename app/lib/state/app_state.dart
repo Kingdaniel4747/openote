@@ -223,7 +223,7 @@ class AppState extends ChangeNotifier
     // the same pass. Narrowing a listener to `app.study` is now possible and
     // is a separate, checkable change.
     study.addListener(notifyListeners);
-    _repo.notebooksChanged.addListener(notifyListeners);
+    _repo.notebooksChanged.addListener(_onNotebooksChanged);
   }
 
   final Repository _repo;
@@ -494,7 +494,8 @@ class AppState extends ChangeNotifier
       final raw = _repo.getSetting(_protectKey(current));
       if (raw != null) {
         final record = ProtectionRecord.fromJson(raw);
-        if (record == null || !_unlocked.containsKey(current) ||
+        if (record == null ||
+            !_unlocked.containsKey(current) ||
             _learningUnlockRecords[current] != jsonEncode(record.toJson())) {
           return true;
         }
@@ -668,6 +669,10 @@ class AppState extends ChangeNotifier
     String? onlyNotebookId,
   }) async {
     await flushSave();
+    if (hasUnsavedChanges) {
+      throw StateError(
+          'Save your changes successfully before creating a backup.');
+    }
     await _repo.flushWorkspace();
     final temporary = await Directory.systemTemp.createTemp(
       'openote-backup-build-',
@@ -684,9 +689,10 @@ class AppState extends ChangeNotifier
           skipNotebookContainers: true,
         );
       }
-      final selected = notebooks
-          .where((n) => onlyNotebookId == null || n.id == onlyNotebookId)
-          .toList();
+      final selected = [
+        ...notebooks,
+        if (onlyNotebookId == null) ...trashedNotebooks
+      ].where((n) => onlyNotebookId == null || n.id == onlyNotebookId).toList();
       if (selected.isEmpty) throw StateError('No notebook was selected.');
       final manifest = <Map<String, Object?>>[];
       final usedNames = <String>{};
@@ -712,21 +718,50 @@ class AppState extends ChangeNotifier
         }
         final media = MediaStore.dirFor(ref);
         final legacyMedia = MediaStore.legacyDirFor(ref);
-        final relativeMedia = '${p.withoutExtension(relativeFile)}.media';
+        final relativeMedia =
+            p.extension(p.dirname(relativeFile)).toLowerCase() == '.onotebook'
+                ? p.join(p.dirname(relativeFile), 'media')
+                : '${p.withoutExtension(relativeFile)}.media';
         final mediaToBackup = media.existsSync() ? media : legacyMedia;
         if (mediaToBackup.existsSync() &&
             (onlyNotebookId != null ||
-                !p.isWithin(_repo.workspaceDir.path, mediaToBackup.path))) {
+                !p.isWithin(_repo.workspaceDir.path, mediaToBackup.path) ||
+                p.relative(mediaToBackup.path, from: _repo.workspaceDir.path) !=
+                    relativeMedia)) {
           await _copyBackupDirectory(
             mediaToBackup,
             Directory(p.join(root.path, relativeMedia)),
           );
         }
+        // Preserve legacy originals without moving/deleting anything in the
+        // source notebook or depending on its old absolute workspace path.
+        final legacyRoot =
+            ref.legacyAssetRoot ?? '${p.withoutExtension(ref.file)}.onotebook';
+        var sourceBlobs = Directory(p.join(legacyRoot, 'blobs'));
+        if (!sourceBlobs.existsSync()) {
+          sourceBlobs = Directory(p.join(p.dirname(ref.file), 'blobs'));
+        }
+        final relativeBlobs =
+            p.extension(p.dirname(relativeFile)).toLowerCase() == '.onotebook'
+                ? p.join(p.dirname(relativeFile), 'blobs')
+                : p.join(
+                    '${p.withoutExtension(relativeFile)}.onotebook', 'blobs');
+        if (sourceBlobs.existsSync() &&
+            (onlyNotebookId != null ||
+                !p.isWithin(_repo.workspaceDir.path, sourceBlobs.path) ||
+                p.relative(sourceBlobs.path, from: _repo.workspaceDir.path) !=
+                    relativeBlobs)) {
+          await _copyBackupDirectory(
+              sourceBlobs, Directory(p.join(root.path, relativeBlobs)));
+        }
         manifest.add({
           'id': ref.id,
           'title': ref.title,
-          'file': 'Openote/$relativeFile',
-          'media': 'Openote/$relativeMedia',
+          'file': 'Openote/${relativeFile.replaceAll(p.separator, '/')}',
+          'media': 'Openote/${relativeMedia.replaceAll(p.separator, '/')}',
+          if (sourceBlobs.existsSync())
+            'blobs': 'Openote/${relativeBlobs.replaceAll(p.separator, '/')}',
+          if (ref.deletedAt != null) 'deletedAt': ref.deletedAt,
         });
       }
       await File(p.join(temporary.path, 'backup.json')).writeAsString(
@@ -809,23 +844,38 @@ class AppState extends ChangeNotifier
         }
       }
       final manifestFile = File(p.join(temporary.path, 'backup.json'));
-      final candidates = <({String path, String? title, String? media})>[];
+      String archiveFile(String relative) {
+        final normalized = p.normalize(
+            relative.replaceAll('\\', '/').replaceAll('/', p.separator));
+        final resolved = p.join(temporary.path, normalized);
+        if (p.isAbsolute(normalized) || !p.isWithin(temporary.path, resolved)) {
+          throw const FormatException(
+              'The backup manifest contains an unsafe path.');
+        }
+        return resolved;
+      }
+
+      final candidates = <({
+        String path,
+        String? title,
+        String? media,
+        String? blobs,
+        int? deletedAt
+      })>[];
       if (manifestFile.existsSync()) {
         final json = jsonDecode(await manifestFile.readAsString());
         if (json is Map && json['notebooks'] is List) {
           for (final raw in json['notebooks'] as List) {
             if (raw is! Map || raw['file'] is! String) continue;
             candidates.add((
-              path: p.join(
-                temporary.path,
-                (raw['file'] as String).replaceAll('/', p.separator),
-              ),
+              path: archiveFile(raw['file'] as String),
               title: raw['title'] as String?,
               media: raw['media'] is String
-                  ? p.join(
-                      temporary.path,
-                      (raw['media'] as String).replaceAll('/', p.separator),
-                    )
+                  ? archiveFile(raw['media'] as String)
+                  : null,
+              deletedAt: (raw['deletedAt'] as num?)?.toInt(),
+              blobs: raw['blobs'] is String
+                  ? archiveFile(raw['blobs'] as String)
                   : null,
             ));
           }
@@ -837,44 +887,69 @@ class AppState extends ChangeNotifier
           followLinks: false,
         )) {
           if (entity is File && p.extension(entity.path) == '.onote') {
-            candidates.add((path: entity.path, title: null, media: null));
+            candidates.add((
+              path: entity.path,
+              title: null,
+              media: null,
+              blobs: null,
+              deletedAt: p
+                      .split(p.relative(entity.path, from: temporary.path))
+                      .contains(Repository.recycleBinDirectoryName)
+                  ? nowMs()
+                  : null
+            ));
           }
         }
       }
       var restored = 0;
       for (final candidate in candidates) {
         if (!File(candidate.path).existsSync()) continue;
-        var stem =
-            (candidate.title ?? p.basenameWithoutExtension(candidate.path))
-                .replaceAll(RegExp(r'[<>:"/\\|?*]'), '_')
-                .trim();
-        if (stem.isEmpty) stem = 'Restored notebook';
-        var destination = p.join(_repo.workspaceDir.path, '$stem.onote');
-        var suffix = 2;
-        while (File(destination).existsSync()) {
-          destination = p.join(_repo.workspaceDir.path, '$stem $suffix.onote');
-          suffix++;
-        }
+        final stem = _repo.availableNotebookTitle(
+            candidate.title ?? p.basenameWithoutExtension(candidate.path));
+        final destination =
+            p.join(_repo.workspaceDir.path, '$stem.onotebook', '$stem.onote');
+        await Directory(p.dirname(destination)).create(recursive: true);
         await File(candidate.path).copy(destination);
-        final sourceMedia =
+        var sourceMedia =
             candidate.media == null ? null : Directory(candidate.media!);
-        if (sourceMedia != null && sourceMedia.existsSync()) {
+        if (sourceMedia == null || !sourceMedia.existsSync()) {
+          // Also read archives from builds whose manifest named the wrong
+          // media path for structured notebooks.
+          sourceMedia = MediaStore.dirFor(
+              NotebookRef(id: '', title: '', file: candidate.path));
+        }
+        if (sourceMedia.existsSync()) {
           await _copyBackupDirectory(
             sourceMedia,
-            Directory('${p.withoutExtension(destination)}.media'),
+            Directory(p.join(p.dirname(destination), 'media')),
           );
+        }
+        var sourceBlobs = candidate.blobs == null
+            ? Directory(p.join(p.dirname(candidate.path), 'blobs'))
+            : Directory(candidate.blobs!);
+        if (!sourceBlobs.existsSync()) {
+          sourceBlobs = Directory(p.join(
+              '${p.withoutExtension(candidate.path)}.onotebook', 'blobs'));
+        }
+        if (sourceBlobs.existsSync()) {
+          await _copyBackupDirectory(
+              sourceBlobs, Directory(p.join(p.dirname(destination), 'blobs')));
         }
         final result = await _repo.adoptWorkspaceNotebook(
           destination,
-          title: candidate.title,
+          title: stem,
         );
         restored++;
-        notebookId = result.id;
+        if (candidate.deletedAt != null) {
+          await _repo.trashNotebook(result.id, deletedAt: candidate.deletedAt);
+        } else {
+          notebookId = result.id;
+        }
       }
       if (restored == 0) {
         throw const FormatException('No Openote notebooks were found.');
       }
-      await _loadNotebook();
+      if (notebookId != null) await _loadNotebook();
       notifyListeners();
       return restored;
     } finally {
@@ -927,7 +1002,7 @@ class AppState extends ChangeNotifier
   /// asymmetry is deliberate — switching mid-import would show the user a
   /// half-built notebook — and it is safe only because of that later switch.
   Future<NotebookRef> importCreateNotebook(String title) =>
-      _repo.createNotebook(title);
+      _repo.createImportedNotebook(title);
 
   /// Shared so toolbar/shortcuts can drive zoom (style guide §8.2).
   final canvas = CanvasController();
@@ -3864,6 +3939,16 @@ class AppState extends ChangeNotifier
 
   List<NotebookRef> get trashedNotebooks => _repo.trashedNotebooks;
 
+  Future<void> refreshNotebooks() async {
+    await flushSave();
+    if (!hasUnsavedChanges) await _repo.refreshNotebooks();
+  }
+
+  void _onNotebooksChanged() {
+    navRevision++;
+    notifyListeners();
+  }
+
   /// How long trashed items live before auto-deletion (recycle-bin retention).
   int _recycleRetentionDays = Repository.recycleRetentionDays;
   int get recycleRetentionDays => _recycleRetentionDays;
@@ -5946,6 +6031,7 @@ class AppState extends ChangeNotifier
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    _repo.notebooksChanged.removeListener(_onNotebooksChanged);
     _learning?.dispose();
     if (_editorOwner?._learningEditor == this) {
       _editorOwner!.focusLearningEditor(_editorOwner!);

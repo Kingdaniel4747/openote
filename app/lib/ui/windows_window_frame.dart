@@ -16,14 +16,6 @@ class WindowsWindowController extends ChangeNotifier {
   bool _disposed = false;
   bool closing = false;
 
-  /// Leave the window visible while the cancelable exit handler settles the
-  /// last durable save. Windows then performs its normal close animation.
-  static Future<void> hideForExit() async {
-    // Kept as an API for the lifecycle path. Deliberately no native hide:
-    // hiding first makes the application vanish abruptly instead of closing
-    // like a normal Windows window.
-  }
-
   static Future<void> restoreAfterFailedExit() async {
     if (!Platform.isWindows) return;
     try {
@@ -97,8 +89,8 @@ class WindowsWindowController extends ChangeNotifier {
     try {
       await channel.invokeMethod<void>('ensureMaximized');
     } on MissingPluginException {
-      // Older local runners only know the toggle command.
-      await maximize();
+      // Never fall back to the toggle: a runner that already maximized the
+      // window would restore it. Its native startup state remains in effect.
     } on PlatformException {
       // The native caption buttons remain available if this cannot be applied.
     }

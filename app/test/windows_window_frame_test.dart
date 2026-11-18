@@ -176,6 +176,38 @@ void main() {
     await controller.minimize();
   });
 
+  test('automatic maximization never falls back to the restore toggle',
+      () async {
+    final controller = WindowsWindowController(enabled: true);
+    addTearDown(controller.dispose);
+    messenger.setMockMethodCallHandler(WindowsWindowController.channel,
+        (call) async {
+      calls.add(call);
+      throw MissingPluginException();
+    });
+    await controller.ensureMaximized();
+    expect(calls.map((call) => call.method), ['ensureMaximized']);
+  });
+
+  testWidgets('rebuilding or changing theme never toggles the window size',
+      (tester) async {
+    final controller = WindowsWindowController(enabled: true);
+    addTearDown(controller.dispose);
+    Widget themed(Brightness brightness) => MaterialApp(
+          theme: ThemeData(brightness: brightness),
+          builder: (_, child) => WindowsWindowFrame(
+              controller: controller, startMaximized: true, child: child!),
+          home: const Scaffold(body: Text('Notebook')),
+        );
+    await tester.pumpWidget(themed(Brightness.light));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(themed(Brightness.dark));
+    await tester.pumpAndSettle();
+    expect(calls.where((call) => call.method == 'ensureMaximized'), hasLength(1));
+    expect(calls.where((call) => call.method == 'maximize'), isEmpty);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   test('close uses cancelable lifecycle exit, allowing shutdown to save',
       () async {
     final controller = WindowsWindowController(enabled: true);

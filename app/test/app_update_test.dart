@@ -2,6 +2,7 @@
 // parsing (the network wrapper is a thin shell around these), and the
 // drift guard — kAppVersion IS pubspec's version, enforced here rather
 // than remembered.
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +10,92 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:openote/update/app_update.dart';
 
 void main() {
+  group('downloading an update', () {
+    late HttpServer server;
+    late Directory directory;
+
+    setUp(() async {
+      server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      directory = Directory.systemTemp.createTempSync('openote_update_test_');
+    });
+    tearDown(() async {
+      await server.close(force: true);
+      directory.deleteSync(recursive: true);
+    });
+
+    test('a complete response is saved before it is returned', () async {
+      server.listen((request) async {
+        request.response.contentLength = 4;
+        request.response.add([1, 2, 3, 4]);
+        await request.response.close();
+      });
+      final file = await downloadUpdate('http://127.0.0.1:${server.port}/setup',
+          '${directory.path}/setup.exe');
+      expect(await file!.readAsBytes(), [1, 2, 3, 4]);
+    });
+
+    test('a server that never sends headers cannot block updating forever',
+        () async {
+      server.listen((request) {});
+      final file = await downloadUpdate('http://127.0.0.1:${server.port}/setup',
+          '${directory.path}/setup.exe');
+      expect(file, isNull);
+    });
+  });
+
+  group('installing a downloaded update', () {
+    test('waits for saves, launches Setup, closes SQLite, then exits',
+        () async {
+      final saved = Completer<void>();
+      final events = <String>[];
+      final applying = installDownloadedUpdate(File('setup.exe'),
+          shutdown: () async {
+            events.add('saving');
+            await saved.future;
+            events.add('saved');
+          },
+          hasUnsavedChanges: () => false,
+          launch: (file, args) async {
+            expect(args, contains('/NORESTART'));
+            events.add('installer');
+          },
+          close: () => events.add('closed'),
+          quit: (_) => events.add('exit'));
+      await Future<void>.delayed(Duration.zero);
+      expect(events, ['saving']);
+      saved.complete();
+      await applying;
+      expect(events, ['saving', 'saved', 'installer', 'closed', 'exit']);
+    });
+
+    test('a failed save never launches Setup or closes the app', () async {
+      var launched = false, closed = false, exited = false;
+      await expectLater(
+          installDownloadedUpdate(File('setup.exe'),
+              shutdown: () async {},
+              hasUnsavedChanges: () => true,
+              launch: (file, arguments) async => launched = true,
+              close: () => closed = true,
+              quit: (_) => exited = true),
+          throwsStateError);
+      expect([launched, closed, exited], [false, false, false]);
+    });
+
+    test('a failed installer launch leaves the app open for retry', () async {
+      var closed = false, exited = false;
+      await expectLater(
+          installDownloadedUpdate(File('setup.exe'),
+              shutdown: () async {},
+              hasUnsavedChanges: () => false,
+              launch: (file, arguments) async =>
+                  throw const FileSystemException('denied'),
+              close: () => closed = true,
+              quit: (_) => exited = true),
+          throwsA(isA<FileSystemException>()));
+      expect([closed, exited], [false, false]);
+    });
+  });
+
   group('compareVersions', () {
     test('orders plainly and numerically', () {
       expect(compareVersions('0.7.0', '0.6.2'), greaterThan(0));

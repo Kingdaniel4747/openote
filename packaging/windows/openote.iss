@@ -93,6 +93,9 @@ ArchitecturesInstallIn64BitMode=x64compatible
 CloseApplications=yes
 CloseApplicationsFilter=*.exe,*.dll
 RestartApplications=no
+; Shared with the Windows runner: manual launches defer to Setup's relaunch.
+; Windows destroys the mutex after a crash, so no stale marker can block startup.
+SetupMutex=Openote.Setup.8E5C0C41-6C2E-4E2C-9E5B-1F7A2D2F1A10
 
 ; Tells Inno to call SHChangeNotify(SHCNE_ASSOCCHANGED) when it finishes, so
 ; Explorer picks up the associations below without a sign-out. Without it the
@@ -235,7 +238,7 @@ Root: HKA; Subkey: "Software\Classes\Applications\{#AppExe}\SupportedTypes"; \
   ValueType: string; ValueName: "{#PointerExt}"; ValueData: ""
 
 [Run]
-Filename: "{app}\{#AppExe}"; \
+Filename: "{app}\{#AppExe}"; Parameters: "--after-update"; \
   Description: "Launch {#AppName}"; \
   Flags: nowait postinstall skipifsilent
 ; Silent installs are the update-through-app path: update_dialog.dart runs
@@ -243,7 +246,7 @@ Filename: "{app}\{#AppExe}"; \
 ; above rightly skips the interactive launch checkbox — this entry is its
 ; silent twin, so an in-app update ends with the NEW Openote open,
 ; completing "apply the update and relaunch" with no user action at all.
-Filename: "{app}\{#AppExe}"; Flags: nowait; Check: RelaunchAfterSilentUpdate
+Filename: "{app}\{#AppExe}"; Parameters: "--after-update"; Flags: nowait; Check: RelaunchAfterSilentUpdate
 
 [Code]
 function RelaunchAfterSilentUpdate: Boolean;

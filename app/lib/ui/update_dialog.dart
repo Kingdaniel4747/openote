@@ -88,8 +88,8 @@ class _ReleaseNotesViewState extends State<ReleaseNotesView> {
   Widget build(BuildContext context) {
     final text = tidyReleaseNotes(widget.notes);
     if (text.isEmpty) return const SizedBox.shrink();
-    final long = '\n'.allMatches(text).length + 1 >
-        ReleaseNotesView.foldAfterLines;
+    final long =
+        '\n'.allMatches(text).length + 1 > ReleaseNotesView.foldAfterLines;
     // Opened out, the panel follows the window rather than a fixed number:
     // the same 460px that is comfortable on a laptop is taller than the whole
     // dialog on a small screen.
@@ -151,16 +151,13 @@ class _UpdateDialogState extends State<_UpdateDialog> {
   String? _error;
 
   UpdateInfo get info => widget.info;
-  bool get _canAutoUpdate =>
-      Platform.isWindows && info.windowsSetupUrl != null;
+  bool get _canAutoUpdate => Platform.isWindows && info.windowsSetupUrl != null;
 
   Future<void> _update() async {
     setState(() {
       _busy = true;
       _error = null;
     });
-    // Save EVERYTHING first — the app is about to be replaced under us.
-    await widget.app.flushSave();
     final to =
         '${Directory.systemTemp.path}${Platform.pathSeparator}openote-${info.version}-setup.exe';
     final file = await downloadUpdate(info.windowsSetupUrl!, to,
@@ -179,18 +176,19 @@ class _UpdateDialogState extends State<_UpdateDialog> {
       return;
     }
     try {
-      // Silent install: replaces the files and relaunches Openote itself.
-      // This process must be gone before the installer touches the exe.
-      await Process.start(file.path, ['/SILENT', '/NOCANCEL'],
-          mode: ProcessStartMode.detached);
+      await installDownloadedUpdate(file,
+          shutdown: widget.app.shutdown,
+          hasUnsavedChanges: () => widget.app.hasUnsavedChanges,
+          close: widget.app.dispose);
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _busy = false;
-        _error = "Couldn't start the installer: $e";
+        _progress = null;
+        _error = "Couldn't install the update: $e";
       });
       return;
     }
-    exit(0);
   }
 
   @override

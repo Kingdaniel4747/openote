@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
 import '../l10n/app_strings.dart';
@@ -55,6 +57,7 @@ class _NotebookManagerState extends State<_NotebookManager> {
   void initState() {
     super.initState();
     app.addListener(_changed);
+    unawaited(app.refreshNotebooks());
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadCounts());
   }
 

@@ -1,4 +1,5 @@
 #include "window_controls.h"
+#include "window_state.h"
 #include <dwmapi.h>
 #include <inputpaneinterop.h>
 #include <roapi.h>
@@ -117,9 +118,7 @@ WindowControls::WindowControls(HWND window, flutter::BinaryMessenger* messenger)
           // Startup must never toggle a window that the native runner already
           // showed maximized. The regular `maximize` command intentionally
           // remains a toggle for the caption button and F11.
-          if (!IsZoomed(window_)) {
-            ShowWindow(window_, SW_MAXIMIZE);
-          }
+          ShowOpenoteMaximized(window_);
           result->Success();
         } else if (call.method_name() == "minimize") {
           ShowWindow(window_, SW_MINIMIZE);
@@ -128,7 +127,7 @@ WindowControls::WindowControls(HWND window, flutter::BinaryMessenger* messenger)
           ShowWindow(window_, SW_HIDE);
           result->Success();
         } else if (call.method_name() == "show") {
-          ShowWindow(window_, SW_SHOW);
+          ShowOpenoteMaximized(window_);
           SetForegroundWindow(window_);
           result->Success();
         } else if (call.method_name() == "showTouchKeyboard") {

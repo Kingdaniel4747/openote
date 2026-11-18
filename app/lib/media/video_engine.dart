@@ -1,12 +1,9 @@
-/// The video engine, fetched when it is first needed rather than shipped.
+/// Optional download and loader support for the video engine.
 ///
-/// **Why.** Measured on the v0.7.1 Windows Release bundle, libmpv and ANGLE
-/// are 48,580,342 B of 97,831,741 B — half the download, carried by every
-/// student whether or not they ever put a lecture in a notebook. They touch no
-/// byte of anybody's notes: a video lives in `<notebook>.media/` as
-/// an ordinary file (see store/media_store.dart) and this is only the code
-/// that decodes it. So the bytes stay on the student's disk and the *player*
-/// becomes a download. See tool/split_video_engine.dart for the build half.
+/// The current Windows build bundles libmpv and ANGLE through
+/// media_kit_libs_windows_video. Download support remains available for
+/// installations without a usable engine. Stored videos are separate files
+/// (see store/media_store.dart), independent of these decoder libraries.
 ///
 /// **What must never happen.** A student on a train with no signal opens a
 /// notebook with a lecture on page 4. The notebook opens, the page renders,
@@ -158,11 +155,9 @@ abstract final class VideoEngine {
   /// did not load" is the same card, and a throw on a build path would be a
   /// red screen where that card belongs.
   ///
-  /// The plugin's imports of these libraries are delay-loaded (see
-  /// tool/split_video_engine.dart), so the loader has not looked for them
-  /// before now. Loading each by ABSOLUTE path registers it under its base
-  /// name, which is what the deferred `LoadLibrary("libmpv-2.dll")` inside the
-  /// plugin then finds.
+  /// Load each library by absolute path after adding its directory to the
+  /// DLL search path. The normal Windows build also bundles these libraries
+  /// beside the executable.
   static bool load() {
     if (!isInstalled) return false;
     try {
