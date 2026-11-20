@@ -194,11 +194,15 @@ void main() {
     expect(raw, contains(' S '), reason: 'stroked path');
     expect(raw, contains(' RG '), reason: 'the stroke keeps its colour');
   });
+
   /// A page's worth of imported slide: one locked, full-width background image
   /// carrying the text pdfium pulled out of it — exactly what `pdf_import`
   /// writes for one-page-per-slide.
   Block slide(String id,
-          {required double w, required double h, String? source, double y = 0}) =>
+          {required double w,
+          required double h,
+          String? source,
+          double y = 0}) =>
       Block(
         id: id,
         type: BlockType.image,
@@ -281,7 +285,8 @@ void main() {
     expect(hPt / wPt, closeTo(9 / 16, 0.02));
   });
 
-  test('a section exports as one document, in navigator order', () async {
+  test('each page exports independently without including its section siblings',
+      () async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     final t = await newApp();
     final section = t.app.nodes.firstWhere((n) => n.kind == NodeKind.section);
@@ -301,9 +306,12 @@ void main() {
     t.app.blocks = [text('a', 100, 'Page 1 body')];
 
     expect(t.app.pagesOf(section.id).length, 3);
-    final raw = readable(await buildDeckPdf(t.app, section.id, title: 'Deck'));
-    expect(RegExp(r'/Type\s*/Page[^s]').allMatches(raw).length, 3,
-        reason: 'three pages in, three sheets out');
+    for (final page in t.app.pagesOf(section.id)) {
+      final raw =
+          readable(await buildPagePdf(t.app, page.id, title: page.title));
+      expect(RegExp(r'/Type\s*/Page[^s]').allMatches(raw).length, 1,
+          reason: 'only the selected page belongs to each PDF');
+    }
     expect(debugPlainText(text('x', 0, 'Page 2 body')), 'Page 2 body');
   });
 
@@ -325,7 +333,6 @@ void main() {
     expect(streams, contains('3 Tr'),
         reason: 'the slide text is emitted as invisible text');
   });
-
 
   // ── The four defects reported after a real export ─────────────────────
   //
@@ -350,8 +357,7 @@ void main() {
           'language': 'dart',
         }),
       ];
-      expect(debugPlainText(app.blocks.first),
-          contains('void main()'),
+      expect(debugPlainText(app.blocks.first), contains('void main()'),
           reason: 'the oracle must read what the exporter reads');
       final bytes = await buildPagePdf(app, pageId, title: 'T');
       expect(bytes.length, greaterThan(500));
@@ -418,7 +424,12 @@ void main() {
       final (app: app, pageId: pageId) = await newApp();
       app.renameNode(pageId, 'Photosynthesis');
       app.blocks = [
-        Block(type: BlockType.text, x: 60, y: 200, w: 400, content: {'text': 'body'}),
+        Block(
+            type: BlockType.text,
+            x: 60,
+            y: 200,
+            w: 400,
+            content: {'text': 'body'}),
       ];
       final bytes = await buildPagePdf(app, pageId, title: 'T');
       final text = latin1.decode(bytes, allowInvalid: true);
@@ -512,7 +523,8 @@ void main() {
     // owner's imported page came out of the PDF full of backslashes. It
     // stopped being cosmetic when the importer started leaving equations
     // inline where OneNote put them, which made this the common case.
-    test('a line is cut into words and equations, and `\\\$` is not a delimiter',
+    test(
+        'a line is cut into words and equations, and `\\\$` is not a delimiter',
         () {
       expect(
         splitInlineMaths(r'before $x^2$ after').map((r) => r.isMaths).toList(),
@@ -532,8 +544,8 @@ void main() {
           reason: r'an escaped \$ opens nothing, so this is one run of words');
       // `$$` is two dollar signs the writer typed, not an empty equation —
       // the same rule the screen's `\$([^$\n]+?)\$` applies.
-      expect(splitInlineMaths(r'a $$ b').map((r) => r.isMaths).toList(),
-          [false]);
+      expect(
+          splitInlineMaths(r'a $$ b').map((r) => r.isMaths).toList(), [false]);
       // Two equations in one sentence, each its own run.
       expect(
         splitInlineMaths(r'$a$ and $b$').map((r) => r.isMaths).toList(),
@@ -542,8 +554,7 @@ void main() {
       // The maths is cut out BEFORE the Markdown markers are stripped: the
       // other order feeds `$a*b*c$` to the italic rule, which eats the
       // asterisks and changes what the equation means on its way to paper.
-      expect(debugPlainText(text('a', 0, r'x $a*b*c$ y')),
-          r'x $a*b*c$ y');
+      expect(debugPlainText(text('a', 0, r'x $a*b*c$ y')), r'x $a*b*c$ y');
     });
 
     test('an inline equation in a paragraph is typeset, not printed as source',
@@ -605,16 +616,13 @@ void main() {
               'After the picture',
         }),
       ];
-      expect(debugFlowKinds(app, app.blocks.single),
-          ['text', 'image', 'text'],
+      expect(debugFlowKinds(app, app.blocks.single), ['text', 'image', 'text'],
           reason: 'the picture is a picture, between the two runs of prose');
-      final raw =
-          latin1.decode(await buildPagePdf(app, pageId, title: 'T'),
-              allowInvalid: true);
+      final raw = latin1.decode(await buildPagePdf(app, pageId, title: 'T'),
+          allowInvalid: true);
       // `/XObject`, not `/Image`: see the note in the maths group. Every page
       // has `/ImageB` in its ProcSet whether or not it has a picture.
-      expect(raw, contains('/XObject'),
-          reason: 'the picture reached the page');
+      expect(raw, contains('/XObject'), reason: 'the picture reached the page');
     });
 
     test('an in-flow flashcard prints both sides', () async {
@@ -778,4 +786,3 @@ void main() {
     });
   });
 }
-

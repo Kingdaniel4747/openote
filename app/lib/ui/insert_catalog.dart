@@ -13,7 +13,7 @@
 /// file is the single list they now both render, so "the menu matches Insert"
 /// is true by construction rather than by anyone remembering.
 ///
-/// **The ribbon is one row of eleven; the menu shows ten of them.**
+/// **The ribbon is one row of ten; the menu shows nine of them.**
 ///
 /// The ribbon went to three groups with four wordless icons for one release,
 /// and came back: *"i dont love the new menu stuff though, i think we go back
@@ -183,7 +183,6 @@ const List<String> kRibbonOrder = [
   'board',
   'image',
   'pdf',
-  'diagram',
   'file',
   'video',
   'pagelink',
@@ -349,15 +348,6 @@ final List<InsertGroup> kInsertGroups = [
       run: insertVideoOrLink,
     ),
     const InsertItem(
-      id: 'diagram',
-      icon: Icons.account_tree_outlined,
-      label: 'Draw.io',
-      tooltip: 'Keep a linked diagram file on this page',
-      opensPicker: true,
-      size: Size(360, 220),
-      run: insertDrawioDiagram,
-    ),
-    const InsertItem(
       id: 'file',
       icon: Icons.attach_file,
       label: 'File',
@@ -420,7 +410,7 @@ Future<void> insertPickedImage(
   // user worked through. Insert the first copied picture at the top, then
   // continue down the page in that visible order.
   files = files.reversed.toList();
-  var nextTop = at.dy;
+  Block? first;
   for (final file in files) {
     Uint8List bytes;
     try {
@@ -443,20 +433,25 @@ Future<void> insertPickedImage(
       'webp' => 'image/webp',
       _ => 'image/png',
     };
-    const width = 480.0;
+    final placement = app.mediaImportPlacement();
+    final width = placement.width;
     final naturalWidth = decoded?.width.toDouble();
     final naturalHeight = decoded?.height.toDouble();
     final height =
         naturalWidth != null && naturalHeight != null && naturalWidth > 0
             ? width * naturalHeight / naturalWidth
             : width * .75;
-    insertImageBytes(app, bytes, mime, Offset(at.dx, nextTop + height / 2),
+    final block = insertImageBytes(app, bytes, mime,
+        Offset(placement.left + width / 2, placement.top + height / 2),
         width: width,
         height: height,
         naturalWidth: naturalWidth,
         naturalHeight: naturalHeight);
     decoded?.dispose();
-    nextTop += height + 24;
+    first ??= block;
+  }
+  if (first != null) {
+    app.canvas.centerOn(Offset(first.x + first.w / 2, first.y + 200));
   }
 }
 
@@ -474,30 +469,6 @@ Future<void> insertPickedFile(
     'mime': 'application/octet-stream',
     'size': bytes.length,
   }));
-  app.select(b.id);
-}
-
-/// Link a draw.io file without copying it into the notebook. The source stays
-/// in the user's synchronised folder and is opened by their draw.io install.
-Future<void> insertDrawioDiagram(
-    BuildContext context, AppState app, Offset at) async {
-  final file = await _pick(context, groups: const [
-    XTypeGroup(
-        label: 'draw.io diagrams', extensions: ['drawio', 'xml', 'png', 'svg'])
-  ]);
-  if (file == null) return;
-  final b = app.addBlock(Block(
-    type: BlockType.file,
-    x: at.dx,
-    y: at.dy,
-    w: 360,
-    h: 220,
-    content: {
-      'kind': 'drawio',
-      'path': file.path,
-      'name': file.name,
-    },
-  ));
   app.select(b.id);
 }
 

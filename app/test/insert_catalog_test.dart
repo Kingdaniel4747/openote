@@ -58,10 +58,10 @@ void main() {
   }
 
   group('the catalog itself', () {
-    test('is eleven things, grouped for the menu', () {
+    test('is ten things, grouped for the menu', () {
       expect(kInsertGroups.map((g) => g.title).toList(),
           ['Write', 'Bring in', 'Link up']);
-      expect(kInsertItems.length, 11);
+      expect(kInsertItems.length, 10);
     });
 
     test('the ribbon is one row, in the order it has always been', () {
@@ -76,7 +76,6 @@ void main() {
         'board',
         'image',
         'pdf',
-        'diagram',
         'file',
         'video',
         'pagelink',
@@ -105,7 +104,7 @@ void main() {
         expect(kInsertItems.map((i) => i.id), contains(id), reason: id);
         expect(menu.contains(id), isFalse, reason: id);
       }
-      expect(menu.length, 10);
+      expect(menu.length, 9);
     });
 
     test('every label is a noun a fifteen-year-old uses', () {
@@ -313,7 +312,7 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('says the same ten things the ribbon does', (tester) async {
+    testWidgets('says the same nine things the ribbon does', (tester) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       await open(tester);
       for (final g in kMenuGroups) {
@@ -321,6 +320,7 @@ void main() {
           expect(find.text(i.menuLabel), findsOneWidget, reason: i.id);
         }
       }
+      expect(find.textContaining('Draw.io'), findsNothing);
       expect(find.text('Paste'), findsOneWidget);
       expect(find.text('Page background'), findsOneWidget);
       app.cancelPendingSave();

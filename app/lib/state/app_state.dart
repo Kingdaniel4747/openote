@@ -570,7 +570,7 @@ class AppState extends ChangeNotifier
   /// passcode on the parent governs nothing.
   ///
   /// The rule here is the one the rest of the app already uses for exactly
-  /// this relationship (`sidebar._pageEntriesFor`, `sortSection`): a page's
+  /// this relationship (the sidebar page tree): a page's
   /// parent is the nearest PRECEDING page in the section, in position order,
   /// with a strictly smaller level.
   String? _protectionParent(TreeNode? n) {
@@ -1057,7 +1057,7 @@ class AppState extends ChangeNotifier
   /// the left navigator keeps only the pages for the active section.
   bool sectionTabsAbovePage = false;
 
-  /// The Home surface (favourites + recents) shown in the pages pane.
+  /// The Home surface (recent pages) shown in the pages pane.
   /// Transient by design: selecting any page returns the pane to that page's
   /// section, so Home behaves like a springboard rather than a place you can
   /// get stuck in. Deliberately a BOOLEAN beside a real [activeSectionId], not
@@ -1066,7 +1066,7 @@ class AppState extends ChangeNotifier
   bool navHome = false;
 
   /// Bumped when navigator-only state changes that nothing else observes —
-  /// favourites, collapse toggles, Home. The navigator memo in AppShell keys
+  /// collapse toggles, Home. The navigator memo in AppShell keys
   /// on it; leaving one of these out is how a stale (not broken, just frozen)
   /// navigator ships.
   int navRevision = 0;
@@ -1104,7 +1104,7 @@ class AppState extends ChangeNotifier
 
   /// Which page each section was last on, so browsing sections never loses
   /// your place. Keys are '<notebookId>:<sectionId>' because settings are
-  /// workspace-scoped (same reasoning as favourites).
+  /// workspace-scoped, with notebook-qualified page IDs.
   final Map<String, String> _sectionLastPage = {};
 
   void _rememberSectionPage(String sectionId, String pageId) {
@@ -1811,34 +1811,16 @@ class AppState extends ChangeNotifier
   /// Open the planner (idempotent) from its summary in the sidebar.
   void openPlanner() => showPanel(SidePanelKind.planner);
 
-  // ── Favourites & recents (ORG-10) ────────────────────────────────────
+  // ── Recently visited pages ────────────────────────────────────
   //
   // Keys are '<notebookId>:<pageId>'. Settings are WORKSPACE-scoped, so a bare
   // page id would collide across notebooks and dangle after one is deleted.
 
-  final Set<String> _favourites = {};
   final List<String> _recents = [];
 
   static const _recentsCap = 20;
 
   String _pageKey(String pageId, [String? nb]) => '${nb ?? notebookId}:$pageId';
-
-  bool isFavourite(String pageId) => _favourites.contains(_pageKey(pageId));
-
-  /// Favourite page ids in THIS notebook, in tree order.
-  List<TreeNode> favouritePages() => [
-        for (final n in nodes)
-          if (n.kind == NodeKind.page && _favourites.contains(_pageKey(n.id)))
-            n,
-      ];
-
-  void toggleFavourite(String pageId) {
-    final k = _pageKey(pageId);
-    _favourites.contains(k) ? _favourites.remove(k) : _favourites.add(k);
-    _repo.setSetting('favourites', _favourites.toList());
-    navRevision++; // the Home pane renders favourites; nothing else changes
-    notifyListeners();
-  }
 
   /// Recently visited pages in this notebook, most recent first.
   List<TreeNode> recentPages({int max = 8}) {
@@ -1863,68 +1845,11 @@ class AppState extends ChangeNotifier
     _repo.setSetting('recentPages', _recents);
   }
 
-  /// Sort a section's pages by title or by last edit (ORG-8).
-  ///
-  /// Subpages move WITH their parent: a page carries the deeper-level pages
-  /// that follow it, or sorting would silently reparent every subpage in the
-  /// section to whatever landed above it.
-  void sortSection(String sectionId, {required bool byTitle}) {
-    final pages = pagesOf(sectionId);
-    if (pages.length < 2) return;
-    // Group each top-level page with its contiguous deeper-level run.
-    final groups = <List<TreeNode>>[];
-    for (final p in pages) {
-      if (p.level == 0 || groups.isEmpty) {
-        groups.add([p]);
-      } else {
-        groups.last.add(p);
-      }
-    }
-    groups.sort(
-      (a, b) => byTitle
-          ? a.first.title.toLowerCase().compareTo(b.first.title.toLowerCase())
-          : b.first.updatedAt.compareTo(a.first.updatedAt),
-    );
-    var seq = nowMs();
-    for (final g in groups) {
-      for (final n in g) {
-        n.position = 'a${(seq++).toString().padLeft(15, '0')}';
-        _putNode(notebookId!, n);
-      }
-    }
-    reloadNodes();
-    notifyListeners();
-  }
-
   /// English uses the bundled word list; German uses local Windows services.
   bool spellCheckEnabled = true;
   String interfaceLanguage = 'en';
   String writingLanguage = 'en-US';
   bool handwritingSpellCheck = true;
-
-  bool get ankiShortcutEnabled =>
-      _repo.getSetting('ankiShortcutEnabled') == true;
-  bool get browserShortcutEnabled =>
-      _repo.getSetting('browserShortcutEnabled') != false;
-  String? get ankiExecutablePath =>
-      _repo.getSetting('ankiExecutablePath') as String?;
-
-  void setAnkiShortcutEnabled(bool value) {
-    _repo.setSetting('ankiShortcutEnabled', value);
-    notifyListeners();
-  }
-
-  void setBrowserShortcutEnabled(bool value) {
-    _repo.setSetting('browserShortcutEnabled', value);
-    notifyListeners();
-  }
-
-  void setAnkiExecutablePath(String? path) {
-    final value = path?.trim();
-    _repo.setSetting(
-        'ankiExecutablePath', value == null || value.isEmpty ? null : value);
-    notifyListeners();
-  }
 
   /// Dismissed handwriting-recognition warnings. The key includes the page,
   /// recognised word and its local bounds, so ignoring one occurrence does not
@@ -3458,8 +3383,7 @@ class AppState extends ChangeNotifier
     // up on what came due while Openote was closed, and it can only know that
     // after the reminders have been read.
     planner.startScheduler();
-    final fav = _repo.getSetting('favourites');
-    if (fav is List) _favourites.addAll(fav.cast<String>());
+
     final rec = _repo.getSetting('recentPages');
     if (rec is List) _recents.addAll(rec.cast<String>());
     final td = _repo.getSetting('touchDrawing') as String?;
@@ -4188,6 +4112,27 @@ class AppState extends ChangeNotifier
   static const double pageLeftMargin = 44;
   static const double titleBandHeight = 84; // title + date live here
   static const double contentTop = titleBandHeight + 8;
+  static const double mediaImportGap = 36;
+
+  /// Shared layout for phone scans, picked images and PDF printouts. Imports
+  /// form one left-aligned stack below existing content, independent of zoom,
+  /// viewport position, selection or the active text editor.
+  ({double left, double top, double width}) mediaImportPlacement(
+      {PageData? page}) {
+    var bottom = contentTop;
+    for (final block in page?.blocks ?? blocks) {
+      final height = block.h ??
+          (page == null ? renderSizes[block.id]?.height : null) ??
+          estimatedHeight(block);
+      bottom = math.max(bottom, block.y + height);
+    }
+    return (
+      left: pageLeftMargin,
+      top: bottom + mediaImportGap,
+      width: ((page?.props ?? pageProps).pageWidth - pageLeftMargin * 2)
+          .clamp(280.0, 760.0),
+    );
+  }
 
   /// Content-only extent (right & bottom edges), for page growth & fit.
   ({double right, double bottom}) contentExtent() {
@@ -4598,7 +4543,7 @@ class AppState extends ChangeNotifier
   /// made while reading page 3 of 50 belongs near page 3, not at the bottom.
   ///
   /// So the position is not guessed. The section's pages are put in the order
-  /// they should be in and renumbered — the same thing `sortSection` does, and
+  /// they should be in and renumbered — the same thing reordering does, and
   /// bounded the same way, by the number of pages in one section.
   Future<void> addPage({String? sectionId}) async {
     sectionId ??= sectionOf(pageId) ??
@@ -4973,6 +4918,55 @@ class AppState extends ChangeNotifier
     select(b.id);
   }
 
+  /// The page's contiguous descendant run belongs to it during every move.
+  List<TreeNode> _pageBranch(TreeNode page) {
+    final pages = pagesOf(page.parentId ?? '');
+    final start = pages.indexWhere((p) => p.id == page.id);
+    if (start < 0) return [];
+    var end = start + 1;
+    while (end < pages.length && pages[end].level > page.level) {
+      end++;
+    }
+    return pages.sublist(start, end);
+  }
+
+  /// Reorders one page and its descendants without moving its own parent.
+  void reorderPageTree(String movingId, String targetId,
+      {required bool after, bool nest = false}) {
+    final moving = node(movingId), target = node(targetId);
+    if (moving?.kind != NodeKind.page || target?.kind != NodeKind.page) return;
+    final branch = _pageBranch(moving!);
+    if (branch.isEmpty || branch.any((p) => p.id == targetId)) return;
+    final level = target!.level + (nest ? 1 : 0);
+    final delta = level - moving.level;
+    if (level < 0 || branch.any((p) => p.level + delta > 2)) return;
+    final branchIds = branch.map((p) => p.id).toSet();
+    final destination = pagesOf(target.parentId ?? '')
+        .where((p) => !branchIds.contains(p.id))
+        .toList();
+    var at = destination.indexWhere((p) => p.id == targetId);
+    if (at < 0) return;
+    if (after || nest) {
+      at++;
+      while (at < destination.length && destination[at].level > target.level) {
+        at++;
+      }
+    }
+    pushUndo();
+    for (final page in branch) {
+      page.parentId = target.parentId;
+      page.level += delta;
+    }
+    destination.insertAll(at, branch);
+    var seq = nowMs();
+    for (final page in destination) {
+      page.position = 'a${(seq++).toString().padLeft(15, '0')}';
+      _putNode(notebookId!, page);
+    }
+    reloadNodes();
+    notifyListeners();
+  }
+
   /// Drag a page into another section (ORG-2): reparent, level 0, append.
   void movePageToSection(String pageId, String sectionId) {
     final n = node(pageId);
@@ -4980,11 +4974,26 @@ class AppState extends ChangeNotifier
     if (n == null || n.kind != NodeKind.page || s?.kind != NodeKind.section) {
       return;
     }
-    n
-      ..parentId = sectionId
-      ..level = 0
-      ..position = _nextPosition();
-    _putNode(notebookId!, n);
+    if (n.parentId == sectionId) return;
+    final branch = _pageBranch(n);
+    final level = n.level;
+    for (final page in branch) {
+      page
+        ..parentId = sectionId
+        ..level -= level;
+    }
+    // Imported position keys may sort beyond a timestamp. Rebuild the run
+    // so dropping onto a section always appends after its existing pages.
+    final destination = [
+      ...pagesOf(sectionId)
+          .where((p) => !branch.any((entry) => entry.id == p.id)),
+      ...branch
+    ];
+    var seq = nowMs();
+    for (final page in destination) {
+      page.position = 'a${(seq++).toString().padLeft(15, '0')}';
+      _putNode(notebookId!, page);
+    }
     reloadNodes();
     notifyListeners();
   }

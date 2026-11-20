@@ -24,6 +24,9 @@ Nur Erkenntnisse behalten, die künftige Fehler verhindern. Keine Sitzungsprotok
 
 ## Daten und Bedienung
 
+- Radierer gegen die gesamte Bewegung zwischen zwei Stiftpositionen schneiden,
+  nicht nur gegen einzelne Abtastkreise. Schnittpunkte samt Druck/Neigung/Zeit
+  interpolieren; beim Neuzeichnen auch geänderte Striche in der Listenmitte prüfen.
 - Windows-Handballenschutz muss vor dem Hit-Test greifen, nicht nur im Canvas:
   sonst reagieren Scrollbalken und Fensterknöpfe bereits auf den Kontakt.
   Bei Stiftkontakt alte Touch-Sequenzen abbrechen und bis zum Abheben verwerfen.
@@ -63,6 +66,13 @@ Nur Erkenntnisse behalten, die künftige Fehler verhindern. Keine Sitzungsprotok
   Alte Erwartungen mit dem heutigen Produkt abgleichen.
 
 ## Prüfungen
+
+PDF-Anzeige: Decode-Größe an Zoom und Display-Pixeldichte anpassen, auch unter
+100 % Zoom. Scharfe sichtbare Ausschnitte nur transient halten; niemals als
+dauerhafte Vorschau speichern. Veraltete Aufträge vor dem Öffnen überspringen,
+bei geteilten Aufträgen alle noch aktiven Betrachter berücksichtigen. Einen
+zuletzt verwendeten großen PDF-Quellcontainer trotz Cache-Budget behalten,
+sonst wird derselbe Inhalt für jede Seite erneut geöffnet; bei Inaktivität freigeben.
 
 Widgettests nutzen eine künstliche Uhr. Speicher-/Erinnerungs-Timer rechtzeitig
 beenden; echtes Datei-I/O passend außerhalb dieser Uhr ausführen. Testdoubles

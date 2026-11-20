@@ -15,6 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/ui/command_bar.dart';
+import 'package:openote/ui/learning_access_dialog.dart';
 
 import 'support/sqlite.dart';
 
@@ -46,7 +47,8 @@ void main() {
     } catch (_) {}
   });
 
-  Future<void> pump(WidgetTester tester, Size size) async {
+  Future<void> pump(WidgetTester tester, Size size,
+      {bool titlebarOnly = false}) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -54,42 +56,72 @@ void main() {
       home: Scaffold(
         body: ListenableBuilder(
           listenable: app,
-          builder: (_, __) => CommandBar(app: app),
+          builder: (_, __) => CommandBar(app: app, titlebarOnly: titlebarOnly),
         ),
       ),
     ));
     await tester.pumpAndSettle();
   }
 
-  testWidgets('browser shortcut can be hidden and stays hidden', (tester) async {
+  testWidgets('removed app launchers stay absent with legacy settings enabled',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    repo.setSetting('ankiShortcutEnabled', true);
+    repo.setSetting('browserShortcutEnabled', true);
+    repo.setSetting('ankiExecutablePath', 'legacy-anki.exe');
+    for (final titlebarOnly in [false, true]) {
+      for (final width in [2600.0, 600.0]) {
+        await pump(tester, Size(width, 1200), titlebarOnly: titlebarOnly);
+        expect(find.byTooltip('Open default browser'), findsNothing);
+        expect(find.byTooltip('Open Anki'), findsNothing);
+        expect(find.byIcon(Icons.open_in_browser_outlined), findsNothing);
+        expect(find.byTooltip('Settings…'), findsOneWidget);
+      }
+    }
+    expect(find.byTooltip('Recherche und YouTube'), findsNothing);
+    await tester.tap(find.byTooltip('Settings…'));
+    await tester.pumpAndSettle();
+    expect(find.text('Show Anki shortcut'), findsNothing);
+    expect(find.text('Show browser shortcut'), findsNothing);
+    expect(find.text('Change Anki app'), findsNothing);
+    expect(find.text('Integrations'), findsNothing);
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('MCP settings are only available through the AI button',
+      (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     await pump(tester, const Size(2600, 1200));
-    expect(find.byTooltip('Open default browser'), findsOneWidget);
-    expect(find.byTooltip('Recherche und YouTube'), findsNothing);
-
-    app.setBrowserShortcutEnabled(false);
+    await tester.tap(find.byTooltip('Settings…'));
     await tester.pumpAndSettle();
-    expect(find.byTooltip('Open default browser'), findsNothing);
-    expect(repo.getSetting('browserShortcutEnabled'), isFalse);
-    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.byType(LearningAccessPanel), findsNothing);
+    expect(find.text('AI learning access'), findsNothing);
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('AI: off'));
+    await tester.pumpAndSettle();
+    expect(find.byType(LearningAccessPanel), findsOneWidget);
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
   });
 
   testWidgets('a wide window shows every trailing control inline, no fold',
       (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     await pump(tester, const Size(2600, 1200));
-    // Planner carries its own dynamic tooltip text (how many reminders are
-    // due), so it is found by icon here; everything else is a fixed tooltip.
-    expect(find.byIcon(Icons.event_note_outlined), findsOneWidget,
+    // The planner's task count is a badge; its calendar icon stays visible.
+    expect(find.byIcon(Icons.calendar_month_outlined), findsOneWidget,
         reason: 'Planner');
     for (final tip in const [
-      'Links & backlinks',
+      'AI: off',
       'Find on page  (Ctrl+F)',
-      'Export page…',
       'Settings…',
     ]) {
       expect(find.byTooltip(tip), findsOneWidget, reason: tip);
     }
+    expect(find.byTooltip('Export page…'), findsNothing);
+    expect(find.byIcon(Icons.ios_share_outlined), findsNothing);
     expect(find.byTooltip('More'), findsNothing,
         reason:
             'the compact utility cluster does not need a menu at full width');
@@ -109,59 +141,39 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byTooltip('1 homework item waiting'), findsOneWidget);
+    expect(
+        find.byTooltip('Hausaufgaben, To-dos und Klausuren'), findsOneWidget);
     expect(find.text('1'), findsOneWidget);
     app.planner.dispose();
     app.cancelPendingSave();
   });
 
-  testWidgets(
-      'a narrow window folds the lowest-priority controls into More, '
-      'not off screen', (tester) async {
-    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-    // Narrow enough to force a fold, wide enough that this is a realistic
-    // "laptop with the navigator open" window, not a pathological one.
-    await pump(tester, const Size(700, 900));
-
-    expect(find.byTooltip('More'), findsOneWidget,
-        reason: 'the trailing cluster does not fit at 700px — something '
-            'has to fold, or a wider net regression than this test caught '
-            'it');
-
-    // Whatever folded is REACHABLE from More, not simply gone.
-    await tester.tap(find.byTooltip('More'));
-    await tester.pumpAndSettle();
-    expect(find.byType(MenuItemButton), findsWidgets);
-    app.cancelPendingSave();
-  });
-
-  testWidgets('a folded Settings still opens the real settings dialog',
+  testWidgets('a narrow window keeps Find inline after export moves to pages',
       (tester) async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     await pump(tester, const Size(700, 900));
-    await tester.tap(find.byTooltip('More'));
+    expect(find.byTooltip('More'), findsNothing);
+    expect(find.byTooltip('Find on page  (Ctrl+F)'), findsOneWidget);
+    expect(find.byTooltip('Export page…'), findsNothing);
+    await tester.tap(find.byTooltip('Find on page  (Ctrl+F)'));
     await tester.pumpAndSettle();
+    expect(app.findOpen, isTrue);
+    expect(tester.takeException(), isNull);
+    app.cancelPendingSave();
+  });
 
-    final settings = find.widgetWithText(MenuItemButton, 'Settings');
-    // Fall through gracefully if Settings happens to still be inline on
-    // whatever platform/font metrics this runs under — the point of this
-    // test is "if it folds, it still works", not pinning the exact pixel
-    // threshold a font substitution could nudge.
-    if (settings.evaluate().isEmpty) {
-      expect(find.byTooltip('Settings…'), findsOneWidget);
-      return;
-    }
-    final onPressed = tester.widget<MenuItemButton>(settings).onPressed;
-    expect(onPressed, isNotNull);
-    onPressed!();
+  testWidgets('Settings remains reachable in a narrow window', (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    await pump(tester, const Size(700, 900));
+    await tester.tap(find.byTooltip('Settings…'));
     await tester.pumpAndSettle();
     expect(
         find.descendant(
             of: find.byType(AlertDialog), matching: find.text('Settings')),
-        findsOneWidget,
-        reason: 'the SAME dialog the inline button opens');
+        findsOneWidget);
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
   });
-
   testWidgets(
       'folding the trailing cluster leaves the tabs and Home row '
       'exactly where they were', (tester) async {

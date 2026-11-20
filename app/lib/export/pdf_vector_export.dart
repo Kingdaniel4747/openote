@@ -92,32 +92,9 @@ Future<String?> exportPagePdfVector(AppState app) async {
   return location.path;
 }
 
-/// Export a whole section — a lecture deck, a week's notes — as one PDF.
-///
-/// The unit a student shares is rarely one page. It is also the last piece of
-/// the PDF-annotation flagship (Phase B step 4): a deck imported one-slide-per-
-/// page comes back out as one document you can hand in.
-Future<String?> exportSectionPdfVector(AppState app, String sectionId) async {
-  final section = app.nodes.where((n) => n.id == sectionId).firstOrNull;
-  if (section == null) return null;
-  if (app.pagesOf(sectionId).isEmpty) return null;
-
-  final location = await getSaveLocation(
-    suggestedName: '${safeFilename(section.title, fallback: 'section')}.pdf',
-    acceptedTypeGroups: const [
-      XTypeGroup(label: 'PDF', extensions: ['pdf'])
-    ],
-  );
-  if (location == null) return null;
-
-  final bytes = await buildDeckPdf(app, sectionId, title: section.title);
-  await File(location.path).writeAsBytes(bytes);
-  return location.path;
-}
-
 /// Build the PDF bytes for a page.
 ///
-/// Separated from the file-picker half so printing (P13) and annotated-slide
+/// Separated from the file-picker half so annotated-slide
 /// re-export can reuse it, and so it is testable without a UI.
 Future<Uint8List> buildPagePdf(AppState app, String pageId,
     {required String title}) async {
@@ -156,13 +133,16 @@ class PdfPageSnapshot {
       final bytes = app.blob(ref);
       if (bytes != null) blobs[ref] = bytes;
     }
+
     // Freeze only bytes the renderer actually needs. A PDF preview is enough:
     // do not read a 200 MB deck, or re-read ink already decoded in the blocks,
     // just to show one page to the learning client.
     for (final b in blocks) {
       if (b.type == BlockType.image) {
         captureBlob(b.content['blob']);
-        if (!blobs.containsKey(b.content['blob'])) captureBlob(b.content['pdf']);
+        if (!blobs.containsKey(b.content['blob'])) {
+          captureBlob(b.content['pdf']);
+        }
       }
       if (b.type == BlockType.text && b.content['text'] is String) {
         for (final line in (b.content['text'] as String).split('\n')) {
@@ -252,22 +232,10 @@ int snapshotSheetCount(PdfPageSnapshot snapshot) {
   return (bottom / height).ceil().clamp(1, 500);
 }
 
-/// Build one PDF from every page of a section, in navigator order.
-Future<Uint8List> buildDeckPdf(AppState app, String sectionId,
-    {required String title}) async {
-  final doc = pw.Document(title: title, creator: 'Openote');
-  final theme = await _theme();
-  for (final p in app.pagesOf(sectionId)) {
-    await _addPageSheets(doc, PdfPageSnapshot.capture(app, p.id), p.id, theme);
-  }
-  return doc.save();
-}
-
 /// Append one Openote page to [doc] as one or more sheets.
 ///
-/// Reads the page's **own** properties rather than the open page's — exporting
-/// a section means most of these pages are closed, and borrowing the open
-/// page's width would have laid every one of them out at the wrong size.
+/// Reads the snapshot's own properties so exports of a closed page retain
+/// its dimensions instead of borrowing the active page's width.
 Future<void> _addPageSheets(
     pw.Document doc, PdfPageSnapshot app, String pageId, pw.ThemeData? theme,
     {int? sheetIndex}) async {

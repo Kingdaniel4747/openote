@@ -5,15 +5,9 @@ import 'package:flutter/material.dart';
 import '../l10n/app_strings.dart';
 import 'package:flutter/services.dart';
 
-import '../export/markdown_export.dart';
-import '../export/open_export.dart';
-import '../export/pdf_export.dart';
-import '../export/pdf_vector_export.dart';
-import '../export/print_page.dart';
 import '../editor/list_editing.dart';
 import '../canvas/media_drop.dart';
-import '../core/anki_launcher.dart';
-import '../core/platform_open.dart';
+
 import '../markdown/md_syntax.dart';
 import '../state/app_state.dart';
 import '../platform/screen_capture.dart';
@@ -31,7 +25,6 @@ import 'learning_access_dialog.dart';
 import 'scanner_pairing_dialog.dart';
 import 'update_dialog.dart';
 import '../theme/tokens.dart';
-import 'onote_dialog.dart';
 import 'windows_window_frame.dart';
 
 /// The tabbed command bar (style guide §7 revised): Home · Insert · Draw ·
@@ -243,90 +236,9 @@ class _CommandBarState extends State<CommandBar> {
                   onPressed: app.toggleFind,
                 ),
               ),
-              ToolbarControl(
-                width: 40,
-                icon: Icons.ios_share_outlined,
-                label: 'Export',
-                inline: MenuAnchor(
-                  builder: (context, controller, _) => IconButton(
-                    icon: const Icon(Icons.ios_share_outlined, size: 18),
-                    tooltip: tr(context, 'Export page…'),
-                    visualDensity: VisualDensity.compact,
-                    onPressed: () => controller.isOpen
-                        ? controller.close()
-                        : controller.open(),
-                  ),
-                  menuChildren: _exportMenuItems(context),
-                ),
-                submenu: [
-                  ToolbarSubmenuItem(
-                    icon: Icons.description_outlined,
-                    label: 'Markdown (.md)',
-                    onPressed: () => _export(context, exportPageMarkdown),
-                  ),
-                  // Vector by default: the shared/printed artefact
-                  // should be searchable, selectable and small. The
-                  // raster capture stays available for the rare page
-                  // whose look matters more than its text.
-                  ToolbarSubmenuItem(
-                    icon: Icons.picture_as_pdf_outlined,
-                    label: 'PDF (.pdf)',
-                    onPressed: () => _export(context, exportPagePdfVector),
-                  ),
-                  ToolbarSubmenuItem(
-                    icon: Icons.print_outlined,
-                    label: 'Print…',
-                    onPressed: () => printCurrentPage(app),
-                  ),
-                  ToolbarSubmenuItem(
-                    icon: Icons.image_outlined,
-                    label: 'PDF — picture of the page',
-                    onPressed: () => _export(context, exportPagePdf),
-                  ),
-                  ToolbarSubmenuItem(
-                    icon: Icons.hub_outlined,
-                    label: 'For Obsidian Canvas (.canvas)',
-                    onPressed: () => _export(context, exportPageJsonCanvas),
-                  ),
-                  ToolbarSubmenuItem(
-                    icon: Icons.gesture,
-                    label: 'Just the drawing (.inkml)',
-                    onPressed: () => _export(context, exportPageInkML),
-                  ),
-                  // Say what lands on disk instead of exposing an internal
-                  // exporter name.
-                  ToolbarSubmenuItem(
-                    icon: Icons.folder_zip_outlined,
-                    label: 'Save the whole notebook as folders and files…',
-                    onPressed: () => _exportWithProgress(
-                      context,
-                      'Saving the notebook…',
-                      (report) => materializeNotebook(
-                        app,
-                        onProgress: (done, total) =>
-                            report('Page $done of $total…'),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
             ],
           ),
         ),
-        if (app.ankiShortcutEnabled)
-          IconButton(
-            icon: const Icon(Icons.style_outlined, size: 18),
-            tooltip: 'Open Anki',
-            visualDensity: VisualDensity.compact,
-            onPressed: () => _openAnki(context, app),
-          ),
-        if (app.browserShortcutEnabled)
-          IconButton(
-            icon: const Icon(Icons.open_in_browser_outlined, size: 18),
-            tooltip: 'Open default browser',
-            visualDensity: VisualDensity.compact,
-            onPressed: () => _openBrowser(context),
-          ),
         _PlannerButton(app: app),
         LearningAccessButton(app: app),
         IconButton(
@@ -372,20 +284,6 @@ class _CommandBarState extends State<CommandBar> {
                 ),
               ),
             ),
-            if (app.ankiShortcutEnabled)
-              IconButton(
-                icon: const Icon(Icons.style_outlined, size: 18),
-                tooltip: 'Open Anki',
-                visualDensity: VisualDensity.compact,
-                onPressed: () => _openAnki(context, app),
-              ),
-            if (app.browserShortcutEnabled)
-              IconButton(
-                icon: const Icon(Icons.open_in_browser_outlined, size: 18),
-                tooltip: 'Open default browser',
-                visualDensity: VisualDensity.compact,
-                onPressed: () => _openBrowser(context),
-              ),
             _PlannerButton(app: app),
             LearningAccessButton(app: app),
             IconButton(
@@ -517,160 +415,6 @@ class _CommandBarState extends State<CommandBar> {
       ),
     );
   }
-
-  /// Every item in the Export menu comes through here.
-  ///
-  /// **The failure has a face.** There was no `try`: a full disk, a read-only
-  /// USB stick, an offline OneDrive folder or a filename the OS refuses threw
-  /// into an unhandled Future and, with no global handler in the app, into a
-  /// console no student will ever read. The menu closed, nothing happened, and
-  /// they believed the work they were about to hand in was on the desktop.
-  ///
-  /// The messenger is taken BEFORE the await, because by the time the write
-  /// fails the menu route that owned the context is gone.
-  /// An export long enough to need a face, with a live count on it.
-  ///
-  /// The same shape as the PDF import's dialog: modal and undismissable while
-  /// it runs, because half a written folder tree is not a thing anybody wants
-  /// to be given quietly.
-  Future<void> _exportWithProgress(
-    BuildContext context,
-    String opening,
-    Future<String?> Function(void Function(String) report) fn,
-  ) async {
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    final progress = ValueNotifier<String>(opening);
-    var open = true;
-    unawaited(
-      showOnoteDialog<void>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => AlertDialog(
-          content: Row(
-            children: [
-              const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2.6),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: ValueListenableBuilder<String>(
-                  valueListenable: progress,
-                  builder: (_, text, __) => Text(text),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ).then((_) => open = false),
-    );
-    String? path;
-    Object? failed;
-    try {
-      path = await fn((text) => progress.value = text);
-    } catch (e) {
-      failed = e;
-    }
-    if (open && context.mounted) {
-      Navigator.of(context, rootNavigator: true).pop();
-      open = false;
-    }
-    progress.dispose();
-    if (failed != null) {
-      messenger?.showSnackBar(
-        SnackBar(
-          content: Text("That couldn't be saved: $failed"),
-          duration: const Duration(seconds: 6),
-        ),
-      );
-      return;
-    }
-    if (path != null) {
-      messenger?.showSnackBar(SnackBar(content: AppText('Exported to $path')));
-    }
-  }
-
-  /// The Export menu's own items — pulled out so the inline `MenuAnchor`
-  /// (shown while there's room) and the folded `ToolbarSubmenuItem` list
-  /// (shown once Export itself has to fold into the command bar's own
-  /// "More" menu) can share one definition rather than drifting apart.
-  List<Widget> _exportMenuItems(BuildContext context) => [
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.description_outlined, size: 18),
-          onPressed: () => _export(context, exportPageMarkdown),
-          child: const AppText('Markdown (.md)'),
-        ),
-        // Vector by default: the shared/printed artefact should be
-        // searchable, selectable and small. The raster capture stays
-        // available for the rare page whose look matters more than its text.
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
-          onPressed: () => _export(context, exportPagePdfVector),
-          child: const AppText('PDF (.pdf)'),
-        ),
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.print_outlined, size: 18),
-          shortcut:
-              const SingleActivator(LogicalKeyboardKey.keyP, control: true),
-          onPressed: () => printCurrentPage(app),
-          child: const AppText('Print…'),
-        ),
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.image_outlined, size: 18),
-          onPressed: () => _export(context, exportPagePdf),
-          child: const AppText('PDF — picture of the page'),
-        ),
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.hub_outlined, size: 18),
-          onPressed: () => _export(context, exportPageJsonCanvas),
-          child: const AppText('For Obsidian Canvas (.canvas)'),
-        ),
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.gesture, size: 18),
-          onPressed: () => _export(context, exportPageInkML),
-          child: const AppText('Just the drawing (.inkml)'),
-        ),
-        const Divider(height: 6),
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.folder_zip_outlined, size: 18),
-          onPressed: () => _exportWithProgress(
-            context,
-            'Saving the notebook…',
-            (report) => materializeNotebook(
-              app,
-              onProgress: (done, total) => report('Page $done of $total…'),
-            ),
-          ),
-          // Say what lands on disk instead of exposing an internal exporter
-          // name.
-          child: const AppText('Save the whole notebook as folders and files…'),
-        ),
-      ];
-
-  Future<void> _export(
-    BuildContext context,
-    Future<String?> Function(AppState) fn,
-  ) async {
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    try {
-      final path = await fn(app);
-      if (path != null) {
-        messenger?.showSnackBar(
-          SnackBar(content: AppText('Exported to $path')),
-        );
-      }
-    } catch (e) {
-      messenger?.showSnackBar(
-        SnackBar(
-          content: Text("That couldn't be saved: $e"),
-          duration: const Duration(seconds: 6),
-        ),
-      );
-    }
-  }
-
-  // ── HOME: history + text formatting ──────────────────────────────────
 
   Widget _homeRow(BuildContext context) {
     // Enable from state, not child build order (fixes the greyed-out bug).
@@ -1561,24 +1305,6 @@ class _FontSizeField extends StatelessWidget {
         ],
       ),
     );
-  }
-}
-
-Future<void> _openAnki(BuildContext context, AppState app) async {
-  final opened = await AnkiLauncher.open(app.ankiExecutablePath);
-  if (!opened && context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text('Anki was not found. Choose its app file in Settings.'),
-    ));
-  }
-}
-
-Future<void> _openBrowser(BuildContext context) async {
-  final opened = await PlatformOpen.url('https://www.google.com/');
-  if (!opened && context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text('The default browser could not be opened.'),
-    ));
   }
 }
 

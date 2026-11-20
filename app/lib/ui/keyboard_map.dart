@@ -96,7 +96,6 @@ const List<KeySection> keyboardMap = [
     KeyBinding('Ctrl+Z', 'Undo'),
     KeyBinding('Ctrl+Y / Ctrl+Shift+Z', 'Redo'),
     KeyBinding('Ctrl+F', 'Find on this page'),
-    KeyBinding('Ctrl+P', 'Print the page'),
     KeyBinding('Ctrl+= / Ctrl+-', 'Zoom in / out'),
     KeyBinding('Ctrl+0', 'Reset zoom and scroll'),
   ]),

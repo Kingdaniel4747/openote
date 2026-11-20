@@ -338,6 +338,10 @@ void main() {
     expect(find.text('Biology'), findsOneWidget);
 
     expect(find.text('Add homework'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    app.cancelPendingSave();
+    app.dispose(); // Stop the future reminder's scheduler before fake-async verification.
   });
 
   testWidgets('a title alone is enough for a new exam', (tester) async {

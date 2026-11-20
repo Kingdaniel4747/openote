@@ -2,17 +2,18 @@ import 'package:flutter/material.dart';
 import '../l10n/app_strings.dart';
 import 'package:flutter/services.dart';
 
-import '../export/pdf_vector_export.dart';
-import '../export/print_page.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
-import '../study/study_stats.dart';
+
 import '../theme/onote_theme.dart';
-import 'exam_date.dart';
+
+import 'inline_section_strip.dart';
 import 'notebook_manager.dart';
 import 'protect_dialog.dart';
 import '../theme/tokens.dart';
 import 'onote_dialog.dart';
+import 'node_context_menu.dart';
+import 'page_export_menu.dart';
 
 Color _sectionColor(String? token, bool dark) => switch (token) {
       'brass-400' => OnoteColors.brass400,
@@ -23,40 +24,149 @@ Color _sectionColor(String? token, bool dark) => switch (token) {
       _ => dark ? OnoteColors.ink400 : OnoteColors.ink500,
     };
 
-/// The page rows for a section, honouring subpage collapse. Children are
-/// NESTED under a [_Reveal] rather than skipped from a flat list, so
-/// collapsing a page animates its subpages closed instead of them blinking
-/// out of existence.
-List<Widget> _pageEntriesFor(AppState app, TreeNode section) {
-  final pages = app.pagesOf(section.id); // already ordered by position
-  List<Widget> range(int start, int end) {
-    final out = <Widget>[];
-    var i = start;
-    while (i < end) {
-      final p = pages[i];
-      var j = i + 1;
-      while (j < end && pages[j].level > p.level) {
-        j++;
-      }
-      final hasKids = j > i + 1;
-      final collapsed = app.collapsedPages.contains(p.id);
-      out.add(_PageTile(
-          app: app, page: p, hasChildren: hasKids, collapsed: collapsed));
-      if (hasKids) {
-        out.add(_Reveal(
-          open: !collapsed,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: range(i + 1, j),
-          ),
-        ));
-      }
-      i = j;
-    }
-    return out;
-  }
+/// Pages use the same inline movement as sections. Visible descendants travel
+/// with their parent, while each subpage can still be moved on its own.
+class _PageList extends StatefulWidget {
+  const _PageList({super.key, required this.app, required this.section});
+  final AppState app;
+  final TreeNode section;
 
-  return range(0, pages.length);
+  @override
+  State<_PageList> createState() => _PageListState();
+}
+
+class _PageListState extends State<_PageList> {
+  String? _renamingId;
+  String? _previewMoving, _previewTarget;
+
+  @override
+  Widget build(BuildContext context) {
+    final app = widget.app;
+    final all = app.pagesOf(widget.section.id);
+    final visible = <TreeNode>[];
+    int? hiddenBelow;
+    for (final page in all) {
+      if (hiddenBelow != null) {
+        if (page.level > hiddenBelow) continue;
+        hiddenBelow = null;
+      }
+      visible.add(page);
+      if (app.collapsedPages.contains(page.id)) hiddenBelow = page.level;
+    }
+    if (visible.isEmpty) {
+      return Center(
+          child: AppText('No pages yet',
+              style: TextStyle(
+                  fontSize: 12, color: context.surfaces.textSecondary)));
+    }
+    final byId = {for (final page in visible) page.id: page};
+    List<TreeNode> branchOf(String id) {
+      final at = all.indexWhere((p) => p.id == id);
+      if (at < 0) return [];
+      var end = at + 1;
+      while (end < all.length && all[end].level > all[at].level) {
+        end++;
+      }
+      return all.sublist(at, end);
+    }
+
+    bool canNest(String moving, String target) {
+      final branch = branchOf(moving);
+      final parent = byId[target];
+      if (branch.isEmpty ||
+          parent == null ||
+          branch.any((p) => p.id == target)) {
+        return false;
+      }
+      final delta = parent.level + 1 - branch.first.level;
+      return branch.every((p) => p.level + delta <= 2);
+    }
+
+    final previewBranch =
+        _previewMoving == null ? <TreeNode>[] : branchOf(_previewMoving!);
+    final previewParent = byId[_previewTarget];
+    final previewDelta = previewBranch.isEmpty || previewParent == null
+        ? 0
+        : previewParent.level + 1 - previewBranch.first.level;
+    final branches = <String, List<String>>{};
+    for (var i = 0; i < visible.length; i++) {
+      var end = i + 1;
+      while (end < visible.length && visible[end].level > visible[i].level) {
+        end++;
+      }
+      branches[visible[i].id] =
+          visible.sublist(i, end).map((p) => p.id).toList();
+    }
+    double height(TreeNode page) {
+      final painter = TextPainter(
+        text: TextSpan(
+            text: 'Mg',
+            style: DefaultTextStyle.of(context).style.copyWith(
+                fontSize: 13,
+                fontWeight:
+                    app.pageId == page.id ? FontWeight.w600 : FontWeight.w400)),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+      )..layout();
+      final height = painter.height.clamp(16.0, double.infinity) + 12;
+      painter.dispose();
+      return page.id == _renamingId ? height + 10 : height;
+    }
+
+    return InlineSectionStrip(
+      axis: Axis.vertical,
+      ids: [for (final page in visible) page.id],
+      widths: [for (final page in visible) height(page)],
+      disabledId: _renamingId,
+      dragGroups: branches,
+      allowExternalDrops: true,
+      preferNextTarget: true,
+      canNest: canNest,
+      onNestPreview: (moving, target) => setState(() {
+        _previewMoving = moving;
+        _previewTarget = target;
+      }),
+      onNest: (moving, target) {
+        app.reorderPageTree(moving, target, after: true, nest: true);
+        if (app.collapsedPages.contains(target)) {
+          app.togglePageCollapsed(target);
+        }
+      },
+      canInsertBefore: (moving, next) =>
+          next == null || byId[next]!.level <= byId[moving]!.level,
+      trailing: const SizedBox.shrink(),
+      onReorder: (moving, targetId, after) {
+        final movingPage = app.node(moving)!;
+        var target = app.node(targetId)!;
+        // A parent goes after the whole preceding branch, preserving that
+        // branch's children instead of accidentally becoming one of them.
+        while (target.level > movingPage.level) {
+          final at = all.indexWhere((p) => p.id == target.id);
+          final parent =
+              all.take(at).where((p) => p.level < target.level).lastOrNull;
+          if (parent == null) break;
+          target = parent;
+        }
+        app.reorderPageTree(moving, target.id, after: after);
+      },
+      children: [
+        for (final page in visible)
+          _PageTile(
+            app: app,
+            page: page,
+            hasChildren: all.indexOf(page) + 1 < all.length &&
+                all[all.indexOf(page) + 1].level > page.level,
+            collapsed: app.collapsedPages.contains(page.id),
+            previewLevel: previewBranch.any((p) => p.id == page.id)
+                ? page.level + previewDelta
+                : null,
+            nestTarget: page.id == _previewTarget,
+            onRenamingChanged: (renaming) =>
+                setState(() => _renamingId = renaming ? page.id : null),
+          ),
+      ],
+    );
+  }
 }
 
 /// Detects a double-click WITHOUT a DoubleTap recognizer. An InkWell that
@@ -94,28 +204,6 @@ class SidebarDoubleTapGate {
 @visibleForTesting
 DateTime Function() sidebarNow = DateTime.now;
 
-/// Animated expand/collapse for tree groups (Eric: "an animation when
-/// opening and closing groups (both page and section)"). The child stays
-/// in the tree; its height animates between natural and zero in the app's
-/// one motion register (150 ms, ease-out).
-class _Reveal extends StatelessWidget {
-  const _Reveal({required this.open, required this.child});
-  final bool open;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRect(
-      child: AnimatedSize(
-        duration: const Duration(milliseconds: 150),
-        curve: Curves.easeOutCubic,
-        alignment: Alignment.topCenter,
-        child: open ? child : const SizedBox(width: double.infinity, height: 0),
-      ),
-    );
-  }
-}
-
 /// Navigator (style guide §7b): a notebook bar, a search/jump box, then TWO
 /// COLUMNS — sections on the left, the active section's pages on the right —
 /// each independently scrollable and resizable, collapsible to a 44px rail.
@@ -124,7 +212,7 @@ class _Reveal extends StatelessWidget {
 /// sections and pages fight over one column's height: with a real notebook
 /// both zones scrolled, and you could never see the section list and a page
 /// list at once. Beyond the shape itself, three things OneNote doesn't do:
-/// a Home pane (favourites + recents), a remembered per-section page so
+/// a Home pane with recent pages, a remembered per-section page so
 /// browsing never loses your place, and the rail.
 class Sidebar extends StatefulWidget {
   const Sidebar({super.key, required this.app});
@@ -137,6 +225,7 @@ class Sidebar extends StatefulWidget {
 class _SidebarState extends State<Sidebar> {
   final _searchCtl = TextEditingController();
   String _query = '';
+  String? _renamingSectionId;
 
   AppState get app => widget.app;
 
@@ -436,95 +525,52 @@ class _SidebarState extends State<Sidebar> {
   Widget _pagesZone(BuildContext context, TreeNode section) {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final color = _sectionColor(section.color, dark);
-    final pages = _pageEntriesFor(app, section);
-    void dropAtPaneEnd(String pageId) {
-      final moving = app.node(pageId);
-      if (moving?.kind != NodeKind.page || moving?.parentId != section.id) {
-        return;
-      }
-      // A nested page uses the same one-level promotion as “Move back out”.
-      if (moving!.level > 0) {
-        app.indentPage(pageId, -1);
-        return;
-      }
-      // A top-level page dropped on the empty pane belongs after the last
-      // top-level page. Its own subpages travel with it in reorderNode.
-      final others = app
-          .pagesOf(section.id)
-          .where((page) => page.level == 0 && page.id != pageId)
-          .toList();
-      if (others.isNotEmpty) {
-        app.reorderNode(pageId, others.last.id, after: true);
-      }
-    }
-
-    // The free part of this pane is a generous end-of-list target. It also
-    // exposes the existing “Move back out” operation without a context menu.
-    return DragTarget<String>(
-      onWillAcceptWithDetails: (d) {
-        final moving = app.node(d.data);
-        return moving?.kind == NodeKind.page && moving?.parentId == section.id;
-      },
-      onAcceptWithDetails: (d) => dropAtPaneEnd(d.data),
-      builder: (context, _, __) => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 8, 4, 2),
-            child: Row(
-              children: [
-                Container(
-                  width: 3.5,
-                  height: 14,
-                  decoration: BoxDecoration(
-                      color: color, borderRadius: BorderRadius.circular(4)),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    section.title.toUpperCase(),
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: .6,
-                      color:
-                          dark ? OnoteColors.moon300 : OnoteColors.graphite500,
-                    ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 8, 4, 2),
+          child: Row(
+            children: [
+              Container(
+                width: 3.5,
+                height: 14,
+                decoration: BoxDecoration(
+                    color: color, borderRadius: BorderRadius.circular(4)),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  section.title.toUpperCase(),
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: .6,
+                    color: dark ? OnoteColors.moon300 : OnoteColors.graphite500,
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.add, size: 16),
-                  visualDensity: VisualDensity.compact,
-                  tooltip: 'New page in ${section.title}',
-                  onPressed: () => app.addPage(sectionId: section.id),
-                ),
-              ],
-            ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.add, size: 16),
+                visualDensity: VisualDensity.compact,
+                tooltip: 'New page in ${section.title}',
+                onPressed: () => app.addPage(sectionId: section.id),
+              ),
+            ],
           ),
-          Expanded(
-            child: pages.isEmpty
-                ? Center(
-                    child: AppText('No pages yet',
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: context.surfaces.textSecondary)),
-                  )
-                : ListView(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    children: pages,
-                  ),
-          ),
-        ],
-      ),
+        ),
+        Expanded(
+          child:
+              _PageList(key: ValueKey(section.id), app: app, section: section),
+        ),
+      ],
     );
   }
-
   // ── Section list (groups → sections) ──────────────────────────────────
 
   Widget _sectionsColumn(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final scheme = Theme.of(context).colorScheme;
     final groups = app.nodes
         .where((n) => n.kind == NodeKind.sectionGroup && n.parentId == null)
         .toList();
@@ -541,82 +587,120 @@ class _SidebarState extends State<Sidebar> {
       );
     }
 
-    Widget row(TreeNode s) => _SectionHeader(
-        app: app, section: s, dark: dark, active: app.activeSectionId == s.id);
-
-    void dropAtPaneEnd(String sectionId) {
-      final moving = app.node(sectionId);
-      if (moving?.kind != NodeKind.section) return;
-      // Keep the existing group move, then order the section after every
-      // other top-level section. This makes the whole blank pane a true
-      // “put it last” target rather than a no-op below the final row.
-      final others = looseSections.where((section) => section.id != sectionId);
-      if (moving!.parentId != null) app.moveSectionToGroup(sectionId, null);
-      if (others.isNotEmpty) {
-        app.reorderNode(sectionId, others.last.id, after: true);
-      }
+    // Headers and the boundary to ungrouped sections participate in layout,
+    // while only sections can be grabbed. This keeps group destinations inline.
+    const looseBoundary = 'section-list-ungrouped';
+    final entries = <TreeNode>[
+      for (final group in groups) ...[
+        group,
+        if (!app.collapsedGroups.contains(group.id))
+          ...app.nodes.where(
+              (n) => n.kind == NodeKind.section && n.parentId == group.id),
+      ],
+      ...looseSections,
+    ];
+    final ids = <String>[
+      for (final entry in entries)
+        if (entry.parentId == null &&
+            entry.kind == NodeKind.section &&
+            looseSections.first.id == entry.id &&
+            groups.isNotEmpty) ...[
+          looseBoundary,
+          entry.id,
+        ] else
+          entry.id,
+      if (looseSections.isEmpty && groups.isNotEmpty) looseBoundary,
+    ];
+    double textHeight(double size, FontWeight weight) {
+      final painter = TextPainter(
+        text: TextSpan(
+            text: 'Mg',
+            style: DefaultTextStyle.of(context)
+                .style
+                .copyWith(fontSize: size, fontWeight: weight)),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+      )..layout();
+      final height = painter.height;
+      painter.dispose();
+      return height;
     }
 
-    return DragTarget<String>(
-      onWillAcceptWithDetails: (d) =>
-          app.node(d.data)?.kind == NodeKind.section,
-      onAcceptWithDetails: (d) => dropAtPaneEnd(d.data),
-      builder: (context, candidates, _) {
-        // The outer target represents taking a section out of its group.
-        // A light pane tells the user that dropping here makes it a top-level
-        // section, while group targets themselves only receive an outline.
-        final movingOutOfGroup = candidates.any((id) {
-          final node = app.node(id);
-          return node?.kind == NodeKind.section && node?.parentId != null;
-        });
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          curve: Curves.easeOut,
-          decoration: movingOutOfGroup
-              ? BoxDecoration(color: scheme.primary.withValues(alpha: .045))
-              : null,
-          child: ListView(
-            padding: const EdgeInsets.only(bottom: 8),
-            children: [
-              for (final g in groups) ...[
-                _GroupHeader(app: app, group: g),
-                // Indented AND railed. Indentation alone says "these are children";
-                // the rail is what says where the group ENDS — with several groups
-                // in a column, an indent that just stops is ambiguous, because the
-                // next group's header looks like an outdented sibling either way.
-                _Reveal(
-                  open: !app.collapsedGroups.contains(g.id),
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: 13),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        border: Border(
-                          left: BorderSide(
-                              color: dark
-                                  ? OnoteColors.night300
-                                  : OnoteColors.paper300),
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          for (final s in app.nodes.where((n) =>
-                              n.kind == NodeKind.section && n.parentId == g.id))
-                            row(s),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-              for (final s in looseSections) row(s),
-            ],
-          ),
-        );
+    final sectionHeight =
+        textHeight(12, FontWeight.w600).clamp(16.0, double.infinity) + 14;
+    final groupHeight =
+        textHeight(13, FontWeight.w600).clamp(16.0, double.infinity) + 12;
+
+    return InlineSectionStrip(
+      axis: Axis.vertical,
+      ids: ids,
+      widths: [
+        for (final id in ids)
+          id == looseBoundary
+              ? 8
+              : app.node(id)!.kind == NodeKind.sectionGroup
+                  ? groupHeight
+                  : id == _renamingSectionId
+                      ? 48
+                      : sectionHeight
+      ],
+      fixedIds: {looseBoundary, for (final group in groups) group.id},
+      disabledId: _renamingSectionId,
+      trailing: const SizedBox.shrink(),
+      onReorder: (moving, target, after) {
+        final targetNode = app.node(target);
+        final groupId = target == looseBoundary
+            ? null
+            : targetNode?.kind == NodeKind.sectionGroup
+                ? target
+                : targetNode?.parentId;
+        if (app.node(moving)?.parentId != groupId) {
+          app.moveSectionToGroup(moving, groupId);
+        }
+        if (targetNode?.kind == NodeKind.section) {
+          app.reorderNode(moving, target, after: after);
+        } else {
+          final siblings = app.nodes.where((n) =>
+              n.kind == NodeKind.section &&
+              n.parentId == groupId &&
+              n.id != moving);
+          if (siblings.isNotEmpty) {
+            app.reorderNode(moving, siblings.first.id, after: false);
+          }
+        }
       },
+      children: [
+        for (final id in ids)
+          if (id == looseBoundary)
+            const SizedBox.shrink()
+          else if (app.node(id)!.kind == NodeKind.sectionGroup)
+            _GroupHeader(app: app, group: app.node(id)!)
+          else
+            Padding(
+              padding: EdgeInsets.only(
+                  left: app.node(id)!.parentId == null ? 0 : 13),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                    border: app.node(id)!.parentId == null
+                        ? null
+                        : Border(
+                            left: BorderSide(
+                                color: dark
+                                    ? OnoteColors.night300
+                                    : OnoteColors.paper300))),
+                child: _SectionHeader(
+                  app: app,
+                  section: app.node(id)!,
+                  dark: dark,
+                  active: app.activeSectionId == id,
+                  onRenamingChanged: (renaming) =>
+                      setState(() => _renamingSectionId = renaming ? id : null),
+                ),
+              ),
+            ),
+      ],
     );
   }
-
   // ── Footer toolbar ────────────────────────────────────────────────────
 
   Widget _sectionActions(BuildContext context) => Padding(
@@ -788,7 +872,7 @@ class _VDragHandle extends StatelessWidget {
   }
 }
 
-/// The Home pane: favourites, then recents. A springboard, not a place — any
+/// The Home pane: recently visited pages. A springboard, not a place — any
 /// page tap returns the pane to that page's section.
 class _HomePane extends StatelessWidget {
   const _HomePane({required this.app});
@@ -796,7 +880,6 @@ class _HomePane extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final favourites = app.favouritePages();
     final recents = app.recentPages(max: 8);
 
     Widget label(String s) => Padding(
@@ -836,12 +919,11 @@ class _HomePane extends StatelessWidget {
           ),
         );
 
-    if (favourites.isEmpty && recents.isEmpty) {
+    if (recents.isEmpty) {
       return const Padding(
         padding: EdgeInsets.all(14),
         child: Text(
-          'Nothing here yet.\n\nRight-click a page and choose Favourite to '
-          'pin it; pages you visit show up under Recent.',
+          'Nothing here yet.\n\nPages you visit show up under Recent.',
           style: TextStyle(fontSize: 12, height: 1.45),
         ),
       );
@@ -850,11 +932,6 @@ class _HomePane extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.only(bottom: 12),
       children: [
-        if (favourites.isNotEmpty) ...[
-          label('FAVOURITES'),
-          for (final p in favourites)
-            row(p, Icons.star, iconColor: OnoteColors.brass400),
-        ],
         if (recents.isNotEmpty) ...[
           label('RECENT'),
           for (final p in recents) row(p, Icons.history),
@@ -1171,11 +1248,13 @@ class _SectionHeader extends StatefulWidget {
     required this.section,
     required this.dark,
     required this.active,
+    required this.onRenamingChanged,
   });
   final AppState app;
   final TreeNode section;
   final bool dark;
   final bool active;
+  final ValueChanged<bool> onRenamingChanged;
 
   @override
   State<_SectionHeader> createState() => _SectionHeaderState();
@@ -1183,7 +1262,7 @@ class _SectionHeader extends StatefulWidget {
 
 class _SectionHeaderState extends State<_SectionHeader> {
   bool _renaming = false;
-  _DropZone _sectionDropZone = _DropZone.none;
+
   final _taps = SidebarDoubleTapGate();
   Offset _downPos = Offset.zero; // last pointer-down, for long-press menus
 
@@ -1203,71 +1282,18 @@ class _SectionHeaderState extends State<_SectionHeader> {
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    // Drop a page ONTO a section header → move it into that section (ORG-2).
-    return DragTarget<String>(
-      onWillAcceptWithDetails: (d) {
-        final moving = app.node(d.data);
-        return moving?.kind == NodeKind.page ||
-            (moving?.kind == NodeKind.section && moving!.id != section.id);
-      },
-      onMove: (d) {
-        if (app.node(d.data)?.kind != NodeKind.section) return;
-        final box = context.findRenderObject() as RenderBox?;
-        if (box == null || !box.hasSize) return;
-        final local = box.globalToLocal(d.offset);
-        final zone =
-            local.dy < box.size.height / 2 ? _DropZone.before : _DropZone.after;
-        if (zone != _sectionDropZone) {
-          setState(() => _sectionDropZone = zone);
-        }
-      },
-      onLeave: (_) => setState(() => _sectionDropZone = _DropZone.none),
-      onAcceptWithDetails: (d) {
-        final moving = app.node(d.data);
-        if (moving?.kind == NodeKind.page) {
-          app.movePageToSection(d.data, section.id);
-        } else if (moving?.kind == NodeKind.section) {
-          app.reorderNode(
-            d.data,
-            section.id,
-            after: _sectionDropZone != _DropZone.before,
-          );
-        }
-        setState(() => _sectionDropZone = _DropZone.none);
-      },
-      builder: (ctx, cand, rej) {
-        final pageTarget =
-            cand.any((id) => app.node(id)?.kind == NodeKind.page);
-        final header = _header(context, pageTarget: pageTarget);
-        final sectionTarget = cand.any(
-          (id) => app.node(id)?.kind == NodeKind.section,
-        );
-        if (sectionTarget && _sectionDropZone != _DropZone.none) {
-          final line = Container(
-            height: 2,
-            color: Theme.of(context).colorScheme.primary,
-          );
-          return Column(mainAxisSize: MainAxisSize.min, children: [
-            if (_sectionDropZone == _DropZone.before) line,
-            header,
-            if (_sectionDropZone == _DropZone.after) line,
-          ]);
-        }
-        if (_renaming) return header;
-        // Section itself is draggable into groups.
-        return Draggable<String>(
-          data: section.id,
-          dragAnchorStrategy: pointerDragAnchorStrategy,
-          feedback: dragChip(context, section.title, Icons.folder_outlined),
-          childWhenDragging: Opacity(opacity: .4, child: _header(context)),
-          child: header,
-        );
-      },
-    );
+  void _setRenaming(bool value) {
+    setState(() => _renaming = value);
+    widget.onRenamingChanged(value);
   }
 
+  @override
+  Widget build(BuildContext context) => DragTarget<String>(
+        onWillAcceptWithDetails: (d) => app.node(d.data)?.kind == NodeKind.page,
+        onAcceptWithDetails: (d) => app.movePageToSection(d.data, section.id),
+        builder: (context, candidates, rejected) =>
+            _header(context, pageTarget: candidates.isNotEmpty),
+      );
   Widget _header(BuildContext context, {bool pageTarget = false}) {
     final color = _sectionColor(section.color, dark);
     final scheme = Theme.of(context).colorScheme;
@@ -1295,7 +1321,7 @@ class _SectionHeaderState extends State<_SectionHeader> {
           ? null
           : () {
               if (_taps.tap()) {
-                setState(() => _renaming = true);
+                _setRenaming(true);
                 return;
               }
               // The click is what aims the keyboard at this row; an InkWell
@@ -1341,10 +1367,10 @@ class _SectionHeaderState extends State<_SectionHeader> {
                       style: labelStyle.copyWith(letterSpacing: 0),
                       onSubmit: (v) {
                         app.renameNode(section.id, v);
-                        if (mounted) setState(() => _renaming = false);
+                        if (mounted) _setRenaming(false);
                       },
                       onCancel: () {
-                        if (mounted) setState(() => _renaming = false);
+                        if (mounted) _setRenaming(false);
                       },
                     )
                   : Text(
@@ -1703,20 +1729,23 @@ Widget dragChip(BuildContext context, String label, IconData icon) {
   );
 }
 
-/// What dropping at the current pointer position would do (ORG-2).
-enum _DropZone { none, before, into, after }
-
 class _PageTile extends StatefulWidget {
   const _PageTile({
     required this.app,
     required this.page,
     this.hasChildren = false,
     this.collapsed = false,
+    required this.onRenamingChanged,
+    this.previewLevel,
+    this.nestTarget = false,
   });
   final AppState app;
   final TreeNode page;
   final bool hasChildren;
   final bool collapsed;
+  final ValueChanged<bool> onRenamingChanged;
+  final int? previewLevel;
+  final bool nestTarget;
 
   @override
   State<_PageTile> createState() => _PageTileState();
@@ -1742,93 +1771,21 @@ class _PageTileState extends State<_PageTile> {
     super.dispose();
   }
 
+  void _setRenaming(bool value) {
+    setState(() => _renaming = value);
+    widget.onRenamingChanged(value);
+  }
+
   @override
-  Widget build(BuildContext context) {
-    // Drop a page ONTO this page → make it a subpage (ORG-6).
-    return DragTarget<String>(
-      onWillAcceptWithDetails: (d) =>
-          d.data != page.id && app.node(d.data)?.kind == NodeKind.page,
-      onMove: (d) {
-        // Which third of the tile the pointer is over decides the gesture:
-        // edges reorder, middle nests. Tracked on move so the affordance can
-        // show what the drop will do BEFORE the user commits (ORG-2).
-        final zone = _dropZoneAt(d.offset);
-        if (zone != _zone) setState(() => _zone = zone);
-      },
-      onLeave: (_) => setState(() => _zone = _DropZone.none),
-      onAcceptWithDetails: (d) {
-        final zone = _zone;
-        setState(() => _zone = _DropZone.none);
-        switch (zone) {
-          case _DropZone.before:
-            app.reorderNode(d.data, page.id, after: false);
-          case _DropZone.after:
-            app.reorderNode(d.data, page.id, after: true);
-          case _DropZone.into:
-          case _DropZone.none:
-            app.makeSubpageOf(d.data, page.id);
-        }
-      },
-      builder: (ctx, cand, rej) {
-        final active = cand.isNotEmpty;
-        final tile =
-            _tile(context, subpageTarget: active && _zone == _DropZone.into);
-        if (active && _zone == _DropZone.before) {
-          // Every between-page drop is represented by the top edge of its
-          // target page. This gives the user one stable insertion line rather
-          // than two competing top/bottom lines in the same visual gap.
-          return Stack(children: [
-            tile,
-            Positioned(
-              left: 0,
-              right: 0,
-              top: 0,
-              child: IgnorePointer(
-                child: Container(
-                  height: 2,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-            ),
-          ]);
-        }
-        // Don't wrap in a Draggable while renaming — the text field needs the
-        // pointer for caret placement and selection.
-        if (_renaming) return tile;
-        return Draggable<String>(
-          data: page.id,
-          dragAnchorStrategy: pointerDragAnchorStrategy,
-          feedback: dragChip(context, page.title, Icons.description_outlined),
-          childWhenDragging: Opacity(opacity: .4, child: _tile(context)),
-          child: tile,
-        );
-      },
-    );
-  }
-
-  /// Where in the tile a drag currently hovers.
-  _DropZone _zone = _DropZone.none;
-
-  /// The upper third is the one visual insertion target for the page. The
-  /// rest is the subpage target; after the final row, the free pane appends.
-  _DropZone _dropZoneAt(Offset globalOffset) {
-    final box = context.findRenderObject() as RenderBox?;
-    if (box == null || !box.hasSize) return _DropZone.into;
-    final local = box.globalToLocal(globalOffset);
-    final h = box.size.height;
-    if (h <= 0) return _DropZone.into;
-    if (local.dy < h / 3) return _DropZone.before;
-    return _DropZone.into;
-  }
-
-  Widget _tile(BuildContext context, {bool subpageTarget = false}) {
+  Widget build(BuildContext context) => _tile(context);
+  Widget _tile(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final selected = app.pageId == page.id;
+    final level = widget.previewLevel ?? page.level;
     final labelStyle = TextStyle(
       fontSize: 13,
-      fontStyle: subpageTarget ? FontStyle.italic : FontStyle.normal,
       fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-      color: selected || subpageTarget ? scheme.primary : null,
+      color: selected ? scheme.primary : null,
     );
     return Material(
       color:
@@ -1843,7 +1800,7 @@ class _PageTileState extends State<_PageTile> {
             ? null
             : () {
                 if (_taps.tap()) {
-                  setState(() => _renaming = true);
+                  _setRenaming(true);
                   return;
                 }
                 // The click is what aims the keyboard at this row; an InkWell
@@ -1856,19 +1813,16 @@ class _PageTileState extends State<_PageTile> {
             canIndent: true, position: d.globalPosition),
         onLongPress: () => showNodeMenu(context, app, page,
             canIndent: true, position: _downPos),
-        child: Container(
-          // Paint the border over the tile so the “make subpage” destination
-          // never nudges the label or icons down and right.
-          decoration: subpageTarget
-              ? BoxDecoration(color: scheme.primary.withValues(alpha: .06))
-              : null,
-          foregroundDecoration: subpageTarget
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          curve: Curves.easeOutCubic,
+          foregroundDecoration: widget.nestTarget
               ? BoxDecoration(
                   border: Border.all(color: scheme.primary, width: 1.5),
                   borderRadius: BorderRadius.circular(6))
               : null,
           padding: EdgeInsets.only(
-              left: 8.0 + page.level * 15, right: 4, top: 6, bottom: 6),
+              left: 8.0 + level * 15, right: 4, top: 6, bottom: 6),
           child: Row(
             children: [
               // Collapse chevron (only when the page has subpages)
@@ -1887,7 +1841,7 @@ class _PageTileState extends State<_PageTile> {
                     : null,
               ),
               Icon(
-                  page.level == 0
+                  level == 0
                       ? Icons.description_outlined
                       : Icons.subdirectory_arrow_right,
                   size: 16,
@@ -1902,14 +1856,14 @@ class _PageTileState extends State<_PageTile> {
                         style: labelStyle,
                         onSubmit: (v) {
                           app.renameNode(page.id, v);
-                          if (mounted) setState(() => _renaming = false);
+                          if (mounted) _setRenaming(false);
                         },
                         onCancel: () {
-                          if (mounted) setState(() => _renaming = false);
+                          if (mounted) _setRenaming(false);
                         },
                       )
                     : Text(
-                        subpageTarget ? '↳ make subpage' : page.title,
+                        page.title,
                         overflow: TextOverflow.ellipsis,
                         style: labelStyle,
                       ),
@@ -1951,23 +1905,6 @@ class _EmptyHint extends StatelessWidget {
       ),
     );
   }
-}
-
-/// One entry in the pop-out node menu (mirrors the canvas context menus).
-PopupMenuItem<String> _nodeItem(String v, IconData icon, String label,
-    {bool danger = false}) {
-  final color = danger ? OnoteColors.danger : null;
-  return PopupMenuItem<String>(
-    value: v,
-    height: 36,
-    child: Row(children: [
-      Icon(icon, size: 16, color: color),
-      const SizedBox(width: 10),
-      Flexible(
-        child: AppText(label, style: TextStyle(fontSize: 13, color: color)),
-      ),
-    ]),
-  );
 }
 
 // ── Delete from the keyboard ──────────────────────────────────────────────
@@ -2090,89 +2027,72 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
   final isPage = node.kind == NodeKind.page;
   final isSection = node.kind == NodeKind.section;
   final isGroup = node.kind == NodeKind.sectionGroup;
-  final overlay = Overlay.of(context).context.findRenderObject() as RenderBox?;
-  final action = await showMenu<String>(
-    context: context,
-    position: RelativeRect.fromLTRB(
-      position.dx,
-      position.dy,
-      overlay == null ? position.dx : overlay.size.width - position.dx,
-      position.dy,
-    ),
-    items: [
-      _nodeItem('rename', Icons.edit_outlined, 'Rename'),
-      _nodeItem('up', Icons.keyboard_arrow_up, 'Move up'),
-      _nodeItem('down', Icons.keyboard_arrow_down, 'Move down'),
+  final action = await showNodeContextMenu(context, position, (select) {
+    Widget item(String value, IconData icon, String label,
+            {bool danger = false}) =>
+        MenuItemButton(
+          closeOnActivate: false,
+          leadingIcon:
+              Icon(icon, size: 16, color: danger ? OnoteColors.danger : null),
+          onPressed: () => select(value),
+          child: AppText(label,
+              style: TextStyle(
+                  fontSize: 13, color: danger ? OnoteColors.danger : null)),
+        );
+    return [
+      item('rename', Icons.edit_outlined, 'Rename'),
+      if (isGroup) item('up', Icons.keyboard_arrow_up, 'Move up'),
+      if (isGroup) item('down', Icons.keyboard_arrow_down, 'Move down'),
       if (isSection || isGroup) ...[
-        const PopupMenuDivider(),
+        const Divider(height: 6),
         // The colour chip is the obvious thing to right-click, so this is
         // where people look for it — a row of swatches rather than a submenu,
         // because picking a colour is one glance and one click.
-        PopupMenuItem<String>(
-          enabled: false,
-          height: 34,
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           child: _SectionColorRow(app: app, section: node),
         ),
-        const PopupMenuDivider(),
+        const Divider(height: 6),
       ],
-      if (isSection) ...[
-        // The one-click add lived on every section row until the two-column
-        // layout tightened those rows; the pages pane's [+] covers the ACTIVE
-        // section, and this covers the rest.
-        _nodeItem('newpage', Icons.note_add_outlined, 'New page'),
-        _nodeItem('togroup', Icons.drive_file_move_outline, 'Move to group…'),
-        _nodeItem('sortaz', Icons.sort_by_alpha, 'Sort pages A→Z'),
-        _nodeItem('sortdate', Icons.schedule, 'Sort pages by last edited'),
-        // The navigator is where a student thinks in subjects rather than in
-        // decks, so it is the more natural of the two places an exam date is
-        // set. The label carries the current value: a menu that says only
-        // "Exam date…" makes you open a dialog to find out whether there is
-        // one.
-        // The unit a student shares is "my notes for week 6", which is a
-        // section far more often than a page — and for an imported deck it is
-        // the whole deck. Vector export made the output worth sending.
-        _nodeItem('sectionpdf', Icons.picture_as_pdf_outlined,
-            'Export section as PDF…'),
-        _nodeItem('printsection', Icons.print_outlined, 'Print section…'),
-        if (app.study.examDate(node.id) case final exam?) ...[
-          _nodeItem('exam', Icons.flag_outlined,
-              _examMenuLabel(context, app, node.id, exam)),
-          _nodeItem('examclear', Icons.event_busy_outlined, 'Remove exam date'),
-        ] else
-          _nodeItem('exam', Icons.event_outlined, 'Set exam date…'),
-      ],
+      if (isSection)
+        item('togroup', Icons.drive_file_move_outline, 'Move to group…'),
       // A page can always indent (make subpage) or outdent (promote) at some
       // level in 0..2, so the separator is shown whenever those items are.
-      if (canIndent) const PopupMenuDivider(),
+      if (canIndent) const Divider(height: 6),
       if (canIndent && node.level < 2)
-        _nodeItem('indent', Icons.subdirectory_arrow_right, 'Make subpage'),
+        item('indent', Icons.subdirectory_arrow_right, 'Make subpage'),
       if (canIndent && node.level > 0)
-        _nodeItem('outdent', Icons.arrow_back, 'Move back out'),
+        item('outdent', Icons.arrow_back, 'Move back out'),
       if (isPage) ...[
-        const PopupMenuDivider(),
-        _nodeItem(
-            'favourite',
-            app.isFavourite(node.id) ? Icons.star : Icons.star_border,
-            app.isFavourite(node.id)
-                ? 'Remove from favourites'
-                : 'Add to favourites'),
-        _nodeItem('sharepdf', Icons.picture_as_pdf_outlined, 'Share as PDF…'),
-        _nodeItem('print', Icons.print_outlined, 'Print…'),
-        _nodeItem('copylink', Icons.link, 'Copy link to page'),
+        const Divider(height: 6),
+        SubmenuButton(
+          leadingIcon: const Icon(Icons.ios_share_outlined, size: 16),
+          menuStyle: const MenuStyle(
+              maximumSize: WidgetStatePropertyAll(Size(380, double.infinity))),
+          menuChildren:
+              pageExportMenuItems((format) => select('export:${format.name}')),
+          child: const AppText('Export'),
+        ),
+        item('copylink', Icons.link, 'Copy link to page'),
       ],
-      const PopupMenuDivider(),
+      const Divider(height: 6),
       // Available on every kind, because the ask was "a page ... a section, or
       // a section group" and protection is resolved by walking up from a page
       // to whichever of those carries it.
       if (app.protectionFor(node.id) != null)
-        _nodeItem('unprotect', Icons.lock_open_outlined, 'Remove passcode…')
+        item('unprotect', Icons.lock_open_outlined, 'Remove passcode…')
       else
-        _nodeItem('protect', Icons.lock_outline, 'Lock with a passcode…'),
-      const PopupMenuDivider(),
-      _nodeItem('delete', Icons.delete_outline, 'Delete', danger: true),
-    ],
-  );
+        item('protect', Icons.lock_outline, 'Lock with a passcode…'),
+      const Divider(height: 6),
+      item('delete', Icons.delete_outline, 'Delete', danger: true),
+    ];
+  });
   if (!context.mounted) return;
+  if (action != null && action.startsWith('export:')) {
+    await exportPageFromMenu(context, app, node.id,
+        PageExportFormat.values.byName(action.substring(7)));
+    return;
+  }
   switch (action) {
     case 'rename':
       final title = await promptForText(context,
@@ -2200,44 +2120,6 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
       app.moveNode(node.id, -1);
     case 'down':
       app.moveNode(node.id, 1);
-    case 'newpage':
-      await app.addPage(sectionId: node.id);
-    case 'sortaz':
-      app.sortSection(node.id, byTitle: true);
-    case 'sortdate':
-      app.sortSection(node.id, byTitle: false);
-    case 'exam':
-      await pickExamDate(context, app, node.id);
-    case 'examclear':
-      if (context.mounted) clearExamDate(context, app, node.id);
-    case 'favourite':
-      app.toggleFavourite(node.id);
-    // **These five VISIT another page and come home.**
-    //
-    // Each of them needs the page open to work on it, and each used to leave
-    // the student sitting on it afterwards — with the page they had been
-    // writing on now behind them and its undo stack cleared, because
-    // `selectPage` clears it. They asked to print a page, not to go there.
-    case 'print':
-      await _onPage(app, node.id, () => printCurrentPage(app));
-    case 'printsection':
-      await printSection(app, node.id);
-    case 'sharepdf':
-      if (app.pageId != node.id) await app.selectPage(node.id);
-      if (!context.mounted) return;
-      final cameFrom = app.pageId == node.id ? null : app.pageId;
-      final saved = await exportPagePdfVector(app);
-      if (cameFrom != null) await app.selectPage(cameFrom);
-      if (saved != null && context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Saved to $saved')));
-      }
-    case 'sectionpdf':
-      final messenger = ScaffoldMessenger.of(context);
-      final saved = await exportSectionPdfVector(app, node.id);
-      if (saved != null) {
-        messenger.showSnackBar(SnackBar(content: Text('Saved to $saved')));
-      }
     case 'copylink':
       // The wiki-link form the editor already resolves. Copying it means
       // cross-referencing is paste, not retype-and-hope.
@@ -2279,7 +2161,7 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
 
 /// The colour swatches inside a section's context menu.
 ///
-/// Lives in a disabled `PopupMenuItem` so the row itself isn't a menu action —
+/// The row is not a menu action;
 /// each swatch closes the menu on its own. That keeps the picker inline
 /// (one glance, one click) instead of behind a submenu, which is what you
 /// want from something you reached by right-clicking the colour chip.
@@ -2299,9 +2181,6 @@ class _SectionColorRowState extends State<_SectionColorRow> {
     final scheme = Theme.of(context).colorScheme;
     final current = widget.app.node(widget.section.id)?.color;
     return Row(children: [
-      const AppText('Colour',
-          style: TextStyle(fontSize: 13, color: OnoteColors.graphite500)),
-      const SizedBox(width: 10),
       for (final token in AppState.sectionColorTokens)
         Padding(
           padding: const EdgeInsets.only(right: 5),
@@ -2328,38 +2207,5 @@ class _SectionColorRowState extends State<_SectionColorRow> {
           ),
         ),
     ]);
-  }
-}
-
-/// "Exam 12 Nov, 9:00 am · in 3 weeks…" — the section menu's exam row.
-///
-/// A function rather than an inline interpolation because the optional time
-/// makes it a two-branch string, and a two-branch string inside a list literal
-/// is where a `?:` chain stops being readable.
-String _examMenuLabel(
-    BuildContext context, AppState app, String sectionId, DateTime exam) {
-  final now = DateTime.now();
-  final minute = app.study.examMinuteOfDay(sectionId);
-  final when = minute == null
-      ? formatExamDate(exam, now)
-      : '${formatExamDate(exam, now)}, ${examTimeLabel(context, minute)}';
-  return 'Exam $when · ${formatCountdown(daysBetween(now, exam))}…';
-}
-
-/// Do something that needs [pageId] open, then go back to where you were.
-///
-/// `selectPage` also clears the undo stack, so the cost of the detour is not
-/// only the view: a student who printed a neighbouring page lost the ability
-/// to undo on the one they were writing.
-Future<void> _onPage(
-    AppState app, String pageId, Future<void> Function() body) async {
-  final cameFrom = app.pageId;
-  if (cameFrom != pageId) await app.selectPage(pageId);
-  try {
-    await body();
-  } finally {
-    if (cameFrom != null && cameFrom != pageId && app.pageId == pageId) {
-      await app.selectPage(cameFrom);
-    }
   }
 }

@@ -324,8 +324,8 @@ class _PlannerPanelState extends State<PlannerPanel> {
           // Delete has always been on the right-click menu, and that was not
           // enough: nobody right-clicks a list they have just been shown, so
           // the honest report was "there is no way to dismiss one". A task has
-          // its checkbox and an exam has a date you can clear from the section
-          // it belongs to; a reminder had neither, which made it the one row
+          // its checkbox and an exam has a date managed in the calendar;
+          // a reminder had neither, which made it the one row
           // type you could not get rid of without knowing a secret.
           if (it.kind == DatedKind.reminder)
             Padding(

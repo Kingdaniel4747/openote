@@ -15,6 +15,7 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'alert_popup.dart';
 import 'import_progress.dart';
+import 'inline_section_strip.dart';
 import 'command_bar.dart';
 import 'context_menus.dart';
 import 'object_row.dart';
@@ -24,7 +25,7 @@ import 'side_panel.dart';
 import 'protect_dialog.dart';
 import 'shortcut_overlay.dart';
 import 'sidebar.dart';
-import '../export/print_page.dart';
+
 import 'windows_window_frame.dart';
 import '../theme/tokens.dart';
 
@@ -705,13 +706,6 @@ class _AppShellState extends State<AppShell> {
         app.toggleFind();
         return true;
       }
-      if (k == LogicalKeyboardKey.keyP) {
-        // Muscle memory, and the reason P13 was worth doing at all: a student
-        // printing a revision sheet reaches for Ctrl+P, not a menu. Unawaited
-        // because the OS dialog owns the interaction from here.
-        unawaited(printCurrentPage(app));
-        return true;
-      }
       if (k == LogicalKeyboardKey.keyZ && !shift) {
         app.undo();
         return true;
@@ -1306,7 +1300,7 @@ class _AppShellState extends State<AppShell> {
       app.navPagesW,
       app.sectionTabsAbovePage,
       app.navHome,
-      // Collapse toggles, favourites, Home — bumped explicitly. A counter and
+      // Collapse toggles, Home — bumped explicitly. A counter and
       // not the sets' lengths, because one collapse plus one expand between
       // frames leaves the length identical while the CONTENTS changed.
       app.navRevision,
@@ -1703,106 +1697,113 @@ class _SectionTabsState extends State<_SectionTabs> {
     return Material(
       color: context.surfaces.chrome,
       child: SizedBox(
-        height: 34,
+        height: 36,
         child: Row(children: [
           Expanded(
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.only(left: 7, right: 3),
-              itemCount: sections.length + 1,
-              separatorBuilder: (_, __) => const SizedBox(width: 2),
-              itemBuilder: (context, index) {
-                if (index == sections.length) {
-                  return IconButton(
-                    icon: const Icon(Icons.add, size: 18),
-                    tooltip: 'New section',
-                    visualDensity: VisualDensity.compact,
-                    onPressed: app.addSection,
-                  );
-                }
+            child: InlineSectionStrip(
+              ids: [for (final section in sections) section.id],
+              widths: [for (final _ in sections) 130.0],
+              disabledId: _renamingId,
+              onReorder: (moving, target, after) =>
+                  app.reorderNode(moving, target, after: after),
+              trailing: IconButton(
+                icon: const Icon(Icons.add, size: 18),
+                tooltip: 'New section',
+                visualDensity: VisualDensity.compact,
+                onPressed: app.addSection,
+              ),
+              children: List.generate(sections.length, (index) {
                 final section = sections[index];
                 final selected = section.id == app.activeSectionId;
                 final color = _colorFor(section.color, dark);
                 var downPosition = Offset.zero;
-                return NavigatorDragEntry(app: app, node: section,
-                  draggable: _renamingId != section.id,
-                  horizontal: true, child: Tooltip(
-                  message: section.title,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: _renamingId == section.id
-                        ? null
-                        : () {
-                            final taps = _taps.putIfAbsent(
-                                section.id, SidebarDoubleTapGate.new);
-                            if (taps.tap()) {
-                              setState(() => _renamingId = section.id);
-                            } else {
-                              app.activateSection(section.id);
-                            }
-                          },
-                    onTapDown: (details) => downPosition = details.globalPosition,
-                    onSecondaryTapUp: (details) => showNodeMenu(
-                        context, app, section,
-                        canIndent: false, position: details.globalPosition),
-                    onLongPress: () => showNodeMenu(context, app, section,
-                        canIndent: false, position: downPosition),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      curve: Curves.easeOutCubic,
-                      margin: EdgeInsets.only(top: selected ? 0 : 6),
-                      constraints:
-                          const BoxConstraints(minWidth: 58, maxWidth: 145),
-                      padding: const EdgeInsets.symmetric(horizontal: 9),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        // Every tab keeps its section colour, as in OneNote:
-                        // colour is navigation, not merely an active-state cue.
-                        color: color.withValues(alpha: dark ? .65 : .70),
-                        borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(8)),
-                        border: selected
-                            ? Border.all(color: color, width: 1.5)
-                            : null,
-                      ),
-                      child: _renamingId == section.id
-                          ? NodeInlineRename(
-                              initial: section.title,
-                              style: TextStyle(
-                                  fontSize: 13,
-                                  color: dark
-                                      ? OnoteColors.moon100
-                                      : scheme.onPrimary),
-                              onSubmit: (title) {
-                                app.renameNode(section.id, title);
-                                if (mounted) {
-                                  setState(() => _renamingId = null);
-                                }
-                              },
-                              onCancel: () {
-                                if (mounted) {
-                                  setState(() => _renamingId = null);
-                                }
-                              },
-                            )
-                          : Text(
-                              section.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: selected ? 13 : 11,
-                                fontWeight: selected
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
-                                color: dark
-                                    ? OnoteColors.moon100
-                                    : scheme.onPrimary,
+                return DragTarget<String>(
+                    onWillAcceptWithDetails: (d) =>
+                        app.node(d.data)?.kind == NodeKind.page,
+                    onAcceptWithDetails: (d) =>
+                        app.movePageToSection(d.data, section.id),
+                    builder: (context, candidates, rejected) => Tooltip(
+                          message: section.title,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: _renamingId == section.id
+                                ? null
+                                : () {
+                                    final taps = _taps.putIfAbsent(
+                                        section.id, SidebarDoubleTapGate.new);
+                                    if (taps.tap()) {
+                                      setState(() => _renamingId = section.id);
+                                    } else {
+                                      app.activateSection(section.id);
+                                    }
+                                  },
+                            onTapDown: (details) =>
+                                downPosition = details.globalPosition,
+                            onSecondaryTapUp: (details) => showNodeMenu(
+                                context, app, section,
+                                canIndent: false,
+                                position: details.globalPosition),
+                            onLongPress: () => showNodeMenu(
+                                context, app, section,
+                                canIndent: false, position: downPosition),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 150),
+                              curve: Curves.easeOutCubic,
+                              margin: EdgeInsets.only(top: selected ? 0 : 6),
+                              constraints: const BoxConstraints(
+                                  minWidth: 58, maxWidth: 145),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 9),
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                // Every tab keeps its section colour, as in OneNote:
+                                // colour is navigation, not merely an active-state cue.
+                                color:
+                                    color.withValues(alpha: dark ? .65 : .70),
+                                borderRadius: const BorderRadius.vertical(
+                                    top: Radius.circular(8)),
+                                border: selected
+                                    ? Border.all(color: color, width: 1.5)
+                                    : null,
                               ),
+                              child: _renamingId == section.id
+                                  ? NodeInlineRename(
+                                      initial: section.title,
+                                      style: TextStyle(
+                                          fontSize: 13,
+                                          color: dark
+                                              ? OnoteColors.moon100
+                                              : scheme.onPrimary),
+                                      onSubmit: (title) {
+                                        app.renameNode(section.id, title);
+                                        if (mounted) {
+                                          setState(() => _renamingId = null);
+                                        }
+                                      },
+                                      onCancel: () {
+                                        if (mounted) {
+                                          setState(() => _renamingId = null);
+                                        }
+                                      },
+                                    )
+                                  : Text(
+                                      section.title,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: selected ? 13 : 11,
+                                        fontWeight: selected
+                                            ? FontWeight.w700
+                                            : FontWeight.w500,
+                                        color: dark
+                                            ? OnoteColors.moon100
+                                            : scheme.onPrimary,
+                                      ),
+                                    ),
                             ),
-                    ),
-                  ),
-                ));
-              },
+                          ),
+                        ));
+              }),
             ),
           ),
         ]),

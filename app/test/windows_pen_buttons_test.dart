@@ -269,6 +269,48 @@ void main() {
       app.cancelPendingSave();
     }
 
+    testWidgets('pen, ballpoint and highlighter taps persist as dots',
+        (t) async {
+      final app = await mount(t);
+      for (final tool in [Tool.pen, Tool.ballpoint, Tool.highlighter]) {
+        app.setTool(tool);
+        await t.pump();
+        await down(t, 100);
+        await up(t, 100);
+        final dot = strokes(app).last;
+        expect(dot['x'], [100.0, 100.0]);
+        expect((dot['brush'] as Map)['tool'], tool.name);
+      }
+      await finish(t, app);
+    });
+
+    for (final mode in EraserMode.values) {
+      testWidgets('fast $mode sweep erases between samples with undo/redo',
+          (t) async {
+        final app = await mount(t);
+        await down(t, 200);
+        await move(t, 400);
+        await up(t, 400);
+        final original = strokes(app).single;
+        app.setTool(Tool.eraser);
+        app.eraserMode = mode;
+        await t.pump();
+        final pen = await t.startGesture(const Offset(300, 100),
+            kind: PointerDeviceKind.stylus);
+        await pen.moveTo(const Offset(300, 320));
+        await pen.up();
+        await t.pump();
+        expect(strokes(app), hasLength(mode == EraserMode.stroke ? 0 : 2));
+        app.undo();
+        await t.pump();
+        expect(strokes(app), [original]);
+        app.redo();
+        await t.pump();
+        expect(strokes(app), hasLength(mode == EraserMode.stroke ? 0 : 2));
+        await finish(t, app);
+      });
+    }
+
     testWidgets(
         'button pressed before contact erases and release returns to pen',
         (t) async {

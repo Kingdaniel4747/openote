@@ -23,6 +23,7 @@ import 'align_guides.dart';
 import 'canvas_controller.dart';
 import 'media_drop.dart';
 import 'ink_painter.dart';
+import 'ink_eraser.dart';
 import 'shape_geometry.dart';
 import 'page_title_view.dart';
 import 'windows_pen_buttons.dart';
@@ -759,7 +760,7 @@ class _PageCanvasState extends State<PageCanvas> {
     _commitErase();
     _gestureErase = false;
     if (_eraserScreen != null) setState(() => _eraserScreen = null);
-    _finishWetStroke();
+    _finishWetStroke(keepDot: true);
     if (e.kind == PointerDeviceKind.stylus ||
         e.kind == PointerDeviceKind.invertedStylus) {
       _pendingErase = _windowsPen.nativeInRange && _windowsPen.nativeEraser;
@@ -767,16 +768,24 @@ class _PageCanvasState extends State<PageCanvas> {
     }
   }
 
-  void _finishWetStroke() {
+  void _finishWetStroke({bool keepDot = false}) {
+    _lastErasePoint = null;
     _shapeHold?.cancel();
     final w = _wet;
-    if (w == null || w.x.length < 2) {
+    if (w == null || w.x.isEmpty || (!keepDot && w.x.length < 2)) {
       _shapeHold?.cancel();
       _shapeRaw.clear();
       _shapeKind = null;
       _shapeLastMotion = null;
       setState(() => _wet = null);
       return;
+    }
+    // A tap is a dot, using the existing two-point stroke representation.
+    if (w.x.length == 1) {
+      w.x.add(w.x.first);
+      w.y.add(w.y.first);
+      if (w.p.isNotEmpty) w.p.add(w.p.first);
+      w.t.add(w.t.first);
     }
     app.pushUndo();
     Block? target;
@@ -801,118 +810,55 @@ class _PageCanvasState extends State<PageCanvas> {
     _shapeLastMotion = null;
   }
 
-  /// True area-erase (INK-6, Ink Spec §2): remove points within the eraser
-  /// radius and split surviving runs into fresh strokes.
+  /// Clip the entire swept disk, including the space between pointer samples.
   void _eraseAt(Offset pt) {
     if (!_eraseUndoPushed) {
       app.pushUndo();
       _eraseUndoPushed = true;
     }
     final radius = app.eraserSize / 2 / controller.scale;
-    // A digitizer can send far more samples than the eraser can visibly
-    // change.  Reprocessing the same disk repeatedly was the source of the
-    // delayed cursor on dense, zoomed-in pages. Keep the visual cursor live,
-    // but only recompute after it has crossed a meaningful fraction of its
-    // radius. The sampled stroke geometry still makes a fast sweep continuous.
-    final previous = _lastErasePoint;
-    if (previous != null &&
-        (pt - previous).distance < math.max(.5, radius / 3)) {
-      return;
-    }
+    final previous = _lastErasePoint ?? pt;
     _lastErasePoint = pt;
-    // INK-6: 'area' rubs points out mid-stroke (splitting survivors); 'stroke'
-    // removes any stroke the eraser touches whole — OneNote's default, and the
-    // mode that makes cleaning up a scratched-out word one swipe instead of
-    // twenty.
+    final sweep = Rect.fromPoints(previous, pt).inflate(radius + 20);
     final wholeStroke = app.eraserMode == EraserMode.stroke;
     var changed = false;
     for (final b in app.blocks.where((b) => b.type == BlockType.ink)) {
-      // Cheap reject: the eraser can only affect a block whose rect it touches.
-      // This runs per pointer sample, so skipping distant blocks before looking
-      // at any stroke is what keeps erasing cheap on an ink-heavy page.
-      // Stroke bounds store centre points. Include the widest legacy brush
-      // radius as well, or an eraser touching the visible edge of an older
-      // highlighter can be rejected before its strokes are examined.
-      if (!_blockRect(b).inflate(radius + 20).contains(pt)) continue;
-      final strokes = (b.content['strokes'] as List);
-      // Reuse the decoded strokes rather than re-parsing JSON per sample.
+      final rect = _blockRect(b);
+      if (rect.right < sweep.left ||
+          rect.left > sweep.right ||
+          rect.bottom < sweep.top ||
+          rect.top > sweep.bottom) {
+        continue;
+      }
+      final strokes = b.content['strokes'] as List;
       final decoded = _strokesOf(b);
       final out = <Map<String, dynamic>>[];
+      final survivors = <Stroke>[];
       var blockChanged = false;
-      for (var si = 0; si < strokes.length; si++) {
-        final sj = strokes[si] as Map;
-        var s = si < decoded.length
-            ? decoded[si]
-            : Stroke.fromJson(sj.cast<String, dynamic>());
-        s = sampleStroke(s, math.max(.25, radius / 2));
-        // Collision is against the visible outline, not merely its invisible
-        // centre line. This matters most for a broad translucent highlighter:
-        // touching its edge must erase it just like touching a pen stroke.
-        final touchRadius = radius + visibleStrokeWidth(s) / 2;
-        final touchRadiusSquared = touchRadius * touchRadius;
-        // Squared distance — avoids a sqrt per point per sample.
-        final keep = List<bool>.generate(s.x.length, (i) {
-          final dx = s.x[i] - pt.dx, dy = s.y[i] - pt.dy;
-          return dx * dx + dy * dy >= touchRadiusSquared;
-        });
-        if (!keep.contains(false)) {
-          out.add(sj.cast<String, dynamic>());
-          continue;
-        }
-        if (wholeStroke) {
-          // Touched at all → the whole stroke goes; no splitting.
+      for (var i = 0; i < decoded.length; i++) {
+        final s = decoded[i];
+        final fragments = eraseStroke(
+            s, previous, pt, radius + visibleStrokeWidth(s) / 2,
+            wholeStroke: wholeStroke);
+        if (fragments == null) {
+          out.add((strokes[i] as Map).cast<String, dynamic>());
+          survivors.add(s);
+        } else {
           blockChanged = true;
-          continue;
-        }
-        blockChanged = true;
-        // Split surviving runs into new strokes (fresh ids per spec §2).
-        var i = 0;
-        while (i < keep.length) {
-          if (!keep[i]) {
-            i++;
-            continue;
-          }
-          var j = i;
-          while (j < keep.length && keep[j]) {
-            j++;
-          }
-          if (j - i >= 2) {
-            out.add(
-              Stroke(
-                tool: s.tool,
-                colorHex: s.colorHex,
-                size: s.size,
-                opacity: s.opacity,
-                x: s.x.sublist(i, j),
-                y: s.y.sublist(i, j),
-                p: s.p.isEmpty ? [] : s.p.sublist(i, j),
-                // Carry per-point channels through the split, or erasing would
-                // quietly strip tilt from the surviving runs.
-                tx: s.tx.isEmpty ? [] : s.tx.sublist(i, j),
-                ty: s.ty.isEmpty ? [] : s.ty.sublist(i, j),
-                t: s.t.sublist(i, j),
-                strokeStart: s.strokeStart,
-              ).toJson(),
-            );
-          }
-          i = j;
+          out.addAll(fragments.map((s) => s.toJson()));
+          survivors.addAll(fragments);
         }
       }
       if (blockChanged) {
         changed = true;
         b.content['strokes'] = out;
-        if (out.isNotEmpty) _refitInkBounds(b);
-        // The working copy is enough for the canvas. Updating AppState here
-        // notified and scheduled a complete save for every pointer sample.
-        // Commit the changed blocks once when the stroke ends.
-        _strokeCache.remove(b.id);
+        _strokeCache[b.id] = (rev: b.updatedAt, strokes: survivors);
+        if (out.isNotEmpty) _refitInkBounds(b, survivors);
       }
     }
     if (changed) {
-      app.blocks.removeWhere(
-        (b) =>
-            b.type == BlockType.ink && (b.content['strokes'] as List).isEmpty,
-      );
+      app.blocks.removeWhere((b) =>
+          b.type == BlockType.ink && (b.content['strokes'] as List).isEmpty);
       _eraseChanged = true;
       setState(() {});
     }
@@ -928,10 +874,13 @@ class _PageCanvasState extends State<PageCanvas> {
     app.commitCanvasEdit();
   }
 
-  void _refitInkBounds(Block b) {
+  void _refitInkBounds(Block b, [List<Stroke>? decoded]) {
     var mnx = double.infinity, mny = double.infinity, mxx = -1e18, mxy = -1e18;
-    for (final sj in b.content['strokes'] as List) {
-      final s = Stroke.fromJson((sj as Map).cast<String, dynamic>());
+    for (final s in decoded ??
+        [
+          for (final sj in b.content['strokes'] as List)
+            Stroke.fromJson((sj as Map).cast<String, dynamic>()),
+        ]) {
       final bb = s.bounds();
       mnx = math.min(mnx, bb.minX);
       mny = math.min(mny, bb.minY);

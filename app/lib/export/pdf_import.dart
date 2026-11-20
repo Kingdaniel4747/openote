@@ -44,7 +44,7 @@ import '../media/pdf_pages.dart';
 const double kPdfPageWidth = 1100.0;
 
 /// Gap between stacked slides on a single page, and above the first one.
-const double kPdfStackGap = 36.0;
+const double kPdfStackGap = AppState.mediaImportGap;
 
 /// Where the imported slides go.
 enum PdfPlacement {
@@ -331,18 +331,12 @@ Future<PdfImportResult> _importOntoCurrentPage(
   List<String> previews,
 ) async {
   final total = doc.pages.length;
-  // Slide width: the page's own writing column, so a slide lines up with the
-  // text already on the page instead of hanging off the side.
-  final width = (app.pageProps.pageWidth - AppState.pageLeftMargin * 2)
-      .clamp(320.0, kPdfPageWidth);
-  final anchor = _insertionAnchor(app);
-  var y = anchor.top;
+  final placement = app.mediaImportPlacement();
+  final width = placement.width;
+  var y = placement.top;
 
   app.pushUndo();
   final top = y;
-  // Everything that sat below the insertion point moves down as slides land,
-  // so inserting at the caret opens a gap instead of burying what follows.
-  final displaced = anchor.displaced;
   Block? first;
   var made = 0;
   for (var i = 0; i < total; i++) {
@@ -353,18 +347,14 @@ Future<PdfImportResult> _importOntoCurrentPage(
     final h = page.height / page.width * width;
     final block = app.addBlock(
       _slideBlock(pdfHash, page, i, text,
-          x: AppState.pageLeftMargin, y: y, w: width, preview: preview)
+          x: placement.left, y: y, w: width, preview: preview)
         ..h = h,
       recordUndo: false,
     );
     first ??= block;
     // Read the position back: addBlock may snap it to the grid, and computing
     // the next slide's y from the requested position would drift.
-    final advance = block.y + h + kPdfStackGap - y;
     y = block.y + h + kPdfStackGap;
-    for (final d in displaced) {
-      d.y += advance;
-    }
     made++;
     // Text extraction is quick, but the loop still yields so a 200-slide
     // deck never freezes input — and a REAL delay, for the same Windows
@@ -433,54 +423,3 @@ Future<PdfImportResult> _importIntoPdfPage(
     firstPageId: app.pageId,
   );
 }
-
-/// Where a printout should start, and which blocks have to move to make room.
-///
-/// **At the cursor if there is one, below everything otherwise.** A student
-/// importing a deck mid-lecture wants it where they are working, not appended
-/// a screen and a half below their last note; a student importing into an empty
-/// page wants it at the top.
-///
-/// [displaced] is every block strictly below the anchor, which the caller
-/// shifts down as slides land. Landing on top of somebody's notes is not a
-/// recoverable mistake.
-({double top, List<Block> displaced}) _insertionAnchor(AppState app) {
-  final caretId = app.editingBlockId ?? app.selectedBlockId;
-  final caret = caretId == null
-      ? null
-      : app.blocks.where((b) => b.id == caretId).firstOrNull;
-
-  double bottomOf(Block b) =>
-      b.y + (b.h ?? app.renderSizes[b.id]?.height ?? app.estimatedHeight(b));
-
-  if (caret != null) {
-    final top = bottomOf(caret) + kPdfStackGap;
-    return (
-      top: top,
-      // Strictly below the anchor block, by its own top edge — a block that
-      // merely overlaps the gap stays put.
-      displaced: [
-        for (final b in app.blocks)
-          if (b.id != caret.id && b.y >= caret.y + 1) b
-      ],
-    );
-  }
-
-  // Nothing focused: append below everything. Belt and braces, because
-  // `contentExtent` can under-report for culled, never-measured blocks — and
-  // an import is exactly when most of the page is off screen.
-  var y = app.contentExtent().bottom;
-  for (final b in app.blocks) {
-    final bottom = bottomOf(b);
-    if (bottom > y) y = bottom;
-  }
-  return (top: y + kPdfStackGap, displaced: const []);
-}
-
-/// The placement decision, exposed for tests.
-///
-/// The rendering half needs pdfium and a real file; the *placement* half is
-/// where the reported bug lived, and it is pure.
-@visibleForTesting
-({double top, List<Block> displaced}) debugInsertionAnchor(AppState app) =>
-    _insertionAnchor(app);

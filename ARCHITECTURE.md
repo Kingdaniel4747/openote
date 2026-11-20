@@ -91,6 +91,15 @@ PDF-Quellen werden nicht als vollständiges mehrseitiges Dokument herausgegeben.
 
 ## Build und Abhängigkeiten
 
+PDF-Anzeige (`media/pdf_pages.dart`, `editor/image_block_view.dart`): Original-PDF
+und dauerhafte Seitenvorschau bleiben erhalten. Die Bilddekodierung folgt Zoom
+und Display-Pixeldichte; für höhere PDF-Auflösung werden sichtbare Ausschnitte
+mit Rand nachgeladen und ausschließlich im Arbeitsspeicher gecacht. Überholte
+Aufträge werden vor dem Öffnen/Rendern verworfen. Ein zuletzt genutztes großes
+PDF darf das Dokumentcache-Budget überschreiten; Inaktivität gibt es wieder frei.
+Der Import bereitet weiterhin alle Seitenvorschauen vor dem Abschluss vor;
+eine schrittweise Veröffentlichung während des Imports ist nicht umgesetzt.
+
 Start/Ende: Pro Workspace hält `core/single_instance.dart` eine Dateisperre;
 beim Schließen werden keine neuen Öffnungsanfragen bestätigt. Ein Neustart
 versucht nach ausbleibender Antwort die Sperre erneut, öffnet aber nie ungesperrt.

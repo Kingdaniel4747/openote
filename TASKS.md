@@ -1,9 +1,16 @@
 # Aufgaben
 
-Stand: 11.11.2026. Nur aktuelle Arbeit und bekannte Grenzen, keine Versionschronik.
+Stand: 20.11.2026. Nur aktuelle Arbeit und bekannte Grenzen, keine Versionschronik.
 
 ## Als Nächstes
 
+- Sektionen oben/links und Seiten am Gerät prüfen: direkt mit Maus und Finger
+  verschieben, Nachbarn weichen animiert aus; erste Position, Griffpunkt,
+  Begrenzung und Randscrollen bei langen Listen prüfen. Gruppenwechsel links
+  sowie Seitenwechsel in andere Sektionen mit sichtbaren/verdeckten Unterseiten prüfen.
+  Für Unterseiten eine Seite 0,5 Sekunden über einer anderen halten:
+  Einrückung als Vorschau, Übernahme beim Loslassen; Wegziehen/Abbruch prüfen.
+  Kein schwebendes Drag-Element oder Einfügestrich.
 - Windows am Gerät prüfen: Schreiben, Speichern/Neustart, Undo/Redo, Stift- und
   Radierer-Taste, Lasso, Pinch-Zoom und Zweifinger-Lineal.
 - Start/Update am Gerät prüfen: minimiert schließen, sofort erneut öffnen,
@@ -11,8 +18,20 @@ Stand: 11.11.2026. Nur aktuelle Arbeit und bekannte Grenzen, keine Versionschron
 - Automatischen Handballenschutz am Gerät prüfen: Hand vor dem Stift auflegen,
   Ärmel am Scrollbalken, Schreibpausen und bewusstes Wischen/Zoomen bei weiter
   aufliegender Hand. Keine manuelle Touch-Sperre und keine neue Einstellung.
-- PDF-Import, Beschriften, wiederholtes Öffnen und Export real prüfen.
+- PDF-Anzeige nach Zoom-/Cache-Korrektur vom Nutzer als verbessert bestätigt.
+  Noch prüfen: während des PDF-Nachladens schließen; danach darf kein
+  Openote-Prozess im Task-Manager verbleiben. Import, Beschriften und Export
+  weiterhin real prüfen. Gezielte PDF-Prüfung: 62 bestanden, 3 wegen fehlendem
+  PDFium übersprungen; statische Analyse der geänderten Dateien ohne Befund.
 - QR-Scanner im gemeinsamen WLAN am Ziel-PC prüfen.
+- Bild-/PDF-Import am Gerät prüfen: wie Handy-Scans linksbündig mit gleicher
+  Breite und 36 Pixel Abstand unter vorhandenen Inhalt stapeln, auch bei
+  Auswahl oder aktivem Texteditor; mehrere Dateien und gemischte Formate prüfen.
+- Seitenmenü am Gerät prüfen: Export als seitliches Untermenü per Hover/Klick,
+  Ausweichen am Fensterrand und alle Exportformate. Export oben, Favoriten und
+  Drucken sind entfernt; „Move up/down“ bleibt nur für Gruppen. Sektionsmenü
+  enthält Farbpunkte ohne Beschriftung sowie Umbenennen, Gruppenzuordnung,
+  Sperren und Löschen. Reihenfolge bleibt manuell; Prüfungsdaten nur im Kalender.
 - MCP dauerhaft im gewünschten Desktop-KI-Client konfigurieren; Buchwechsel
   außerhalb der Freigabe und gesperrte Seiten zusätzlich am Gerät prüfen.
 - Große Notizbücher und laufende Medien beim Schließen/Backup beobachten.
@@ -24,14 +43,14 @@ Stand: 11.11.2026. Nur aktuelle Arbeit und bekannte Grenzen, keine Versionschron
 
 Letzter breiter Lauf vor dem Aufräumen: 2324 bestanden, 21 übersprungen,
 27 fehlgeschlagen. Datum/Uhrzeit-Löschen und Notebook-Pfadfixture wurden danach
-behoben; beide Testdateien bestanden (56 Tests). Die übrigen 25 Fälle sind teils
+behoben; beide Testdateien bestanden (56 Tests). Die Toolbar-Erwartungen wurden
+an die aktuellen Schaltflächen angepasst. Die übrigen 23 Fälle sind teils
 veraltete UI-Erwartungen, teils Test-Lifecycle-Probleme, teils noch zu prüfendes
 Verhalten. Entfernte Messproben ändern zukünftige Testzahlen.
 
 | Testdatei in `app/test/` | Noch zu prüfen |
 |---|---|
 | `canvas_interaction_test.dart` | Rotierter Resize-Anker; Timer bei Touch-Swipe, Maus nach Stift-Hover und drei Kontakten (4; auch im unveränderten Vergleichsstand) |
-| `command_bar_compact_test.dart` | Heutiges Planersymbol/-Badge statt alter Erwartung (2) |
 | `drawing_regressions_test.dart` | Lineal bewegen/strecken ohne Kamerabewegung (1) |
 | `draw_tools_test.dart` | Schmale Tab-Leiste läuft über (1) |
 | `dialog_controller_lifetime_test.dart` | Notebook anlegen bei aktivem Editor (1) |

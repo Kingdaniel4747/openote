@@ -128,7 +128,7 @@ void main() {
     expect(repo.getSetting('navCollapsed'), true);
   });
 
-  test('collapse and favourite toggles bump navRevision', () async {
+  test('collapse and expand both bump navRevision', () async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     // The navigator memo keys on this counter; lengths can alias (one
     // collapse + one expand between frames looks unchanged), a counter can't.
@@ -137,7 +137,7 @@ void main() {
 
     final before = app.navRevision;
     app.togglePageCollapsed(byTitle(app, 'A0').id);
-    app.toggleFavourite(byTitle(app, 'A1').id);
+    app.togglePageCollapsed(byTitle(app, 'A0').id);
     expect(app.navRevision, greaterThan(before + 1));
   });
 }

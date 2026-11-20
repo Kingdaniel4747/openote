@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:perfect_freehand/perfect_freehand.dart';
 
@@ -156,8 +157,5 @@ class InkPainter extends CustomPainter {
       old.wet != wet ||
       old.autoColor != autoColor ||
       old.fixedBackdrops != fixedBackdrops ||
-      old.strokes.length != strokes.length ||
-      (strokes.isNotEmpty &&
-          (!identical(old.strokes.first, strokes.first) ||
-              !identical(old.strokes.last, strokes.last)));
+      !listEquals(old.strokes, strokes);
 }

@@ -1,4 +1,3 @@
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../core/platform_open.dart';
@@ -8,7 +7,6 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../update/app_update.dart';
 import 'onote_dialog.dart';
-import 'learning_access_dialog.dart';
 import 'update_dialog.dart';
 
 /// The centralised settings page (PLANNING "Consistency/UX"): one place
@@ -36,11 +34,6 @@ class _SettingsDialogState extends State<_SettingsDialog> {
 
   bool _checking = false;
   bool _checkingLanguage = false;
-
-  Future<void> _chooseAnkiApp() async {
-    final file = await openFile();
-    if (file != null) app.setAnkiExecutablePath(file.path);
-  }
 
   String? _updateNote;
 
@@ -154,7 +147,6 @@ class _SettingsDialogState extends State<_SettingsDialog> {
           child: ListView(
             shrinkWrap: true,
             children: [
-              _card('AI learning access', [LearningAccessPanel(app: app)]),
               _card('Appearance', [
                 _row(
                   'Interface language',
@@ -314,51 +306,6 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                     app.writingServiceProblem!,
                     style: const TextStyle(fontSize: 11),
                   ),
-              ]),
-              _card('Integrations', [
-                _row(
-                  'Show browser shortcut',
-                  _toggle(app.browserShortcutEnabled,
-                      app.setBrowserShortcutEnabled),
-                ),
-                const AppText(
-                  'Opens Google in your default browser.',
-                  style: TextStyle(fontSize: 11),
-                ),
-                _row(
-                  'Show Anki shortcut',
-                  _toggle(app.ankiShortcutEnabled, app.setAnkiShortcutEnabled),
-                ),
-                const AppText(
-                  'Opens your local Anki app. Openote never reads or changes Anki cards.',
-                  style: TextStyle(fontSize: 11),
-                ),
-                if (app.ankiShortcutEnabled)
-                  TextButton.icon(
-                    icon: const Icon(Icons.folder_open_outlined, size: 16),
-                    label: Text(app.ankiExecutablePath == null
-                        ? 'Choose Anki app (optional)'
-                        : 'Change Anki app'),
-                    onPressed: _chooseAnkiApp,
-                  ),
-                /* _section('Connections'),
-              _door(
-                Icons.smart_toy_outlined,
-                'AI access',
-                app.mcpEnabled
-                    ? 'On — AI helpers on this computer can use your notes.'
-                    : 'Off — connect Claude or other AI helpers.',
-                () => showMcpDialog(context, app),
-              ),
-              */
-                /* _section('Keyboard'),
-              _door(
-                Icons.keyboard_outlined,
-                'Keyboard shortcuts',
-                'Everything has a key — the full list.  (Ctrl+/)',
-                () => showShortcutOverlay(context),
-              ),
-              */
               ]),
               _card('About', [
                 _row(

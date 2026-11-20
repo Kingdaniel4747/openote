@@ -41,19 +41,14 @@ Future<Block> importPhoneScan(
   final hash = app.importBlob(notebookId, bytes, mime);
   final dimensions = await _imageDimensions(bytes);
 
-  var y = AppState.contentTop;
-  for (final block in data.blocks) {
-    final bottom = block.y + (block.h ?? app.estimatedHeight(block));
-    if (bottom > y) y = bottom;
-  }
-  final width =
-      (data.props.pageWidth - AppState.pageLeftMargin * 2).clamp(280.0, 760.0);
+  final placement = app.mediaImportPlacement(page: onScreen ? null : data);
+  final width = placement.width;
   final height =
       dimensions == null ? null : width * dimensions.$2 / dimensions.$1;
   final scan = Block(
     type: BlockType.image,
-    x: AppState.pageLeftMargin,
-    y: y + 36,
+    x: placement.left,
+    y: placement.top,
     w: width,
     h: height,
     content: {
@@ -115,15 +110,11 @@ Future<Block> importPhoneFile(
       ? PageData(app.blocks, app.pageProps)
       : app.readPageOf(notebookId, pageId);
   final hash = app.importBlob(notebookId, bytes, mime);
-  var y = AppState.contentTop;
-  for (final block in data.blocks) {
-    final bottom = block.y + (block.h ?? app.estimatedHeight(block));
-    if (bottom > y) y = bottom;
-  }
+  final placement = app.mediaImportPlacement(page: onScreen ? null : data);
   final file = Block(
     type: BlockType.file,
-    x: AppState.pageLeftMargin,
-    y: y + 36,
+    x: placement.left,
+    y: placement.top,
     w: 320,
     content: {
       'blob': 'sha256:$hash',

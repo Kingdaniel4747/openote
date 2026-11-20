@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -60,11 +61,20 @@ class _ImageBlockViewState extends State<ImageBlockView> {
   String? _hash;
   Uint8List? _sourceBytes;
   Timer? _zoomRenderTimer;
-  int _qualityBucket = 2;
-  int _requestedBucket = 2;
   int _qualityRequest = 0;
   bool _zoomRendering = false;
   int _pdfRenderFailures = 0;
+  String? _pdf;
+  int _pdfPage = 0;
+  String? _notebook;
+  String? _ownerPage;
+  double _pixelRatio = 1;
+  int _decodedWidth = 0, _decodedHeight = 0;
+  int? _sourceWidth;
+  RenderedPdfRegion? _detail;
+  String? _detailKey;
+  String? _requestedDetail;
+  bool _detailFailed = false;
 
   /// True while an on-demand PDF page render is in flight — the placeholder
   /// then says "rendering" rather than "missing", which are different facts.
@@ -81,6 +91,13 @@ class _ImageBlockViewState extends State<ImageBlockView> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _pixelRatio = MediaQuery.devicePixelRatioOf(context);
+    _scheduleZoomRender();
+  }
+
+  @override
   void dispose() {
     _zoomRenderTimer?.cancel();
     widget.app.canvas.removeListener(_scheduleZoomRender);
@@ -91,93 +108,159 @@ class _ImageBlockViewState extends State<ImageBlockView> {
   @override
   void didUpdateWidget(covariant ImageBlockView old) {
     super.didUpdateWidget(old);
+    if (old.app != widget.app) {
+      old.app.canvas.removeListener(_scheduleZoomRender);
+      widget.app.canvas.addListener(_scheduleZoomRender);
+    }
     final key = widget.block.content['blob'] ?? widget.block.content['pdf'];
     if (key != _hash ||
-        old.block.content['page'] != widget.block.content['page']) {
-      _qualityBucket = 2;
-      _requestedBucket = 2;
+        _pdf != widget.block.content['pdf'] ||
+        _pdfPage != ((widget.block.content['page'] as num?)?.toInt() ?? 0) ||
+        _notebook != widget.app.notebookId ||
+        _ownerPage != widget.app.pageId) {
       _qualityRequest++;
       _zoomRenderTimer?.cancel();
       _zoomRendering = false;
+      _detail = null;
+      _detailKey = _requestedDetail = null;
+      _sourceBytes = null;
+      _sourceWidth = null;
+      _provider = null;
       _load();
     }
     _scheduleZoomRender();
   }
 
   void _scheduleZoomRender() {
-    final pdf = widget.block.content['pdf'] as String?;
-    final zoom = widget.app.canvas.scale;
-    // The stored preview is 2×. Keep requesting larger PDF rasters as the
-    // user continues to zoom; a fixed 8× ceiling left a real PDF blurry at
-    // 500–1000% even though its vector source was available.
-    var bucket = 2;
-    while (bucket < zoom * 2 && bucket < 32) {
-      bucket *= 2;
-    }
-    if (bucket <= _qualityBucket || bucket <= _requestedBucket) return;
+    // Invalidate old queued detail work immediately, not after the debounce.
+    // The last sharp patch remains visible until its replacement arrives.
+    _qualityRequest++;
+    _requestedDetail = null;
     _zoomRenderTimer?.cancel();
-    _requestedBucket = bucket;
-    final request = ++_qualityRequest;
-    _zoomRenderTimer = Timer(const Duration(milliseconds: 180), () async {
-      if (mounted) setState(() => _zoomRendering = true);
-      if (pdf == null) {
-        final bytes = _sourceBytes;
-        if (mounted && request == _qualityRequest) {
-          setState(() {
-            if (bytes != null) {
-              _setBytes(bytes, quality: bucket);
-              _qualityBucket = bucket;
-            }
-            _zoomRendering = false;
-          });
-        }
-        return;
-      }
-      final page = (widget.block.content['page'] as num?)?.toInt() ?? 0;
-      final png = await PdfPages.pageImageAtScale(
-          widget.app, pdf, page, bucket.toDouble());
-      if (!mounted ||
-          request != _qualityRequest ||
-          widget.block.content['pdf'] != pdf) {
-        return;
-      }
-      setState(() {
-        _zoomRendering = false;
-        if (png != null) {
-          _setBytes(png, quality: bucket);
-          _qualityBucket = bucket;
-          _pdfRenderFailures = 0;
-        } else {
-          // Do not leave a failed transient render marked as requested. A PDF
-          // source can briefly be unavailable while its blob is read or
-          // pdfium is releasing an earlier page. The old value prevented any
-          // later retry and left the low-resolution preview on screen forever.
-          _requestedBucket = _qualityBucket;
-          _pdfRenderFailures++;
-        }
-      });
-      if (png == null && _pdfRenderFailures <= 3 && mounted) {
-        _zoomRenderTimer =
-            Timer(const Duration(milliseconds: 400), _scheduleZoomRender);
+    _zoomRenderTimer =
+        Timer(const Duration(milliseconds: 180), _refreshResolution);
+  }
+
+  Rect _imageRect(Size size) {
+    final nw = (widget.block.content['naturalW'] as num?)?.toDouble();
+    final nh = (widget.block.content['naturalH'] as num?)?.toDouble();
+    final natural =
+        nw != null && nh != null && nw > 0 && nh > 0 ? Size(nw, nh) : size;
+    return Offset.zero & applyBoxFit(BoxFit.contain, natural, size).destination;
+  }
+
+  Future<void> _refreshResolution() async {
+    if (!mounted) return;
+    final request = _qualityRequest;
+    if (_sourceBytes != null) {
+      final changed = _updateProvider();
+      if (changed) setState(() {});
+    }
+    final pdf = _pdf;
+    final box = context.findRenderObject();
+    if (pdf == null ||
+        _provider == null ||
+        _sourceWidth == null ||
+        box is! RenderBox ||
+        !box.hasSize) {
+      if (_zoomRendering) setState(() => _zoomRendering = false);
+      return;
+    }
+    final imageRect = _imageRect(box.size);
+    if (imageRect.isEmpty) return;
+    final window = Offset.zero & MediaQuery.sizeOf(context);
+    final points = [
+      window.topLeft,
+      window.topRight,
+      window.bottomLeft,
+      window.bottomRight
+    ].map(box.globalToLocal).toList();
+    var visible = Rect.fromLTRB(
+            points.map((p) => p.dx).reduce(math.min),
+            points.map((p) => p.dy).reduce(math.min),
+            points.map((p) => p.dx).reduce(math.max),
+            points.map((p) => p.dy).reduce(math.max))
+        .intersect(imageRect);
+    if (visible.isEmpty) return;
+    final physicalWidth =
+        imageRect.width * widget.app.canvas.scale * _pixelRatio;
+    final fullWidth =
+        ((physicalWidth * 1.25 / 128).ceil() * 128).clamp(128, 1048576);
+    if (_sourceWidth != null && fullWidth <= _sourceWidth!) {
+      if (_zoomRendering) setState(() => _zoomRendering = false);
+      return; // The durable preview already covers this screen resolution.
+    }
+    // Pad and quantize the patch so small pans reuse it. Convert all four
+    // window corners through the real widget transform, including rotation.
+    visible = visible.inflate(96 / math.max(widget.app.canvas.scale, .01));
+    final left =
+        ((visible.left - imageRect.left) / imageRect.width * 32).floor() / 32;
+    final top =
+        ((visible.top - imageRect.top) / imageRect.height * 32).floor() / 32;
+    final right =
+        ((visible.right - imageRect.left) / imageRect.width * 32).ceil() / 32;
+    final bottom =
+        ((visible.bottom - imageRect.top) / imageRect.height * 32).ceil() / 32;
+    final region = Rect.fromLTRB(left, top, right, bottom)
+        .intersect(const Rect.fromLTWH(0, 0, 1, 1));
+    final key = '$pdf#$_pdfPage#$fullWidth#$region';
+    if (key == _detailKey) {
+      if (_zoomRendering) setState(() => _zoomRendering = false);
+      return;
+    }
+    _requestedDetail = key;
+    setState(() {
+      _zoomRendering = true;
+      _detailFailed = false;
+    });
+    bool current() =>
+        mounted &&
+        request == _qualityRequest &&
+        _requestedDetail == key &&
+        _notebook == widget.app.notebookId &&
+        _ownerPage == widget.app.pageId;
+    final image = await PdfPages.pageRegion(
+        widget.app, pdf, _pdfPage, region, fullWidth.toInt(),
+        isCurrent: current);
+    if (!current()) return;
+    setState(() {
+      _zoomRendering = false;
+      _detailFailed = image == null;
+      if (image != null) {
+        _detail = image;
+        _detailKey = key;
+        _pdfRenderFailures = 0;
+      } else {
+        _pdfRenderFailures++;
       }
     });
+    if (image == null && _pdfRenderFailures <= 3) {
+      _zoomRenderTimer =
+          Timer(const Duration(milliseconds: 600), _refreshResolution);
+    }
   }
 
   void _load() {
     final request = ++_loadRequest;
     _pdfError = null;
+    _pdfRenderFailures = 0;
+    _detailFailed = false;
     // New PDF slides carry both the source `{pdf, page}` and a permanent
     // image `blob`. Legacy slides have only the source reference; render one
     // once, store it like an ordinary image and upgrade the block in place.
     final pdf = widget.block.content['pdf'] as String?;
     final preview = widget.block.content['blob'] as String?;
+    _pdf = pdf;
+    _pdfPage = (widget.block.content['page'] as num?)?.toInt() ?? 0;
+    _notebook = widget.app.notebookId;
+    _ownerPage = widget.app.pageId;
+    _hash = preview ?? pdf;
     if (pdf != null && preview == null) {
       final page = (widget.block.content['page'] as num?)?.toInt() ?? 0;
       _loadPdf(pdf, page, request);
       return;
     }
     final h = preview;
-    _hash = h;
     if (h == null) {
       _provider = null;
       if (mounted) setState(() {});
@@ -201,7 +284,7 @@ class _ImageBlockViewState extends State<ImageBlockView> {
     _rendering = true;
     _readQueue = _readQueue.then((_) async {
       await Future<void>.delayed(Duration.zero);
-      if (!mounted || widget.block.content['blob'] != h) return;
+      if (!_loadCurrent(request) || widget.block.content['blob'] != h) return;
       // The queue is SHARED and CHAINED: every later image read `.then`s
       // onto this future, and a future carrying an error never runs those
       // callbacks. So one throwing read — a file a cloud client had locked —
@@ -214,7 +297,7 @@ class _ImageBlockViewState extends State<ImageBlockView> {
         debugPrint('[openote] could not read image $h: $e');
       }
       if (b != null) _blobCache.put(h, b);
-      if (!mounted || widget.block.content['blob'] != h) return;
+      if (!_loadCurrent(request) || widget.block.content['blob'] != h) return;
       if (b == null && pdf != null) {
         // A cloud client can deliver the small page record before the preview
         // blob. The original PDF is sufficient to rebuild it, so a temporarily
@@ -232,15 +315,15 @@ class _ImageBlockViewState extends State<ImageBlockView> {
   }
 
   void _loadPdf(String pdf, int page, int request) {
-    _hash = pdf;
     final hit = PdfPages.cached(pdf, page);
     if (hit != null) {
       _persistPdfPreview(hit, request);
       return;
     }
     _rendering = true;
-    PdfPages.pageImage(widget.app, pdf, page).then((png) {
-      if (!mounted || request != _loadRequest) return;
+    PdfPages.pageImage(widget.app, pdf, page,
+        isCurrent: () => _loadCurrent(request)).then((png) {
+      if (!_loadCurrent(request)) return;
       if (png != null) {
         _persistPdfPreview(png, request);
         return;
@@ -251,7 +334,7 @@ class _ImageBlockViewState extends State<ImageBlockView> {
         _provider = null;
       });
     }, onError: (Object error) {
-      if (!mounted || request != _loadRequest) return;
+      if (!_loadCurrent(request)) return;
       setState(() {
         _rendering = false;
         _pdfError = 'PDF loading failed or timed out. Please retry.';
@@ -260,8 +343,14 @@ class _ImageBlockViewState extends State<ImageBlockView> {
     if (mounted) setState(() {});
   }
 
+  bool _loadCurrent(int request) =>
+      mounted &&
+      request == _loadRequest &&
+      _notebook == widget.app.notebookId &&
+      _ownerPage == widget.app.pageId;
+
   void _persistPdfPreview(Uint8List png, int request) {
-    if (!mounted || request != _loadRequest) return;
+    if (!_loadCurrent(request)) return;
     String? ref;
     try {
       // Content-addressed writes are idempotent. Once this block is saved,
@@ -278,12 +367,12 @@ class _ImageBlockViewState extends State<ImageBlockView> {
     } catch (e) {
       debugPrint('[openote/pdf] could not persist page preview: $e');
     }
-    if (!mounted || request != _loadRequest) return;
+    if (!_loadCurrent(request)) return;
     setState(() {
       _hash = ref ?? _hash;
       _rendering = false;
       _pdfError = null;
-      if (_qualityBucket <= 2) _setBytes(png);
+      _setBytes(png);
     });
   }
 
@@ -291,36 +380,72 @@ class _ImageBlockViewState extends State<ImageBlockView> {
   /// page — the stagger that keeps any single frame cheap.
   static Future<void> _readQueue = Future<void>.value();
 
-  void _setBytes(Uint8List? b, {int? quality}) {
+  bool _updateProvider() {
+    final bytes = _sourceBytes;
+    if (bytes == null) return false;
+    final nw = (widget.block.content['naturalW'] as num?)?.toDouble();
+    final nh = (widget.block.content['naturalH'] as num?)?.toDouble();
+    final height = widget.block.h ??
+        (nw != null && nh != null && nw > 0
+            ? widget.block.w * nh / nw
+            : widget.block.w);
+    final size = _imageRect(Size(widget.block.w, height)).size;
+    final scale = widget.app.canvas.scale * _pixelRatio * 1.25;
+    var width = ((size.width * scale / 64).ceil() * 64).clamp(1, 8192).toInt();
+    var decodeHeight =
+        ((size.height * scale / 64).ceil() * 64).clamp(1, 8192).toInt();
+    if (width * decodeHeight > 8 * 1024 * 1024) {
+      final reduce = math.sqrt(8 * 1024 * 1024 / (width * decodeHeight));
+      width = math.max(1, (width * reduce).floor());
+      decodeHeight = math.max(1, (decodeHeight * reduce).floor());
+    }
+    if (_provider != null &&
+        _decodedWidth >= width &&
+        _decodedHeight >= decodeHeight) {
+      return false;
+    }
+    _decodedWidth = width;
+    _decodedHeight = decodeHeight;
+    _provider = ResizeImage(MemoryImage(bytes),
+        width: width, height: decodeHeight, policy: ResizeImagePolicy.fit);
+    return true;
+  }
+
+  void _setBytes(Uint8List? b) {
+    if (!identical(_sourceBytes, b)) {
+      _decodedWidth = _decodedHeight = 0;
+      _provider = null;
+    }
     _sourceBytes = b;
     if (b == null) {
       _provider = null;
     } else {
-      final scale = widget.app.canvas.scale * (quality ?? _qualityBucket);
-      _provider = ResizeImage(
-        MemoryImage(b),
-        width: (widget.block.w * scale).round().clamp(1, 8192).toInt(),
-        height: ((widget.block.h ?? widget.block.w) * scale)
-            .round()
-            .clamp(1, 8192)
-            .toInt(),
-      );
+      _updateProvider();
+      _inspectImage(b, _loadRequest);
     }
-    // Record intrinsic size once, so width-resize keeps aspect ratio.
-    if (b != null && widget.block.content['naturalW'] == null) {
-      ui.decodeImageFromList(b, (img) {
-        try {
-          if (!mounted) return;
-          widget.block.content['naturalW'] = img.width.toDouble();
-          widget.block.content['naturalH'] = img.height.toDouble();
-          widget.app.markDirty();
-          setState(() {});
-        } finally {
-          // This decode is only for dimensions; Image owns a separate decode.
-          // Release even when scrolling has already disposed this widget.
-          img.dispose();
-        }
-      });
+    _scheduleZoomRender();
+  }
+
+  Future<void> _inspectImage(Uint8List bytes, int request) async {
+    ui.ImmutableBuffer? buffer;
+    ui.ImageDescriptor? descriptor;
+    try {
+      buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+      descriptor = await ui.ImageDescriptor.encoded(buffer);
+      if (!_loadCurrent(request) || !identical(bytes, _sourceBytes)) return;
+      _sourceWidth = descriptor.width;
+      if (widget.block.content['naturalW'] == null) {
+        widget.block.content['naturalW'] = descriptor.width.toDouble();
+        widget.block.content['naturalH'] = descriptor.height.toDouble();
+        widget.app.markDirty();
+      }
+      setState(() {});
+      _scheduleZoomRender();
+    } catch (e) {
+      debugPrint('[openote] could not inspect image: $e');
+    } finally {
+      descriptor?.dispose();
+      buffer?.dispose();
     }
   }
 
@@ -423,6 +548,38 @@ class _ImageBlockViewState extends State<ImageBlockView> {
                       filterQuality: FilterQuality.medium,
                     ),
         ),
+        if (_detail != null)
+          Positioned.fill(
+            child: IgnorePointer(
+                child: LayoutBuilder(builder: (context, constraints) {
+              final rect = _imageRect(constraints.biggest);
+              final detail = _detail!;
+              return Stack(children: [
+                Positioned(
+                  left: rect.left + detail.region.left * rect.width,
+                  top: rect.top + detail.region.top * rect.height,
+                  width: detail.region.width * rect.width,
+                  height: detail.region.height * rect.height,
+                  child: Image.memory(detail.png,
+                      fit: BoxFit.fill,
+                      gaplessPlayback: true,
+                      filterQuality: FilterQuality.medium),
+                )
+              ]);
+            })),
+          ),
+        if (_detailFailed && !_zoomRendering)
+          Positioned(
+              right: 4,
+              top: 4,
+              child: IconButton(
+                tooltip: 'Retry',
+                icon: const Icon(Icons.refresh),
+                onPressed: () {
+                  _pdfRenderFailures = 0;
+                  _scheduleZoomRender();
+                },
+              )),
         if (_zoomRendering)
           const Positioned(
             right: 8,

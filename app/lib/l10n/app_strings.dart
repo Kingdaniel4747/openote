@@ -272,7 +272,6 @@ const german = <String, String>{
   'Find on page': 'Auf dieser Seite suchen',
   'Find on page  (Ctrl+F)': 'Auf dieser Seite suchen  (Strg+F)',
   'Export': 'Exportieren',
-  'Print…': 'Drucken…',
   'PDF — picture of the page': 'PDF – Abbild der Seite',
   'For Obsidian Canvas (.canvas)': 'Für Obsidian Canvas (.canvas)',
   'Just the drawing (.inkml)': 'Nur die Zeichnung (.inkml)',

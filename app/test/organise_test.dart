@@ -1,4 +1,4 @@
-// Favourites, recents, section sorting (ORG-8/ORG-10) and the page outline
+// Recents, page hierarchy and the page outline
 // (TEXT-10) — the state logic behind the navigator and the outline panel.
 //
 // The property that matters most here is that sorting keeps subpages attached
@@ -19,14 +19,14 @@ void main() {
   var haveSqlite = false;
   setUpAll(() => haveSqlite = initSqliteForTests());
 
-  Future<(Repository, Directory, AppState, String)> fixture(String prefix) async {
+  Future<(Repository, Directory, AppState, String)> fixture(
+      String prefix) async {
     final tmp = Directory.systemTemp.createTempSync(prefix);
     final repo = await Repository.openAt(tmp);
     final nb = await repo.createNotebook('Organise');
     final app = AppState(repo)..notebookId = nb.id;
     app.reloadNodes();
-    final section =
-        app.nodes.firstWhere((n) => n.kind == NodeKind.section).id;
+    final section = app.nodes.firstWhere((n) => n.kind == NodeKind.section).id;
     return (repo, tmp, app, section);
   }
 
@@ -43,102 +43,70 @@ void main() {
     return saved;
   }
 
-  group('section sorting (ORG-8)', () {
-    test('sorts pages by title and keeps subpages with their parent', () async {
-      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-      final (repo, tmp, app, section) = await fixture('onote_sort_');
-      addTearDown(() {
-        repo.dispose();
-        try {
-          tmp.deleteSync(recursive: true);
-        } catch (_) {}
-      });
-
-      // Zebra owns a subpage; Apple comes last in tree order but first A→Z.
-      addPage(app, section, 'Zebra', 'a100');
-      addPage(app, section, 'Zebra child', 'a200', level: 1);
-      addPage(app, section, 'Apple', 'a300');
-
-      app.sortSection(section, byTitle: true);
-
-      final titles = [
-        for (final n in app.nodes)
-          if (n.kind == NodeKind.page && n.parentId == section) n.title
-      ];
-      // The starter page created with the notebook sorts in too; assert the
-      // relative order of ours and, crucially, the parent/child adjacency.
-      final z = titles.indexOf('Zebra');
-      expect(titles.indexOf('Apple'), lessThan(z));
-      expect(titles[z + 1], 'Zebra child',
-          reason: 'a subpage must move with its parent, not sort separately');
+  test('nesting keeps descendants and rejects cycles or excessive depth',
+      () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (repo, tmp, app, section) = await fixture('onote_nest_tree_');
+    addTearDown(() {
+      app.cancelPendingSave();
+      app.dispose();
+      repo.dispose();
+      tmp.deleteSync(recursive: true);
     });
-
-    test('sorts by last edited, newest first', () async {
-      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-      final (repo, tmp, app, section) = await fixture('onote_sortdate_');
-      addTearDown(() {
-        repo.dispose();
-        try {
-          tmp.deleteSync(recursive: true);
-        } catch (_) {}
-      });
-
-      addPage(app, section, 'Old', 'a100', updatedAt: 1000);
-      addPage(app, section, 'New', 'a200', updatedAt: 9000);
-      app.sortSection(section, byTitle: false);
-
-      final titles = [
-        for (final n in app.nodes)
-          if (n.kind == NodeKind.page && n.parentId == section) n.title
-      ];
-      expect(titles.indexOf('New'), lessThan(titles.indexOf('Old')));
-    });
-
-    test('positions stay unique and lexicographically ordered', () async {
-      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-      final (repo, tmp, app, section) = await fixture('onote_sortpos_');
-      addTearDown(() {
-        repo.dispose();
-        try {
-          tmp.deleteSync(recursive: true);
-        } catch (_) {}
-      });
-
-      for (final t in ['c', 'a', 'b']) {
-        addPage(app, section, t, 'a${t.codeUnitAt(0)}00');
-      }
-      app.sortSection(section, byTitle: true);
-
-      final positions = [
-        for (final n in app.nodes)
-          if (n.kind == NodeKind.page && n.parentId == section) n.position
-      ];
-      expect(positions.toSet().length, positions.length, reason: 'unique');
-      final sorted = [...positions]..sort();
-      expect(positions, sorted, reason: 'tree order IS position order');
-    });
+    final parent = addPage(app, section, 'Parent', 'a000');
+    final child = addPage(app, section, 'Child', 'a010', level: 1);
+    final grandchild = addPage(app, section, 'Grandchild', 'a020', level: 2);
+    final sibling = addPage(app, section, 'Sibling', 'a030', level: 1);
+    final target = addPage(app, section, 'Target', 'z1');
+    final before =
+        app.pagesOf(section).map((p) => (p.id, p.level, p.position)).toList();
+    app.reorderPageTree(parent.id, child.id, after: true, nest: true);
+    expect(
+        app.pagesOf(section).map((p) => (p.id, p.level, p.position)), before);
+    app.reorderPageTree(parent.id, target.id, after: true, nest: true);
+    expect(app.pagesOf(section).map((p) => (p.id, p.level, p.position)), before,
+        reason: 'a full branch must never be flattened at the maximum depth');
+    app.collapsedPages.add(child.id);
+    app.reorderPageTree(child.id, target.id, after: true, nest: true);
+    final pages = app.pagesOf(section);
+    final at = pages.indexWhere((p) => p.id == target.id);
+    expect(
+        pages.skip(at).map((p) => p.id), [target.id, child.id, grandchild.id]);
+    expect(
+        pages[pages.indexWhere((p) => p.id == parent.id) + 1].id, sibling.id);
+    final saved = {for (final p in repo.loadNodes(app.notebookId!)) p.id: p};
+    expect(saved[child.id]!.level, 1);
+    expect(saved[grandchild.id]!.level, 2);
+    expect(saved[grandchild.id]!.parentId, section);
   });
 
-  group('favourites & recents (ORG-10)', () {
-    test('favourites toggle and survive by notebook-scoped key', () async {
-      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-      final (repo, tmp, app, section) = await fixture('onote_fav_');
-      addTearDown(() {
-        repo.dispose();
-        try {
-          tmp.deleteSync(recursive: true);
-        } catch (_) {}
-      });
-
-      final p = addPage(app, section, 'Starred', 'a900');
-      expect(app.isFavourite(p.id), isFalse);
-      app.toggleFavourite(p.id);
-      expect(app.isFavourite(p.id), isTrue);
-      expect(app.favouritePages().map((n) => n.id), contains(p.id));
-      app.toggleFavourite(p.id);
-      expect(app.isFavourite(p.id), isFalse);
+  test('manual page order survives renaming and reload with its subpages',
+      () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (repo, tmp, app, section) = await fixture('onote_manual_order_');
+    addTearDown(() {
+      app.cancelPendingSave();
+      app.dispose();
+      repo.dispose();
+      tmp.deleteSync(recursive: true);
     });
+    final parent = addPage(app, section, 'Zebra', 'z1');
+    final child = addPage(app, section, 'Child', 'z2', level: 1);
+    final other = addPage(app, section, 'Apple', 'z3');
+    app.reorderPageTree(other.id, parent.id, after: false);
+    final order = app.pagesOf(section).map((p) => p.id).toList();
+    app.renameNode(other.id, 'Zulu');
+    app.renameNode(parent.id, 'AAA');
+    app.reloadNodes();
+    final pages = app.pagesOf(section);
+    expect(pages.map((p) => p.id), order);
+    expect(pages[pages.indexWhere((p) => p.id == parent.id) + 1].id, child.id);
+    final positions = pages.map((p) => p.position).toList();
+    expect(positions.toSet().length, positions.length);
+    expect(positions, [...positions]..sort());
+  });
 
+  group('recents (ORG-10)', () {
     test('recents record most-recent-first and de-duplicate', () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final (repo, tmp, app, section) = await fixture('onote_recent_');
