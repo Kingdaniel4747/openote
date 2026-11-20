@@ -14,6 +14,63 @@ import 'package:openote/store/repository.dart';
 import 'support/sqlite.dart';
 
 void main() {
+  for (final horizontal in [false, true]) {
+    test(
+        'concurrent phone scans append to the existing PDF row (horizontal: $horizontal)',
+        () async {
+      if (!initSqliteForTests()) return markTestSkipped('sqlite unavailable');
+      final temporary =
+          Directory.systemTemp.createTempSync('onote_scan_batch_');
+      final repo = await Repository.openAt(temporary);
+      final notebook = await repo.createNotebook('Scans');
+      final app = AppState(repo)..notebookId = notebook.id;
+      app.reloadNodes();
+      final page = app.nodes.firstWhere((n) => n.kind == NodeKind.page);
+      final originals = [
+        for (var i = 0; i < 2; i++)
+          Block(
+            type: BlockType.image,
+            x: horizontal ? 44 + i * 336.0 : 44,
+            y: horizontal ? 100 : 100 + i * 436.0,
+            w: 300,
+            h: 400,
+            content: {'pdf': 'original', 'page': i},
+          )
+      ];
+      app.importPage(notebook.id, page.id, originals, PageProps());
+      final png = base64Decode(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
+      try {
+        // The target is off-screen: each import must read the previous result,
+        // not overwrite a stale copy captured by another in-flight scan.
+        final inserted = await Future.wait([
+          for (var i = 0; i < 3; i++)
+            importPhoneScan(app,
+                notebookId: notebook.id,
+                pageId: page.id,
+                bytes: png,
+                mime: 'image/png')
+        ]);
+        final stored = app.readPageOf(notebook.id, page.id).blocks;
+        expect(stored, hasLength(5));
+        final sequence = [originals.last, ...inserted];
+        for (var i = 1; i < sequence.length; i++) {
+          final previous = app.blockVisualBounds(sequence[i - 1]);
+          final next = app.blockVisualBounds(sequence[i]);
+          if (horizontal) {
+            expect(next.left, greaterThanOrEqualTo(previous.right + 36));
+            expect(next.top, 100);
+          } else {
+            expect(next.top, greaterThanOrEqualTo(previous.bottom + 36));
+          }
+          expect(stored.map((b) => b.id), contains(sequence[i].id));
+        }
+      } finally {
+        app.dispose();
+        temporary.deleteSync(recursive: true);
+      }
+    });
+  }
   test('receiver accepts only its paired token and forwards image bytes',
       () async {
     Uint8List? received;

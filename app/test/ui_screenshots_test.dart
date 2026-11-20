@@ -33,6 +33,7 @@ import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/theme/onote_theme.dart';
 import 'package:openote/ui/app_shell.dart';
+import 'package:openote/ui/notebook_manager.dart';
 
 import 'support/sqlite.dart';
 
@@ -169,10 +170,60 @@ void main() {
   }
 
   testWidgets('shell light', (t) => run(t, 'shell_light'));
+  for (final brightness in Brightness.values) {
+    testWidgets('notebook library and backup ${brightness.name}', (t) async {
+      if (!_enabled) {
+        return markTestSkipped('set ONOTE_SCREENSHOTS=1 to render');
+      }
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      final app = await seed(t);
+      await t.runAsync(() async {
+        for (final (title, color) in [
+          ('Biology', 'Green'),
+          ('Physics · Winter semester', 'Yellow'),
+          ('Computer Science', 'Indigo'),
+          ('Projects & ideas', 'Coral'),
+          ('Reading notes', 'White'),
+        ]) {
+          await app.createNotebook(title);
+          app.setNotebookColor(app.notebookId!, color);
+        }
+      });
+      t.view.physicalSize = const Size(1280, 800);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+      final key = GlobalKey();
+      await t.pumpWidget(RepaintBoundary(
+          key: key,
+          child: MaterialApp(
+            theme: onoteTheme(brightness),
+            debugShowCheckedModeBanner: false,
+            home: Scaffold(
+                body: Builder(
+                    builder: (context) => TextButton(
+                          onPressed: () => showNotebookManager(context, app),
+                          child: const Text('open'),
+                        ))),
+          )));
+      await t.tap(find.text('open'));
+      await t.pump(const Duration(milliseconds: 800));
+      await t.pumpAndSettle();
+      await expectLater(find.byKey(key),
+          matchesGoldenFile('goldens/notebooks_${brightness.name}.png'));
+      await t.tap(find.byTooltip('Create a portable ZIP backup'));
+      await t.pumpAndSettle();
+      await expectLater(find.byKey(key),
+          matchesGoldenFile('goldens/notebook_backup_${brightness.name}.png'));
+      await t.tap(find.text('Biology').last);
+      await t.pumpAndSettle();
+      await expectLater(
+          find.byKey(key),
+          matchesGoldenFile(
+              'goldens/notebook_backup_selected_${brightness.name}.png'));
+    });
+  }
   testWidgets(
       'shell dark', (t) => run(t, 'shell_dark', brightness: Brightness.dark));
-  testWidgets('study panel',
-      (t) => run(t, 'shell_study', arrange: (a) => a.toggleStudyPanel()));
   testWidgets('planner panel',
       (t) => run(t, 'shell_planner', arrange: (a) => a.togglePlannerPanel()));
   // The Insert tab is rendered on its own because it is the one tab that used

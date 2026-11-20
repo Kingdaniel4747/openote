@@ -61,7 +61,8 @@ const double _pxPerPoint = 120.0 / 72.0;
 double _sheetHeight(double widthPx) => widthPx * 1.41421356;
 
 /// Export the current page as a vector PDF. Returns the written path.
-Future<String?> exportPagePdfVector(AppState app) async {
+Future<String?> exportPagePdfVector(AppState app,
+    {void Function(int done, int total)? onProgress}) async {
   final pageId = app.pageId;
   if (pageId == null) return null;
   final page = app.nodes.where((n) => n.id == pageId).firstOrNull;
@@ -82,7 +83,8 @@ Future<String?> exportPagePdfVector(AppState app) async {
   // be a way to render it in the pdf too."
   Uint8List bytes;
   try {
-    bytes = await buildPagePdf(app, pageId, title: page.title);
+    bytes = await buildPagePdf(app, pageId,
+        title: page.title, onProgress: onProgress);
   } catch (_) {
     final fallback = await buildPageRasterPdf(app);
     if (fallback == null) rethrow;
@@ -97,8 +99,10 @@ Future<String?> exportPagePdfVector(AppState app) async {
 /// Separated from the file-picker half so annotated-slide
 /// re-export can reuse it, and so it is testable without a UI.
 Future<Uint8List> buildPagePdf(AppState app, String pageId,
-    {required String title}) async {
-  return buildSnapshotPdf(PdfPageSnapshot.capture(app, pageId), title: title);
+    {required String title,
+    void Function(int done, int total)? onProgress}) async {
+  return buildSnapshotPdf(PdfPageSnapshot.capture(app, pageId),
+      title: title, onProgress: onProgress);
 }
 
 /// Frozen input: asynchronous exports never borrow another notebook's blobs
@@ -200,12 +204,16 @@ class PdfPageSnapshot {
 /// With [sheetIndex], render only one sheet of a long note, keeping learning
 /// requests bounded without moving the user's canvas or selection.
 Future<Uint8List> buildSnapshotPdf(PdfPageSnapshot snapshot,
-    {required String title, int? sheetIndex}) async {
+    {required String title,
+    int? sheetIndex,
+    void Function(int done, int total)? onProgress}) async {
   final doc = pw.Document(title: title, creator: 'Openote');
   final theme = await _theme();
   await _addPageSheets(doc, snapshot, snapshot.pageId, theme,
-      sheetIndex: sheetIndex);
-  return doc.save();
+      sheetIndex: sheetIndex, onProgress: onProgress);
+  final bytes = await doc.save();
+  onProgress?.call(1, 1);
+  return bytes;
 }
 
 int snapshotSheetCount(PdfPageSnapshot snapshot) {
@@ -238,7 +246,7 @@ int snapshotSheetCount(PdfPageSnapshot snapshot) {
 /// its dimensions instead of borrowing the active page's width.
 Future<void> _addPageSheets(
     pw.Document doc, PdfPageSnapshot app, String pageId, pw.ThemeData? theme,
-    {int? sheetIndex}) async {
+    {int? sheetIndex, void Function(int done, int total)? onProgress}) async {
   final blocks = app.blocks;
   final props = app.pageProps;
 
@@ -297,33 +305,42 @@ Future<void> _addPageSheets(
   // math block, keyed by block id. PDF slides join the same map for the same
   // reason — an on-demand slide (storage wave 1c) has no stored pixels until
   // something renders them, and the sheet builder cannot await.
+  final totalSteps = renderingBlocks.length + sheets + 2;
+  var completedSteps = 0;
+  onProgress?.call(completedSteps, totalSteps);
   final maths = await _renderMaths(renderingBlocks);
+  onProgress?.call(++completedSteps, totalSteps);
   for (final b in renderingBlocks) {
-    final pdf = b.content['pdf'];
-    if (b.type != BlockType.image || pdf is! String) continue;
-    final preview = b.content['blob'];
-    if (preview is String) {
-      final bytes = app.blob(preview);
-      if (bytes != null) {
-        maths[b.id] = bytes;
-        continue;
-      }
-    }
-    final bytes = app.blob(pdf);
-    if (bytes == null) continue;
-    final source = await PdfRuntime.open(bytes, pdf);
     try {
-      final index = (b.content['page'] as num?)?.toInt() ?? 0;
-      if (index >= 0 && index < source.pages.length) {
-        final png = await renderPdfPageToPng(source.pages[index]);
-        if (png != null) maths[b.id] = png.png;
+      final pdf = b.content['pdf'];
+      if (b.type != BlockType.image || pdf is! String) continue;
+      final preview = b.content['blob'];
+      if (preview is String) {
+        final bytes = app.blob(preview);
+        if (bytes != null) {
+          maths[b.id] = bytes;
+          continue;
+        }
+      }
+      final bytes = app.blob(pdf);
+      if (bytes == null) continue;
+      final source = await PdfRuntime.open(bytes, pdf);
+      try {
+        final index = (b.content['page'] as num?)?.toInt() ?? 0;
+        if (index >= 0 && index < source.pages.length) {
+          final png = await renderPdfPageToPng(source.pages[index]);
+          if (png != null) maths[b.id] = png.png;
+        }
+      } finally {
+        await source.dispose();
       }
     } finally {
-      await source.dispose();
+      onProgress?.call(++completedSteps, totalSteps);
     }
   }
 
   for (var sheet = 0; sheet < sheets; sheet++) {
+    onProgress?.call(++completedSteps, totalSteps);
     if (sheetIndex != null && sheet != sheetIndex) continue;
     final top = region?.top ?? sheet * sheetPx;
     final bottom = top + (region?.height ?? sheetPx);

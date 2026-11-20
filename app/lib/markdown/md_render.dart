@@ -10,7 +10,6 @@ import '../theme/onote_theme.dart';
 import 'md_syntax.dart';
 import 'md_table.dart';
 import '../editor/flashcard_view.dart';
-import '../study/flashcards.dart' show inlineCardRe;
 
 /// Interim inline-Markdown rendering (TEXT-2/4 at block granularity):
 /// a text block RENDERS its Markdown when not being edited and reveals the
@@ -137,7 +136,8 @@ class _MarkdownViewState extends State<MarkdownView> {
 
   String get text => widget.text;
   TextStyle get baseStyle => widget.baseStyle;
-  void Function(String newText)? get onToggleCheckbox => widget.onToggleCheckbox;
+  void Function(String newText)? get onToggleCheckbox =>
+      widget.onToggleCheckbox;
   void Function(String label, String? id)? get onWikiLink => widget.onWikiLink;
 
   @override
@@ -174,7 +174,10 @@ class _MarkdownViewState extends State<MarkdownView> {
           borderRadius: BorderRadius.circular(6),
         ),
         child: Text(fenceBuf.join('\n'),
-            style: baseStyle.copyWith(fontFamily: 'JetBrains Mono', fontFamilyFallback: onoteFontFallback, fontSize: 13)),
+            style: baseStyle.copyWith(
+                fontFamily: 'JetBrains Mono',
+                fontFamilyFallback: onoteFontFallback,
+                fontSize: 13)),
       ));
       fenceBuf.clear();
     }
@@ -231,7 +234,8 @@ class _MarkdownViewState extends State<MarkdownView> {
                 InkWell(
                   onTap: widget.onToggleTag == null
                       ? null
-                      : () => widget.onToggleTag!(lineIndex, !(t.checked ?? false)),
+                      : () =>
+                          widget.onToggleTag!(lineIndex, !(t.checked ?? false)),
                   child: Icon(
                       (t.checked ?? false)
                           ? Icons.check_box
@@ -297,8 +301,7 @@ class _MarkdownViewState extends State<MarkdownView> {
               fontSize: 10.5,
               height: 1.2,
               fontWeight: days < 0 ? FontWeight.w700 : FontWeight.w500,
-              color:
-                  days < 0 ? OnoteColors.danger : OnoteColors.graphite400)),
+              color: days < 0 ? OnoteColors.danger : OnoteColors.graphite400)),
     );
   }
 
@@ -363,7 +366,9 @@ class _MarkdownViewState extends State<MarkdownView> {
       return Padding(
         padding: EdgeInsets.only(top: index == 0 ? 0 : 6, bottom: 2),
         child: Text.rich(
-          TextSpan(children: inlineSpans(h.group(2)!, baseStyle, dark, onWikiLink, widget.mathLinkTint)),
+          TextSpan(
+              children: inlineSpans(h.group(2)!, baseStyle, dark, onWikiLink,
+                  widget.mathLinkTint)),
           style: baseStyle.copyWith(
             fontSize: sizes[level - 1],
             fontWeight: FontWeight.w600,
@@ -416,7 +421,8 @@ class _MarkdownViewState extends State<MarkdownView> {
             Expanded(
               child: Text.rich(
                 TextSpan(
-                  children: inlineSpans(cb.group(3)!, baseStyle, dark, onWikiLink, widget.mathLinkTint),
+                  children: inlineSpans(cb.group(3)!, baseStyle, dark,
+                      onWikiLink, widget.mathLinkTint),
                   style: checked
                       ? baseStyle.copyWith(
                           decoration: TextDecoration.lineThrough,
@@ -464,7 +470,9 @@ class _MarkdownViewState extends State<MarkdownView> {
                     style: baseStyle.copyWith(color: OnoteColors.graphite500))),
             Expanded(
                 child: Text.rich(
-                    TextSpan(children: inlineSpans(body, baseStyle, dark, onWikiLink, widget.mathLinkTint)),
+                    TextSpan(
+                        children: inlineSpans(body, baseStyle, dark, onWikiLink,
+                            widget.mathLinkTint)),
                     style: baseStyle)),
           ],
         ),
@@ -547,9 +555,12 @@ class _MarkdownViewState extends State<MarkdownView> {
         margin: const EdgeInsets.symmetric(vertical: 2),
         padding: const EdgeInsets.only(left: 10),
         decoration: const BoxDecoration(
-            border: Border(left: BorderSide(color: OnoteColors.ink300, width: 3))),
+            border:
+                Border(left: BorderSide(color: OnoteColors.ink300, width: 3))),
         child: Text.rich(
-          TextSpan(children: inlineSpans(quote.group(1)!, baseStyle, dark, onWikiLink, widget.mathLinkTint)),
+          TextSpan(
+              children: inlineSpans(quote.group(1)!, baseStyle, dark,
+                  onWikiLink, widget.mathLinkTint)),
           style: baseStyle.copyWith(color: OnoteColors.graphite500),
         ),
       );
@@ -574,8 +585,7 @@ class _MarkdownViewState extends State<MarkdownView> {
             // The same scale as everything else — a display equation is not
             // a third size (it was 18 against the block's 22 and a
             // sentence's 15).
-            child: OnoteMath(dm.group(1)!,
-                textStyle: mathStyleIn(baseStyle)),
+            child: OnoteMath(dm.group(1)!, textStyle: mathStyleIn(baseStyle)),
           ),
         ),
       );
@@ -595,8 +605,8 @@ class _MarkdownViewState extends State<MarkdownView> {
             left: indentPx(plainIndent.group(1)!.length, baseStyle.fontSize)),
         child: Text.rich(
           TextSpan(
-              children: inlineSpans(
-                  plainIndent.group(2)!, baseStyle, dark, onWikiLink, widget.mathLinkTint)),
+              children: inlineSpans(plainIndent.group(2)!, baseStyle, dark,
+                  onWikiLink, widget.mathLinkTint)),
           style: baseStyle,
         ),
       );
@@ -604,7 +614,9 @@ class _MarkdownViewState extends State<MarkdownView> {
 
     // Paragraph (empty lines keep their height)
     return Text.rich(
-      TextSpan(children: inlineSpans(line.isEmpty ? ' ' : line, baseStyle, dark, onWikiLink, widget.mathLinkTint)),
+      TextSpan(
+          children: inlineSpans(line.isEmpty ? ' ' : line, baseStyle, dark,
+              onWikiLink, widget.mathLinkTint)),
       style: baseStyle,
     );
   }
@@ -853,8 +865,8 @@ class _ExternalLink extends StatelessWidget {
           onTap: () async {
             final ok = await PlatformOpen.url(url);
             if (!ok && context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text("Couldn't open $url")));
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(SnackBar(content: Text("Couldn't open $url")));
             }
           },
           child: Text.rich(TextSpan(children: [
@@ -876,7 +888,8 @@ class _ExternalLink extends StatelessWidget {
 }
 
 class _WikiLink extends StatelessWidget {
-  const _WikiLink({required this.label, required this.onTap, required this.color});
+  const _WikiLink(
+      {required this.label, required this.onTap, required this.color});
   final String label;
   final VoidCallback? onTap;
   final Color color;

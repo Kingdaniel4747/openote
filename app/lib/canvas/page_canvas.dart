@@ -8,7 +8,7 @@ import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
+import 'package:flutter/rendering.dart' show OffsetLayer, RenderRepaintBoundary;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
@@ -17,6 +17,7 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../ui/context_menus.dart';
 import '../ui/selection_toolbar.dart';
+import '../ui/transfer_progress.dart';
 import 'handwriting_spell_layer.dart';
 import 'block_view.dart';
 import 'align_guides.dart';
@@ -79,6 +80,9 @@ class _PageCanvasState extends State<PageCanvas> {
 
   Tool _penReturnTool = Tool.pen;
   Tool _contactTool = Tool.pen;
+  int? _penToolRevision;
+  bool _selectAfterPenButtonRelease = false;
+  PointerDownEvent? _fingerInkDown;
   Offset? _eraserScreen;
   Timer? _shapeHold;
   final List<Offset> _shapeRaw = [];
@@ -122,6 +126,7 @@ class _PageCanvasState extends State<PageCanvas> {
     // barrel-button gesture, even if the pen is still hovering.
     if (_buttonOverride && _overrideToolRevision != app.toolChoiceRevision) {
       _buttonOverride = false;
+      _selectAfterPenButtonRelease = false;
     }
     if (erase) {
       if (!_buttonOverride) {
@@ -137,7 +142,9 @@ class _PageCanvasState extends State<PageCanvas> {
       if (app.tool != Tool.eraser) app.setTool(Tool.eraser, temporary: true);
     } else if (_buttonOverride) {
       _buttonOverride = false;
-      app.setTool(_penReturnTool, temporary: true);
+      app.setTool(_selectAfterPenButtonRelease ? Tool.select : _penReturnTool,
+          temporary: true);
+      _selectAfterPenButtonRelease = false;
     }
   }
 
@@ -255,6 +262,7 @@ class _PageCanvasState extends State<PageCanvas> {
     _eyedropperPointerKind = event.kind;
     _eyedropperPosition = event.localPosition;
     _eyedropperPreview = null;
+    unawaited(_previewEyedropperColor());
     setState(() {});
   }
 
@@ -267,22 +275,27 @@ class _PageCanvasState extends State<PageCanvas> {
 
   Future<Color?> _colorAtEyedropperPosition(Offset position) async {
     final render = _eyedropperCaptureKey.currentContext?.findRenderObject();
-    if (render is! RenderRepaintBoundary || !mounted) return null;
+    if (render is! _EyedropperRenderBoundary || !mounted) return null;
     ui.Image? image;
     try {
       final pixelRatio = MediaQuery.devicePixelRatioOf(context);
-      image = await render.toImage(pixelRatio: pixelRatio);
+      if (render.size.isEmpty) return null;
+      final x = (position.dx * pixelRatio)
+          .floor()
+          .clamp(0, (render.size.width * pixelRatio).ceil() - 1);
+      final y = (position.dy * pixelRatio)
+          .floor()
+          .clamp(0, (render.size.height * pixelRatio).ceil() - 1);
+      // Read only the sampled physical pixel, not the entire page image.
+      image = await render.samplePixel(
+        Rect.fromLTWH(x / pixelRatio, y / pixelRatio, 1 / pixelRatio,
+            1 / pixelRatio),
+        pixelRatio: pixelRatio,
+      );
       final bytes = await image.toByteData(format: ImageByteFormat.rawRgba);
-      final imageWidth = image.width;
-      final imageHeight = image.height;
       if (bytes == null || !mounted) return null;
-      final x =
-          (position.dx * pixelRatio).floor().clamp(0, imageWidth - 1).toInt();
-      final y =
-          (position.dy * pixelRatio).floor().clamp(0, imageHeight - 1).toInt();
-      final i = (y * imageWidth + x) * 4;
       final data = bytes.buffer.asUint8List();
-      return Color.fromARGB(data[i + 3], data[i], data[i + 1], data[i + 2]);
+      return Color.fromARGB(data[3], data[0], data[1], data[2]);
     } catch (_) {
       return null;
     } finally {
@@ -292,15 +305,20 @@ class _PageCanvasState extends State<PageCanvas> {
 
   Future<void> _previewEyedropperColor() async {
     final position = _eyedropperPosition;
-    if (position == null) return;
+    final pointer = _eyedropperPointer;
+    if (position == null || pointer == null) return;
     _eyedropperSampling = true;
     final color = await _colorAtEyedropperPosition(position);
     _eyedropperSampling = false;
-    if (!mounted || !app.inkEyedropperActive) return;
+    if (!mounted || !app.inkEyedropperActive || _eyedropperPointer != pointer) {
+      return;
+    }
     // A newer move can arrive while the boundary is being read. Do not paint
     // its older colour below the current crosshair.
     if (_eyedropperPosition == position && color != null) {
       setState(() => _eyedropperPreview = color);
+    } else if (_eyedropperPosition != position) {
+      unawaited(_previewEyedropperColor());
     }
   }
 
@@ -452,8 +470,9 @@ class _PageCanvasState extends State<PageCanvas> {
         e.kind == PointerDeviceKind.invertedStylus) {
       _showPenButtonTool(_windowsPen.erasesAtContact(e));
       if (app.tool == Tool.select || app.tool == Tool.text) {
-        app.setTool(app.preferredInkTool);
+        app.setTool(app.preferredInkTool, temporary: true);
       }
+      _penToolRevision = app.toolChoiceRevision;
       app.requestDrawTab();
     }
     if (_windowsPen.enabled ||
@@ -765,6 +784,12 @@ class _PageCanvasState extends State<PageCanvas> {
         e.kind == PointerDeviceKind.invertedStylus) {
       _pendingErase = _windowsPen.nativeInRange && _windowsPen.nativeEraser;
       _showPenButtonTool(_pendingErase);
+      if (_penToolRevision == app.toolChoiceRevision && !_buttonOverride) {
+        app.setTool(Tool.select, temporary: true);
+      } else if (_penToolRevision == app.toolChoiceRevision && _buttonOverride) {
+        _selectAfterPenButtonRelease = true;
+      }
+      _penToolRevision = null;
     }
   }
 
@@ -943,13 +968,15 @@ class _PageCanvasState extends State<PageCanvas> {
     }
   }
 
-  bool _canFingerMoveLassoSelection(Offset pagePoint) =>
-      app.selectedIds.isNotEmpty &&
-      app.selectedIds.any((id) {
-        final block = app.blocks.where((b) => b.id == id).firstOrNull;
-        return block != null &&
-            _blockRect(block).inflate(10).contains(pagePoint);
-      });
+  bool _canMoveLassoSelection(Offset pagePoint) {
+    Rect? bounds;
+    for (final block in app.blocks) {
+      if (!app.selectedIds.contains(block.id)) continue;
+      final rect = _blockRect(block);
+      bounds = bounds == null ? rect : bounds.expandToInclude(rect);
+    }
+    return bounds?.inflate(10).contains(pagePoint) ?? false;
+  }
 
   void _startLassoFingerMove(PointerDownEvent e) {
     _lassoMovePointer = e.pointer;
@@ -2102,13 +2129,18 @@ class _PageCanvasState extends State<PageCanvas> {
               _touchDown(e);
               return;
             }
-            if (_canFingerMoveLassoSelection(
+            if (_canMoveLassoSelection(
               controller.screenToPage(e.localPosition),
             )) {
               _startLassoFingerMove(e);
               return;
             }
             _touchDown(e);
+          } else if (e.kind == PointerDeviceKind.mouse &&
+              (e.buttons & kPrimaryMouseButton) != 0 &&
+              _canMoveLassoSelection(
+                  controller.screenToPage(e.localPosition))) {
+            _startLassoFingerMove(e);
           } else {
             _lassoDown(e);
           }
@@ -2152,12 +2184,9 @@ class _PageCanvasState extends State<PageCanvas> {
         child: canvas,
       );
     } else if (_inkTool) {
-      // Palm rejection (INK-4), stylus-CONDITIONAL. Pen and mouse always draw.
-      // A finger draws too — unless a stylus is in use, in which case touch
-      // reverts to pan/pinch so a resting palm never marks the page (OneNote's
-      // "draw with pen, navigate with touch"). A second finger always pans,
-      // whatever the setting, so the canvas stays navigable while a drawing
-      // tool is selected. See `app.touchDrawing` for the user override.
+      // A selected drawing tool also accepts the mouse. Explicit finger
+      // drawing accepts one finger; a second contact switches to navigation.
+      // Pen proximity continues to take precedence over touch.
       canvas = Listener(
         behavior: HitTestBehavior.opaque,
         onPointerDown: (e) {
@@ -2170,14 +2199,28 @@ class _PageCanvasState extends State<PageCanvas> {
             _inkDown(e);
             return;
           }
+          if (app.touchDrawing == TouchDrawing.always &&
+              !_windowsPen.nativeInRange && !_inkContactActive &&
+              _fingerInkDown == null && _touches.isEmpty) {
+            _fingerInkDown = e;
+            _inkDown(e);
+            return;
+          }
+          if (_fingerInkDown case final first?) {
+            _fingerInkDown = null;
+            _cancelWetStroke();
+            _commitErase();
+            _windowsInkPointer = null;
+            _touchDown(first);
+          }
           _touchDown(e);
-          // A finger only navigates. This keeps palm contact and a second
-          // finger from ever producing ink or an eraser mark.
         },
         onPointerMove: (e) {
           if (_moveMiddlePan(e)) return;
           if (_updateRulerPointer(e)) return;
-          if (_touches.containsKey(e.pointer)) {
+          if (_fingerInkDown?.pointer == e.pointer) {
+            _inkMove(e);
+          } else if (_touches.containsKey(e.pointer)) {
             _touchMove(e);
           } else if (e.kind != PointerDeviceKind.touch) {
             _inkMove(e);
@@ -2186,7 +2229,10 @@ class _PageCanvasState extends State<PageCanvas> {
         onPointerUp: (e) {
           if (_endMiddlePan(e)) return;
           if (_endRulerPointer(e)) return;
-          if (_touches.containsKey(e.pointer)) {
+          if (_fingerInkDown?.pointer == e.pointer) {
+            _fingerInkDown = null;
+            _inkUp(e);
+          } else if (_touches.containsKey(e.pointer)) {
             _touchUp(e);
           } else if (e.kind != PointerDeviceKind.touch) {
             _inkUp(e);
@@ -2196,6 +2242,13 @@ class _PageCanvasState extends State<PageCanvas> {
           if (_endMiddlePan(e)) return;
           if (_endRulerPointer(e)) return;
           if (e.kind == PointerDeviceKind.touch) {
+            if (_fingerInkDown?.pointer == e.pointer) {
+              _fingerInkDown = null;
+              _windowsInkPointer = null;
+              _commitErase();
+              _cancelWetStroke();
+              return;
+            }
             _cancelTouch(e);
             return;
           }
@@ -2266,7 +2319,7 @@ class _PageCanvasState extends State<PageCanvas> {
     // Capture the completed page composition for the eyedropper before the
     // input-only wrappers below. Absorb ordinary canvas gestures while the
     // sampler is armed; the selected colour is committed on release.
-    canvas = RepaintBoundary(key: _eyedropperCaptureKey, child: canvas);
+    canvas = _EyedropperBoundary(key: _eyedropperCaptureKey, child: canvas);
     if (app.inkEyedropperActive) {
       canvas = MouseRegion(
         cursor: SystemMouseCursors.precise,
@@ -2291,15 +2344,15 @@ class _PageCanvasState extends State<PageCanvas> {
               if (_eyedropperPosition case final position?)
                 Positioned(
                   // The crosshair's centre, rather than its top-left, is the
-                  // sampled pixel. Mouse users already have a native precise
-                  // cursor, so only the pen/touch route draws a second cross.
+                  // sampled pixel. Mouse and pen have their own cursors;
+                  // touch needs an additional crosshair.
                   left: position.dx - 23,
                   top: position.dy - 23,
                   child: IgnorePointer(
                     child: _EyedropperCursor(
                       color: _eyedropperPreview,
                       showCrosshair:
-                          _eyedropperPointerKind != PointerDeviceKind.mouse,
+                          _eyedropperPointerKind == PointerDeviceKind.touch,
                     ),
                   ),
                 ),
@@ -2325,12 +2378,18 @@ class _PageCanvasState extends State<PageCanvas> {
         // it is not, now that the drop point decides which text box you are
         // dropping INTO.
         final at = controller.screenToPage(details.localPosition);
-        final n = await dropFilesOntoCanvas(
-          app,
-          [for (final f in details.files) f.path],
-          at,
-          dark: Theme.of(context).brightness == Brightness.dark,
-        );
+        final dark = Theme.of(context).brightness == Brightness.dark;
+        final n = await runTransfer(
+            context,
+            'Import files',
+            (progress) => dropFilesOntoCanvas(
+                  app,
+                  [for (final f in details.files) f.path],
+                  at,
+                  dark: dark,
+                  onProgress: (done, total, name) =>
+                      progress.update(done: done, total: total, detail: name),
+                ));
         if (!context.mounted) return;
         // **A drop that lands nothing says so.** It used to be silent, which
         // is indistinguishable from the app not having noticed the drop at
@@ -2512,6 +2571,19 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 }
 
+class _EyedropperBoundary extends SingleChildRenderObjectWidget {
+  const _EyedropperBoundary({super.key, required super.child});
+
+  @override
+  _EyedropperRenderBoundary createRenderObject(BuildContext context) =>
+      _EyedropperRenderBoundary();
+}
+
+class _EyedropperRenderBoundary extends RenderRepaintBoundary {
+  Future<ui.Image> samplePixel(Rect bounds, {required double pixelRatio}) =>
+      (layer! as OffsetLayer).toImage(bounds, pixelRatio: pixelRatio);
+}
+
 /// Crosshair for the one-shot colour sampler. The large chip is intentionally
 /// offset above-right of the sampling point, so it never hides the pixel being
 /// inspected with a pen tip or mouse cursor.
@@ -2530,7 +2602,10 @@ class _EyedropperCursor extends StatelessWidget {
             if (showCrosshair)
               const Positioned.fill(
                 child: Center(
-                    child: Icon(Icons.add, size: 30, color: Colors.white)),
+                    child: Icon(Icons.add,
+                        key: ValueKey('eyedropper-touch-crosshair'),
+                        size: 30,
+                        color: Colors.white)),
               ),
             Positioned(
               left: 25,

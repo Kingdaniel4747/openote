@@ -37,8 +37,8 @@ void main() {
       ..notebookId = nb.id
       ..spellCheckEnabled = false;
     app.reloadNodes();
-    await app.selectPage(
-        app.nodes.firstWhere((n) => n.kind == NodeKind.page).id);
+    await app
+        .selectPage(app.nodes.firstWhere((n) => n.kind == NodeKind.page).id);
     block = Block(type: BlockType.text, x: 0, y: 0, content: {'text': ''});
     app.addBlock(block, recordUndo: false);
     c = TextEditingController();
@@ -73,8 +73,7 @@ void main() {
   }
 
   group('Ctrl+B with nothing selected', () {
-    test('formats the WORD the caret is in — it never writes bare markers',
-        () {
+    test('formats the WORD the caret is in — it never writes bare markers', () {
       if (!haveSqlite) return;
       edit('make this bo|ld please');
       app.wrapSelection('**');
@@ -230,7 +229,10 @@ void main() {
   group('a code cell is not prose', () {
     test('Ctrl+B does not inject Markdown into source code', () {
       if (!haveSqlite) return;
-      final code = Block(type: BlockType.code, x: 0, y: 0,
+      final code = Block(
+          type: BlockType.code,
+          x: 0,
+          y: 0,
           content: {'language': 'js', 'source': 'let x = 2;'});
       app.addBlock(code, recordUndo: false);
       final cc = TextEditingController(text: 'let x = 2;');
@@ -305,11 +307,11 @@ void main() {
     });
   });
 
-  group('blank-out commits its edit', () {
-    test('the fill-in-the-blank reaches the block, not just the field', () {
+  group('highlight commits its edit', () {
+    test('highlight reaches the block, not just the field', () {
       if (!haveSqlite) return;
       edit('the capital is «Paris» ok');
-      expect(app.blankOutSelection(), isTrue);
+      app.wrapSelection('==');
       expect(c.text, contains('==Paris=='));
       // The bug: it wrote into the controller and never committed, so the
       // block still held the old text and the next rebuild reverted it.

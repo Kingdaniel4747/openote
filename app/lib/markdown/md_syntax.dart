@@ -15,6 +15,10 @@
 /// so a branch added here reaches reading and writing in the same commit.
 library;
 
+/// Legacy inline cards remain readable in existing notes. This is syntax
+/// recognition only; no deck generation, review scheduler or export is kept.
+final RegExp inlineCardRe = RegExp(r'^\s*\?\[([^\]]*)\]\(([^)]*)\)\s*$');
+
 /// What an inline match turned out to be.
 enum MdInline {
   wikiLink,
@@ -155,10 +159,8 @@ const String _mathDisplay =
     r'(\$\$([^\s\$\n](?:[^\$\n]*[^\s\$\n])?)\$\$(?!\d))';
 
 // One space of padding, backslash-guarded — see [MdInline.mathPadded].
-const String _mathPadded =
-    r'(\$ ([^\$\n]*\\[a-zA-Z]+[^\$\n]*) \$)';
-const String _colour =
-    r'(\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) (.+?)\}\})';
+const String _mathPadded = r'(\$ ([^\$\n]*\\[a-zA-Z]+[^\$\n]*) \$)';
+const String _colour = r'(\{\{#([0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?) (.+?)\}\})';
 const String _wiki = r'(\[\[([^\]|]+)(?:\|([^\]]+))?\]\])';
 const String _link = r'(\[([^\]\[]+)\]\((https?://[^)\s]+|mailto:[^)\s]+)\))';
 // Last: an explicit `[label](url)` must win at the same position, and the
@@ -242,8 +244,7 @@ final Map<MdInline, int> _groupBase = () {
     m[e.key] = g;
     // `bold` and `italic` each carry TWO alternatives (asterisk and
     // underscore), so they occupy twice their group count.
-    final mult =
-        (e.key == MdInline.bold || e.key == MdInline.italic) ? 2 : 1;
+    final mult = (e.key == MdInline.bold || e.key == MdInline.italic) ? 2 : 1;
     g += e.value * mult;
   }
   return m;
@@ -348,17 +349,19 @@ Iterable<({int start, int end, String latex})> mathRunsIn(String text) sync* {
 }
 
 /// The same run with a new equation in it, dollars and all.
-String replaceMathRun(String text, ({int start, int end, String latex}) run,
-    String latex) {
+String replaceMathRun(
+    String text, ({int start, int end, String latex}) run, String latex) {
   final full = text.substring(run.start, run.end);
   var d = 0;
   while (d < full.length && full.codeUnitAt(d) == 0x24) {
     d++;
   }
   final wrap = r'$' * (d == 0 ? 1 : d);
-  return text.replaceRange(run.start, run.end, 'wrapLATEXwrap'
-      .replaceFirst('wrap', wrap)
-      .replaceFirst('LATEX', latex)
-      .replaceFirst('wrap', wrap));
+  return text.replaceRange(
+      run.start,
+      run.end,
+      'wrapLATEXwrap'
+          .replaceFirst('wrap', wrap)
+          .replaceFirst('LATEX', latex)
+          .replaceFirst('wrap', wrap));
 }
-

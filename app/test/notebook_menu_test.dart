@@ -63,6 +63,9 @@ void main() {
     expect(find.text('Beta'), findsOneWidget);
     expect(find.text('New'), findsOneWidget);
     expect(find.text('Import'), findsOneWidget);
-    expect(find.text('Done'), findsOneWidget);
+    expect(find.byTooltip('Close'), findsOneWidget);
+    await tester.tap(find.byTooltip('Close'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
   });
 }

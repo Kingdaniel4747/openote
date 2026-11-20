@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:file_selector/file_selector.dart';
+import '../ui/selection_toolbar.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -14,7 +14,7 @@ import '../store/media_store.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
 import '../ui/onote_dialog.dart';
-import '../ui/media_link_dialog.dart';
+
 import 'dart:async';
 
 /// A video or recording kept in the notebook and played in the page.
@@ -280,61 +280,7 @@ class _VideoBlockViewState extends State<VideoBlockView> {
   }
 
   Future<void> _saveCopy(BuildContext context, File file) async {
-    final loc = await getSaveLocation(suggestedName: _name);
-    if (loc == null) return;
-    final total = await file.length();
-    if (!context.mounted) return;
-    // **The same dialog the import side uses**, in the other direction. A
-    // recording is a gigabyte and the button used to look, for thirty
-    // seconds, exactly like a button that had done nothing — so the natural
-    // move was to press it again.
-    final progress = ValueNotifier<double>(0);
-    var dialogOpen = true;
-    unawaited(showOnoteDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => MediaCopyDialog(
-        name: _name,
-        bytes: total,
-        progress: progress,
-        onCancel: () => Navigator.of(ctx).pop(),
-      ),
-    ).then((_) => dialogOpen = false));
-
-    final out = File(loc.path);
-    try {
-      final sink = out.openWrite();
-      var done = 0;
-      await for (final chunk in file.openRead()) {
-        sink.add(chunk);
-        done += chunk.length;
-        if (total > 0) progress.value = done / total;
-      }
-      await sink.close();
-      if (dialogOpen && context.mounted) {
-        Navigator.of(context, rootNavigator: true).pop();
-        dialogOpen = false;
-      }
-      if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Saved to ${loc.path}')));
-      }
-    } catch (e) {
-      if (dialogOpen && context.mounted) {
-        Navigator.of(context, rootNavigator: true).pop();
-      }
-      // Half a recording is worse than none: it looks like a file and will
-      // not play. `MediaStore.add` cleans up after itself the same way.
-      try {
-        if (out.existsSync()) out.deleteSync();
-      } catch (_) {}
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("That copy didn't finish: $e")));
-      }
-    } finally {
-      progress.dispose();
-    }
+    await SelectionToolbar.saveOriginal(context, widget.app, widget.block);
   }
 
   void _explainMissingLibrary(BuildContext context) => showOnoteDialog<void>(

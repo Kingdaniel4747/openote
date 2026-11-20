@@ -163,8 +163,8 @@ Block? _textBlockAt(AppState app, Offset pagePt) {
   final hits = [
     for (final b in app.blocks)
       if (b.type == BlockType.text &&
-          Rect.fromLTWH(b.x, b.y, b.w,
-                  b.h ?? app.renderSizes[b.id]?.height ?? 60)
+          Rect.fromLTWH(
+                  b.x, b.y, b.w, b.h ?? app.renderSizes[b.id]?.height ?? 60)
               .contains(pagePt))
         b
   ]..sort((a, b) => b.z.compareTo(a.z));
@@ -212,8 +212,7 @@ int _offsetInBlock(Block b, String text, Offset pagePt, {required bool dark}) {
   final needsLeading = head.isNotEmpty && !head.endsWith('\n');
   final needsTrailing = tail.isNotEmpty && !tail.startsWith('\n');
   final insert = '${needsLeading ? '\n' : ''}$ref${needsTrailing ? '\n' : ''}';
-  final refLine =
-      '\n'.allMatches(needsLeading ? '$head\n' : head).length;
+  final refLine = '\n'.allMatches(needsLeading ? '$head\n' : head).length;
   return (
     head + insert + tail,
     (line: refLine, linesAdded: '\n'.allMatches(insert).length),
@@ -244,8 +243,7 @@ void _rebaseTags(Block b, {required int fromLine, required int by}) {
 ///
 /// Null on a failed write, like [insertImageBytes] — an attachment chip whose
 /// bytes were never stored is a file the user believes is kept and is not.
-Block? insertFileBytes(
-    AppState app, Uint8List bytes, String name, Offset at) {
+Block? insertFileBytes(AppState app, Uint8List bytes, String name, Offset at) {
   final mime = mimeForExtension(name);
   final hash = app.tryAddBlob(bytes, mime);
   if (hash == null) return null;
@@ -427,38 +425,47 @@ Future<Uint8List?> _readFile(ClipboardReader reader, FileFormat fmt) async {
 /// Images become image blocks, everything else an attachment — dropping a PDF
 /// or a lab handout onto a page and having it just be there is most of why
 /// drag-and-drop matters.
-Future<int> dropFilesOntoCanvas(
-    AppState app, List<String> paths, Offset at, {bool dark = false}) async {
+Future<int> dropFilesOntoCanvas(AppState app, List<String> paths, Offset at,
+    {bool dark = false,
+    void Function(int done, int total, String name)? onProgress}) async {
   var placed = 0;
   var offset = 0.0;
+  var done = 0;
   for (final path in paths) {
-    final file = File(path);
-    if (!file.existsSync()) continue;
-    final bytes = await file.readAsBytes();
-    final name = path.split(Platform.pathSeparator).last;
-    // Cascade multiple drops so they don't land exactly on top of each other.
-    final where = at + Offset(offset, offset);
-    // Only what actually landed counts: the caller announces "Added N items"
-    // on the strength of this number, and a blob write that failed (full
-    // disk, read-only folder) is already on the status bar saying the
-    // opposite.
-    var landed = false;
-    if (looksLikeCsv(name)) {
-      // Tabular data becomes a TABLE, not an attachment — "import data
-      // (csv, xlsx)" means the rows end up editable on the page, the same
-      // block the table button makes. An unusable file falls back to an
-      // attachment, so the drop never simply vanishes.
-      landed = insertTableFromFile(app, name, bytes, where).placed ||
-          insertFileBytes(app, bytes, name, where) != null;
-    } else if (!_looksLikeImage(name)) {
-      landed = insertFileBytes(app, bytes, name, where) != null;
-    } else {
-      landed = insertImageBytes(app, bytes, mimeForExtension(name), where) !=
-          null;
-    }
-    if (landed) {
-      offset += 24;
-      placed++;
+    onProgress?.call(
+        done, paths.length, path.split(Platform.pathSeparator).last);
+    try {
+      final file = File(path);
+      if (!file.existsSync()) continue;
+      final bytes = await file.readAsBytes();
+      final name = path.split(Platform.pathSeparator).last;
+      // Cascade multiple drops so they don't land exactly on top of each other.
+      final where = at + Offset(offset, offset);
+      // Only what actually landed counts: the caller announces "Added N items"
+      // on the strength of this number, and a blob write that failed (full
+      // disk, read-only folder) is already on the status bar saying the
+      // opposite.
+      var landed = false;
+      if (looksLikeCsv(name)) {
+        // Tabular data becomes a TABLE, not an attachment — "import data
+        // (csv, xlsx)" means the rows end up editable on the page, the same
+        // block the table button makes. An unusable file falls back to an
+        // attachment, so the drop never simply vanishes.
+        landed = insertTableFromFile(app, name, bytes, where).placed ||
+            insertFileBytes(app, bytes, name, where) != null;
+      } else if (!_looksLikeImage(name)) {
+        landed = insertFileBytes(app, bytes, name, where) != null;
+      } else {
+        landed =
+            insertImageBytes(app, bytes, mimeForExtension(name), where) != null;
+      }
+      if (landed) {
+        offset += 24;
+        placed++;
+      }
+    } catch (_) {/* Continue with the rest of the selection. */} finally {
+      onProgress?.call(
+          ++done, paths.length, path.split(Platform.pathSeparator).last);
     }
   }
   return placed;

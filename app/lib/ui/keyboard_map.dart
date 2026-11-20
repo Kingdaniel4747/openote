@@ -150,11 +150,6 @@ const List<KeySection> keyboardMap = [
     KeyBinding('Del', 'Remove the card you are on (Ctrl+Z brings it back)'),
     KeyBinding('Esc', 'Leave the board'),
   ]),
-  KeySection('Studying flashcards', [
-    KeyBinding('Space', 'Reveal the answer; again marks it Good'),
-    KeyBinding('1 / 2 / 3 / 4', 'Grade: Again, Hard, Good, Easy'),
-    KeyBinding('Ctrl+Enter', 'Save the card you are writing'),
-  ]),
   KeySection('Reading a PDF', [
     KeyBinding('PgUp / PgDn / Space', 'Previous / next page'),
     KeyBinding('Home / End', 'First / last page'),

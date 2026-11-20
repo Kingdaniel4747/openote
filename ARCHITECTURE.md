@@ -25,6 +25,87 @@ verwaltet Darstellung und Quelltextpositionen; Änderungen dürfen Caret,
 Auswahl und Inline-Objekte nicht auseinanderbringen. Farben und Abstände
 kommen aus `theme/`, nicht aus neuen parallelen Stilsystemen.
 
+Handschrift: `canvas/page_canvas.dart` erfasst Stiftbewegungen und erhält kurze
+Tupfer als Punkte für Stift, Kugelschreiber und Textmarker. `canvas/ink_eraser.dart`
+schneidet Striche gegen die gesamte vom runden Radierer überstrichene Fläche;
+Schnittpunkte interpolieren Druck, Neigung und Zeit. Unveränderte Striche bleiben
+im Cache, Undo/Redo und Speichern werden weiter am Gestenende abgeschlossen.
+`canvas/ink_painter.dart` erkennt auch Änderungen in der Mitte der Strichliste.
+Die bestehende Knopf-/Hover-Auswertung in `canvas/windows_pen_buttons.dart`
+und im Windows-Runner bleibt davon unabhängig und wurde nicht geändert.
+Referenz für Schnittintervalle und Stabilisierung: [Xournal++](https://github.com/xournalpp/xournalpp/tree/master/src/core/control/tools).
+Tests: `ink_eraser_test.dart`, `windows_pen_buttons_test.dart`,
+`drawing_regressions_test.dart`, `ink_storage_test.dart` und `ink_codec_test.dart`.
+
+## Navigation und Kontextmenüs
+
+`ui/inline_section_strip.dart` enthält die gemeinsame direkte Verschiebelogik
+für obere Sektionstabs und vertikale Sektions-/Seitenlisten. Sie hält den
+Griffpunkt, animiert Nachbarn, begrenzt die Bewegung und scrollt am Rand.
+Die 500-ms-Unterseitenvorschau wird erst beim Loslassen übernommen.
+`ui/sidebar.dart` und `ui/app_shell.dart` binden sie ein; `AppState` speichert
+Reihenfolge und Seitenbäume über `reorderNode`, `reorderPageTree` und
+`makeSubpageOf`. Der frühere `moveNode(id, delta)`-Befehl ist entfernt.
+
+`ui/node_context_menu.dart` stellt das Kontextmenü bereit;
+`ui/page_export_menu.dart` definiert Formatauswahl und Export der angeklickten
+Seite. `ui/insert_catalog.dart` ist der gemeinsame Einfügen-Katalog für Ribbon
+und Canvas-Menü. Kalenderdaten bleiben in `state/study_state.dart`,
+`state/planner_state.dart` und `planner/`; `StudyState` enthält nur noch
+Prüfungsdaten/-zeiten, keine Lernkartenplanung.
+
+## Medienimport und Dateiexport
+
+| Aufgabe | Einstieg |
+|---|---|
+| Fortschrittsmodell, Anzeige und Dialog-Lebensdauer | `ui/transfer_progress.dart`: `TransferProgress`, `TransferMeter`, `runTransfer` |
+| Dateiauswahl für Bilder, Dateien, Tabellen und PDFs | `ui/insert_catalog.dart` |
+| PDF-Quelle, Vorschauen und Platzierungsmodi | `export/pdf_import.dart` |
+| QR-Dateien auf der gekoppelten Zielseite | `api/scanner_import.dart`, `ui/scanner_pairing_dialog.dart` |
+| Drop und Clipboard | `canvas/media_drop.dart`, `canvas/page_canvas.dart`, `ui/app_shell.dart` |
+| Originalquellen zusammenfassen und Namen reservieren | `core/original_download.dart` |
+| Originale speichern, auch Anhänge/Videos | `ui/selection_toolbar.dart`; Datei-/Videokarten delegieren dorthin |
+| Markdown, PDF und offene Formate | `export/markdown_export.dart`, `pdf_vector_export.dart`, `pdf_export.dart`, `open_export.dart` |
+| Notizbuch-/Backup-Import und Export | `ui/notebook_manager.dart`, `state/app_state.dart` |
+
+`AppState.mediaImportPlacement` ist die gemeinsame Platzierung für ausgewählte
+Bilder, PDF-Ausdrucke und Handy-Dateien. Sie verwendet tatsächliche sichtbare
+Blockgrenzen einschließlich Rotation; ohne gespeicherte/gemessene Bildhöhe
+werden `naturalW`/`naturalH`, sonst ein Bild-Seitenverhältnis als Fallback benutzt.
+Off-screen-Importe verwenden die Daten der gekoppelten Seite, keine Messwerte
+der aktuell sichtbaren Seite. Erkennbare horizontale Reihen wachsen rechts;
+sonst wächst der Inhalt unten. Feste Papier-/PDF-Seiten behalten ihre Grenzen.
+PDF-Ausdrucke berechnen die Position für jedes neu veröffentlichte Blatt erneut.
+
+`AppState.runMediaImport` serialisiert PDF- und Handy-Importe einschließlich
+Lesen, Dekodieren und Speichern. Das verhindert sowohl überlagerte Positionen
+als auch das Überschreiben von Off-screen-Seiten durch veraltete Kopien.
+Nach einem Fehler kann der nächste Import fortfahren. PDF-only und eine
+Openote-Seite je PDF-Blatt bleiben eigene Platzierungsmodi.
+
+Ein PDF-Blatt ist ein Bildblock mit `content['pdf']` als vollständiger
+Originalquelle und optionalem `blob` als Seitenvorschau. `uniqueOriginals`
+dedupliziert zuerst nach der Originalreferenz, nicht nach Vorschau oder
+Blattnummer; normale Blob-Anhänge derselben Quelle zählen ebenfalls nur einmal.
+Medien-/Pfadreferenzen bilden eigene Schlüssel. Zielauswahl erfolgt vor dem
+Schreiben; nie automatisch in Downloads. Originale werden temporär im
+Zielordner geschrieben und erst danach auf den gewählten Dateinamen umbenannt.
+Mehrere Originale bekommen kollisionsfrei reservierte `OpenNote N.<ext>`-Namen.
+
+`TransferProgress` trennt abgeschlossene Einträge, Teilfortschritt und Fehler.
+`runTransfer` besitzt seine eigene Dialogroute; Bereinigung darf keinen fremden
+Dialog schließen. Videoimport behält echten Abbruch, OneNote-Paketimport seine
+Hintergrundkarte; beide verwenden dieselbe Fortschrittsanzeige. Eintragszähler
+können je Operation Dateien, Seiten oder Schritte zählen; unbekannte Gesamten
+werden nicht als erfundene Prozentzahl angezeigt.
+
+Gezielte Regressionen liegen insbesondere in `original_export_test.dart`,
+`transfer_progress_test.dart`, `pdf_placement_test.dart`, `phone_scanner_test.dart`,
+`media_import_layout_test.dart`, `media_arrangement_test.dart`,
+`file_block_view_test.dart`, `page_context_menu_test.dart`,
+`sidebar_page_reorder_test.dart`, `sidebar_section_reorder_test.dart` und
+`section_tabs_navigation_test.dart` unter `app/test/`.
+
 ## Speicherung und native Grenze
 
 `Repository` verwaltet `workspace.json`, Notizbücher und Papierkorb.

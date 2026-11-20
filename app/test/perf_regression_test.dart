@@ -164,9 +164,7 @@ void main() {
   group('the planner agenda is cached', () {
     // The planner panel, the command bar's badge and the navigator's Home pane
     // all read the agenda, and all three rebuild on every notify. Building it
-    // walks the tag rollup and — for the soonest exam — a whole section's deck
-    // out of SQLite, so this is squarely on the hot path the group above
-    // exists for.
+    // walks the notebook's tag rollup, so repeated reads must share a cache.
     test('repeated calls do not re-read the notebook', () async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       final (repo, tmp, app, section) =

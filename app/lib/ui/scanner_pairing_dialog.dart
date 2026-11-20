@@ -8,6 +8,7 @@ import '../api/scanner_receiver.dart';
 import '../export/pdf_import.dart';
 import '../state/app_state.dart';
 import 'onote_dialog.dart';
+import 'transfer_progress.dart';
 
 Future<void> showScannerPairingDialog(
     BuildContext context, AppState app) async {
@@ -55,19 +56,37 @@ class _ScannerPairingDialogState extends State<_ScannerPairingDialog> {
   String? _error;
   int _received = 0;
   bool _importing = false;
+  int _pagesDone = 0;
+  int _pagesTotal = 1;
+  String _filename = '';
 
   @override
   void initState() {
     super.initState();
     _receiver = ScannerReceiver(
       onScan: (bytes, mime, filename) async {
-        if (mounted) setState(() => _importing = true);
+        if (mounted) {
+          setState(() {
+            _importing = true;
+            _pagesDone = 0;
+            _pagesTotal = 1;
+            _filename = filename;
+          });
+        }
         try {
           if (mime == 'application/pdf') {
             if (widget.app.pageProps.pdfOnly) {
               widget.app.setPdfEditorView(false);
             }
-            await importPdfBytes(widget.app, bytes, filename);
+            await importPdfBytes(widget.app, bytes, filename,
+                onProgress: (done, total) {
+              if (mounted) {
+                setState(() {
+                  _pagesDone = done;
+                  _pagesTotal = total;
+                });
+              }
+            });
           } else {
             await importPhoneFile(
               widget.app,
@@ -174,9 +193,15 @@ class _ScannerPairingDialogState extends State<_ScannerPairingDialog> {
                         ),
                       ],
                       const SizedBox(height: 10),
-                      if (_importing)
-                        const LinearProgressIndicator()
-                      else
+                      if (_importing) ...[
+                        Text(_filename, overflow: TextOverflow.ellipsis),
+                        const SizedBox(height: 12),
+                        TransferMeter(
+                            fraction: _pagesDone / _pagesTotal,
+                            done: _pagesDone,
+                            total: _pagesTotal,
+                            unit: 'pages'),
+                      ] else
                         Text(
                           _received == 0
                               ? 'Waiting for scans…'

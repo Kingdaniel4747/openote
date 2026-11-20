@@ -193,10 +193,7 @@ class NoteTag {
   /// **A tag records a line INDEX**, which is what makes it survive edits to
   /// other lines — but it
   /// also means pressing Enter above a tagged line silently moves the marker
-  /// onto the wrong sentence. That is not cosmetic: `cardsFromBlock` reads
-  /// `lines[tag.line]`, so a flashcard's question and answer quietly change
-  /// while its id — `blockId:line` — stays the same, and the review schedule
-  /// stays attached to a card that is now about something else.
+  /// onto the wrong sentence. Rebase markers so they stay with their text.
   ///
   /// Rebasing off a common prefix/suffix of the two texts, so it is exact for
   /// the ordinary cases (typing a new line, deleting one, pasting a block of

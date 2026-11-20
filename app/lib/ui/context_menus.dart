@@ -72,7 +72,7 @@ Future<void> showBlockMenu(
       // selectable, which the raster on the canvas can never be.
       if (b.content['pdf'] is String)
         _item('open-pdf', Icons.picture_as_pdf_outlined, 'Open the PDF…'),
-      if (b.type == BlockType.image || b.content['kind'] == 'drawio')
+      if (b.type == BlockType.image)
         _item('download', Icons.download_outlined, 'Save original'),
       const PopupMenuDivider(),
       _item('front', Icons.flip_to_front, 'Bring to front'),

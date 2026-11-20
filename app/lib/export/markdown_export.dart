@@ -15,7 +15,8 @@ import 'md_common.dart';
 /// left-to-right) per the File Format Spec §8 note that page.md is the
 /// convenience projection; page.json remains the fidelity path. Images are
 /// written into an assets/ folder next to the .md, content-addressed.
-Future<String?> exportPageMarkdown(AppState app) async {
+Future<String?> exportPageMarkdown(AppState app,
+    {void Function(int done, int total)? onProgress}) async {
   if (app.pageId == null) return null;
   final page = app.nodes.firstWhere((n) => n.id == app.pageId);
   final location = await getSaveLocation(
@@ -31,8 +32,12 @@ Future<String?> exportPageMarkdown(AppState app) async {
   final md = pageMarkdownOf(app, page.title, app.blocks,
       assetsOut: assets, mediaOut: media);
 
+  final total = 1 + assets.length + media.length;
+  var done = 0;
+  onProgress?.call(done, total);
   final outPath = location.path;
   await File(outPath).writeAsString(md);
+  onProgress?.call(++done, total);
   // Write referenced image assets next to the file.
   if (assets.isNotEmpty) {
     final assetDir = Directory(p.join(p.dirname(outPath), 'assets'));
@@ -42,9 +47,12 @@ Future<String?> exportPageMarkdown(AppState app) async {
       if (bytes != null) {
         await File(p.join(p.dirname(outPath), e.value)).writeAsBytes(bytes);
       }
+      onProgress?.call(++done, total);
     }
   }
-  await writeExportedMedia(app, outPath, media);
+  await writeExportedMedia(app, outPath, media,
+      onFile: () => onProgress?.call(++done, total));
+  onProgress?.call(total, total);
   return outPath;
 }
 
@@ -62,7 +70,8 @@ Future<String?> exportPageMarkdown(AppState app) async {
 /// file next to it is a broken link, which is recoverable; failing the whole
 /// export is not.
 Future<void> writeExportedMedia(
-    AppState app, String outPath, Map<String, String> media) async {
+    AppState app, String outPath, Map<String, String> media,
+    {void Function()? onFile}) async {
   if (media.isEmpty) return;
   final NotebookRef ref;
   try {
@@ -74,7 +83,10 @@ Future<void> writeExportedMedia(
   await dir.create(recursive: true);
   for (final e in media.entries) {
     final src = MediaStore.resolve(ref, e.key);
-    if (src == null) continue;
+    if (src == null) {
+      onFile?.call();
+      continue;
+    }
     try {
       final dst = File(p.join(p.dirname(outPath), e.value));
       final sink = dst.openWrite();
@@ -82,6 +94,7 @@ Future<void> writeExportedMedia(
     } catch (_) {
       // Out of space, or a name the filesystem refused. The writing survives.
     }
+    onFile?.call();
   }
 }
 

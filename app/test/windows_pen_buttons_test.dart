@@ -327,7 +327,8 @@ void main() {
       expect(strokes(app), isEmpty);
       await nativeState(true, false);
       await t.pump();
-      expect(app.tool, Tool.pen);
+      expect(app.tool, Tool.select);
+      expect(app.preferredInkTool, Tool.pen);
       await down(t, 250, buttons: kPrimaryButton | kPrimaryStylusButton);
       await move(t, 300, buttons: kPrimaryButton | kPrimaryStylusButton);
       await up(t, 300);
@@ -336,7 +337,7 @@ void main() {
       await move(t, 300);
       await up(t, 300);
       expect(strokes(app), hasLength(2));
-      expect(app.tool, Tool.pen);
+      expect(app.tool, Tool.select);
       await finish(t, app);
     });
 
@@ -363,7 +364,7 @@ void main() {
       expect(ink[1]['x'], [280.0, 340.0]);
       expect((ink[0]['brush'] as Map)['tool'], 'highlighter');
       expect((ink[1]['brush'] as Map)['tool'], 'highlighter');
-      expect(app.tool, Tool.highlighter);
+      expect(app.tool, Tool.select);
       expect(app.penSize, 4);
       expect(app.penColor, 2);
       await finish(t, app);
@@ -429,7 +430,8 @@ void main() {
             kind: PointerDeviceKind.invertedStylus,
             buttons: kPrimaryButton | kPrimaryStylusButton);
         await up(t, 160, kind: PointerDeviceKind.invertedStylus);
-        expect(app.tool, Tool.ballpoint);
+        expect(app.tool, Tool.select);
+        expect(app.preferredInkTool, Tool.ballpoint);
         expect((strokes(app).last['brush'] as Map)['tool'], 'ballpoint');
       }
       await finish(t, app);
@@ -463,7 +465,8 @@ void main() {
         await t.pump();
         expect(app.tool, Tool.ballpoint);
         await up(t, 200);
-        expect(app.tool, Tool.ballpoint);
+        expect(app.tool, Tool.select);
+        expect(app.preferredInkTool, Tool.ballpoint);
       }
       await finish(t, app);
     });

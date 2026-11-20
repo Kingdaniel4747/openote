@@ -1,11 +1,9 @@
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:file_selector/file_selector.dart';
+import '../ui/selection_toolbar.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
-import 'package:xml/xml.dart';
 
 import '../core/platform_open.dart';
 import '../export/md_common.dart' show safeFilename;
@@ -55,7 +53,7 @@ class FileBlockView extends StatelessWidget {
     if (media != null && media.isNotEmpty) {
       return VideoBlockView(block: block, app: app);
     }
-    if (block.content['kind'] == 'drawio') return _drawioCard(context);
+
     final url = (block.content['url'] as String?)?.trim();
     if (url != null && url.isNotEmpty) return _linkCard(context, url);
     final name = block.content['name'] as String? ?? 'file';
@@ -167,168 +165,24 @@ class FileBlockView extends StatelessWidget {
     );
   }
 
-  /// A local reference rather than an attachment: diagrams commonly live in a
-  /// separately synchronised folder and must remain editable there.
-  Widget _drawioCard(BuildContext context) {
-    final path = (block.content['path'] as String?)?.trim() ?? '';
-    final name = (block.content['name'] as String?)?.trim();
-    final file = File(path);
-    final exists = path.isNotEmpty && file.existsSync();
-    final previewable = exists;
-    final scheme = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: exists ? () => _selectOrOpenDiagram(context, file, name) : null,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: scheme.outlineVariant),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: ClipRRect(
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(9)),
-                child: exists
-                    ? _diagramPreview(file, compact: true)
-                    : _diagramPlaceholder(),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 7, 5, 7),
-              child: Row(children: [
-                Icon(Icons.account_tree_outlined,
-                    size: 18, color: scheme.primary),
-                const SizedBox(width: 7),
-                Expanded(
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                      Text(
-                          name == null || name.isEmpty
-                              ? 'draw.io diagram'
-                              : name,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w500, fontSize: 13)),
-                      Text(
-                          exists
-                              ? (previewable
-                                  ? 'Tap to preview · open to edit'
-                                  : 'Open in draw.io to view or edit')
-                              : 'Original file is unavailable',
-                          style: const TextStyle(
-                              fontSize: 11, color: OnoteColors.graphite400)),
-                    ])),
-                IconButton(
-                    icon: const Icon(Icons.open_in_new, size: 17),
-                    tooltip: 'Open in draw.io',
-                    onPressed:
-                        exists ? () => _openDiagram(context, path) : null),
-              ]),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _diagramPlaceholder() => const Center(
-        child: Icon(Icons.account_tree_outlined,
-            size: 46, color: OnoteColors.graphite400),
-      );
-
-  /// A PNG can use Flutter's normal image decoder. Native draw.io files are
-  /// XML, so their diagram model is drawn locally for a useful read-only
-  /// preview; editing stays in draw.io.
-  Widget _diagramPreview(File file, {bool compact = false}) {
-    final ext = p.extension(file.path).toLowerCase();
-    if (ext == '.png') {
-      return Image.file(file,
-          fit: BoxFit.contain,
-          errorBuilder: (_, __, ___) => _diagramPlaceholder());
-    }
-    if (ext == '.drawio' || ext == '.xml') {
-      return FutureBuilder<_DrawioPreview?>(
-        future: _DrawioPreview.read(file),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final preview = snapshot.data;
-          if (preview == null) return _diagramPlaceholder();
-          if (preview.image != null) {
-            return Image.memory(preview.image!, fit: BoxFit.contain);
-          }
-          return CustomPaint(
-              painter: _DrawioPreviewPainter(preview),
-              child: const SizedBox.expand());
-        },
-      );
-    }
-    return _diagramPlaceholder();
-  }
-
-  Future<void> _openDiagram(BuildContext context, String path) async {
-    if (!await PlatformOpen.file(path) && context.mounted) {
-      _toast(context, 'No app is registered to open this diagram.');
-    }
-  }
-
-  /// Object cards follow the rest of the canvas: one click selects and shows
-  /// its common action bar; clicking an already-selected card opens its viewer.
-  void _selectOrOpenDiagram(BuildContext context, File file, String? name) {
-    if (!app.selectedIds.contains(block.id)) {
-      app.select(block.id);
-      return;
-    }
-    final box = context.findRenderObject() as RenderBox?;
-    _showDiagramPreview(context, file, name,
-        growFrom: box != null && box.hasSize
-            ? box.localToGlobal(box.size.center(Offset.zero))
-            : null);
-  }
-
-  void _showDiagramPreview(BuildContext context, File file, String? name,
-      {Offset? growFrom}) {
-    showOnoteDialog<void>(
-      context: context,
-      growFrom: growFrom,
-      builder: (ctx) => Dialog(
-        child: SizedBox(
-          width: 980,
-          height: 760,
-          child: Column(children: [
-            AppBar(
-                title: Text(
-                    name == null || name.isEmpty ? 'Diagram preview' : name),
-                automaticallyImplyLeading: false,
-                actions: [
-                  IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(ctx))
-                ]),
-            Expanded(
-                child: InteractiveViewer(
-                    minScale: .3,
-                    maxScale: 5,
-                    child: SizedBox(
-                        width: 900,
-                        height: 650,
-                        child: _diagramPreview(file)))),
-          ]),
-        ),
-      ),
-    );
-  }
-
   Future<void> _openLink(BuildContext context, String url) async {
     final ok = await PlatformOpen.url(url);
     if (!ok && context.mounted) {
       _toast(context, "That link couldn't be opened.");
+    }
+  }
+
+  /// Older notebooks can refer to an external file instead of storing a blob.
+  /// Handle that as an ordinary attachment without interpreting its contents.
+  Future<Uint8List?> _attachmentBytes() async {
+    final hash = block.content['blob'] as String?;
+    if (hash != null) return app.blob(hash);
+    final path = (block.content['path'] as String?)?.trim();
+    if (path == null || path.isEmpty) return null;
+    try {
+      return await File(path).readAsBytes();
+    } on FileSystemException {
+      return null;
     }
   }
 
@@ -338,9 +192,8 @@ class FileBlockView extends StatelessWidget {
   /// OS — materialise a copy in the temp directory under the original filename
   /// (so the extension drives the file association) and open that.
   Future<void> _openWithDefaultApp(BuildContext context) async {
-    final hash = block.content['blob'] as String?;
-    if (hash == null) return;
-    final bytes = app.blob(hash);
+    final bytes = await _attachmentBytes();
+    if (!context.mounted) return;
     if (bytes == null) {
       if (context.mounted) _toast(context, 'That attachment is missing.');
       return;
@@ -420,27 +273,7 @@ class FileBlockView extends StatelessWidget {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 
   Future<void> _saveCopy(BuildContext context) async {
-    final hash = block.content['blob'] as String?;
-    if (hash == null) return;
-    final bytes = app.blob(hash);
-    if (bytes == null) {
-      // The SAME words the Open button gives for the same missing file. One
-      // of the two used to explain it and the other silently did nothing.
-      _toast(context, 'That attachment is missing.');
-      return;
-    }
-    final loc = await getSaveLocation(
-        suggestedName: block.content['name'] as String? ?? 'file');
-    if (loc == null) return;
-    try {
-      await File(loc.path).writeAsBytes(bytes);
-    } catch (e) {
-      // A full stick, a protected folder: the write threw into an unhandled
-      // Future and the student was told nothing at all.
-      if (context.mounted) _toast(context, "That copy didn't save: $e");
-      return;
-    }
-    if (context.mounted) _toast(context, 'Saved to ${loc.path}');
+    await SelectionToolbar.saveOriginal(context, app, block);
   }
 
   String _fmtSize(int b) => b < 1024
@@ -448,231 +281,4 @@ class FileBlockView extends StatelessWidget {
       : b < 1024 * 1024
           ? '${(b / 1024).toStringAsFixed(1)} KB'
           : '${(b / 1024 / 1024).toStringAsFixed(1)} MB';
-}
-
-/// A small, dependency-free renderer for the useful core of draw.io's mxGraph
-/// XML: vertices, labels and connectors. It deliberately does not edit or
-/// reinterpret the diagram; draw.io remains the editor of record.
-class _DrawioPreview {
-  const _DrawioPreview(this.cells, this.edges, this.bounds) : image = null;
-  const _DrawioPreview.image(this.image)
-      : cells = const [],
-        edges = const [],
-        bounds = Rect.zero;
-
-  final List<_DrawioCell> cells;
-  final List<_DrawioEdge> edges;
-  final Rect bounds;
-  final Uint8List? image;
-
-  /// Rebuilding selection chrome must not restart XML parsing and briefly
-  /// replace a diagram with its loading spinner. The source's timestamp and
-  /// size make this cache refresh automatically after it is edited in draw.io.
-  static final _reads = <String, Future<_DrawioPreview?>>{};
-
-  static Future<_DrawioPreview?> read(File file) {
-    final stat = file.statSync();
-    final key =
-        '${file.path}:${stat.modified.microsecondsSinceEpoch}:${stat.size}';
-    return _reads.putIfAbsent(key, () => _read(file));
-  }
-
-  static Future<_DrawioPreview?> _read(File file) async {
-    try {
-      // draw.io itself is the only renderer that knows every library shape,
-      // icon and custom style. When its desktop app is installed, ask it for
-      // a temporary PNG first so the preview is pixel-faithful, not an
-      // approximation made from the graph's rectangles.
-      final rendered = await _exportWithDrawio(file);
-      if (rendered != null) return _DrawioPreview.image(rendered);
-      final raw = await file.readAsString();
-      final source = _diagramXml(raw);
-      if (source == null) return null;
-      final document = XmlDocument.parse(source);
-      final cells = <_DrawioCell>[];
-      final byId = <String, _DrawioCell>{};
-      for (final element in document.findAllElements('mxCell')) {
-        if (element.getAttribute('vertex') != '1') continue;
-        final geometry = element.getElement('mxGeometry');
-        if (geometry == null) continue;
-        final width = double.tryParse(geometry.getAttribute('width') ?? '');
-        final height = double.tryParse(geometry.getAttribute('height') ?? '');
-        if (width == null || height == null || width <= 0 || height <= 0) {
-          continue;
-        }
-        final cell = _DrawioCell(
-          id: element.getAttribute('id') ?? '',
-          rect: Rect.fromLTWH(
-            double.tryParse(geometry.getAttribute('x') ?? '') ?? 0,
-            double.tryParse(geometry.getAttribute('y') ?? '') ?? 0,
-            width,
-            height,
-          ),
-          label: _plainText(element.getAttribute('value') ?? ''),
-          color: _styleColor(element.getAttribute('style') ?? ''),
-        );
-        cells.add(cell);
-        if (cell.id.isNotEmpty) byId[cell.id] = cell;
-      }
-      if (cells.isEmpty) return null;
-      final edges = <_DrawioEdge>[];
-      for (final element in document.findAllElements('mxCell')) {
-        if (element.getAttribute('edge') != '1') continue;
-        final from = byId[element.getAttribute('source')];
-        final to = byId[element.getAttribute('target')];
-        if (from != null && to != null) edges.add(_DrawioEdge(from, to));
-      }
-      var bounds = cells.first.rect;
-      for (final cell in cells.skip(1)) {
-        bounds = bounds.expandToInclude(cell.rect);
-      }
-      return _DrawioPreview(cells, edges, bounds.inflate(20));
-    } catch (_) {
-      return null;
-    }
-  }
-
-  static Future<Uint8List?> _exportWithDrawio(File source) async {
-    if (!Platform.isWindows) return null;
-    final programFiles =
-        Platform.environment['ProgramFiles'] ?? r'C:\Program Files';
-    final localAppData = Platform.environment['LOCALAPPDATA'];
-    final candidates = [
-      p.join(programFiles, 'draw.io', 'draw.io.exe'),
-      p.join(programFiles, 'diagrams.net', 'diagrams.net.exe'),
-      if (localAppData != null)
-        p.join(localAppData, 'Programs', 'draw.io', 'draw.io.exe'),
-    ];
-    final executable = candidates.firstWhere(
-        (candidate) => File(candidate).existsSync(),
-        orElse: () => '');
-    if (executable.isEmpty) return null;
-    Directory? temp;
-    try {
-      temp = await Directory.systemTemp.createTemp('openote_drawio_preview_');
-      final output = File(p.join(temp.path, 'preview.png'));
-      final result = await Process.run(executable, [
-        '--export',
-        '--format',
-        'png',
-        '--output',
-        output.path,
-        source.path,
-      ]).timeout(const Duration(seconds: 12));
-      if (result.exitCode != 0 || !output.existsSync()) return null;
-      return await output.readAsBytes();
-    } catch (_) {
-      return null;
-    } finally {
-      if (temp != null) {
-        try {
-          await temp.delete(recursive: true);
-        } catch (_) {}
-      }
-    }
-  }
-
-  static String? _diagramXml(String raw) {
-    try {
-      final doc = XmlDocument.parse(raw);
-      if (doc.findAllElements('mxGraphModel').isNotEmpty) return raw;
-      final diagrams = doc.findAllElements('diagram');
-      if (diagrams.isEmpty) return null;
-      final encoded = diagrams.first.innerText.trim();
-      if (encoded.isEmpty) return null;
-      final inflated = ZLibDecoder(raw: true)
-          .convert(base64.decode(base64.normalize(encoded)));
-      return Uri.decodeComponent(utf8.decode(inflated));
-    } catch (_) {
-      return null;
-    }
-  }
-
-  static String _plainText(String value) => value
-      .replaceAll(RegExp(r'<[^>]*>'), ' ')
-      .replaceAll('&nbsp;', ' ')
-      .replaceAll('&amp;', '&')
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
-
-  static Color _styleColor(String style) {
-    final m = RegExp(r'fillColor=(#[0-9A-Fa-f]{6})').firstMatch(style);
-    if (m == null) return const Color(0xffeef3ff);
-    return Color(int.parse(m.group(1)!.substring(1), radix: 16) | 0xff000000);
-  }
-}
-
-class _DrawioCell {
-  const _DrawioCell(
-      {required this.id,
-      required this.rect,
-      required this.label,
-      required this.color});
-  final String id;
-  final Rect rect;
-  final String label;
-  final Color color;
-}
-
-class _DrawioEdge {
-  const _DrawioEdge(this.from, this.to);
-  final _DrawioCell from;
-  final _DrawioCell to;
-}
-
-class _DrawioPreviewPainter extends CustomPainter {
-  const _DrawioPreviewPainter(this.preview);
-  final _DrawioPreview preview;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final scale = [
-          size.width / preview.bounds.width,
-          size.height / preview.bounds.height
-        ].reduce((a, b) => a < b ? a : b) *
-        .92;
-    final dx = (size.width - preview.bounds.width * scale) / 2 -
-        preview.bounds.left * scale;
-    final dy = (size.height - preview.bounds.height * scale) / 2 -
-        preview.bounds.top * scale;
-    canvas.save();
-    canvas.translate(dx, dy);
-    canvas.scale(scale);
-    final line = Paint()
-      ..color = OnoteColors.graphite400
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.stroke;
-    for (final edge in preview.edges) {
-      canvas.drawLine(edge.from.rect.center, edge.to.rect.center, line);
-    }
-    for (final cell in preview.cells) {
-      canvas.drawRRect(
-          RRect.fromRectAndRadius(cell.rect, const Radius.circular(5)),
-          Paint()..color = cell.color);
-      canvas.drawRRect(
-          RRect.fromRectAndRadius(cell.rect, const Radius.circular(5)), line);
-      if (cell.label.isEmpty) continue;
-      final text = TextPainter(
-          text: TextSpan(
-              text: cell.label,
-              style: const TextStyle(
-                  fontSize: 12, color: OnoteColors.graphite900)),
-          textAlign: TextAlign.center,
-          textDirection: TextDirection.ltr,
-          maxLines: 3,
-          ellipsis: '…')
-        ..layout(
-            maxWidth:
-                (cell.rect.width - 12).clamp(1, double.infinity).toDouble());
-      text.paint(
-          canvas,
-          Offset(cell.rect.center.dx - text.width / 2,
-              cell.rect.center.dy - text.height / 2));
-    }
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant _DrawioPreviewPainter oldDelegate) =>
-      oldDelegate.preview != preview;
 }

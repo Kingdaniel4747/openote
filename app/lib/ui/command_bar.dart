@@ -20,12 +20,48 @@ import 'font_picker.dart';
 import 'insert_catalog.dart';
 import 'object_face.dart';
 import 'object_row.dart';
+import 'onote_switch.dart';
 import 'settings_dialog.dart';
 import 'learning_access_dialog.dart';
 import 'scanner_pairing_dialog.dart';
 import 'update_dialog.dart';
 import '../theme/tokens.dart';
 import 'windows_window_frame.dart';
+
+class _InkSizeIndicator extends SliderComponentShape {
+  const _InkSizeIndicator(this.width, {this.maxWidth = 24});
+  final double width;
+  final double maxWidth;
+
+  @override
+  Size getPreferredSize(bool isEnabled, bool isDiscrete) => const Size(32, 32);
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset center, {
+    required Animation<double> activationAnimation,
+    required Animation<double> enableAnimation,
+    required bool isDiscrete,
+    required TextPainter labelPainter,
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required TextDirection textDirection,
+    required double value,
+    required double textScaleFactor,
+    required Size sizeWithOverflow,
+  }) {
+    final at = center + const Offset(0, -35);
+    final scale = activationAnimation.value;
+    context.canvas.drawCircle(at, 16 * scale,
+        Paint()..color = sliderTheme.valueIndicatorColor ?? Colors.black);
+    context.canvas.drawCircle(
+        at,
+        width / maxWidth * 12 * scale,
+        Paint()
+          ..color = sliderTheme.valueIndicatorTextStyle?.color ?? Colors.white);
+  }
+}
 
 /// The tabbed command bar (style guide §7 revised): Home · Insert · Draw ·
 /// View. OneNote's few-clicks accessibility in Openote's calm language — a
@@ -860,17 +896,40 @@ class _CommandBarState extends State<CommandBar> {
     final activeCustomColour = app.customInkColorFor(colourTool);
     Widget gap([double size = 4]) =>
         SizedBox(width: vertical ? 0 : size, height: vertical ? size : 0);
-    Widget sizeSlider({required Key key}) {
-      final slider = Slider(
-        key: key,
-        value: app.penSize,
-        min: app.minInkSizeFor(app.tool),
-        max: app.maxInkSizeFor(app.tool),
-        // One-pixel increments: a pen width is a precision control, not a
-        // five-pixel preset.
-        divisions: 99,
-        label: '${app.penSize.toStringAsFixed(1)} px',
-        onChanged: app.setInkSize,
+    Widget sizeSlider({required Key key, bool eraser = false}) {
+      final sizes = eraser
+          ? const [4.0, 12.0, 24.0, 48.0, 80.0]
+          : const [0.5, 1.5, 2.5, 6.0, 10.0];
+      final width = eraser ? app.eraserSize : app.penSize;
+      var closest = 0;
+      for (var i = 1; i < sizes.length; i++) {
+        if ((sizes[i] - width).abs() < (sizes[closest] - width).abs())
+          closest = i;
+      }
+      final slider = SliderTheme(
+        data: SliderTheme.of(context).copyWith(
+          trackHeight: 4,
+          thumbShape: const RoundSliderThumbShape(
+              enabledThumbRadius: 7, elevation: 1, pressedElevation: 2),
+          activeTrackColor: scheme.primary,
+          inactiveTrackColor: scheme.outlineVariant,
+          activeTickMarkColor: scheme.onPrimary,
+          inactiveTickMarkColor: scheme.outline,
+          valueIndicatorShape:
+              _InkSizeIndicator(width, maxWidth: eraser ? 80 : 24),
+        ),
+        child: Slider(
+          key: key,
+          value: closest.toDouble(),
+          min: 0,
+          max: (sizes.length - 1).toDouble(),
+          divisions: sizes.length - 1,
+          label: '${width.toStringAsFixed(1)} px',
+          semanticFormatterCallback: (value) => '${sizes[value.round()]} px',
+          onChanged: (value) => eraser
+              ? app.setEraserSize(sizes[value.round()])
+              : app.setInkSize(sizes[value.round()]),
+        ),
       );
       return vertical
           ? SizedBox(
@@ -909,7 +968,6 @@ class _CommandBarState extends State<CommandBar> {
 
     final children = <Widget>[
       toolButton(Tool.select, Icons.near_me_outlined, 'Select / move  (V)'),
-      toolButton(Tool.text, Icons.text_fields, 'Text  (T)'),
       toolButton(Tool.pen, Icons.brush_outlined, 'Pen  (P)'),
       toolButton(Tool.ballpoint, Icons.edit, 'Ballpoint — constant width'),
       toolButton(
@@ -1109,73 +1167,75 @@ class _CommandBarState extends State<CommandBar> {
         ),
         gap(6),
         sizeSlider(key: const ValueKey('ink-size')),
-        SizedBox(
-          width: vertical ? 48 : 43,
-          child: Center(
-            child: AppText(
-              '${app.penSize.toStringAsFixed(1)} px',
-              style: const TextStyle(fontSize: 10),
-            ),
-          ),
-        ),
       ] else if (app.tool == Tool.eraser) ...[
         SizedBox(
-          width: vertical ? 48 : 118,
-          height: vertical ? 118 : null,
-          child: RotatedBox(
-            quarterTurns: vertical ? 3 : 0,
-            child: Slider(
-              key: const ValueKey('eraser-size'),
-              value: app.eraserSize,
-              min: 4,
-              max: 80,
-              divisions: 38,
-              label: '${app.eraserSize.round()} px',
-              onChanged: app.setEraserSize,
-            ),
-          ),
-        ),
-        Padding(
-          padding: vertical
-              ? const EdgeInsets.symmetric(vertical: 2)
-              : const EdgeInsets.only(right: 10),
-          child: AppText(
-            '${app.eraserSize.round()} px',
-            style: const TextStyle(fontSize: 11),
-          ),
-        ),
-        SizedBox(
           width: vertical ? 48 : null,
-          height: vertical ? 96 : 28,
+          height: vertical ? 210 : 48,
           child: RotatedBox(
             quarterTurns: vertical ? 3 : 0,
-            child: SizedBox(
-              width: vertical ? 96 : null,
-              child: SegmentedButton<EraserMode>(
-                segments: [
-                  for (final m in EraserMode.values)
-                    ButtonSegment(
-                      value: m,
-                      label: AppText(
-                        vertical && m == EraserMode.stroke ? 'Stroke' : m.label,
-                        style: const TextStyle(fontSize: 10),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                InkWell(
+                  hoverColor: Colors.transparent,
+                  onTap: () => app.setEraserMode(EraserMode.area),
+                  child: SizedBox(
+                    width: 48,
+                    height: 44,
+                    child: Center(
+                        child: AnimatedDefaultTextStyle(
+                      duration: MediaQuery.disableAnimationsOf(context)
+                          ? Duration.zero
+                          : const Duration(milliseconds: 160),
+                      style: OnoteType.uiStrong.copyWith(
+                        fontSize: app.eraserMode == EraserMode.area ? 14 : 13,
+                        height: app.eraserMode == EraserMode.area
+                            ? 18 / 14
+                            : 18 / 13,
+                        color: app.eraserMode == EraserMode.area
+                            ? scheme.primary
+                            : scheme.onSurfaceVariant,
                       ),
-                    ),
-                ],
-                selected: {app.eraserMode},
-                onSelectionChanged: (s) => app.setEraserMode(s.first),
-                showSelectedIcon: false,
-                style: const ButtonStyle(
-                  visualDensity: VisualDensity.compact,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  minimumSize: WidgetStatePropertyAll(Size.zero),
-                  padding: WidgetStatePropertyAll(
-                      EdgeInsets.symmetric(horizontal: 5)),
+                      child: const AppText('Area'),
+                    )),
+                  ),
                 ),
-              ),
+                OnoteSwitch(
+                  key: const ValueKey('eraser-mode'),
+                  compact: true,
+                  value: app.eraserMode == EraserMode.stroke,
+                  onChanged: (value) => app.setEraserMode(
+                      value ? EraserMode.stroke : EraserMode.area),
+                ),
+                InkWell(
+                  hoverColor: Colors.transparent,
+                  onTap: () => app.setEraserMode(EraserMode.stroke),
+                  child: SizedBox(
+                    width: 106,
+                    height: 44,
+                    child: Center(
+                        child: AnimatedDefaultTextStyle(
+                      duration: MediaQuery.disableAnimationsOf(context)
+                          ? Duration.zero
+                          : const Duration(milliseconds: 160),
+                      style: OnoteType.uiStrong.copyWith(
+                        fontSize: app.eraserMode == EraserMode.stroke ? 14 : 13,
+                        height: app.eraserMode == EraserMode.stroke
+                            ? 18 / 14
+                            : 18 / 13,
+                        color: app.eraserMode == EraserMode.stroke
+                            ? scheme.primary
+                            : scheme.onSurfaceVariant,
+                      ),
+                      child: const AppText('Whole stroke'),
+                    )),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
+        sizeSlider(key: const ValueKey('eraser-size'), eraser: true),
       ],
       gap(12),
       gap(),

@@ -167,14 +167,34 @@ class PageFace extends StatelessWidget {
     final surfaces = context.surfaces;
     Widget bg(String v, IconData icon, String tip) => IconButton(
           icon: Icon(icon, size: OnoteIcon.md),
-          tooltip: 'Background: $tip',
+          tooltip: '${tr(context, 'Background')}: ${tr(context, tip)}',
           isSelected: app.pageProps.background == v,
           visualDensity: VisualDensity.compact,
+          style: IconButton.styleFrom(
+            backgroundColor: app.pageProps.background == v
+                ? scheme.primary.withValues(alpha: .12)
+                : null,
+          ),
           color: app.pageProps.background == v ? scheme.primary : null,
           onPressed: () => app.setBackground(v),
         );
     final paged = app.pageProps.isPaged;
+    final canArrange = app.blocks
+            .where((b) =>
+                app.selectedIds.contains(b.id) && b.type == BlockType.image)
+            .length >
+        1;
     return FixedToolbar(children: [
+      Row(mainAxisSize: MainAxisSize.min, children: [
+        const SizedBox(width: 8),
+        const AppText('Background', style: TextStyle(fontSize: 11)),
+        const SizedBox(width: 4),
+        bg('blank', Icons.crop_din, 'blank'),
+        bg('grid', Icons.grid_4x4, 'grid'),
+        bg('dotted', Icons.apps, 'dotted'),
+        bg('ruled', Icons.notes, 'ruled'),
+      ]),
+      const _Sep(),
       TextButton.icon(
         key: const ValueKey('split-screen'),
         style: TextButton.styleFrom(
@@ -203,55 +223,41 @@ class PageFace extends StatelessWidget {
         ),
       PopupMenuButton<bool>(
         tooltip: tr(context, 'Arrange selected images and PDFs'),
-        enabled: app.blocks
-                .where((b) =>
-                    app.selectedIds.contains(b.id) && b.type == BlockType.image)
-                .length >
-            1,
         onSelected: (horizontal) =>
             app.arrangeSelectedMedia(horizontal: horizontal),
-        itemBuilder: (_) => const [
-          PopupMenuItem(
+        itemBuilder: (_) => [
+          if (!canArrange)
+            const PopupMenuItem<bool>(
+              enabled: false,
+              child: AppText('Select at least two images or PDFs'),
+            ),
+          PopupMenuItem<bool>(
             value: false,
-            child: Row(children: [
+            enabled: canArrange,
+            child: const Row(children: [
               Icon(Icons.view_agenda_outlined, size: 18),
               SizedBox(width: 9),
-              AppText('Arrange vertically'),
+              Flexible(child: AppText('Arrange vertically')),
             ]),
           ),
-          PopupMenuItem(
+          PopupMenuItem<bool>(
             value: true,
-            child: Row(children: [
+            enabled: canArrange,
+            child: const Row(children: [
               Icon(Icons.view_week_outlined, size: 18),
               SizedBox(width: 9),
-              AppText('Arrange horizontally'),
+              Flexible(child: AppText('Arrange horizontally')),
             ]),
           ),
         ],
         child: const Padding(
           padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(Icons.view_module_outlined, size: 18),
+            Icon(Icons.align_vertical_bottom_outlined, size: 18),
             SizedBox(width: 5),
             AppText('Arrange'),
           ]),
         ),
-      ),
-      const SizedBox(width: 2),
-      Container(
-        padding: const EdgeInsets.only(left: 7, right: 2),
-        decoration: BoxDecoration(
-          color: scheme.primary.withValues(alpha: .055),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: scheme.outline.withValues(alpha: .22)),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          const AppText('Background', style: TextStyle(fontSize: 11)),
-          bg('blank', Icons.crop_din, 'blank'),
-          bg('grid', Icons.grid_4x4, 'grid'),
-          bg('dotted', Icons.apps, 'dotted'),
-          bg('ruled', Icons.notes, 'ruled'),
-        ]),
       ),
       const _Sep(),
       // Canvas or paper. Per page, not per notebook: one notebook holds the
@@ -265,7 +271,7 @@ class PageFace extends StatelessWidget {
                   '— click for canvas'
               : 'Canvas mode: boundless — click for pages',
           child: TextButton.icon(
-            icon: Icon(paged ? Icons.description : Icons.dashboard_customize,
+            icon: Icon(paged ? Icons.description_outlined : Icons.open_in_full,
                 size: OnoteIcon.md),
             label: AppText(paged ? 'Pages' : 'Canvas'),
             style: TextButton.styleFrom(

@@ -17,5 +17,6 @@
 - Flutter-Befehle im jeweiligen Paket app/ oder scanner/ ausführen.
   Für Windows-Buildprobleme zuerst LEARNINGS.md und die lokalen Overrides prüfen.
 - Kein Push und kein Release ohne ausdrücklichen Nutzerauftrag. Der bestehende
-  GitHub-Workflow veröffentlicht bei Branch-Pushes automatisch; beachten.
+  GitHub-Workflow veröffentlicht nach manuellem Start über `workflow_dispatch`;
+  normale Branch-Pushes lösen keinen Release aus. Workflow unverändert lassen.
 - Keine Schlüssel, persönlichen Notizen oder lokalen Testdaten einchecken.

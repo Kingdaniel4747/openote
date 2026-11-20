@@ -43,6 +43,8 @@
 /// others) turn into one rule.
 library;
 
+import 'transfer_progress.dart';
+
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -410,66 +412,101 @@ Future<void> insertPickedImage(
   // user worked through. Insert the first copied picture at the top, then
   // continue down the page in that visible order.
   files = files.reversed.toList();
-  Block? first;
-  for (final file in files) {
-    Uint8List bytes;
-    try {
-      bytes = await file.readAsBytes();
-    } catch (_) {
-      // A removed or unreadable file must not cancel the rest of the batch.
-      continue;
+  if (!context.mounted) return;
+  await runTransfer(context, 'Import images', (progress) async {
+    progress.update(total: files.length);
+    var completed = 0;
+    var failed = 0;
+    Block? first;
+    for (final file in files) {
+      progress.update(done: completed, detail: file.name);
+      try {
+        Uint8List bytes;
+        try {
+          bytes = await file.readAsBytes();
+        } catch (_) {
+          // A removed or unreadable file must not cancel the rest of the batch.
+          failed++;
+          continue;
+        }
+        ui.Image? decoded;
+        try {
+          decoded = await decodeImageFromList(bytes);
+        } catch (_) {
+          // Insert a normal placeholder for a format the current platform cannot
+          // decode now; this must not cancel the rest of a multi-selection.
+        }
+        final ext = file.name.split('.').last.toLowerCase();
+        final mime = switch (ext) {
+          'jpg' || 'jpeg' => 'image/jpeg',
+          'gif' => 'image/gif',
+          'webp' => 'image/webp',
+          _ => 'image/png',
+        };
+        final placement = app.mediaImportPlacement();
+        final width = placement.width;
+        final naturalWidth = decoded?.width.toDouble();
+        final naturalHeight = decoded?.height.toDouble();
+        final height =
+            naturalWidth != null && naturalHeight != null && naturalWidth > 0
+                ? width * naturalHeight / naturalWidth
+                : width * .75;
+        final block = insertImageBytes(app, bytes, mime,
+            Offset(placement.left + width / 2, placement.top + height / 2),
+            width: width,
+            height: height,
+            naturalWidth: naturalWidth,
+            naturalHeight: naturalHeight);
+        decoded?.dispose();
+        if (block != null) block.content['name'] = file.name;
+        first ??= block;
+        if (block == null) failed++;
+      } finally {
+        completed++;
+        progress.update(done: completed, failed: failed);
+        await Future<void>.delayed(Duration.zero);
+      }
     }
-    ui.Image? decoded;
-    try {
-      decoded = await decodeImageFromList(bytes);
-    } catch (_) {
-      // Insert a normal placeholder for a format the current platform cannot
-      // decode now; this must not cancel the rest of a multi-selection.
+    if (first != null) {
+      app.canvas.centerOn(Offset(first.x + first.w / 2, first.y + 200));
     }
-    final ext = file.name.split('.').last.toLowerCase();
-    final mime = switch (ext) {
-      'jpg' || 'jpeg' => 'image/jpeg',
-      'gif' => 'image/gif',
-      'webp' => 'image/webp',
-      _ => 'image/png',
-    };
-    final placement = app.mediaImportPlacement();
-    final width = placement.width;
-    final naturalWidth = decoded?.width.toDouble();
-    final naturalHeight = decoded?.height.toDouble();
-    final height =
-        naturalWidth != null && naturalHeight != null && naturalWidth > 0
-            ? width * naturalHeight / naturalWidth
-            : width * .75;
-    final block = insertImageBytes(app, bytes, mime,
-        Offset(placement.left + width / 2, placement.top + height / 2),
-        width: width,
-        height: height,
-        naturalWidth: naturalWidth,
-        naturalHeight: naturalHeight);
-    decoded?.dispose();
-    first ??= block;
-  }
-  if (first != null) {
-    app.canvas.centerOn(Offset(first.x + first.w / 2, first.y + 200));
-  }
+  });
 }
 
 Future<void> insertPickedFile(
     BuildContext context, AppState app, Offset at) async {
-  final file = await _pick(context);
-  if (file == null) return;
-  final Uint8List bytes = await file.readAsBytes();
-  final hash = app.tryAddBlob(bytes, 'application/octet-stream');
-  if (hash == null) return;
-  final b = app.addBlock(
-      Block(type: BlockType.file, x: at.dx, y: at.dy, w: 280, content: {
-    'blob': 'sha256:$hash',
-    'name': file.name,
-    'mime': 'application/octet-stream',
-    'size': bytes.length,
-  }));
-  app.select(b.id);
+  final files = await openFiles();
+  if (files.isEmpty || !context.mounted) return;
+  await runTransfer(context, 'Import files', (progress) async {
+    progress.update(total: files.length);
+    var failed = 0;
+    for (var i = 0; i < files.length; i++) {
+      final file = files[i];
+      progress.update(done: i, detail: file.name);
+      try {
+        final bytes = await file.readAsBytes();
+        final hash = app.tryAddBlob(bytes, 'application/octet-stream');
+        if (hash == null) throw StateError('Could not store the file.');
+        final placement = app.mediaImportPlacement();
+        final b = app.addBlock(Block(
+            type: BlockType.file,
+            x: placement.left,
+            y: placement.top,
+            w: 280,
+            content: {
+              'blob': 'sha256:$hash',
+              'name': file.name,
+              'mime': 'application/octet-stream',
+              'size': bytes.length,
+            }));
+        app.select(b.id);
+      } catch (_) {
+        failed++;
+      }
+      progress.update(done: i + 1, failed: failed);
+      await Future<void>.delayed(Duration.zero);
+    }
+  });
 }
 
 Future<void> insertTableFromPickedFile(
@@ -478,8 +515,14 @@ Future<void> insertTableFromPickedFile(
     XTypeGroup(label: 'Tables', extensions: ['csv', 'tsv', 'xlsx'])
   ]);
   if (file == null) return;
-  final bytes = await file.readAsBytes();
-  final r = insertTableFromFile(app, file.name, bytes, at);
+  if (!context.mounted) return;
+  final r = await runTransfer(context, 'Import table', (progress) async {
+    progress.update(detail: file.name);
+    final bytes = await file.readAsBytes();
+    final result = insertTableFromFile(app, file.name, bytes, at);
+    progress.update(done: 1);
+    return result;
+  });
   if (!context.mounted) return;
   if (!r.placed) {
     _say(context, 'That file has no rows in it.');
@@ -650,55 +693,26 @@ Future<void> insertPageLink(
 /// the difference between "working" and "frozen".
 Future<void> importPdfWithProgress(BuildContext context, AppState app,
     {PdfPlacement placement = PdfPlacement.currentPage}) async {
-  final progress = ValueNotifier<String>('Opening PDF…');
   var currentFile = '';
-  var dialogOpen = false;
-  if (context.mounted) {
-    dialogOpen = true;
-    showOnoteDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => PopScope(
-        canPop: false,
-        child: AlertDialog(
-          content: Row(children: [
-            const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2.6)),
-            const SizedBox(width: 16),
-            Expanded(
-              child: ValueListenableBuilder<String>(
-                valueListenable: progress,
-                builder: (_, text, __) => AppText(text),
-              ),
-            ),
-          ]),
-        ),
-      ),
-    );
-  }
   try {
-    final result = await importPdfAsPages(
-      app,
-      placement: placement,
-      onStatus: (message) {
+    final result = await runTransfer(context, 'Import PDFs', (progress) async {
+      final imported = await importPdfAsPages(app, placement: placement,
+          onStatus: (message) {
         currentFile = message;
-        progress.value = '$message\nOpening PDF…';
-      },
-      onProgress: (done, total) =>
-          progress.value = '$currentFile\nPreparing page $done of $total…'
-              '${done == total ? '\nSaving…' : ''}',
-    );
-    if (result != null) {
-      await app.flushSave();
-      final problem = app.saveError;
-      if (problem != null) throw StateError(problem.message);
-    }
-    if (dialogOpen && context.mounted) {
-      Navigator.of(context, rootNavigator: true).pop();
-      dialogOpen = false;
-    }
+      }, onBatchProgress: (done, total, page, pages, name) {
+        progress.update(
+            done: done,
+            total: total,
+            current: pages > 0 ? page / pages : 0,
+            detail: '$name\n$page / $pages pages');
+      });
+      if (imported != null) {
+        await app.flushSave();
+        final problem = app.saveError;
+        if (problem != null) throw StateError(problem.message);
+      }
+      return imported;
+    });
     if (result == null) return; // cancelled at the file picker
     if (!context.mounted) return;
     if (result.pages == 0) {
@@ -720,9 +734,6 @@ Future<void> importPdfWithProgress(BuildContext context, AppState app,
           'All pages are prepared and saved.'),
     ));
   } catch (e) {
-    if (dialogOpen && context.mounted) {
-      Navigator.of(context, rootNavigator: true).pop();
-    }
     if (context.mounted) {
       final message = e is TimeoutException
           ? 'This PDF took too long to open. Try saving it again or restart Openote.'
@@ -730,7 +741,5 @@ Future<void> importPdfWithProgress(BuildContext context, AppState app,
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(message)));
     }
-  } finally {
-    progress.dispose();
   }
 }

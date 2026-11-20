@@ -5,6 +5,7 @@
 /// they can only be the same ten things if there is one definition of each.
 library;
 
+import 'transfer_progress.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -65,8 +66,7 @@ class _MediaLinkDialogState extends State<MediaLinkDialog> {
   void _submit() {
     final raw = _url.text.trim();
     // A bare "youtube.com/..." is what people paste out of a browser bar.
-    final candidate =
-        raw.contains('://') || raw.isEmpty ? raw : 'https://$raw';
+    final candidate = raw.contains('://') || raw.isEmpty ? raw : 'https://$raw';
     if (!PlatformOpen.isOpenableUrl(candidate)) {
       setState(() => _error = 'That needs to be an http or https link.');
       return;
@@ -133,8 +133,7 @@ class _MediaLinkDialogState extends State<MediaLinkDialog> {
         TextButton.icon(
           icon: const Icon(Icons.video_file_outlined, size: 17),
           label: const Text('Use a file on this computer…'),
-          onPressed: () =>
-              Navigator.of(context).pop(const MediaChoice.file()),
+          onPressed: () => Navigator.of(context).pop(const MediaChoice.file()),
         ),
         Row(mainAxisSize: MainAxisSize.min, children: [
           TextButton(
@@ -155,7 +154,8 @@ class _MediaLinkDialogState extends State<MediaLinkDialog> {
 /// half file behind. Cancel is real: it stops the stream, and MediaStore
 /// removes what it had written.
 class MediaCopyDialog extends StatelessWidget {
-  const MediaCopyDialog({super.key,
+  const MediaCopyDialog({
+    super.key,
     required this.name,
     required this.bytes,
     required this.progress,
@@ -197,10 +197,9 @@ class MediaCopyDialog extends StatelessWidget {
                 builder: (_, v, __) => Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    LinearProgressIndicator(value: v == 0 ? null : v),
+                    TransferMeter(fraction: v, done: v >= 1 ? 1 : 0, total: 1),
                     const SizedBox(height: OnoteSpace.x2),
-                    Text('${(v * 100).round()}% of ${formatBytes(bytes)}',
-                        style: OnoteType.small),
+                    Text(formatBytes(bytes), style: OnoteType.small),
                   ],
                 ),
               ),

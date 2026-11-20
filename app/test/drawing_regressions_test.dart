@@ -161,7 +161,7 @@ void main() {
       app.setTool(Tool.ballpoint);
       final restored = AppState(repo);
       await restored.init();
-      expect(restored.tool, Tool.ballpoint);
+      expect(restored.tool, Tool.select);
       expect(restored.preferredInkTool, Tool.ballpoint);
       restored.dispose();
     });
@@ -205,6 +205,87 @@ void main() {
       expect(t.takeException(), isNull);
       await t.pumpWidget(const SizedBox());
     });
+    testWidgets('eyedropper shows a crosshair for touch but not pen', (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      app.setInkEyedropperActive(true);
+      await t.pumpWidget(MaterialApp(
+          home: Scaffold(
+              body: ListenableBuilder(
+                  listenable: app,
+                  builder: (_, __) => PageCanvas(state: app)))));
+      await t.pump();
+      final pen = await t.startGesture(const Offset(200, 300),
+          kind: PointerDeviceKind.stylus);
+      await t.pump();
+      expect(find.byKey(const ValueKey('eyedropper-touch-crosshair')),
+          findsNothing);
+      await pen.cancel();
+      await t.pump();
+      app.setInkEyedropperActive(true);
+      await t.pump();
+      final touch = await t.startGesture(const Offset(200, 300));
+      await t.pump();
+      expect(find.byKey(const ValueKey('eyedropper-touch-crosshair')),
+          findsOneWidget);
+      await touch.cancel();
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('pen restores its brush while mouse defaults to selection',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      app.setTool(Tool.highlighter);
+      app.setCustomInkColor('ABCDEF');
+      app.setInkSize(8);
+      app.setTool(Tool.select);
+      app.shapeRecognition = false;
+      await t.pumpWidget(MaterialApp(
+          home: Scaffold(
+              body: ListenableBuilder(
+                  listenable: app,
+                  builder: (_, __) => PageCanvas(state: app)))));
+      await t.pump();
+      Future<void> stroke(PointerDeviceKind kind, double y) async {
+        final gesture = await t.startGesture(Offset(200, y), kind: kind);
+        await gesture.moveTo(Offset(300, y));
+        await gesture.up();
+        await t.pump();
+      }
+
+      List<Stroke> ink() => [
+            for (final b in app.blocks.where((b) => b.type == BlockType.ink))
+              for (final s in b.content['strokes'] as List)
+                Stroke.fromJson((s as Map).cast<String, dynamic>())
+          ];
+      await stroke(PointerDeviceKind.stylus, 300);
+      expect(ink().single.tool, 'highlighter');
+      expect(ink().single.colorHex, '#ABCDEF');
+      expect(ink().single.size, 8);
+      expect(app.tool, Tool.select);
+      await stroke(PointerDeviceKind.mouse, 400);
+      expect(ink(), hasLength(1));
+      app.setTool(Tool.pen);
+      await t.pump();
+      await stroke(PointerDeviceKind.mouse, 450);
+      expect(ink(), hasLength(2));
+      app.setTouchDrawing(TouchDrawing.always);
+      await t.pump();
+      await stroke(PointerDeviceKind.touch, 500);
+      expect(ink(), hasLength(3));
+      final first = await t.startGesture(const Offset(200, 350));
+      await first.moveTo(const Offset(220, 350));
+      final second = await t.startGesture(const Offset(300, 350));
+      await first.moveTo(const Offset(230, 360));
+      await second.moveTo(const Offset(310, 360));
+      await first.up();
+      await second.up();
+      await t.pump();
+      expect(ink(), hasLength(3),
+          reason: 'a second finger cancels the unfinished drawing gesture');
+      app.cancelPendingSave();
+      await t.pumpWidget(const SizedBox());
+    });
+
     testWidgets(
         'shape endpoint, erasing and deliberate pen choices work together',
         (t) async {
@@ -284,8 +365,7 @@ void main() {
       expect(repo.getSetting('preferredInkTool'), Tool.ballpoint.name);
       app.setInkSize(4);
       app.setTool(Tool.highlighter);
-      expect(app.preferredInkTool, Tool.ballpoint,
-          reason: 'a highlighter must not become the automatic pen tool');
+      expect(app.preferredInkTool, Tool.highlighter);
       app.setInkSize(26);
       app.setEraserMode(EraserMode.stroke);
       expect(app.inkSizeFor(Tool.pen), 7);
@@ -376,6 +456,58 @@ void main() {
       expect(app.canvas.offset, canvasBefore);
       app.cancelPendingSave();
       expect(t.takeException(), isNull);
+      await t.pumpWidget(const SizedBox());
+    });
+    testWidgets('mouse moves a lasso selection and can lasso elsewhere',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      app.setTool(Tool.lasso);
+      await t.pumpWidget(MaterialApp(
+          home: Scaffold(
+              body: ListenableBuilder(
+                  listenable: app,
+                  builder: (_, __) => PageCanvas(state: app)))));
+      await t.pump();
+      void addInk(Offset screen) {
+        final p = app.canvas.screenToPage(screen);
+        app.addBlock(Block(type: BlockType.ink, x: p.dx, y: p.dy, w: 40, h: 0,
+            content: {
+              'strokes': [
+                Stroke(tool: 'pen', colorHex: '#000000', size: 2,
+                    x: [p.dx, p.dx + 40], y: [p.dy, p.dy], t: [0, 1])
+                    .toJson(),
+              ]
+            }));
+      }
+
+      addInk(const Offset(170, 260));
+      addInk(const Offset(470, 400));
+      await t.pump();
+      Future<void> lasso(Offset topLeft, Offset bottomRight) async {
+        final mouse = await t.startGesture(topLeft, kind: PointerDeviceKind.mouse);
+        await mouse.moveTo(Offset(bottomRight.dx, topLeft.dy));
+        await mouse.moveTo(bottomRight);
+        await mouse.moveTo(Offset(topLeft.dx, bottomRight.dy));
+        await mouse.moveTo(topLeft);
+        await mouse.up();
+        await t.pump();
+      }
+
+      await lasso(const Offset(140, 230), const Offset(240, 290));
+      expect(app.selectedIds, hasLength(1));
+      final selected = app.blocks.singleWhere((b) => app.selectedIds.contains(b.id));
+      final before = selected.x;
+      final move = await t.startGesture(const Offset(180, 260),
+          kind: PointerDeviceKind.mouse);
+      await move.moveBy(const Offset(50, 30));
+      await move.up();
+      await t.pump();
+      expect(selected.x, closeTo(before + 50 / app.canvas.scale, .1));
+      expect(app.tool, Tool.lasso);
+      await lasso(const Offset(440, 370), const Offset(540, 430));
+      expect(app.selectedIds, hasLength(1));
+      expect(app.selectedIds, isNot(contains(selected.id)));
+      app.cancelPendingSave();
       await t.pumpWidget(const SizedBox());
     });
     testWidgets('holding a table moves it and uses object snapping', (t) async {

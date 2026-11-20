@@ -145,9 +145,8 @@ class TextBlockView extends StatefulWidget {
     // is 80-odd characters of source that the reader never sees, and measuring
     // it would pin any auto-width box to its maximum the instant a picture
     // landed in it.
-    final source = engine
-        .deserialize(b.content)
-        .replaceAll(RegExp(r'^\s*!\[[^\]]*\]\([^)]*\)\s*$', multiLine: true), '');
+    final source = engine.deserialize(b.content).replaceAll(
+        RegExp(r'^\s*!\[[^\]]*\]\([^)]*\)\s*$', multiLine: true), '');
     final w = engine.measureIntrinsicWidth(source, baseStyle(b, dark: dark));
     return _autoWidthCache[key] =
         (w + chrome + slack).clamp(minAutoW, maxAutoW).toDouble();
@@ -268,18 +267,9 @@ class _TextBlockViewState extends State<TextBlockView> {
             widget.app.pendingEmptyBlockId = null;
           }
           _pushUndoOnce();
-          // Tags record a line index, so a keystroke that adds or removes a
-          // line moves every marker below it onto the wrong sentence — and
-          // takes the flashcards derived from them with it. Rebase before the
-          // new text lands, while both versions are still available, and carry
-          // each moved tag's review schedule across with it: a card is
-          // identified by `blockId:line`, so a tag that moves alone leaves its
-          // schedule orphaned under a name nothing points at any more.
-          widget.app.study.remapCardStates(
-            widget.block.id,
-            NoteTag.rebase(widget.block.content,
-                _engine.deserialize(widget.block.content), v),
-          );
+          // Keep tags attached to their lines when text is inserted or removed.
+          NoteTag.rebase(widget.block.content,
+              _engine.deserialize(widget.block.content), v);
           _engine.serialize(widget.block.content, v);
           widget.block.updatedAt = nowMs();
           // Width is measured in the parent build (lag-free); markDirty here

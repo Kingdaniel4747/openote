@@ -214,10 +214,11 @@ void main() {
               reason: i.id);
         }
       }
-      // And the three the ribbon has that the right-click menu does not.
+      // Text remains ribbon-only. Removed entries must stay absent.
       expect(find.text('Text box'), findsOneWidget);
-      expect(find.text('Flashcard'), findsOneWidget);
-      expect(find.text('Template'), findsOneWidget);
+      expect(find.text('Flashcard'), findsNothing);
+      expect(find.text('Template'), findsNothing);
+      expect(find.textContaining('Draw.io'), findsNothing);
       app.cancelPendingSave();
     });
 
@@ -240,23 +241,17 @@ void main() {
         expect(find.text(item.label), findsOneWidget, reason: item.id);
       }
       expect(find.byTooltip('More'), findsNothing,
-          reason: 'wide open, all thirteen fit inline — nothing to fold');
+          reason: 'wide open, all current commands fit inline');
       app.cancelPendingSave();
     });
 
     testWidgets(
         'compacts instead of scrolling once the ribbon runs past a '
-        '1280px window', (tester) async {
-      // **It does not fit, and that is the shape that was asked for back.**
-      //
-      // Thirteen labelled buttons run past the ~965px a 1280 window leaves
-      // once the navigator is open. Reported later: "it doesnt handle
-      // resizing well (menus should either compact as required or become
-      // sliding, again i belive the former is cleaner)" — so the ones that
-      // do not fit fold into one "More" menu instead of sliding out of
-      // reach behind `_ToolbarScroll`'s old horizontal viewport.
+        '700px window', (tester) async {
+      // A narrow window still folds commands that do not fit, even after
+      // removing unused insert actions from the catalogue.
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
-      widen(tester, const Size(1280, 900));
+      widen(tester, const Size(700, 900));
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
           body: ListenableBuilder(
@@ -271,13 +266,11 @@ void main() {
 
       expect(find.byType(Scrollable), findsNothing,
           reason: 'the old rescue is gone — nothing here scrolls any more');
-      expect(find.byTooltip('More'), findsOneWidget,
-          reason: 'thirteen labelled buttons do not fit a 1280px window; '
-              'something has to fold, or a wider regression than this test '
-              'caught it');
+      expect(find.byTooltip('More commands'), findsOneWidget,
+          reason: 'commands that do not fit must remain reachable');
 
       // Whatever folded is REACHABLE, not simply gone.
-      await tester.tap(find.byTooltip('More'));
+      await tester.tap(find.byTooltip('More commands'));
       await tester.pumpAndSettle();
       final visible = kInsertRibbon
           .where((i) => find.text(i.label).evaluate().isNotEmpty)

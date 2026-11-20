@@ -82,7 +82,13 @@ void main() {
     final t = await newApp();
     t.app.blocks = [text('a', 100, 'Hello lecture')];
 
-    final bytes = await buildPagePdf(t.app, t.pageId, title: 'Week 1');
+    final fractions = <double>[];
+    final bytes = await buildPagePdf(t.app, t.pageId,
+        title: 'Week 1',
+        onProgress: (done, total) => fractions.add(done / total));
+    expect(fractions.first, 0);
+    expect(fractions.last, 1);
+    expect(fractions, orderedEquals([...fractions]..sort()));
 
     expect(bytes.length, greaterThan(400));
     expect(latin1.decode(bytes.take(5).toList()), '%PDF-');

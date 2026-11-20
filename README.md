@@ -5,6 +5,21 @@ beschriften und Materialien für Schule und Studium organisieren.
 Die Android-Begleitapp **Openote Scanner** überträgt Dokumente direkt auf
 die ausgewählte Seite. Beide Apps bleiben in diesem Repository.
 
+## Einstieg für die nächste Arbeitssitzung
+
+Nach dieser Datei [PRODUCT.md](PRODUCT.md) für Funktionen und Bedienregeln,
+[ARCHITECTURE.md](ARCHITECTURE.md) für Code-Einstiegspunkte,
+[TASKS.md](TASKS.md) für aktuellen Prüfstand/offene Arbeit und
+[LEARNINGS.md](LEARNINGS.md) für Fehlerfallen lesen. [AGENTS.md](AGENTS.md)
+enthält die Arbeitsregeln. Anschließend `git status`/Diff prüfen: lokale
+Änderungen erhalten; Dokumentation bedeutet weder Commit noch Veröffentlichung.
+
+Aktuell umgesetzt sind direktes Verschieben von Sektionen/Seiten einschließlich
+Unterseiten nach 0,5 Sekunden Halten, bereinigte Kontextmenüs sowie einheitlicher
+Import-/Exportfortschritt. Neue PDFs und Scans setzen vorhandene Medienreihen
+fort. „Save original“ fragt nach dem Ziel und speichert jede Quelle nur einmal
+pro Auswahl. Details und Grenzen stehen in den folgenden Projektdateien.
+
 ## Windows starten
 
 Benötigt: Flutter mit Windows-Desktop-Unterstützung und Visual Studio mit

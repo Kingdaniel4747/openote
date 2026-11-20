@@ -109,7 +109,8 @@ void main() {
   });
 
   group('parity, enforced by the constructor', () {
-    testWidgets('the equation face is built from closures and primitives, '
+    testWidgets(
+        'the equation face is built from closures and primitives, '
         'with no AppState in scope', (tester) async {
       // This test compiles or it does not. If someone gives EquationFace an
       // `AppState`, a `Block` or an `EquationPlacement`, this line stops
@@ -124,9 +125,9 @@ void main() {
       tester.view.physicalSize = const Size(2600, 900);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
-      await tester.pumpWidget(
-          MaterialApp(home: Scaffold(body: Align(
-              alignment: Alignment.topLeft, child: face))));
+      await tester.pumpWidget(MaterialApp(
+          home: Scaffold(
+              body: Align(alignment: Alignment.topLeft, child: face))));
       await tester.pumpAndSettle();
       expect(find.byType(MathBar), findsOneWidget);
     });
@@ -202,8 +203,7 @@ void main() {
             for (final t in ['Home', 'Insert', 'Draw', 'View'])
               t: tester.getRect(find.text(t)).left,
           };
-      double pageTop() =>
-          tester.getRect(find.byType(ColoredBox).last).top;
+      double pageTop() => tester.getRect(find.byType(ColoredBox).last).top;
 
       final restingTabs = tabXs();
       final restingTop = pageTop();
@@ -276,6 +276,20 @@ void main() {
       await tester.tap(find.byTooltip('Background: grid'));
       await tester.pumpAndSettle();
       expect(app.pageProps.background, 'grid');
+      await tester.tap(find.byTooltip('Arrange selected images and PDFs'));
+      await tester.pumpAndSettle();
+      expect(find.text('Select at least two images or PDFs'), findsOneWidget);
+      expect(
+        tester
+            .widget<PopupMenuItem<bool>>(
+              find.ancestor(
+                of: find.text('Arrange vertically'),
+                matching: find.byType(PopupMenuItem<bool>),
+              ),
+            )
+            .enabled,
+        isFalse,
+      );
       app.cancelPendingSave();
     });
   });

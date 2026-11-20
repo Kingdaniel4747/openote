@@ -24,74 +24,75 @@ void main() {
     expect(flushed, isTrue);
   }
 
-  testWidgets(
-      'section menu keeps colours without duplicate page or calendar actions',
-      (tester) async {
-    late Directory directory;
-    late AppState app;
-    late Repository repo;
-    late TreeNode section;
-    final exam = DateTime(2026, 12, 12);
-    await tester.runAsync(() async {
-      directory = Directory.systemTemp.createTempSync('onote_section_menu_');
-      repo = await Repository.openAt(directory);
-      final nb = await repo.createNotebook('Section menu');
-      app = AppState(repo)
-        ..notebookId = nb.id
-        ..spellCheckEnabled = false;
-      app.reloadNodes();
-      section = app.nodes.firstWhere((n) => n.kind == NodeKind.section);
-      app.study.setExamDate(section.id, exam);
-    });
-    addTearDown(() {
+  for (final isGroup in [false, true]) {
+    testWidgets(
+        'section/group menu keeps colours without removed actions (group: $isGroup)',
+        (tester) async {
+      late Directory directory;
+      late AppState app;
+      late Repository repo;
+      late TreeNode section;
+      final exam = DateTime(2026, 12, 12);
+      await tester.runAsync(() async {
+        directory = Directory.systemTemp.createTempSync('onote_section_menu_');
+        repo = await Repository.openAt(directory);
+        final nb = await repo.createNotebook('Section menu');
+        app = AppState(repo)
+          ..notebookId = nb.id
+          ..spellCheckEnabled = false;
+        app.reloadNodes();
+        if (isGroup) app.addSectionGroup();
+        section = app.nodes.firstWhere((n) =>
+            n.kind == (isGroup ? NodeKind.sectionGroup : NodeKind.section));
+        app.study.setExamDate(section.id, exam);
+      });
+      addTearDown(() {
+        app.cancelPendingSave();
+        app.dispose();
+        directory.deleteSync(recursive: true);
+      });
+      await tester.pumpWidget(MaterialApp(
+          home: Scaffold(
+              body: Builder(
+                  builder: (context) => TextButton(
+                      onPressed: () => showNodeMenu(context, app, section,
+                          canIndent: false, position: const Offset(100, 100)),
+                      child: const Text('Open section menu'))))));
+      await tester.tap(find.text('Open section menu'));
+      await tester.pumpAndSettle();
+      for (final label in [
+        'Move up',
+        'Move down',
+        'Colour',
+        'Color',
+        'New page',
+        'Sort pages A→Z',
+        'Sort pages by last edited',
+        'Export section as PDF…',
+        'Print section…',
+        'Set exam date…',
+        'Remove exam date'
+      ]) {
+        expect(find.text(label), findsNothing, reason: label);
+      }
+      expect(find.textContaining('Exam '), findsNothing);
+      for (final label in ['Rename', 'Lock with a passcode…', 'Delete']) {
+        expect(find.text(label), findsOneWidget);
+      }
+      expect(
+          find.text('Move to group…'), isGroup ? findsNothing : findsOneWidget);
+      expect(find.byTooltip('blue'), findsOneWidget);
+      await tester.tap(find.byTooltip('blue'));
+      await tester.pumpAndSettle();
+      expect(app.node(section.id)!.color, 'blue');
+      expect(app.study.examDate(section.id), exam);
+      expect(find.text('Move to group…'), findsNothing);
+      expect(tester.takeException(), isNull);
+      await flushWorkspace(tester, repo);
       app.cancelPendingSave();
-      app.dispose();
-      directory.deleteSync(recursive: true);
+      await tester.pumpWidget(const SizedBox.shrink());
     });
-    await tester.pumpWidget(MaterialApp(
-        home: Scaffold(
-            body: Builder(
-                builder: (context) => TextButton(
-                    onPressed: () => showNodeMenu(context, app, section,
-                        canIndent: false, position: const Offset(100, 100)),
-                    child: const Text('Open section menu'))))));
-    await tester.tap(find.text('Open section menu'));
-    await tester.pumpAndSettle();
-    for (final label in [
-      'Move up',
-      'Move down',
-      'Colour',
-      'Color',
-      'New page',
-      'Sort pages A→Z',
-      'Sort pages by last edited',
-      'Export section as PDF…',
-      'Print section…',
-      'Set exam date…',
-      'Remove exam date'
-    ]) {
-      expect(find.text(label), findsNothing, reason: label);
-    }
-    expect(find.textContaining('Exam '), findsNothing);
-    for (final label in [
-      'Rename',
-      'Move to group…',
-      'Lock with a passcode…',
-      'Delete'
-    ]) {
-      expect(find.text(label), findsOneWidget);
-    }
-    expect(find.byTooltip('blue'), findsOneWidget);
-    await tester.tap(find.byTooltip('blue'));
-    await tester.pumpAndSettle();
-    expect(app.node(section.id)!.color, 'blue');
-    expect(app.study.examDate(section.id), exam);
-    expect(find.text('Move to group…'), findsNothing);
-    expect(tester.takeException(), isNull);
-    await flushWorkspace(tester, repo);
-    app.cancelPendingSave();
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
+  }
 
   for (final rightEdge in [false, true]) {
     testWidgets(

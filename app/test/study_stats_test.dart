@@ -1,14 +1,3 @@
-// Study statistics and the exam countdown (P1) — the pure half.
-//
-// Every function here takes "today" as an argument, so these tests pin real
-// behaviour instead of whatever the calendar happens to say when CI runs. That
-// matters more than usual for this feature: a streak is entirely about day
-// boundaries, and the two ways to get day arithmetic wrong (DST, and treating
-// "no study yet today" as a broken streak) are both invisible on the day you
-// write the code.
-//
-// No SQLite and no widgets, so this file runs on a bare checkout.
-
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/study/study_stats.dart';
@@ -41,7 +30,8 @@ void main() {
     test('counts calendar days, not elapsed hours', () {
       expect(daysBetween(DateTime(2026, 8, 4), DateTime(2026, 8, 4)), 0);
       expect(daysBetween(DateTime(2026, 8, 4), DateTime(2026, 8, 5)), 1);
-      expect(daysBetween(DateTime(2026, 8, 4, 23, 59), DateTime(2026, 8, 5, 0, 1)),
+      expect(
+          daysBetween(DateTime(2026, 8, 4, 23, 59), DateTime(2026, 8, 5, 0, 1)),
           1,
           reason: 'two minutes apart, but a day apart');
       expect(daysBetween(DateTime(2026, 8, 5), DateTime(2026, 8, 4)), -1);
@@ -67,137 +57,6 @@ void main() {
         expect(daysBetween(d, DateTime(d.year, d.month, d.day + 1)), 1,
             reason: 'the day after $d is one day away');
       }
-    });
-  });
-
-  group('streak', () {
-    final today = DateTime(2026, 8, 4);
-    String k(int daysAgo) => dayKey(DateTime(2026, 8, 4 - daysAgo));
-
-    test('is zero with no history', () {
-      expect(studyStreak({}, today), 0);
-    });
-
-    test('counts consecutive days ending today', () {
-      final days = {k(0): 12, k(1): 4, k(2): 30};
-      expect(studyStreak(days, today), 3);
-    });
-
-    // The whole reason the rule is "today or yesterday": a streak that resets
-    // at midnight shows a student zero over breakfast, which is precisely when
-    // the number was supposed to get them to sit down.
-    test('stays alive on a day you have not studied yet', () {
-      final days = {k(1): 4, k(2): 30, k(3): 7};
-      expect(studyStreak(days, today), 3);
-    });
-
-    test('breaks once a whole day has been missed', () {
-      final days = {k(2): 30, k(3): 7};
-      expect(studyStreak(days, today), 0,
-          reason: 'yesterday is empty, so the streak is already gone');
-    });
-
-    test('stops at the first gap', () {
-      final days = {k(0): 1, k(1): 1, k(3): 99, k(4): 99};
-      expect(studyStreak(days, today), 2);
-    });
-
-    test('ignores a day recorded as zero', () {
-      expect(studyStreak({k(0): 1, k(1): 0, k(2): 5}, today), 1);
-    });
-
-    test('counts across a month boundary', () {
-      final t = DateTime(2026, 9, 2);
-      final days = {'2026-09-02': 1, '2026-09-01': 1, '2026-08-31': 1};
-      expect(studyStreak(days, t), 3);
-    });
-  });
-
-  group('activity strip', () {
-    final today = DateTime(2026, 8, 4);
-
-    test('always returns one entry per day, oldest first', () {
-      final bars = activityBars({dayKey(today): 9}, today, n: 7);
-      expect(bars.length, 7);
-      expect(bars.last, 9, reason: 'today is the right-hand bar');
-      expect(bars.take(6), everyElement(0));
-    });
-
-    test('places each day in its own slot', () {
-      final days = {
-        dayKey(DateTime(2026, 8, 4)): 1,
-        dayKey(DateTime(2026, 8, 2)): 5,
-        dayKey(DateTime(2026, 7, 31)): 2,
-      };
-      expect(activityBars(days, today, n: 5), [2, 0, 5, 0, 1]);
-    });
-  });
-
-  group('pruning', () {
-    final today = DateTime(2026, 8, 4);
-
-    test('keeps recent days and drops ancient ones', () {
-      final days = {
-        dayKey(DateTime(2026, 8, 4)): 3,
-        dayKey(DateTime(2026, 8, 4 - studyDaysKept + 1)): 1,
-        dayKey(DateTime(2026, 8, 4 - studyDaysKept - 1)): 1,
-      };
-      final kept = pruneStudyDays(days, today);
-      expect(kept.length, 2);
-      expect(kept.containsKey(dayKey(DateTime(2026, 8, 4))), isTrue);
-    });
-
-    test('drops zero counts and unparseable keys', () {
-      final kept = pruneStudyDays(
-          {dayKey(today): 1, dayKey(DateTime(2026, 8, 3)): 0, 'rubbish': 4},
-          today);
-      expect(kept.keys, [dayKey(today)]);
-    });
-  });
-
-  group('exam plan', () {
-    final today = DateTime(2026, 8, 4);
-
-    test('is null without a date', () {
-      expect(examPlan(exam: null, today: today, unseen: 10, total: 10), isNull);
-    });
-
-    test('spreads the unseen cards over the days left', () {
-      final p = examPlan(
-          exam: DateTime(2026, 8, 18), today: today, unseen: 40, total: 168)!;
-      expect(p.daysLeft, 14);
-      expect(p.newPerDay, 3, reason: '40 over 14 days, rounded up');
-      expect(p.isPast, isFalse);
-      expect(p.isToday, isFalse);
-    });
-
-    test('rounds up so the plan actually finishes', () {
-      final p = examPlan(
-          exam: DateTime(2026, 8, 7), today: today, unseen: 10, total: 10)!;
-      expect(p.daysLeft, 3);
-      expect(p.newPerDay, 4, reason: '3 a day leaves one card unseen');
-    });
-
-    test('asks for nothing when there is nothing unseen', () {
-      final p = examPlan(
-          exam: DateTime(2026, 8, 18), today: today, unseen: 0, total: 168)!;
-      expect(p.newPerDay, 0);
-    });
-
-    test('asks for nothing on the day itself', () {
-      final p = examPlan(
-          exam: today, today: today, unseen: 40, total: 168)!;
-      expect(p.isToday, isTrue);
-      expect(p.isPast, isFalse);
-      expect(p.newPerDay, 0, reason: 'no days left to spread over');
-    });
-
-    test('knows an exam that has been and gone', () {
-      final p = examPlan(
-          exam: DateTime(2026, 8, 1), today: today, unseen: 5, total: 20)!;
-      expect(p.isPast, isTrue);
-      expect(p.daysLeft, -3);
-      expect(p.newPerDay, 0);
     });
   });
 

@@ -51,7 +51,7 @@ void main() {
 
     expect(anchor.top, greaterThanOrEqualTo(550),
         reason: 'below the bottom-most block (400 + 150)');
-    expect(anchor.left, AppState.pageLeftMargin);
+    expect(anchor.left, 60, reason: 'continue the existing column');
     expect(anchor.width, 760);
   });
 
@@ -94,6 +94,80 @@ void main() {
         reason: 'an empty page must not push the first slide down the canvas');
     expect(anchor.top, AppState.contentTop + 36);
     expect(anchor.left, AppState.pageLeftMargin);
+  });
+
+  test('new batches continue an existing horizontal PDF row to the right',
+      () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await newApp();
+    app.blocks = [img('a', 200, 500), img('b', 200, 500)..x = 500];
+    app.select('a');
+    for (var i = 0; i < 3; i++) {
+      final right = app.blocks
+          .map((b) => app.blockVisualBounds(b).right)
+          .reduce((a, b) => a > b ? a : b);
+      final placement = app.mediaImportPlacement();
+      expect(placement.left, right + AppState.mediaImportGap);
+      expect(placement.top, 200);
+      app.blocks.add(Block(
+          type: BlockType.image,
+          x: placement.left,
+          y: placement.top,
+          w: placement.width,
+          h: 500,
+          content: {'pdf': 'next'}));
+    }
+    expect(app.blocks.first.x, 60);
+    expect(app.blocks[1].x, 500);
+  });
+
+  test(
+      'legacy PDF dimensions and rotations keep new imports outside visible content',
+      () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await newApp();
+    final legacy = Block(
+        type: BlockType.image,
+        x: 44,
+        y: 100,
+        w: 400,
+        content: {'pdf': 'original', 'naturalW': 200, 'naturalH': 600});
+    app.blocks = [legacy];
+    expect(app.mediaImportPlacement().top, 1336);
+    legacy.rotation = 90;
+    expect(app.mediaImportPlacement().top,
+        app.blockVisualBounds(legacy).bottom + 36);
+  });
+
+  test('a horizontal row on a paired off-screen page ignores live measurements',
+      () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await newApp();
+    app.blocks = [img('live', 10000, 500)];
+    final first = img('a', 200, 300);
+    final second = img('b', 200, 300)..x = 500;
+    app.renderSizes['a'] = const Size(400, 10000);
+    final placement =
+        app.mediaImportPlacement(page: PageData([first, second], PageProps()));
+    expect(placement.left, 936);
+    expect(placement.top, 200);
+  });
+
+  test('an irregular arrangement appends below all content', () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await newApp();
+    app.blocks = [img('a', 200, 500), img('b', 900, 600)..x = 500];
+    expect(app.mediaImportPlacement().top, 1536);
+  });
+
+  test('a failed media import does not block the next queued import', () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await newApp();
+    final first =
+        app.runMediaImport<void>(() async => throw StateError('unreadable'));
+    final second = app.runMediaImport(() async => 'next');
+    await expectLater(first, throwsStateError);
+    expect(await second, 'next');
   });
 
   test('placement uses measured content height and the phone width limits',

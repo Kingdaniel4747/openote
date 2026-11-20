@@ -5,27 +5,77 @@ import '../api/learning_access.dart';
 import '../l10n/app_strings.dart';
 import '../state/app_state.dart';
 import '../theme/tokens.dart';
-import 'onote_dialog.dart';
+import 'onote_switch.dart';
 
-Future<void> showLearningAccessDialog(BuildContext context, AppState app) =>
-    showOnoteDialog<void>(
-        context: context,
-        builder: (_) => AlertDialog(
-              title: const Row(children: [
-                Icon(Icons.auto_stories_outlined, size: OnoteIcon.lg),
-                SizedBox(width: OnoteSpace.x5),
-                Expanded(child: AppText('AI learning access')),
-              ]),
-              content: SizedBox(
-                  width: 460,
-                  child: SingleChildScrollView(
-                      child: LearningAccessPanel(app: app))),
-              actions: [
-                TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const AppText('Close'))
-              ],
-            ));
+Future<void> showLearningAccessDialog(BuildContext context, AppState app) {
+  final box = context.findRenderObject();
+  final anchor = box is RenderBox
+      ? box.localToGlobal(Offset(0, box.size.height))
+      : const Offset(0, 40);
+  return showGeneralDialog<void>(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+    barrierColor: Colors.transparent,
+    transitionDuration: MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 160),
+    transitionBuilder: (_, animation, __, child) => FadeTransition(
+      opacity: animation,
+      child: child,
+    ),
+    pageBuilder: (context, _, __) => SafeArea(
+      child: LayoutBuilder(builder: (context, constraints) {
+        final top = (anchor.dy + 8).clamp(
+            8.0, (constraints.maxHeight - 160).clamp(8.0, double.infinity));
+        return Padding(
+          padding: EdgeInsets.fromLTRB(12, top, 12, 12),
+          child: Align(
+            alignment: Alignment.topRight,
+            child: SizedBox(
+              width: 360,
+              child: Material(
+                key: const ValueKey('learning-access-popover'),
+                color: Theme.of(context).colorScheme.surfaceContainerLow,
+                elevation: 12,
+                shadowColor: Colors.black26,
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(20),
+                    topRight: Radius.circular(6),
+                    bottomLeft: Radius.circular(20),
+                    bottomRight: Radius.circular(20),
+                  ),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(children: [
+                        const Expanded(
+                            child: AppText('AI learning access',
+                                style: OnoteType.uiStrong)),
+                        IconButton(
+                          tooltip: tr(context, 'Close'),
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.close, size: 18),
+                        ),
+                      ]),
+                      const SizedBox(height: 8),
+                      LearningAccessPanel(app: app),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      }),
+    ),
+  );
+}
 
 class LearningAccessButton extends StatelessWidget {
   const LearningAccessButton({super.key, required this.app});
@@ -117,9 +167,21 @@ class _LearningAccessPanelState extends State<LearningAccessPanel> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Row(children: [
-              const Expanded(
-                  child: AppText('AI access', style: OnoteType.uiStrong)),
-              Switch(
+              Expanded(
+                child: AnimatedDefaultTextStyle(
+                  duration: MediaQuery.disableAnimationsOf(context)
+                      ? Duration.zero
+                      : const Duration(milliseconds: 160),
+                  style: OnoteType.uiStrong.copyWith(
+                    fontSize: enabled ? 14 : 13,
+                    color: enabled
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.onSurface,
+                  ),
+                  child: const AppText('AI access'),
+                ),
+              ),
+              OnoteSwitch(
                 value: enabled,
                 onChanged: busy
                     ? null
@@ -191,27 +253,37 @@ class _ScopeOption extends StatelessWidget {
         color: disabled
             ? colors.onSurface.withValues(alpha: OnoteAlpha.selected)
             : selected
-                ? colors.primaryContainer
-                : colors.surfaceContainerLow,
+                ? colors.primary.withValues(alpha: .10)
+                : colors.surfaceContainerHighest.withValues(alpha: .5),
         shape: RoundedRectangleBorder(
             borderRadius: OnoteRadius.lgAll,
             side: BorderSide(
                 color: !disabled && selected
                     ? colors.primary
-                    : colors.outlineVariant)),
+                    : Colors.transparent)),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onPressed,
           child: Padding(
             padding: const EdgeInsets.all(OnoteSpace.x6),
             child: Row(children: [
-              Icon(icon,
-                  size: OnoteIcon.lg,
-                  color: disabled
-                      ? disabledForeground
-                      : selected
-                          ? colors.onPrimaryContainer
-                          : colors.onSurfaceVariant),
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: !disabled && selected
+                      ? colors.primary.withValues(alpha: .12)
+                      : colors.surface,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon,
+                    size: OnoteIcon.lg,
+                    color: disabled
+                        ? disabledForeground
+                        : selected
+                            ? colors.primary
+                            : colors.onSurfaceVariant),
+              ),
               const SizedBox(width: OnoteSpace.x5),
               Expanded(
                   child: Column(
@@ -219,10 +291,11 @@ class _ScopeOption extends StatelessWidget {
                 children: [
                   AppText(title,
                       style: OnoteType.uiStrong.copyWith(
+                          fontSize: 14,
                           color: disabled
                               ? disabledForeground
                               : selected
-                                  ? colors.onPrimaryContainer
+                                  ? colors.onSurface
                                   : colors.onSurface)),
                   const SizedBox(height: OnoteSpace.x2),
                   AppText(subtitle,
@@ -230,7 +303,7 @@ class _ScopeOption extends StatelessWidget {
                           color: disabled
                               ? disabledForeground
                               : selected
-                                  ? colors.onPrimaryContainer
+                                  ? colors.onSurfaceVariant
                                   : colors.onSurfaceVariant)),
                 ],
               )),

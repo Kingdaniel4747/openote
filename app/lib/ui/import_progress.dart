@@ -19,6 +19,7 @@ import '../export/import_job.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
+import 'transfer_progress.dart';
 
 class ImportProgressCard extends StatelessWidget {
   const ImportProgressCard({super.key, required this.app});
@@ -108,17 +109,11 @@ class _Card extends StatelessWidget {
                 overflow: TextOverflow.ellipsis),
             if (running && job.pagesTotal > 0) ...[
               const SizedBox(height: OnoteSpace.x4),
-              ClipRRect(
-                borderRadius: OnoteRadius.smAll,
-                child: LinearProgressIndicator(
-                  value: job.pagesDone / job.pagesTotal,
-                  minHeight: 5,
-                  backgroundColor: s.chrome2,
-                ),
-              ),
-              const SizedBox(height: OnoteSpace.x2),
-              Text('${job.pagesDone} of ${job.pagesTotal} pages',
-                  style: OnoteType.caption.copyWith(color: s.textSecondary)),
+              TransferMeter(
+                  fraction: job.pagesDone / job.pagesTotal,
+                  done: job.pagesDone,
+                  total: job.pagesTotal,
+                  unit: 'pages'),
             ],
             const SizedBox(height: OnoteSpace.x3),
             Row(children: [

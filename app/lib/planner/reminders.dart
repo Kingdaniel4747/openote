@@ -615,8 +615,7 @@ class ReminderStore {
 
   /// Drop dismissals older than [retentionDays].
   ///
-  /// On write rather than on read, matching `_persistCardStates` in
-  /// `study_state.dart`: this blob is loaded once per launch and read on every
+  /// On write rather than on read: this blob is loaded once per launch and read on every
   /// planner build, so the scan belongs at the point it changes.
   ///
   /// **A dismissed reminder with no `dismissedAt` is never pruned.** That is

@@ -24,6 +24,27 @@ Nur Erkenntnisse behalten, die künftige Fehler verhindern. Keine Sitzungsprotok
 
 ## Daten und Bedienung
 
+- PDF-Blätter referenzieren ein gemeinsames Original: beim Export nach
+  `content['pdf']` deduplizieren, niemals nach Vorschaubild oder Blattnummer.
+  Ein Originalexport muss einen Ziel-Dialog anbieten; Downloads ist kein
+  stillschweigender Ersatz für eine Nutzerauswahl.
+- Medienplatzierung über sichtbare Grenzen berechnen: natürliche Bildmaße,
+  gespeicherte/gemessene Höhe und Rotation berücksichtigen. 60 Pixel als
+  generische Bildhöhe lassen Folgeimporte hinter bestehenden PDFs landen.
+  Ausrichtung aus der vorhandenen Reihe ableiten, nicht aus Auswahl oder Caret.
+- Gleichzeitige Scan-/PDF-Importe vor dem Lesen der Zielseite serialisieren.
+  Nur die Schreiboperation zu serialisieren genügt nicht: zwei zuvor gelesene
+  Off-screen-Kopien können sich gegenseitig überschreiben. Nach jedem neuen
+  PDF-Blatt die nächste Position erneut aus dem aktuellen Inhalt ermitteln.
+- Fortschrittsdialoge über ihre eigene Route schließen. Notifier erst nach
+  `route.completed` freigeben; das Ende des Arbeits-Futures bedeutet noch
+  nicht, dass alle Dialogwidgets abgebaut sind. Abgeschlossene statische
+  Future-Warteschlangen freigeben, damit Widgettests nicht an alten Fake-Uhren
+  hängen bleiben. Fehler dürfen nachfolgende Queue-Einträge nicht blockieren.
+- Entfernte Funktionen einschließlich Befehlen, Hilfsmethoden, Abhängigkeiten
+  und Kürzeln prüfen. Kompatibilitätsdarstellung alter Notizen ist weiterhin
+  gebraucht und darf nicht als toter Code entfernt werden.
+
 - Radierer gegen die gesamte Bewegung zwischen zwei Stiftpositionen schneiden,
   nicht nur gegen einzelne Abtastkreise. Schnittpunkte samt Druck/Neigung/Zeit
   interpolieren; beim Neuzeichnen auch geänderte Striche in der Listenmitte prüfen.

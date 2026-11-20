@@ -15,6 +15,7 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import 'alert_popup.dart';
 import 'import_progress.dart';
+import 'transfer_progress.dart';
 import 'inline_section_strip.dart';
 import 'command_bar.dart';
 import 'context_menus.dart';
@@ -1010,8 +1011,6 @@ class _AppShellState extends State<AppShell> {
   /// the Row so the F6 marker is applied in exactly one place — a panel that
   /// grew its own `if` would quietly drop out of the rotation.
   Widget? _openPanel(TreeNode? page) => switch (app.openPanel) {
-        // Study is retained only for compatibility with older saved UI state.
-        SidePanelKind.study => null,
         SidePanelKind.planner => PlannerPanel(app: app),
         SidePanelKind.outline => page == null ? null : _TocPanel(app: app),
         SidePanelKind.links => page == null ? null : _LinksPanel(app: app),
@@ -1267,7 +1266,15 @@ class _AppShellState extends State<AppShell> {
       app.pasteBlocks();
       return;
     }
-    final result = await pasteOntoCanvas(app, at, dark: dark);
+    if (!mounted) return;
+    final result =
+        probe.kind == PasteResult.image || probe.kind == PasteResult.files
+            ? await runTransfer(context, 'Import', (progress) async {
+                final result = await pasteOntoCanvas(app, at, dark: dark);
+                progress.update(done: result == PasteResult.nothing ? 0 : 1);
+                return result;
+              })
+            : await pasteOntoCanvas(app, at, dark: dark);
     if (result == PasteResult.nothing && app.canPasteBlocks) {
       app.pasteBlocks();
     }

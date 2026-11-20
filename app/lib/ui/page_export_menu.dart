@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../export/markdown_export.dart';
@@ -8,7 +6,7 @@ import '../export/pdf_export.dart';
 import '../export/pdf_vector_export.dart';
 import '../l10n/app_strings.dart';
 import '../state/app_state.dart';
-import 'onote_dialog.dart';
+import 'transfer_progress.dart';
 
 enum PageExportFormat { markdown, pdf, picturePdf, canvas, inkml, notebook }
 
@@ -61,14 +59,23 @@ Future<void> exportPageFromMenu(BuildContext context, AppState app,
     }
     if (app.pageId != pageId) await app.selectPage(pageId);
     if (!context.mounted || app.pageId != pageId) return;
-    final path = await switch (format) {
-      PageExportFormat.markdown => exportPageMarkdown(app),
-      PageExportFormat.pdf => exportPagePdfVector(app),
-      PageExportFormat.picturePdf => exportPagePdf(app),
-      PageExportFormat.canvas => exportPageJsonCanvas(app),
-      PageExportFormat.inkml => exportPageInkML(app),
-      PageExportFormat.notebook => Future<String?>.value(null),
-    };
+    final path = await runTransfer(context, 'Export page', (progress) async {
+      progress.update(detail: app.node(pageId)?.title ?? 'Page');
+      final path = await switch (format) {
+        PageExportFormat.markdown => exportPageMarkdown(app,
+            onProgress: (done, total) =>
+                progress.update(done: done, total: total)),
+        PageExportFormat.pdf => exportPagePdfVector(app,
+            onProgress: (done, total) =>
+                progress.update(current: .99 * done / total)),
+        PageExportFormat.picturePdf => exportPagePdf(app),
+        PageExportFormat.canvas => exportPageJsonCanvas(app),
+        PageExportFormat.inkml => exportPageInkML(app),
+        PageExportFormat.notebook => Future<String?>.value(null),
+      };
+      if (path != null) progress.update(done: progress.total);
+      return path;
+    });
     if (path != null) {
       messenger?.showSnackBar(SnackBar(content: AppText('Exported to $path')));
     }
@@ -81,37 +88,11 @@ Future<void> exportPageFromMenu(BuildContext context, AppState app,
 }
 
 Future<void> _exportNotebook(BuildContext context, AppState app) async {
-  final progress = ValueNotifier<String>('Saving the notebook…');
-  var open = true;
-  unawaited(showOnoteDialog<void>(
-    context: context,
-    barrierDismissible: false,
-    builder: (_) => PopScope(
-      canPop: false,
-      child: AlertDialog(
-          content: Row(children: [
-        const SizedBox(
-            width: 22,
-            height: 22,
-            child: CircularProgressIndicator(strokeWidth: 2.6)),
-        const SizedBox(width: 16),
-        Expanded(
-            child: ValueListenableBuilder<String>(
-                valueListenable: progress,
-                builder: (_, text, __) => Text(text))),
-      ])),
-    ),
-  ).then((_) => open = false));
-  String? path;
-  try {
-    path = await materializeNotebook(app,
-        onProgress: (done, total) => progress.value = 'Page $done of $total…');
-  } finally {
-    if (open && context.mounted) {
-      Navigator.of(context, rootNavigator: true).pop();
-    }
-    progress.dispose();
-  }
+  final path = await runTransfer(context, 'Export notebook', (progress) async {
+    progress.update(unit: 'steps');
+    return materializeNotebook(app,
+        onProgress: (done, total) => progress.update(done: done, total: total));
+  });
   if (path != null && context.mounted) {
     ScaffoldMessenger.maybeOf(context)
         ?.showSnackBar(SnackBar(content: AppText('Exported to $path')));

@@ -60,6 +60,8 @@ void main() {
 
     await tester.tap(find.text('Draw'));
     await tester.pumpAndSettle();
+    expect(find.byTooltip('Text  (T)'), findsNothing);
+    expect(find.byTooltip('Select / move  (V)'), findsOneWidget);
 
     for (final (tip, want) in const [
       ('Pen  (P)', Tool.pen),
@@ -92,6 +94,63 @@ void main() {
     expect(find.byTooltip('Pen  (P)'), findsOneWidget,
         reason: 'the Draw row must still be showing after picking a tool');
     expect(app.tool, Tool.pen);
+  });
+
+  testWidgets('ink size slider selects five fixed widths per tool',
+      (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await newApp(tester);
+    await tester.pumpWidget(host(app));
+    await tester.tap(find.text('Draw'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Pen  (P)'));
+    await tester.pumpAndSettle();
+
+    final finder = find.byKey(const ValueKey('ink-size'));
+    for (final (index, width) in [0.5, 1.5, 2.5, 6.0, 10.0].indexed) {
+      final slider = tester.widget<Slider>(finder);
+      expect(slider.divisions, 4);
+      slider.onChanged!(index.toDouble());
+      await tester.pump();
+      expect(app.penSize, width);
+    }
+    app.setTool(Tool.highlighter);
+    await tester.pump();
+    expect(app.penSize, 6);
+    app.setTool(Tool.pen);
+    await tester.pump();
+    expect(app.penSize, 10);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('eraser size slider selects five fixed widths', (tester) async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await newApp(tester);
+    await tester.pumpWidget(host(app));
+    await tester.tap(find.text('Draw'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Eraser  (E)'));
+    await tester.pumpAndSettle();
+
+    final finder = find.byKey(const ValueKey('eraser-size'));
+    final mode = find.byKey(const ValueKey('eraser-mode'));
+    expect(tester.getCenter(mode).dx, lessThan(tester.getCenter(finder).dx));
+    await tester.tap(mode);
+    await tester.pumpAndSettle();
+    expect(app.eraserMode, EraserMode.stroke);
+    await tester.tap(find.text('Area'));
+    await tester.pumpAndSettle();
+    expect(app.eraserMode, EraserMode.area);
+    for (final (index, width) in [4.0, 12.0, 24.0, 48.0, 80.0].indexed) {
+      final slider = tester.widget<Slider>(finder);
+      expect(slider.divisions, 4);
+      slider.onChanged!(index.toDouble());
+      await tester.pump();
+      expect(app.eraserSize, width);
+    }
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
   });
 
   testWidgets('the tab row stays usable on a narrow window', (tester) async {

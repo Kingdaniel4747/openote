@@ -9,7 +9,7 @@ import '../math/math_view.dart' show mathStyleIn;
 import '../markdown/md_syntax.dart';
 import 'inline_math_editor.dart';
 import '../theme/onote_theme.dart';
-import '../study/flashcards.dart' show inlineCardRe;
+
 import '../theme/tokens.dart';
 import 'flashcard_view.dart';
 

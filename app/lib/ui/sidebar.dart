@@ -2041,8 +2041,7 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
         );
     return [
       item('rename', Icons.edit_outlined, 'Rename'),
-      if (isGroup) item('up', Icons.keyboard_arrow_up, 'Move up'),
-      if (isGroup) item('down', Icons.keyboard_arrow_down, 'Move down'),
+
       if (isSection || isGroup) ...[
         const Divider(height: 6),
         // The colour chip is the obvious thing to right-click, so this is
@@ -2116,10 +2115,6 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Passcode removed from “${node.title}”.')));
       }
-    case 'up':
-      app.moveNode(node.id, -1);
-    case 'down':
-      app.moveNode(node.id, 1);
     case 'copylink':
       // The wiki-link form the editor already resolves. Copying it means
       // cross-referencing is paste, not retype-and-hope.

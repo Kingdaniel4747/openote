@@ -94,7 +94,8 @@ void main() {
 
       final a = repo.readPageShared(nb, id);
       final b = repo.readPageShared(nb, id);
-      expect(identical(a, b), isTrue, reason: 'second read must be a cache hit');
+      expect(identical(a, b), isTrue,
+          reason: 'second read must be a cache hit');
 
       // A write through the single funnel evicts.
       final fresh = repo.readPage(nb, id);
@@ -128,8 +129,8 @@ void main() {
       /// A section with [titles] pages under it, each holding its own title as
       /// text so a stale read is identifiable rather than merely non-identical.
       /// Returns the section id followed by the page ids.
-      List<String> section(AppState app, String nb, String name,
-          List<String> titles,
+      List<String> section(
+          AppState app, String nb, String name, List<String> titles,
           {String? parent}) {
         final s = app.importNode(
             nb,
@@ -143,14 +144,13 @@ void main() {
           final p = app.importNode(
               nb,
               TreeNode(
-                  kind: NodeKind.page,
-                  parentId: s.id,
-                  title: t,
-                  position: t));
+                  kind: NodeKind.page, parentId: s.id, title: t, position: t));
           app.importPage(
               nb,
               p.id,
-              [Block(type: BlockType.text, x: 0, y: 0, content: {'text': t})],
+              [
+                Block(type: BlockType.text, x: 0, y: 0, content: {'text': t})
+              ],
               PageProps());
           out.add(p.id);
         }
@@ -224,7 +224,8 @@ void main() {
 
         repo.softDeleteNode(nb, doomed[0]);
         repo.softDeleteNode(nb, kept[0]); // trashed, but not yet expired
-        final db = sqlite3.open(repo.notebooks.firstWhere((n) => n.id == nb).file);
+        final db =
+            sqlite3.open(repo.notebooks.firstWhere((n) => n.id == nb).file);
         db.execute('UPDATE nodes SET deleted_at=? WHERE id IN (?,?)', [
           DateTime.now()
               .subtract(
@@ -290,7 +291,7 @@ void main() {
       NoteTag.writeInto(app.blocks.first.content, [
         NoteTag(kind: TagKind.question, line: 0),
       ]);
-      app.study.noteContentChanged();
+
       app.docRevision++;
       expect(app.allTags(), hasLength(1),
           reason: 'the open page bypasses the prefilter — its memory is '

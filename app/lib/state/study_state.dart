@@ -2,14 +2,10 @@ library;
 
 import 'package:flutter/foundation.dart';
 
-import '../model/models.dart';
-import '../study/study_stats.dart'
-    show dayKey, parseDayKey, daysBetween, ExamPlan, examPlan;
+import '../study/study_stats.dart' show dayKey, parseDayKey;
 
 abstract interface class StudyDocument {
   String? get notebookId;
-  List<TreeNode> get nodes;
-  String? get activeSectionId;
 }
 
 /// Personal exam dates used by the planner. Flashcard scheduling was removed.
@@ -26,10 +22,6 @@ class StudyState extends ChangeNotifier {
   final Map<String, String> _dates = {};
   final Map<String, String> _times = {};
   int studyRevision = 0;
-
-  void noteContentChanged() {}
-
-  void remapCardStates(String blockId, Map<int, int> moved) {}
 
   void load() {
     _load('examDates', _dates);
@@ -107,25 +99,5 @@ class StudyState extends ChangeNotifier {
     _write('examTimes', _times);
     studyRevision++;
     notifyListeners();
-  }
-
-  ({TreeNode section, ExamPlan plan})? nextExam([DateTime? now]) {
-    final today = now ?? DateTime.now();
-    TreeNode? closest;
-    DateTime? date;
-    for (final node in _document.nodes) {
-      if (node.kind != NodeKind.section) continue;
-      final candidate = examDate(node.id);
-      if (candidate == null || daysBetween(today, candidate) < 0) continue;
-      if (date == null || candidate.isBefore(date)) {
-        closest = node;
-        date = candidate;
-      }
-    }
-    if (closest == null || date == null) return null;
-    return (
-      section: closest,
-      plan: examPlan(exam: date, today: today, unseen: 0, total: 0)!
-    );
   }
 }

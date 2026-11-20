@@ -7,27 +7,7 @@ import 'wrap_selection.dart';
 import 'flashcard_view.dart';
 import '../theme/tokens.dart';
 
-/// A flashcard living on the page, written and revised where it sits.
-///
-/// content: `{ front, back }`
-///
-/// **Why this exists.** Cards were derived from tags only: mark a line
-/// Question or Definition and one appears in the study tab. That is a lovely
-/// trick and nobody found it — "Currently not intuitive how to use them" —
-/// because nothing about typing notes suggests a tag makes a card, and the
-/// chords are invisible until told. A thing you can insert, see, and flip is
-/// self-explanatory in a way a keyboard chord never is.
-///
-/// It does not replace the tag route; both produce cards through
-/// `cardsFromBlock`, so this card is in the deck, the counts and the exam plan
-/// the moment its two halves are filled in.
-///
-/// **The flip is the whole design.** A card that just swaps its text is a
-/// label changing; a card that turns over is an object you are holding. For a
-/// fifteen-year-old deciding whether revision is worth the effort, that
-/// difference is most of the argument — so the flip is a real rotation about
-/// the vertical axis, with the perspective set so it reads as a card rather
-/// than a shrinking rectangle.
+/// Displays and edits flashcard blocks stored in existing notebooks.
 class FlashcardBlockView extends StatefulWidget {
   const FlashcardBlockView({super.key, required this.block, required this.app});
   final Block block;

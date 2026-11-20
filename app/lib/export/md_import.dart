@@ -26,7 +26,9 @@ import '../state/app_state.dart';
 /// content-addressed blob store, so they won't render until image import lands.
 /// [onProgress] is called with the running count, so a caller can show it.
 Future<int?> importMarkdownFolder(AppState app,
-    {void Function(int done)? onProgress, String? sourceDirectory}) async {
+    {void Function(int done)? onProgress,
+    void Function(int done, int total)? onBatchProgress,
+    String? sourceDirectory}) async {
   if (app.notebookId == null) return null;
   final dir = sourceDirectory ??
       await getDirectoryPath(confirmButtonText: 'Import this folder');
@@ -47,6 +49,24 @@ Future<int?> importMarkdownFolder(AppState app,
         position: order.next(),
       ));
 
+  // Count the same visible files/folders that the import walk will process.
+  Future<int> count(Directory dir) async {
+    var total = 0;
+    try {
+      await for (final entry in dir.list(followLinks: false)) {
+        if (p.basename(entry.path).startsWith('.')) continue;
+        if (entry is Directory) {
+          total += 1 + await count(entry);
+        } else if (entry is File && _isMarkdown(entry.path)) {
+          total++;
+        }
+      }
+    } catch (_) {/* The import skips unreadable subtrees too. */}
+    return total;
+  }
+
+  final total = await count(root);
+  onBatchProgress?.call(0, total);
   var imported = 0;
   String? firstPageId;
 
@@ -61,7 +81,7 @@ Future<int?> importMarkdownFolder(AppState app,
   Future<void> walk(Directory d, int level) async {
     final List<FileSystemEntity> entries;
     try {
-      entries = d.listSync()..sort(_byTypeThenName);
+      entries = d.listSync(followLinks: false)..sort(_byTypeThenName);
     } catch (_) {
       return; // unreadable directory — skip its subtree
     }
@@ -83,6 +103,7 @@ Future<int?> importMarkdownFolder(AppState app,
         firstPageId ??= folderPage.id;
         imported++;
         onProgress?.call(imported);
+        onBatchProgress?.call(imported, total);
         await _breathe(imported);
         await walk(e, level + 1);
       } else if (e is File && _isMarkdown(e.path)) {
@@ -116,6 +137,7 @@ Future<int?> importMarkdownFolder(AppState app,
         firstPageId ??= page.id;
         imported++;
         onProgress?.call(imported);
+        onBatchProgress?.call(imported, total);
         await _breathe(imported);
       }
     }

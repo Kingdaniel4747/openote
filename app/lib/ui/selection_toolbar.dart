@@ -2,12 +2,14 @@ import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 
 import '../l10n/app_strings.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../core/original_download.dart';
+import '../store/media_store.dart';
+import 'transfer_progress.dart';
 
 /// Non-modal: the next lasso can start immediately on the canvas.
 class SelectionToolbar extends StatelessWidget {
@@ -18,8 +20,8 @@ class SelectionToolbar extends StatelessWidget {
   Widget build(BuildContext context) {
     final selected =
         app.blocks.where((b) => app.selectedIds.contains(b.id)).toList();
-    final downloadable = selected.where((b) => b.type == BlockType.image ||
-        b.content['kind'] == 'drawio').firstOrNull;
+    final downloadable =
+        selected.where((b) => originalSourceKey(b) != null).firstOrNull;
     return Listener(
       onPointerDown: (e) => app.claimedPointers.add(e.pointer),
       child: Material(
@@ -48,43 +50,81 @@ class SelectionToolbar extends StatelessWidget {
     );
   }
 
-  static Future<void> _saveQueue = Future<void>.value();
+  static Future<void>? _saveQueue;
 
   static Future<void> saveOriginal(
       BuildContext context, AppState app, Block block) async {
-    final selected = app.blocks.where((b) => app.selectedIds.contains(b.id) &&
-        (b.type == BlockType.image || b.content['kind'] == 'drawio')).toList();
-    final targets = app.selectedIds.contains(block.id) ? selected : [block];
-    _saveQueue = _saveQueue.then((_) async {
+    final selected = app.blocks
+        .where((b) =>
+            app.selectedIds.contains(b.id) && originalSourceKey(b) != null)
+        .toList();
+    final targets = uniqueOriginals(
+        app.selectedIds.contains(block.id) ? selected : [block]);
+    final previous = _saveQueue;
+    final work = () async {
+      if (previous != null) await previous;
       if (!context.mounted) return;
       await _saveOriginals(context, app, targets);
-    });
-    await _saveQueue;
+    }();
+    _saveQueue = work;
+    try {
+      await work;
+    } finally {
+      if (identical(_saveQueue, work)) _saveQueue = null;
+    }
   }
 
   static Future<void> _saveOriginals(
       BuildContext context, AppState app, List<Block> targets) async {
     try {
-      final downloads = await getDownloadsDirectory();
-      final directory = downloads?.path ?? await getDirectoryPath(
-          confirmButtonText: 'Save originals here');
-      if (directory == null) return;
-      await Directory(directory).create(recursive: true);
-      var saved = 0;
-      for (final target in targets) {
-        try {
-          await _saveOriginalTo(app, target, directory);
-          saved++;
-        } catch (e) {
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Could not save original: $e')));
-          }
-        }
+      if (targets.isEmpty) return;
+      String? singlePath;
+      String? directory;
+      if (targets.length == 1) {
+        final block = targets.single;
+        singlePath = (await getSaveLocation(
+                suggestedName: block.content['name'] as String? ??
+                    'OpenNote.${_extension(block)}'))
+            ?.path;
+        if (singlePath == null) return;
+      } else {
+        directory =
+            await getDirectoryPath(confirmButtonText: 'Save originals here');
+        if (directory == null) return;
       }
-      if (context.mounted && saved > 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('$saved original(s) saved to $directory')));
+      if (!context.mounted) return;
+      var saved = 0;
+      var failed = 0;
+      await runTransfer(context, 'Export originals', (progress) async {
+        progress.update(total: targets.length);
+        for (var i = 0; i < targets.length; i++) {
+          final target = targets[i];
+          progress.update(
+              done: i,
+              detail: target.content['name'] as String? ?? 'Original ${i + 1}');
+          File? reserved;
+          try {
+            final destination = singlePath == null
+                ? await reserveOriginalDownload(directory!, _extension(target))
+                : File(singlePath);
+            if (singlePath == null) reserved = destination;
+            await _saveOriginalTo(app, target, destination,
+                (fraction) => progress.update(done: i, current: fraction));
+            saved++;
+          } catch (_) {
+            failed++;
+            if (reserved != null && await reserved.exists()) {
+              await reserved.delete();
+            }
+          }
+          progress.update(done: i + 1, failed: failed);
+        }
+      });
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(failed == 0 && singlePath != null
+                ? 'Saved to $singlePath'
+                : '$saved original(s) saved${failed > 0 ? ' · $failed failed' : ''}')));
       }
     } catch (e) {
       if (context.mounted) {
@@ -94,32 +134,78 @@ class SelectionToolbar extends StatelessWidget {
     }
   }
 
-  static Future<void> _saveOriginalTo(
-      AppState app, Block block, String directory) async {
-    if (block.content['kind'] == 'drawio') {
-      final source = File(block.content['path'] as String? ?? '');
-      if (!await source.exists()) throw StateError('The original file is unavailable.');
-      final destination = await reserveOriginalDownload(directory, 'drawio');
-      await source.copy(destination.path);
-      return;
-    }
+  static String _extension(Block block) {
     final pdf = block.content['pdf'] as String?;
-    final blob = pdf ?? block.content['blob'] as String?;
-    if (blob == null) throw StateError('The original file is unavailable.');
-    final extension = pdf != null
+    final name = block.content['name'] as String?;
+    return pdf != null
         ? 'pdf'
-        : switch (block.content['mime'] as String?) {
-            'image/jpeg' => 'jpg',
-            'image/gif' => 'gif',
-            'image/webp' => 'webp',
-            _ => 'png',
-          };
-    final bytes = app.blob(blob);
-    if (bytes == null) {
-      throw StateError('The original file is unavailable.');
+        : name != null && p.extension(name).isNotEmpty
+            ? p.extension(name).substring(1)
+            : switch (block.content['mime'] as String?) {
+                'image/jpeg' => 'jpg',
+                'image/gif' => 'gif',
+                'image/webp' => 'webp',
+                'image/bmp' => 'bmp',
+                'application/pdf' => 'pdf',
+                'application/octet-stream' => 'bin',
+                _ => 'png',
+              };
+  }
+
+  static Future<void> _saveOriginalTo(AppState app, Block block,
+      File destination, ValueChanged<double> progress) async {
+    final temporary = await destination.parent.createTemp('.openote-export-');
+    final output = File(p.join(temporary.path, 'original'));
+    try {
+      final blob = block.content['pdf'] ?? block.content['blob'];
+      if (blob is String) {
+        final bytes = app.blob(blob);
+        if (bytes == null) {
+          throw StateError('The original file is unavailable.');
+        }
+        final handle = await output.open(mode: FileMode.write);
+        try {
+          const chunkSize = 1024 * 1024;
+          for (var offset = 0; offset < bytes.length; offset += chunkSize) {
+            final end = (offset + chunkSize).clamp(0, bytes.length);
+            await handle.writeFrom(bytes, offset, end);
+            progress(.99 * end / bytes.length);
+          }
+          await handle.flush();
+        } finally {
+          await handle.close();
+        }
+      } else {
+        final media = block.content['media'] as String?;
+        final source = media != null
+            ? MediaStore.resolve(app.currentNotebook, media)
+            : File(block.content['path'] as String);
+        if (source == null ||
+            p.equals(p.absolute(source.path), p.absolute(destination.path))) {
+          throw StateError('Choose a different destination.');
+        }
+        final length = await source.length();
+        final sink = output.openWrite();
+        var copied = 0;
+        try {
+          await for (final chunk in source.openRead()) {
+            sink.add(chunk);
+            copied += chunk.length;
+            if (length > 0) progress(.99 * copied / length);
+          }
+          await sink.flush();
+        } finally {
+          await sink.close();
+        }
+      }
+      await output.rename(destination.path);
+    } finally {
+      try {
+        await temporary.delete(recursive: true);
+      } on FileSystemException {
+        /* A later cleanup can remove a locked temporary folder. */
+      }
     }
-    final destination = await reserveOriginalDownload(directory, extension);
-    await destination.writeAsBytes(bytes, flush: true);
   }
 
   Widget _button(BuildContext context, String label, IconData icon,

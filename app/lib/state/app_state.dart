@@ -37,7 +37,7 @@ import '../theme/tokens.dart';
 import 'page_protection.dart';
 import '../model/tags.dart';
 import '../spell/spell_checker.dart';
-import '../study/flashcards.dart';
+
 import 'planner_state.dart';
 import 'study_state.dart';
 
@@ -109,7 +109,6 @@ enum TouchDrawing {
 /// An enum rather than five booleans, so "which panel is open" has exactly one
 /// answer and cannot be five contradictory ones.
 enum SidePanelKind {
-  study('Study'),
   planner('Planner'),
   outline('Outline'),
   links('Links');
@@ -667,6 +666,7 @@ class AppState extends ChangeNotifier
   Future<WorkspaceBackupResult> createWorkspaceBackup(
     String destination, {
     String? onlyNotebookId,
+    void Function(int done, int total, String detail)? onProgress,
   }) async {
     await flushSave();
     if (hasUnsavedChanges) {
@@ -694,6 +694,8 @@ class AppState extends ChangeNotifier
         if (onlyNotebookId == null) ...trashedNotebooks
       ].where((n) => onlyNotebookId == null || n.id == onlyNotebookId).toList();
       if (selected.isEmpty) throw StateError('No notebook was selected.');
+      var completed = 0;
+      onProgress?.call(0, selected.length + 1, 'Preparing notebooks');
       final manifest = <Map<String, Object?>>[];
       final usedNames = <String>{};
       for (final ref in selected) {
@@ -763,6 +765,7 @@ class AppState extends ChangeNotifier
             'blobs': 'Openote/${relativeBlobs.replaceAll(p.separator, '/')}',
           if (ref.deletedAt != null) 'deletedAt': ref.deletedAt,
         });
+        onProgress?.call(++completed, selected.length + 1, ref.title);
       }
       await File(p.join(temporary.path, 'backup.json')).writeAsString(
         jsonEncode({
@@ -776,6 +779,8 @@ class AppState extends ChangeNotifier
       final bytes = await Isolate.run(
         () => _encodeWorkspaceBackupZip((temporary.path, destination)),
       );
+      onProgress?.call(
+          selected.length + 1, selected.length + 1, 'Backup saved');
       return WorkspaceBackupResult(
         notebooks: selected.length,
         bytes: bytes,
@@ -1038,7 +1043,6 @@ class AppState extends ChangeNotifier
   final Set<String> collapsedGroups = {};
 
   // Navigator (§7b, two-column): the focused section fills the pages pane.
-  @override
   String? activeSectionId;
 
   TreeNode? get activeSection => node(activeSectionId);
@@ -1061,8 +1065,7 @@ class AppState extends ChangeNotifier
   /// Transient by design: selecting any page returns the pane to that page's
   /// section, so Home behaves like a springboard rather than a place you can
   /// get stuck in. Deliberately a BOOLEAN beside a real [activeSectionId], not
-  /// a sentinel section id — every consumer of activeSectionId (study scoping,
-  /// exam plans, deck counts) stays correct with zero special-casing.
+  /// a sentinel section id, so section navigation stays explicit.
   bool navHome = false;
 
   /// Bumped when navigator-only state changes that nothing else observes —
@@ -1219,9 +1222,7 @@ class AppState extends ChangeNotifier
   }
 
   Tool tool = Tool.select;
-  // A pen contact starts writing even when Select or Text is active. Remember
-  // only the two ordinary writing tools: a highlighter or eraser must always
-  // be chosen deliberately.
+  // The pointer starts in Select; a pen contact restores its last ink tool.
   Tool _preferredInkTool = Tool.pen;
   Tool get preferredInkTool => _preferredInkTool;
   bool writingMode = false;
@@ -1586,24 +1587,6 @@ class AppState extends ChangeNotifier
     };
   }
 
-  /// The text block a tag action applies to: the one being edited, else the
-  /// one selected. Public because the tag menu needs to ask what is under the
-  /// caret before it can offer to change it — the same block [tagsAtCaret]
-  /// already answers about.
-  Block? caretBlock() {
-    final b = blocks
-        .where((x) => x.id == (editingBlockId ?? selectedBlockId))
-        .firstOrNull;
-    return b != null && b.type == BlockType.text ? b : null;
-  }
-
-  /// Which line of [caretBlock] the caret is on. 0 when nothing is being
-  /// edited, matching where a tag would land.
-  int caretLineIndex() {
-    final b = caretBlock();
-    return b == null ? 0 : _caretLine(b);
-  }
-
   /// Which line the caret sits on, so a tag lands where the user is looking.
   /// Falls back to line 0 when nothing is being edited (a tag applied to a
   /// merely-selected block is a tag on its first line).
@@ -1614,71 +1597,6 @@ class AppState extends ChangeNotifier
     if (ctl == null || !ctl.selection.isValid) return 0;
     final at = ctl.selection.baseOffset.clamp(0, text.length);
     return '\n'.allMatches(text.substring(0, at)).length;
-  }
-
-  /// Turn the caret's line into a flashcard, picking the tag that fits it.
-  ///
-  /// Tagging is the on-ramp — you mark a line while taking notes and it becomes
-  /// a card — but "tag it Question or Definition and remember which one" is a
-  /// rule the student has to learn before anything happens, and getting it
-  /// wrong produces nothing at all with no explanation. So: one action, and it
-  /// reads the line.
-  ///
-  /// Returns what a caller should tell the user, or null if there was no line
-  /// to work with.
-  String? makeCardAtCaret() {
-    final b = blocks
-        .where((x) => x.id == (editingBlockId ?? selectedBlockId))
-        .firstOrNull;
-    if (b == null || b.type != BlockType.text) return null;
-    final lines = (b.content['text'] as String? ?? '').split('\n');
-    final idx = _caretLine(b);
-    if (idx >= lines.length) return null;
-    final line = lines[idx].trim();
-    if (line.isEmpty) return 'Put the caret on a line with something on it.';
-
-    final kind = line.endsWith('?') ? TagKind.question : TagKind.definition;
-    if (!tagsAtCaret().contains(kind)) toggleTagOnSelection(kind);
-
-    // Say whether it actually produced a card. Silence is what made tagging
-    // feel like it did nothing.
-    final made = cardsFromBlock(
-      b,
-      pageId ?? '',
-      '',
-    ).where((c) => c.line == idx).isNotEmpty;
-    if (made) return '${kind.label} card created.';
-    return kind == TagKind.question
-        ? 'Tagged as a Question — now indent the answer on the line below.'
-        : 'Tagged as a Definition — write it as “term — meaning” to make a card.';
-  }
-
-  /// Blank out the selected words on a tagged line, making it a fill-in-the-
-  /// blank. Returns false when there is no selection to blank.
-  bool blankOutSelection() {
-    final ed = activeEditor;
-    if (ed == null) return false;
-    final sel = ed.controller.selection;
-    if (!sel.isValid || sel.isCollapsed) return false;
-    final text = ed.controller.text;
-    final a = sel.start, z = sel.end;
-    final word = text.substring(a, z);
-    if (word.trim().isEmpty) return false;
-    pushUndo();
-    ed.controller.value = ed.controller.value.copyWith(
-      text: text.replaceRange(a, z, '==$word=='),
-      selection: TextSelection.collapsed(offset: z + 4),
-      composing: TextRange.empty,
-    );
-    // COMMIT it. This wrote the blank into the controller and stopped,
-    // so the block still held the old text and the next rebuild threw the
-    // edit away — the feature looked like it worked and then undid itself.
-    _commitActiveEditor();
-    // Blanking only means something on a line that is already a card.
-    if (tagsAtCaret().isEmpty) toggleTagOnSelection(TagKind.question);
-    markDirty();
-    notifyListeners();
-    return true;
   }
 
   /// Every tagged line in the notebook, for the find-tags rollup.
@@ -1741,22 +1659,12 @@ class AppState extends ChangeNotifier
     return out;
   }
 
-  // ── Study: flashcards, scheduling, stats (E3 — see study_state.dart) ──
-
-  /// Cards, schedules, streaks and the exam countdown.
-  ///
-  /// Extracted in the E3 pass. `AppState` still forwards its notifications
-  /// (see the constructor), so every existing listener keeps working exactly
-  /// as it did — but the state itself now has an owner, and the next study
-  /// feature has somewhere to go that is not this file.
+  /// Personal exam dates used by the calendar.
   late final StudyState study = StudyState(
     this,
     readSetting: _repo.getSetting,
     writeSetting: _repo.setSetting,
   );
-
-  bool get showStudyPanel => openPanel == SidePanelKind.study;
-  void toggleStudyPanel() => togglePanel(SidePanelKind.study);
 
   // ── The planner: dates, reminders, timetable (v0.5) ──────────────────
 
@@ -3404,11 +3312,11 @@ class AppState extends ChangeNotifier
           EraserMode.values.asNameMap()[storedEraserMode] ?? eraserMode;
     }
     final storedPreferredInkTool = _repo.getSetting('preferredInkTool');
-    if (storedPreferredInkTool == Tool.pen.name ||
-        storedPreferredInkTool == Tool.ballpoint.name) {
+    if ([Tool.pen, Tool.ballpoint, Tool.highlighter, Tool.eraser]
+        .any((t) => t.name == storedPreferredInkTool)) {
       _preferredInkTool = Tool.values.byName(storedPreferredInkTool as String);
     }
-    tool = _preferredInkTool;
+    tool = Tool.select;
     final retention = _repo.getSetting('recycleRetentionDays');
     if (retention is num) {
       _recycleRetentionDays = retention.toInt().clamp(1, 3650).toInt();
@@ -4114,20 +4022,82 @@ class AppState extends ChangeNotifier
   static const double contentTop = titleBandHeight + 8;
   static const double mediaImportGap = 36;
 
+  Future<void>? _mediaImportTail;
+
+  /// Scans and PDF batches must finish before the next one reads page geometry.
+  Future<T> runMediaImport<T>(Future<T> Function() work) async {
+    final previous = _mediaImportTail;
+    final finished = Completer<void>();
+    _mediaImportTail = finished.future;
+    try {
+      if (previous != null) await previous;
+      return await work();
+    } finally {
+      finished.complete();
+      if (identical(_mediaImportTail, finished.future)) _mediaImportTail = null;
+    }
+  }
+
   /// Shared layout for phone scans, picked images and PDF printouts. Imports
-  /// form one left-aligned stack below existing content, independent of zoom,
-  /// viewport position, selection or the active text editor.
+  /// continue a horizontal media row to the right, otherwise append below
+  /// existing content. Geometry comes from the page, never the selection.
   ({double left, double top, double width}) mediaImportPlacement(
       {PageData? page}) {
-    var bottom = contentTop;
-    for (final block in page?.blocks ?? blocks) {
+    final source = page?.blocks ?? blocks;
+    final props = page?.props ?? pageProps;
+    Rect bounds(Block block) {
       final height = block.h ??
           (page == null ? renderSizes[block.id]?.height : null) ??
           estimatedHeight(block);
-      bottom = math.max(bottom, block.y + height);
+      final radians =
+          block.type == BlockType.image ? block.rotation * math.pi / 180 : 0.0;
+      final c = math.cos(radians).abs(), s = math.sin(radians).abs();
+      return Rect.fromCenter(
+          center: Offset(block.x + block.w / 2, block.y + height / 2),
+          width: block.w * c + height * s,
+          height: height * c + block.w * s);
+    }
+
+    var bottom = contentTop;
+    var appendLeft = pageLeftMargin;
+    final media = <Rect>[];
+    for (final block in source) {
+      final rect = bounds(block);
+      bottom = math.max(bottom, rect.bottom);
+      if (block.type == BlockType.image) media.add(rect);
+    }
+    if (media.length >= 2 && !props.isPaged && !props.pdfOnly) {
+      final left = media.map((r) => r.left).reduce(math.min);
+      final right = media.map((r) => r.right).reduce(math.max);
+      final top = media.map((r) => r.top).reduce(math.min);
+      final maxTop = media.map((r) => r.top).reduce(math.max);
+      final minHeight = media.map((r) => r.height).reduce(math.min);
+      final minWidth = media.map((r) => r.width).reduce(math.min);
+      final maxLeft = media.map((r) => r.left).reduce(math.max);
+      if (maxLeft - left <= math.max(mediaImportGap, minWidth * .1) &&
+          maxTop - top >= minHeight * .5) {
+        appendLeft = math.max(0, left);
+      }
+      // A row has side-by-side members with roughly aligned upper edges.
+      // A staggered/overlapping pile provides no horizontal ordering signal.
+      if (maxLeft - left >= minWidth * .5 &&
+          maxTop - top <= math.max(mediaImportGap, minHeight * .2)) {
+        var x = right + mediaImportGap;
+        final width =
+            ((props.pageWidth - pageLeftMargin * 2).clamp(280.0, 760.0));
+        final rowBottom = media.map((r) => r.bottom).reduce(math.max);
+        // Other notes in the row must not be covered by the appended item.
+        for (final block in source) {
+          final rect = bounds(block);
+          if (rect.bottom > top && rect.top < rowBottom) {
+            x = math.max(x, rect.right + mediaImportGap);
+          }
+        }
+        return (left: x, top: top, width: width);
+      }
     }
     return (
-      left: pageLeftMargin,
+      left: appendLeft,
       top: bottom + mediaImportGap,
       width: ((page?.props ?? pageProps).pageWidth - pageLeftMargin * 2)
           .clamp(280.0, 760.0),
@@ -4159,6 +4129,19 @@ class AppState extends ChangeNotifier
   /// undershoot a long unwrapped paragraph — but it is far closer than a
   /// constant, and it errs low only where a constant erred catastrophically.
   double estimatedHeight(Block b) {
+    if (b.type == BlockType.image) {
+      final width = b.content['naturalW'];
+      final height = b.content['naturalH'];
+      if (width is num &&
+          height is num &&
+          width > 0 &&
+          height > 0 &&
+          width.isFinite &&
+          height.isFinite) {
+        return b.w * height / width;
+      }
+      return b.w * .75;
+    }
     if (b.type != BlockType.text) return 60;
     final text = b.content['text'] as String? ?? '';
     if (text.isEmpty) return 60;
@@ -4751,25 +4734,6 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
-  void moveNode(String id, int delta) {
-    final n = node(id);
-    if (n == null) return;
-    final siblings = nodes
-        .where((s) => s.kind == n.kind && s.parentId == n.parentId)
-        .toList();
-    final i = siblings.indexWhere((s) => s.id == id);
-    final j = i + delta;
-    if (i < 0 || j < 0 || j >= siblings.length) return;
-    final other = siblings[j];
-    final tmp = n.position;
-    n.position = other.position;
-    other.position = tmp;
-    _putNode(notebookId!, n);
-    _putNode(notebookId!, other);
-    reloadNodes();
-    notifyListeners();
-  }
-
   void moveSectionToGroup(String sectionId, String? groupId) {
     final n = node(sectionId);
     if (n == null || n.kind != NodeKind.section) return;
@@ -5042,7 +5006,7 @@ class AppState extends ChangeNotifier
   // Append-ordered position key. Time-based (siblings sort by creation), padded
   // to a fixed width so lexicographic == numeric order. NOT the CRDT
   // fractional-index of Data Model Spec §1 — that lands with the Loro engine;
-  // until then reorder is swap-based ([moveNode]) and insert-after-target uses a
+  // Reordering rewrites the sibling run; inserting a nested page uses a
   // suffix ([makeSubpageOf]), neither of which needs true between-key insertion.
   // (The old `% 1e8` truncation wrapped every ~28h, letting new nodes sort
   // before old ones — fixed by keeping the full millisecond value.)
@@ -5140,51 +5104,6 @@ class AppState extends ChangeNotifier
       activeMath = null;
       notifyListeners();
     }
-  }
-
-  /// Put a new equation on the page, open for editing (task #79).
-  ///
-  /// THE way an equation is created. It existed in three copies — Alt+= in the
-  /// shell, Insert ▸ Equation in the command bar, and the right-click menu —
-  /// each with its own idea of the box's size and its own literal content map.
-  /// One of them already carried a `linearSource` the others didn't, which is
-  /// the kind of drift that ends with two routes producing subtly different
-  /// blocks.
-  ///
-  /// [at] is the block's top-left in page coordinates. [seed] is text the
-  /// student had selected when they pressed Alt+= — the words come WITH them
-  /// rather than being left behind.
-  /// A card on the page, in a box of its own, opened ready to be written.
-  ///
-  /// The fallback for the Home row's card button when there is no line to
-  /// turn into a card. It used to live on the Insert ribbon as its own
-  /// entry, which meant two buttons with the same icon on two different tabs
-  /// doing two different things; the ribbon's copy is gone and this is where
-  /// its one unique behaviour went.
-  ///
-  /// `BlockType.flashcard` is still read and rendered — pages already have
-  /// them — it is simply no longer the thing this makes.
-  Block insertFlashcard({Offset? at}) {
-    const line = '?[Question](Answer)';
-    final where = at ??
-        canvas.screenToPage(
-          Offset(canvas.viewport.width / 2, canvas.viewport.height / 2),
-        );
-    final pos = smartTextPosition(where);
-    final b = addBlock(
-      Block(
-        type: BlockType.text,
-        x: pos.dx,
-        y: pos.dy,
-        w: 460,
-        // A card is 420 wide and the auto-width measurement reads the RAW
-        // markdown, which is far narrower than the card it stands for — the box
-        // would size itself to the text and clip the card.
-        content: {'text': '$line\n', 'autoWidth': false},
-      ),
-    );
-    select(b.id, edit: true);
-    return b;
   }
 
   // ── Graphs (v0.23 §5) ────────────────────────────────────────
@@ -5753,7 +5672,9 @@ class AppState extends ChangeNotifier
 
   void setTool(Tool t, {bool temporary = false}) {
     if (!temporary) toolChoiceRevision++;
-    if (!temporary && (t == Tool.pen || t == Tool.ballpoint)) {
+    if (!temporary &&
+        (t == Tool.pen || t == Tool.ballpoint ||
+            t == Tool.highlighter || t == Tool.eraser)) {
       _preferredInkTool = t;
       _repo.setSetting('preferredInkTool', t.name);
     }
@@ -5905,10 +5826,7 @@ class AppState extends ChangeNotifier
   void markDirty() {
     _dirty = true;
     _dirtyRevision++;
-    // Cheap counter, not a rebuild: it lets the open page's flashcards be
-    // rederived once per edit, so tagging a line produces a card immediately
-    // instead of only after you navigate away.
-    study.noteContentChanged();
+
     _saveDebounce?.cancel();
     _saveDebounce = Timer(const Duration(seconds: 1), flushSave);
     // Continuous writing keeps postponing the idle save, but must not defer

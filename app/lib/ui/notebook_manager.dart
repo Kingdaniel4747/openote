@@ -13,17 +13,9 @@ import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
 import '../theme/tokens.dart';
 import 'onote_dialog.dart';
+import 'transfer_progress.dart';
 
-/// The notebook manager (style guide §7b) — the one place notebooks are managed.
-///
-/// **Why a panel and not a pointer menu.** Management used to live in the
-/// notebook dropdown: right-clicking a row popped a context menu, which closed
-/// the dropdown underneath it. The action worked but the surface you were
-/// working in vanished, which read as broken, and deleting three notebooks meant
-/// reopening the dropdown three times. Here the list is *stable*: rename in
-/// place, delete with an inline confirm, restore from the trash — the list never
-/// disappears, and you can do several things in a row. The dropdown keeps only
-/// what it is genuinely good at: switching fast.
+/// The shared surface for switching, managing and backing up notebooks.
 Future<void> showNotebookManager(
   BuildContext context,
   AppState app,
@@ -34,6 +26,188 @@ Future<void> showNotebookManager(
     context: context,
     builder: (_) => _NotebookManager(app: app),
   );
+}
+
+// Pick the higher-contrast foreground, including for pale notebook colours.
+Color _coverInk(Color color) =>
+    color.computeLuminance() > .179 ? Colors.black : Colors.white;
+
+class _NotebookBackupDialog extends StatefulWidget {
+  const _NotebookBackupDialog(
+      {required this.notebooks, required this.colorFor});
+
+  final List<NotebookRef> notebooks;
+  final Color Function(NotebookRef) colorFor;
+
+  @override
+  State<_NotebookBackupDialog> createState() => _NotebookBackupDialogState();
+}
+
+class _NotebookBackupDialogState extends State<_NotebookBackupDialog> {
+  final _search = TextEditingController();
+  String _selected = '__all__';
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  Widget _choice(
+      {required String id,
+      required Widget leading,
+      required String title,
+      String? subtitle}) {
+    final scheme = Theme.of(context).colorScheme;
+    final selected = _selected == id;
+    return Semantics(
+      selected: selected,
+      inMutuallyExclusiveGroup: true,
+      child: Material(
+        color: selected
+            ? scheme.primary.withValues(alpha: OnoteAlpha.selected)
+            : context.surfaces.chrome,
+        shape: RoundedRectangleBorder(
+          borderRadius: OnoteRadius.lgAll,
+          side: BorderSide(
+              color: selected ? scheme.primary : context.surfaces.border),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => setState(() => _selected = id),
+          child: Padding(
+            padding: const EdgeInsets.all(OnoteSpace.x5),
+            child: Row(children: [
+              ExcludeSemantics(child: leading),
+              const SizedBox(width: OnoteSpace.x5),
+              Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    Text(title, style: OnoteType.uiStrong),
+                    if (subtitle != null)
+                      Text(subtitle,
+                          style: OnoteType.small
+                              .copyWith(color: context.surfaces.textSecondary)),
+                  ])),
+              const SizedBox(width: OnoteSpace.x5),
+              Icon(
+                  selected
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_off,
+                  size: OnoteIcon.lg,
+                  color: selected
+                      ? scheme.primary
+                      : context.surfaces.textSecondary),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final query = _search.text.trim().toLowerCase();
+    final visible = widget.notebooks
+        .where((nb) => nb.title.toLowerCase().contains(query))
+        .toList();
+    final selected =
+        widget.notebooks.where((nb) => nb.id == _selected).firstOrNull;
+    return AlertDialog(
+      title: const AppText('Backup', style: OnoteType.headline),
+      content: SizedBox(
+        width: 540,
+        height: 460,
+        child:
+            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          TextField(
+            controller: _search,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              labelText: tr(context, 'Search notebooks'),
+              prefixIcon: const Icon(Icons.search, size: OnoteIcon.lg),
+              suffixIcon: query.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: tr(context, 'Clear search'),
+                      icon: const Icon(Icons.close, size: OnoteIcon.md),
+                      onPressed: () => setState(() => _search.clear()),
+                    ),
+            ),
+          ),
+          const SizedBox(height: OnoteSpace.x5),
+          Expanded(
+              child: ListView.separated(
+            itemCount: 3 + (visible.isEmpty ? 1 : visible.length),
+            separatorBuilder: (_, __) => const SizedBox(height: OnoteSpace.x4),
+            itemBuilder: (_, index) {
+              if (index == 0) {
+                return AppText(
+                    'Choose what to save. You’ll choose the ZIP file location next.',
+                    style: OnoteType.ui
+                        .copyWith(color: context.surfaces.textSecondary));
+              }
+              if (index == 1) {
+                return _choice(
+                  id: '__all__',
+                  leading: const Icon(Icons.inventory_2_outlined,
+                      size: OnoteIcon.lg),
+                  title: tr(context, 'Back up all notebooks'),
+                  subtitle:
+                      '${widget.notebooks.length} ${tr(context, 'notebooks')}',
+                );
+              }
+              if (index == 2) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: OnoteSpace.x4),
+                  child: AppText('Or choose one notebook',
+                      style: OnoteType.uiStrong),
+                );
+              }
+              if (visible.isEmpty) {
+                return const AppText('No notebooks found.');
+              }
+              final nb = visible[index - 3];
+              final cover = widget.colorFor(nb);
+              return _choice(
+                  id: nb.id,
+                  title: nb.title,
+                  leading: Container(
+                    width: 32,
+                    height: 40,
+                    decoration: BoxDecoration(
+                        color: cover,
+                        borderRadius: OnoteRadius.smAll,
+                        border:
+                            Border.all(color: context.surfaces.textSecondary)),
+                    child: Icon(Icons.menu_book_outlined,
+                        size: OnoteIcon.sm, color: _coverInk(cover)),
+                  ));
+            },
+          )),
+          const SizedBox(height: OnoteSpace.x5),
+          Text(
+              '${tr(context, 'Selected')}: ${selected?.title ?? tr(context, 'Back up all notebooks')}',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: OnoteType.uiStrong),
+        ]),
+      ),
+      actions: [
+        TextButton(
+            style: TextButton.styleFrom(minimumSize: const Size(0, 44)),
+            onPressed: () => Navigator.pop(context),
+            child: const AppText('Cancel')),
+        FilledButton.icon(
+          style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
+          onPressed: () => Navigator.pop(context, _selected),
+          icon: const Icon(Icons.save_alt, size: OnoteIcon.md),
+          label: const AppText('Choose location…'),
+        ),
+      ],
+    );
+  }
 }
 
 class _NotebookManager extends StatefulWidget {
@@ -129,6 +303,17 @@ class _NotebookManagerState extends State<_NotebookManager> {
   void _toast(String msg) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 
+  Future<void> _chooseBackup() async {
+    final choice = await showOnoteDialog<String>(
+      context: context,
+      builder: (_) => _NotebookBackupDialog(
+        notebooks: app.notebooks.toList(),
+        colorFor: (nb) => _coverColor(app.notebookColor(nb.id), nb.id),
+      ),
+    );
+    if (choice != null && mounted) await _createBackup(choice);
+  }
+
   Future<void> _createBackup(String choice) async {
     final only = choice == '__all__' ? null : choice;
     final notebook = only == null
@@ -144,10 +329,17 @@ class _NotebookManagerState extends State<_NotebookManager> {
     if (location == null || !mounted) return;
     setState(() => _busyId = only ?? '__all__');
     try {
-      final result = await app.createWorkspaceBackup(
-        location.path,
-        onlyNotebookId: only,
-      );
+      final result =
+          await runTransfer(context, 'Export backup', (progress) async {
+        progress.update(detail: 'Saving backup');
+        final result = await app.createWorkspaceBackup(
+          location.path,
+          onlyNotebookId: only,
+          onProgress: (done, total, detail) => progress.update(
+              done: done, total: total, detail: detail, unit: 'steps'),
+        );
+        return result;
+      });
       if (mounted) {
         _toast(
           'Backup saved: ${result.notebooks} notebook'
@@ -178,10 +370,20 @@ class _NotebookManagerState extends State<_NotebookManager> {
     setState(() => _busyId = '__import__');
     try {
       if (extension == '.zip') {
-        final count = await app.restoreWorkspaceBackup(file.path);
+        final count =
+            await runTransfer(context, 'Import backup', (progress) async {
+          progress.update(detail: file.name);
+          final count = await app.restoreWorkspaceBackup(file.path);
+          progress.update(done: 1);
+          return count;
+        });
         if (mounted) _toast('Imported $count notebooks from the backup.');
       } else if (extension == '.onote') {
-        await app.openExistingNotebook(file.path);
+        await runTransfer(context, 'Import notebook', (progress) async {
+          progress.update(detail: file.name);
+          await app.openExistingNotebook(file.path);
+          progress.update(done: 1);
+        });
       } else if (extension == '.onepkg') {
         final job = ImportJob.start(app, p.basename(file.name), file.path);
         if (job == null && mounted) _toast('An import is already running.');
@@ -192,8 +394,14 @@ class _NotebookManagerState extends State<_NotebookManager> {
           _toast('Imported $count page${count == 1 ? '' : 's'} from OneNote.');
         }
       } else if (extension == '.md') {
-        final count = await importMarkdownFolder(app,
-            sourceDirectory: p.dirname(file.path));
+        final count =
+            await runTransfer(context, 'Import Markdown', (progress) async {
+          progress.update(total: 0, unit: 'pages', detail: file.name);
+          return importMarkdownFolder(app,
+              sourceDirectory: p.dirname(file.path),
+              onBatchProgress: (done, total) =>
+                  progress.update(done: done, total: total));
+        });
         if (mounted && count != null) {
           _toast('Imported $count Markdown page${count == 1 ? '' : 's'}.');
         }
@@ -219,9 +427,8 @@ class _NotebookManagerState extends State<_NotebookManager> {
         children: [
           Row(
             children: [
-              Icon(Icons.menu_book_outlined, size: 18, color: scheme.primary),
-              const SizedBox(width: 9),
-              const AppText('Notebooks'),
+              const Expanded(
+                  child: AppText('Notebooks', style: OnoteType.headline)),
               if (_busyId != null)
                 const Padding(
                   padding: EdgeInsets.only(left: 12),
@@ -231,13 +438,10 @@ class _NotebookManagerState extends State<_NotebookManager> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                 ),
-              const Spacer(),
-              Text(
-                '${notebooks.length} open',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: context.surfaces.textSecondary,
-                ),
+              IconButton(
+                tooltip: tr(context, 'Close'),
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close, size: OnoteIcon.lg),
               ),
             ],
           ),
@@ -264,45 +468,61 @@ class _NotebookManagerState extends State<_NotebookManager> {
               ),
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.only(top: OnoteSpace.x5),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                query.isEmpty
+                    ? '${notebooks.length} ${tr(context, 'notebooks')}'
+                    : '${visibleNotebooks.length} / ${notebooks.length} ${tr(context, 'notebooks')}',
+                style: OnoteType.small
+                    .copyWith(color: context.surfaces.textSecondary),
+              ),
+            ),
+          ),
         ],
       ),
-      contentPadding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      contentPadding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
       content: SizedBox(
         width: 980,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: 680),
-          child: ListView(
-            children: [
-              if (visibleNotebooks.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.all(24),
-                  child: AppText('No notebooks found.',
-                      textAlign: TextAlign.center),
+          child: LayoutBuilder(builder: (context, constraints) {
+            // Give names room before adding another column; larger system
+            // text also gets taller cards rather than clipping the footer.
+            final columns = (constraints.maxWidth / 210).floor().clamp(1, 4);
+            final textScale = MediaQuery.textScalerOf(context).scale(1);
+            return CustomScrollView(
+              slivers: [
+                if (visibleNotebooks.isEmpty)
+                  const SliverToBoxAdapter(
+                      child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: AppText('No notebooks found.',
+                        textAlign: TextAlign.center),
+                  )),
+                SliverPadding(
+                  padding: const EdgeInsets.only(bottom: OnoteSpace.x6),
+                  sliver: SliverGrid.builder(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: columns,
+                      mainAxisSpacing: OnoteSpace.x6,
+                      crossAxisSpacing: OnoteSpace.x6,
+                      mainAxisExtent: 208 + 76 * textScale,
+                    ),
+                    itemCount: visibleNotebooks.length,
+                    itemBuilder: (_, index) => RepaintBoundary(
+                      child: _coverCard(visibleNotebooks[index], scheme),
+                    ),
+                  ),
                 ),
-              GridView.count(
-                crossAxisCount: 4,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                mainAxisSpacing: 18,
-                crossAxisSpacing: 18,
-                childAspectRatio: .72,
-                children: [
-                  for (final nb in visibleNotebooks)
-                    RepaintBoundary(child: _coverCard(nb, scheme)),
-                ],
-              ),
-              // Repeated imports of the same notebook. Shown here rather than
-              // behind a button because the whole problem is that nothing ever
-              // pointed them out: a real workspace was holding 586 MB, of which
-              // ~380 MB was four copies of one OneNote import made while
-              // getting the importer working. Each import correctly mints
-              // fresh ids, so nothing can merge them automatically — only a
-              // person can say they are the same thing, and only if shown.
-            ],
-          ),
+              ],
+            );
+          }),
         ),
       ),
-      actionsPadding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
+      actionsPadding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
       // ONE Row as the single action, because `AlertDialog.actions` is an
       // OverflowBar — a `Spacer` there throws ("applying parent data"), since
       // Spacer needs a Flex parent.
@@ -313,67 +533,53 @@ class _NotebookManagerState extends State<_NotebookManager> {
           alignment: WrapAlignment.end,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            TextButton.icon(
+            FilledButton.icon(
+              style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
               icon: const Icon(Icons.add, size: 18),
               label: const AppText('New'),
-              onPressed: () async {
-                // Through the shared prompt, which owns the field's controller in
-                // the dialog's own State. This used to build the field and
-                // dispose its controller in a `finally` right after the await —
-                // 150 ms before the route's exit transition had finished
-                // unmounting the field. That is what crashed the app on Enter;
-                // see [promptForText].
-                final title = await promptForText(
-                  context,
-                  title: 'New notebook',
-                  okLabel: 'Create',
-                  hintText: 'Notebook name',
-                );
-                if (title == null || !mounted) return;
-                setState(() => _busyId = '__new__');
-                // Let the pressed state paint before SQLite creates the first
-                // section and page, so a slow folder never reads as a dead tap.
-                await Future<void>.delayed(const Duration(milliseconds: 16));
-                try {
-                  await app.createNotebook(title);
-                } catch (e) {
-                  if (mounted) _toast('Could not create notebook: $e');
-                } finally {
-                  if (mounted) setState(() => _busyId = null);
-                }
-              },
+              onPressed: _busyId != null
+                  ? null
+                  : () async {
+                      // Through the shared prompt, which owns the field's controller in
+                      // the dialog's own State. This used to build the field and
+                      // dispose its controller in a `finally` right after the await —
+                      // 150 ms before the route's exit transition had finished
+                      // unmounting the field. That is what crashed the app on Enter;
+                      // see [promptForText].
+                      final title = await promptForText(
+                        context,
+                        title: 'New notebook',
+                        okLabel: 'Create',
+                        hintText: 'Notebook name',
+                      );
+                      if (title == null || !mounted) return;
+                      setState(() => _busyId = '__new__');
+                      // Let the pressed state paint before SQLite creates the first
+                      // section and page, so a slow folder never reads as a dead tap.
+                      await Future<void>.delayed(
+                          const Duration(milliseconds: 16));
+                      try {
+                        await app.createNotebook(title);
+                      } catch (e) {
+                        if (mounted) _toast('Could not create notebook: $e');
+                      } finally {
+                        if (mounted) setState(() => _busyId = null);
+                      }
+                    },
             ),
             TextButton.icon(
+              style: TextButton.styleFrom(minimumSize: const Size(0, 44)),
               icon: const Icon(Icons.download_outlined, size: 18),
               label: const AppText('Import'),
               onPressed: _busyId == null ? _importFile : null,
             ),
-            PopupMenuButton<String>(
-              tooltip: 'Create a portable ZIP backup',
-              onSelected: _createBackup,
-              itemBuilder: (_) => [
-                const PopupMenuItem(
-                  value: '__all__',
-                  child: Row(
-                    children: [
-                      Icon(Icons.inventory_2_outlined, size: 18),
-                      SizedBox(width: 8),
-                      Flexible(child: Text('Back up all notebooks')),
-                    ],
-                  ),
-                ),
-                const PopupMenuDivider(),
-                for (final nb in notebooks)
-                  PopupMenuItem(value: nb.id, child: Text(nb.title)),
-              ],
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.backup_outlined, size: 18, color: scheme.primary),
-                  const SizedBox(width: 8),
-                  AppText('Backup', style: TextStyle(color: scheme.primary)),
-                ]),
+            Tooltip(
+              message: tr(context, 'Create a portable ZIP backup'),
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
+                onPressed: _busyId == null ? _chooseBackup : null,
+                icon: const Icon(Icons.backup_outlined, size: OnoteIcon.md),
+                label: const AppText('Backup'),
               ),
             ),
           ],
@@ -382,199 +588,215 @@ class _NotebookManagerState extends State<_NotebookManager> {
     );
   }
 
-  /// The former inline import chooser was removed in favour of [_importFile].
-  ///
-  /// **Everything an import needs is captured BEFORE this dialog is popped.**
-  /// The obvious spelling — pop, then call `importX(context, app)` — hands the
-  /// import the context of a route that no longer exists, so every
-  /// `context.mounted` guard inside it is false and the import silently does
-  /// nothing at all. That is precisely how the `.onepkg` import stopped
-  /// working: the file picker opened, the user chose their notebook, and the
-  /// very next line returned.
-  ///
-  /// A `ScaffoldMessengerState` and the ROOT navigator's context both outlive
-  /// this route, so neither can go stale under an import that takes a minute.
   Widget _coverCard(NotebookRef nb, ColorScheme scheme) {
     final current = nb.id == app.notebookId;
     final counts = _counts[nb.id] ?? (sections: 0, pages: 0);
     final cover = _coverColor(app.notebookColor(nb.id), nb.id);
-    final coverForeground =
-        cover.computeLuminance() > .58 ? const Color(0xFF243040) : Colors.white;
-    return InkWell(
-      borderRadius: BorderRadius.circular(10),
-      onTap: () async {
-        Navigator.pop(context);
-        if (current) return;
-        await app.selectNotebook(nb.id);
-      },
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: cover,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: current
-                      ? scheme.primary
-                      : Colors.black.withValues(alpha: .15),
-                  width: current ? 2 : 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: .16),
-                    blurRadius: 5,
-                    offset: const Offset(1, 3),
-                  ),
-                ],
-              ),
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: Row(
+    final coverForeground = _coverInk(cover);
+    return Semantics(
+      selected: current,
+      child: Material(
+        color: current
+            ? scheme.primary.withValues(alpha: OnoteAlpha.selected)
+            : context.surfaces.chrome,
+        shape: RoundedRectangleBorder(
+          borderRadius: OnoteRadius.xlAll,
+          side: BorderSide(
+              color: current ? scheme.primary : context.surfaces.border,
+              width: current ? 2 : 1),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: _busyId != null
+              ? null
+              : () async {
+                  Navigator.pop(context);
+                  if (current) return;
+                  await app.selectNotebook(nb.id);
+                },
+          child: Padding(
+            padding: const EdgeInsets.all(OnoteSpace.x4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: Ink(
+                    decoration: BoxDecoration(
+                      color: cover,
+                      borderRadius: OnoteRadius.lgAll,
+                    ),
+                    child: Stack(
                       children: [
-                        Container(
-                          width: 11,
-                          color: Colors.black.withValues(alpha: .18),
+                        Positioned(
+                          left: OnoteSpace.x4,
+                          top: OnoteSpace.x4,
+                          bottom: OnoteSpace.x4,
+                          child: Container(
+                              width: 2,
+                              color: coverForeground.withValues(
+                                  alpha: OnoteAlpha.borderOnTint)),
                         ),
-                        const Spacer(),
-                        Container(
-                          width: 7,
-                          color: Colors.white.withValues(alpha: .22),
-                        ),
-                        Container(
-                          width: 4,
-                          color: Colors.white.withValues(alpha: .52),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Center(
-                    child: Icon(
-                      Icons.menu_book_outlined,
-                      size: 44,
-                      color: coverForeground.withValues(alpha: .9),
-                    ),
-                  ),
-                  Positioned(
-                    top: 2,
-                    right: 0,
-                    child: PopupMenuButton<String>(
-                      icon: Icon(Icons.more_vert, color: coverForeground),
-                      tooltip: 'Notebook options',
-                      popUpAnimationStyle: AnimationStyle.noAnimation,
-                      onSelected: (value) async {
-                        if (value == 'rename') {
-                          final title = await promptForText(
-                            context,
-                            title: 'Rename notebook',
-                            okLabel: 'Save',
-                            hintText: nb.title,
-                          );
-                          if (title != null) {
-                            await app.renameNotebook(nb.id, title);
-                          }
-                        }
-                        if (value == 'delete') {
-                          await _confirmDeleteCard(nb);
-                        }
-                        if (value.startsWith('color:')) {
-                          app.setNotebookColor(nb.id, value.substring(6));
-                        }
-                      },
-                      itemBuilder: (_) => [
-                        const PopupMenuItem(
-                          value: 'rename',
-                          child: Text('Rename'),
-                        ),
-                        const PopupMenuItem(
-                          value: 'delete',
-                          child: Text('Move to recycle bin'),
-                        ),
-                        const PopupMenuDivider(),
-                        // A fixed-size Wrap keeps all sixteen colours visible
-                        // inside the popup without a nested scroll viewport.
-                        PopupMenuItem(
-                          value: '__palette',
-                          height: 154,
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          child: SizedBox(
-                            width: 170,
-                            height: 130,
-                            child: Wrap(
-                              spacing: 6,
-                              runSpacing: 6,
-                              children: [
-                                for (final color in _coverColors.keys)
-                                  Tooltip(
-                                    message: color,
-                                    child: GestureDetector(
-                                      onTap: () {
-                                        Navigator.of(context).pop();
-                                        app.setNotebookColor(nb.id, color);
-                                      },
-                                      child: Container(
-                                        width: 38,
-                                        height: 28,
-                                        decoration: BoxDecoration(
-                                          color: _coverColor(color, nb.id),
-                                          borderRadius:
-                                              BorderRadius.circular(4),
-                                          border: Border.all(
-                                            color: app.notebookColor(nb.id) ==
-                                                    color
-                                                ? scheme.primary
-                                                : scheme.outlineVariant,
-                                            width: app.notebookColor(nb.id) ==
-                                                    color
-                                                ? 2
-                                                : 1,
-                                          ),
-                                        ),
-                                        child: app.notebookColor(nb.id) == color
-                                            ? Icon(Icons.check,
-                                                size: 17,
-                                                color: _coverColor(color, nb.id)
-                                                            .computeLuminance() >
-                                                        .58
-                                                    ? const Color(0xFF243040)
-                                                    : Colors.white)
-                                            : null,
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
+                        Positioned(
+                          left: OnoteSpace.x8,
+                          top: OnoteSpace.x6,
+                          child: Icon(
+                            Icons.menu_book_outlined,
+                            size: OnoteIcon.lg,
+                            color: coverForeground,
                           ),
                         ),
+                        Positioned(
+                          left: OnoteSpace.x8,
+                          right: OnoteSpace.x6,
+                          bottom: OnoteSpace.x7,
+                          child: Tooltip(
+                            message: nb.title,
+                            child: Text(nb.title,
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                                style: OnoteType.headline
+                                    .copyWith(color: coverForeground)),
+                          ),
+                        ),
+                        Positioned(
+                          top: 2,
+                          right: 0,
+                          child: _notebookOptions(nb, scheme, coverForeground),
+                        ),
                       ],
                     ),
                   ),
-                ],
-              ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                      vertical: OnoteSpace.x4, horizontal: OnoteSpace.x2),
+                  child: Row(children: [
+                    if (current) ...[
+                      Icon(Icons.check_circle,
+                          size: OnoteIcon.sm, color: scheme.primary),
+                      const SizedBox(width: OnoteSpace.x2),
+                    ],
+                    Expanded(
+                        child: AppText(
+                            current ? 'Current notebook' : 'Open notebook',
+                            style: OnoteType.uiStrong.copyWith(
+                                color: current
+                                    ? scheme.primary
+                                    : context.surfaces.textPrimary))),
+                    if (!current)
+                      Icon(Icons.arrow_forward,
+                          size: OnoteIcon.sm,
+                          color: context.surfaces.textSecondary),
+                  ]),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
+                  child: Text(
+                    _counts.containsKey(nb.id)
+                        ? '${counts.sections} ${tr(context, counts.sections == 1 ? 'section' : 'sections')} · ${counts.pages} ${tr(context, counts.pages == 1 ? 'page' : 'pages')}'
+                        : tr(context, 'Loading…'),
+                    style: OnoteType.small
+                        .copyWith(color: context.surfaces.textSecondary),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 7),
-          Text(
-            nb.title,
-            textAlign: TextAlign.center,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontWeight: current ? FontWeight.w700 : FontWeight.w600,
-              color: current ? scheme.primary : null,
-            ),
-          ),
-          Text(
-            '${counts.sections} sections · ${counts.pages} pages',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 11,
-              color: context.surfaces.textSecondary,
-            ),
-          ),
-        ],
+        ),
       ),
+    );
+  }
+
+  Widget _notebookOptions(
+      NotebookRef nb, ColorScheme scheme, Color coverForeground) {
+    final selectedColor =
+        app.notebookColor(nb.id) ?? _automaticCoverToken(nb.id);
+    return PopupMenuButton<String>(
+      icon: Icon(Icons.more_vert, color: coverForeground),
+      tooltip: tr(context, 'Notebook options'),
+      enabled: _busyId == null,
+      popUpAnimationStyle: AnimationStyle.noAnimation,
+      onSelected: (value) async {
+        if (value == 'rename') {
+          final title = await promptForText(
+            context,
+            title: 'Rename notebook',
+            okLabel: 'Save',
+            hintText: nb.title,
+          );
+          if (title != null) {
+            await app.renameNotebook(nb.id, title);
+          }
+        }
+        if (value == 'delete') {
+          await _confirmDeleteCard(nb);
+        }
+        if (value.startsWith('color:')) {
+          app.setNotebookColor(nb.id, value.substring(6));
+        }
+      },
+      itemBuilder: (_) => [
+        const PopupMenuItem(
+          value: 'rename',
+          child: AppText('Rename'),
+        ),
+        const PopupMenuItem(
+          value: 'delete',
+          child: AppText('Move to recycle bin'),
+        ),
+        const PopupMenuDivider(),
+        // A fixed-size Wrap keeps all sixteen colours visible
+        // inside the popup without a nested scroll viewport.
+        PopupMenuItem(
+          value: '__palette',
+          height: 218,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: SizedBox(
+            width: 202,
+            height: 202,
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final color in _coverColors.keys)
+                  Tooltip(
+                    message: color,
+                    child: Semantics(
+                      button: true,
+                      selected: selectedColor == color,
+                      child: InkWell(
+                        borderRadius: OnoteRadius.mdAll,
+                        onTap: () {
+                          Navigator.of(context).pop();
+                          app.setNotebookColor(nb.id, color);
+                        },
+                        child: Container(
+                          width: 46,
+                          height: 46,
+                          decoration: BoxDecoration(
+                            color: _coverColor(color, nb.id),
+                            borderRadius: OnoteRadius.mdAll,
+                            border: Border.all(
+                              color: selectedColor == color
+                                  ? scheme.primary
+                                  : scheme.outlineVariant,
+                              width: selectedColor == color ? 2 : 1,
+                            ),
+                          ),
+                          child: selectedColor == color
+                              ? Icon(Icons.check,
+                                  size: OnoteIcon.md,
+                                  color: _coverInk(_coverColor(color, nb.id)))
+                              : null,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -612,10 +834,14 @@ class _NotebookManagerState extends State<_NotebookManager> {
   ];
 
   static Color _coverColor(String? token, String id) {
-    if (token != null) return _coverColors[token] ?? _coverColors['Blue']!;
+    return _coverColors[token ?? _automaticCoverToken(id)] ??
+        _coverColors['Blue']!;
+  }
+
+  static String _automaticCoverToken(String id) {
     final index = id.codeUnits.fold<int>(0, (a, b) => a + b) %
         _automaticCoverTokens.length;
-    return _coverColors[_automaticCoverTokens[index]]!;
+    return _automaticCoverTokens[index];
   }
 }
 // ── Import entry points ────────────────────────────────────────────────────
@@ -698,22 +924,19 @@ Future<void> importMarkdownWithFeedback(
   ScaffoldMessengerState messenger,
   AppState app,
 ) async {
-  // **It says what it is doing while it does it.** A vault of a few hundred
-  // notes is seconds of work, and there was nothing on screen for any of it.
-  final progress = ValueNotifier<String>('Reading the folder…');
   int? count;
   try {
-    count = await importMarkdownFolder(
-      app,
-      onProgress: (done) => progress.value = 'Imported $done '
-          'page${done == 1 ? '' : 's'}…',
-    );
+    count = await runTransfer(messenger.context, 'Import Markdown',
+        (progress) async {
+      progress.update(total: 0, unit: 'pages', detail: 'Reading the folder…');
+      return importMarkdownFolder(app,
+          onBatchProgress: (done, total) =>
+              progress.update(done: done, total: total));
+    });
   } catch (e) {
-    progress.dispose();
     _say(messenger, "That folder couldn't be imported: $e", seconds: 8);
     return;
   }
-  progress.dispose();
   if (count == null) return;
   _say(
     messenger,

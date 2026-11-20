@@ -33,7 +33,7 @@ import 'md_common.dart';
 /// Export every page of the current notebook into [rootDir]/<notebook>/…, one
 /// folder per section and page. Returns the created root folder path, or null
 /// if the user cancelled the folder picker.
-/// [onProgress] is called with (page number, total) as each page is written,
+/// [onProgress] counts completed pages plus one final asset/manifest step,
 /// so the caller can put something on screen. This walks every page in the
 /// notebook and writes a folder for each: seconds of work on a term of notes,
 /// and there used to be nothing at all to say so.
@@ -56,11 +56,11 @@ Future<String?> materializeNotebook(AppState app,
   // hash → "hash.ext"; collected across ALL pages then written once (dedup).
   final sharedAssets = <String, String>{};
 
-  final pageNodes =
-      app.nodes.where((n) => n.kind == NodeKind.page).toList();
+  final pageNodes = app.nodes.where((n) => n.kind == NodeKind.page).toList();
   var pagesDone = 0;
+  onProgress?.call(0, pageNodes.length + 1);
   for (final node in pageNodes) {
-    onProgress?.call(++pagesDone, pageNodes.length);
+    onProgress?.call(pagesDone, pageNodes.length + 1);
     // Page folder = sanitized titles of every ancestor + this page (+ an id
     // suffix to guarantee uniqueness), so the section/group/subpage hierarchy
     // is mirrored as nested folders under pages/.
@@ -93,8 +93,8 @@ Future<String?> materializeNotebook(AppState app,
 
     // 1) Fidelity mirror.
     await File(p.join(pageDir, 'page.json')).writeAsString(
-        const JsonEncoder.withIndent('  ').convert(
-            _mirrorMap(node.id, data.props, blocks)));
+        const JsonEncoder.withIndent('  ')
+            .convert(_mirrorMap(node.id, data.props, blocks)));
 
     // 2) Convenience Markdown + collected image assets.
     final md = _pageMarkdown(node.title, blocks, assetPrefix);
@@ -103,8 +103,8 @@ Future<String?> materializeNotebook(AppState app,
 
     // 3) JSON Canvas.
     await File(p.join(pageDir, 'canvas.json')).writeAsString(
-        const JsonEncoder.withIndent('  ').convert(
-            _jsonCanvas(blocks, assetPrefix)));
+        const JsonEncoder.withIndent('  ')
+            .convert(_jsonCanvas(blocks, assetPrefix)));
 
     // 4) InkML when there's ink.
     final inkml = _inkML(blocks);
@@ -118,6 +118,7 @@ Future<String?> materializeNotebook(AppState app,
       'path': 'pages/${rel.replaceAll('\\', '/')}',
       'level': node.level,
     });
+    onProgress?.call(++pagesDone, pageNodes.length + 1);
   }
 
   // Write the shared, content-addressed asset store once.
@@ -133,8 +134,8 @@ Future<String?> materializeNotebook(AppState app,
 
   // notebook.json: the full structure tree (groups/sections/pages, order,
   // colours, timestamps) — the spec's §8 top-level structure file.
-  await File(p.join(root, 'notebook.json')).writeAsString(
-      const JsonEncoder.withIndent('  ').convert({
+  await File(p.join(root, 'notebook.json'))
+      .writeAsString(const JsonEncoder.withIndent('  ').convert({
     'format': 'openote-materialized/1',
     'notebook': {'id': nb.id, 'title': nb.title},
     'exportedAt': DateTime.now().toIso8601String(),
@@ -159,6 +160,7 @@ Future<String?> materializeNotebook(AppState app,
     'pages': manifestPages,
   }));
 
+  onProgress?.call(pageNodes.length + 1, pageNodes.length + 1);
   return root;
 }
 
@@ -175,8 +177,8 @@ Future<String?> exportPageJsonCanvas(AppState app) async {
     ],
   );
   if (location == null) return null;
-  await File(location.path).writeAsString(
-      const JsonEncoder.withIndent('  ').convert(_jsonCanvas(app.blocks, 'assets')));
+  await File(location.path).writeAsString(const JsonEncoder.withIndent('  ')
+      .convert(_jsonCanvas(app.blocks, 'assets')));
   return location.path;
 }
 
@@ -194,8 +196,7 @@ Future<String?> exportPageInkML(AppState app) async {
     ],
   );
   if (location == null) return null;
-  await File(location.path)
-      .writeAsString(inkml ?? _emptyInkML());
+  await File(location.path).writeAsString(inkml ?? _emptyInkML());
   return location.path;
 }
 
@@ -241,7 +242,8 @@ _Markdown _pageMarkdown(String title, List<Block> blocks, String assetPrefix) {
   for (final b in ordered) {
     switch (b.type) {
       case BlockType.text:
-        buf.writeln(markdownInline(b.content['text'] as String? ?? '').trimRight());
+        buf.writeln(
+            markdownInline(b.content['text'] as String? ?? '').trimRight());
         buf.writeln();
       case BlockType.math:
         final latex = b.content['latex'] as String? ?? '';
@@ -322,7 +324,10 @@ Map<String, dynamic> _jsonCanvas(List<Block> blocks, String assetPrefix) {
           'id': b.id,
           'type': 'text',
           'text': b.content['text'] as String? ?? '',
-          'x': x, 'y': y, 'width': w, 'height': h,
+          'x': x,
+          'y': y,
+          'width': w,
+          'height': h,
         });
       case BlockType.graph:
         // JSON Canvas has no curve, so a graph travels as the text of its
@@ -331,7 +336,10 @@ Map<String, dynamic> _jsonCanvas(List<Block> blocks, String assetPrefix) {
           'id': b.id,
           'type': 'text',
           'text': 'Graph of \$${b.content['latex'] ?? ''}\$',
-          'x': x, 'y': y, 'width': w, 'height': h,
+          'x': x,
+          'y': y,
+          'width': w,
+          'height': h,
         });
       case BlockType.substitute:
         // Same reasoning as a graph: a substitute block travels as the text
@@ -350,7 +358,10 @@ Map<String, dynamic> _jsonCanvas(List<Block> blocks, String assetPrefix) {
           'id': b.id,
           'type': 'text',
           'text': stext,
-          'x': x, 'y': y, 'width': w, 'height': h,
+          'x': x,
+          'y': y,
+          'width': w,
+          'height': h,
         });
       case BlockType.math:
         final latex = b.content['latex'] as String? ?? '';
@@ -358,7 +369,10 @@ Map<String, dynamic> _jsonCanvas(List<Block> blocks, String assetPrefix) {
           'id': b.id,
           'type': 'text',
           'text': latex.isEmpty ? '' : '\$\$$latex\$\$',
-          'x': x, 'y': y, 'width': w, 'height': h,
+          'x': x,
+          'y': y,
+          'width': w,
+          'height': h,
         });
       case BlockType.code:
         final lang = b.content['language'] as String? ?? '';
@@ -366,14 +380,20 @@ Map<String, dynamic> _jsonCanvas(List<Block> blocks, String assetPrefix) {
           'id': b.id,
           'type': 'text',
           'text': '```$lang\n${b.content['source'] ?? ''}\n```',
-          'x': x, 'y': y, 'width': w, 'height': h,
+          'x': x,
+          'y': y,
+          'width': w,
+          'height': h,
         });
       case BlockType.table:
         nodes.add({
           'id': b.id,
           'type': 'text',
           'text': tableToMarkdown(b.content['cells']),
-          'x': x, 'y': y, 'width': w, 'height': h,
+          'x': x,
+          'y': y,
+          'width': w,
+          'height': h,
         });
       case BlockType.image:
         final hash =
@@ -384,7 +404,10 @@ Map<String, dynamic> _jsonCanvas(List<Block> blocks, String assetPrefix) {
           'id': b.id,
           'type': 'file',
           'file': '$assetPrefix/$hash.$ext',
-          'x': x, 'y': y, 'width': w, 'height': h,
+          'x': x,
+          'y': y,
+          'width': w,
+          'height': h,
         });
       default:
         break; // ink/file/embed have no JSON Canvas equivalent
@@ -425,7 +448,8 @@ String? _inkML(List<Block> blocks) {
       buf
         ..writeln('    <brush xml:id="$id">')
         ..writeln('      <brushProperty name="tool" value="${_xml(s.tool)}"/>')
-        ..writeln('      <brushProperty name="color" value="${_xml(s.colorHex)}"/>')
+        ..writeln(
+            '      <brushProperty name="color" value="${_xml(s.colorHex)}"/>')
         ..writeln('      <brushProperty name="width" value="${s.size}"/>')
         ..writeln('      <brushProperty name="opacity" value="${s.opacity}"/>')
         ..writeln('    </brush>');
@@ -448,8 +472,7 @@ String? _inkML(List<Block> blocks) {
   return buf.toString();
 }
 
-String _emptyInkML() =>
-    '<?xml version="1.0" encoding="UTF-8"?>\n'
+String _emptyInkML() => '<?xml version="1.0" encoding="UTF-8"?>\n'
     '<ink xmlns="http://www.w3.org/2003/InkML"/>\n';
 
 String _num(double v) {

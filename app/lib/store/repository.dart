@@ -854,7 +854,7 @@ class Repository {
     // The recycle bin counts. Joining a notebook you had deleted used to skip
     // this check entirely and copy the container again under a fresh id —
     // which is how a workspace ends up holding five ~95MB copies of one
-    // notebook, each with its own review history and favourites. Restoring
+    // notebook, each with its own local settings. Restoring
     // the entry you already have is both cheaper and what the user meant.
     final trashed = trashedNotebooks.where(sameNotebook).firstOrNull;
     if (trashed != null) {

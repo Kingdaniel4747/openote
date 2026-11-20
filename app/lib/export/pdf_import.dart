@@ -73,6 +73,8 @@ Future<PdfImportResult?> importPdfAsPages(
   PdfPlacement placement = PdfPlacement.currentPage,
   void Function(int done, int total)? onProgress,
   void Function(String message)? onStatus,
+  void Function(int done, int total, int page, int pages, String name)?
+      onBatchProgress,
 }) async {
   const typeGroup = XTypeGroup(label: 'PDF', extensions: ['pdf']);
   final files = await openFiles(acceptedTypeGroups: [typeGroup]);
@@ -85,8 +87,13 @@ Future<PdfImportResult?> importPdfAsPages(
   for (var i = 0; i < files.length; i++) {
     final file = files[i];
     onStatus?.call('PDF ${i + 1} / ${files.length}: ${file.name}');
+    onBatchProgress?.call(i, files.length, 0, 0, file.name);
     final result = await importPdfFile(app, file.path, file.name,
-        placement: placement, onProgress: onProgress);
+        placement: placement, onProgress: (done, total) {
+      onProgress?.call(done, total);
+      onBatchProgress?.call(i, files.length, done, total, file.name);
+    });
+    onBatchProgress?.call(i + 1, files.length, 0, 0, file.name);
     first ??= result;
     pages += result.pages;
   }
@@ -114,6 +121,16 @@ Future<PdfImportResult> importPdfFile(
 
 /// Import a PDF already received in memory, such as a phone scan.
 Future<PdfImportResult> importPdfBytes(
+  AppState app,
+  Uint8List bytes,
+  String displayName, {
+  PdfPlacement placement = PdfPlacement.currentPage,
+  void Function(int done, int total)? onProgress,
+}) =>
+    app.runMediaImport(() => _importPdfBytes(app, bytes, displayName,
+        placement: placement, onProgress: onProgress));
+
+Future<PdfImportResult> _importPdfBytes(
   AppState app,
   Uint8List bytes,
   String displayName, {
@@ -331,15 +348,13 @@ Future<PdfImportResult> _importOntoCurrentPage(
   List<String> previews,
 ) async {
   final total = doc.pages.length;
-  final placement = app.mediaImportPlacement();
-  final width = placement.width;
-  var y = placement.top;
-
   app.pushUndo();
-  final top = y;
   Block? first;
   var made = 0;
   for (var i = 0; i < total; i++) {
+    // Re-read after each published slide, including any interleaved image insert.
+    final placement = app.mediaImportPlacement();
+    final width = placement.width;
     final page = doc.pages[i];
     // Rendering has finished; publishing a slide only writes its references.
     const String? text = null;
@@ -347,14 +362,11 @@ Future<PdfImportResult> _importOntoCurrentPage(
     final h = page.height / page.width * width;
     final block = app.addBlock(
       _slideBlock(pdfHash, page, i, text,
-          x: placement.left, y: y, w: width, preview: preview)
+          x: placement.left, y: placement.top, w: width, preview: preview)
         ..h = h,
       recordUndo: false,
     );
     first ??= block;
-    // Read the position back: addBlock may snap it to the grid, and computing
-    // the next slide's y from the requested position would drift.
-    y = block.y + h + kPdfStackGap;
     made++;
     // Text extraction is quick, but the loop still yields so a 200-slide
     // deck never freezes input — and a REAL delay, for the same Windows
@@ -365,7 +377,7 @@ Future<PdfImportResult> _importOntoCurrentPage(
   // the page, which on a page with content means off screen.
   if (first != null) {
     app.select(first.id);
-    app.canvas.centerOn(Offset(width / 2 + AppState.pageLeftMargin, top + 200));
+    app.canvas.centerOn(Offset(first.x + first.w / 2, first.y + 200));
   }
   await app.flushSave();
   return (pages: made, sectionId: null, firstPageId: app.pageId);

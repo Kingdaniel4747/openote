@@ -428,7 +428,7 @@ class PlannerState extends ChangeNotifier {
     if (cached != null && cached.key == key) return cached.items;
 
     final out = <DatedItem>[
-      ..._examItems(today),
+      ..._examItems(),
       ..._taskItems(),
       ..._reminderItems(),
       ..._eventItems(today),
@@ -456,33 +456,13 @@ class PlannerState extends ChangeNotifier {
 
   // ── Building each stream ─────────────────────────────────────────────
 
-  /// **The revision plan is costed for the soonest exam only, and that is a
-  /// performance decision as much as an editorial one.**
-  ///
-  /// `examPlanFor` walks a whole section's deck out of SQLite, and the deck
-  /// cache holds six entries before clearing itself — so building a plan per
-  /// exam-dated section would evict the cache that exists to keep the study
-  /// button off the keystroke path. `StudyState.nextExam` already solves
-  /// exactly this: find the soonest by reading the cheap date map, then cost
-  /// one deck. It is also the right row to put it on — "3 a day covers it" is
-  /// only actionable for the exam you are actually revising for.
-  List<DatedItem> _examItems(DateTime today) {
-    final soonest = _study.nextExam(today);
+  /// Legacy section exam dates remain visible in the calendar.
+  List<DatedItem> _examItems() {
     final out = <DatedItem>[];
     for (final n in _doc.nodes) {
       if (n.kind != NodeKind.section) continue;
       final date = _study.examDate(n.id);
       if (date == null) continue;
-      String? subtitle;
-      if (soonest != null && soonest.section.id == n.id) {
-        final plan = soonest.plan;
-        if (plan.total > 0) {
-          final rate = plan.newPerDay;
-          subtitle = rate > 0
-              ? '${plan.unseen} to learn · $rate a day covers it'
-              : '${plan.total} cards · all seen';
-        }
-      }
       // An exam with a stated start time is not an all-day row: "9am" is the
       // single most useful thing to know on the morning of it, and bucketing
       // it as all-day would also sort it before every timed thing that day.
@@ -495,7 +475,6 @@ class PlannerState extends ChangeNotifier {
         when: at,
         allDay: !timed,
         notebookId: _doc.notebookId,
-        subtitle: subtitle,
       ));
     }
     return out;

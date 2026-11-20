@@ -102,8 +102,14 @@ void main() {
     await tester.tap(find.byTooltip('AI: off'));
     await tester.pumpAndSettle();
     expect(find.byType(LearningAccessPanel), findsOneWidget);
-    await tester.tap(find.text('Close'));
+    final popover =
+        tester.getRect(find.byKey(const ValueKey('learning-access-popover')));
+    expect(popover.width, 360);
+    expect(popover.right, greaterThan(2500));
+    expect(popover.top, lessThan(120));
+    await tester.tap(find.byTooltip('Close'));
     await tester.pumpAndSettle();
+    expect(find.byType(LearningAccessPanel), findsNothing);
   });
 
   testWidgets('a wide window shows every trailing control inline, no fold',

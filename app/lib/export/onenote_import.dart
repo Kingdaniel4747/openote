@@ -12,7 +12,7 @@ import '../model/models.dart';
 import '../model/tags.dart';
 import '../state/app_state.dart';
 import 'import_sink.dart';
-import '../ui/onote_dialog.dart';
+import '../ui/transfer_progress.dart';
 
 /// Isolate entry points: the Rust parse (LZX + binary decode + base64) can
 /// take seconds on a big notebook and must not freeze the UI thread. Each
@@ -82,49 +82,17 @@ void decodePageImagesInPlace(Map<String, dynamic> page) {
 }
 
 /// Show a busy dialog while [work] runs (import feedback for large notebooks).
-/// The dialog text tracks [message] live, so multi-phase imports can narrate
-/// progress ("Importing section 3 of 12…") as they go.
-/// Runs [work] behind a modal progress dialog. **Takes ownership of
-/// [message]** and disposes it when the work completes — both call sites
-/// hand over a notifier they never touch again, and leaving disposal to them
-/// leaked one notifier per import.
-Future<T> _withBusyDialog<T>(BuildContext? context,
-    ValueNotifier<String> message, Future<T> Function() work) async {
-  if (context == null || !context.mounted) {
-    try {
-      return await work();
-    } finally {
-      message.dispose();
-    }
+/// The same progress surface as other imports; headless callers keep working.
+Future<T> _withBusyDialog<T>(
+    BuildContext? context, Future<T> Function(TransferProgress) work) async {
+  if (context != null && context.mounted) {
+    return runTransfer(context, 'Import OneNote', work);
   }
-  showOnoteDialog<void>(
-    context: context,
-    barrierDismissible: false,
-    builder: (_) => AlertDialog(
-      content: Row(children: [
-        const SizedBox(
-            width: 22,
-            height: 22,
-            child: CircularProgressIndicator(strokeWidth: 2.6)),
-        const SizedBox(width: 16),
-        Expanded(
-          child: ValueListenableBuilder<String>(
-            valueListenable: message,
-            builder: (_, text, __) => Text(text),
-          ),
-        ),
-      ]),
-    ),
-  );
+  final progress = TransferProgress();
   try {
-    return await work();
+    return await work(progress);
   } finally {
-    if (context.mounted) {
-      Navigator.of(context, rootNavigator: true).pop();
-    }
-    // Dispose only after the dialog is gone — its ValueListenableBuilder is
-    // still listening until the route pops.
-    message.dispose();
+    progress.dispose();
   }
 }
 
@@ -504,12 +472,12 @@ Future<int?> importOneNoteFile(AppState app,
   // never yielded, so no frame could paint between its first page and its last.
   var imported = 0;
   String? firstPageId;
-  final message = ValueNotifier<String>('Reading the section…');
+
   if (progressContext != null && !progressContext.mounted) {
-    message.dispose();
     return null;
   }
-  await _withBusyDialog(progressContext, message, () async {
+  await _withBusyDialog(progressContext, (progress) async {
+    progress.update(total: 0, unit: 'pages', detail: 'Reading the section…');
     Map<String, dynamic> result;
     try {
       // Structured: the isolate does the jsonDecode and the image base64 too.
@@ -531,7 +499,7 @@ Future<int?> importOneNoteFile(AppState app,
         // Plain words, and a count the user can watch move. "Page 12 of 80"
         // is the whole story: how far in, and how far to go.
         onProgress: (done, total) =>
-            message.value = 'Importing page $done of $total…');
+            progress.update(done: done, total: total, detail: sectionTitle));
     imported = count;
     firstPageId = first;
   });

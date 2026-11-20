@@ -6,10 +6,20 @@ import 'dart:ui' as ui;
 import '../model/models.dart';
 import '../state/app_state.dart';
 
-/// Store one phone scan in [notebookId] and append it below the page content.
+/// Store one phone scan in [notebookId] and continue the page's media row.
 /// The target is captured when the QR code is created, so navigating elsewhere
 /// while the phone scanner is open cannot put a worksheet on the wrong page.
 Future<Block> importPhoneScan(
+  AppState app, {
+  required String notebookId,
+  required String pageId,
+  required Uint8List bytes,
+  required String mime,
+}) =>
+    app.runMediaImport(() => _importPhoneScan(app,
+        notebookId: notebookId, pageId: pageId, bytes: bytes, mime: mime));
+
+Future<Block> _importPhoneScan(
   AppState app, {
   required String notebookId,
   required String pageId,
@@ -83,9 +93,24 @@ Future<Block> importPhoneFile(
   required Uint8List bytes,
   required String mime,
   required String filename,
+}) =>
+    app.runMediaImport(() => _importPhoneFile(app,
+        notebookId: notebookId,
+        pageId: pageId,
+        bytes: bytes,
+        mime: mime,
+        filename: filename));
+
+Future<Block> _importPhoneFile(
+  AppState app, {
+  required String notebookId,
+  required String pageId,
+  required Uint8List bytes,
+  required String mime,
+  required String filename,
 }) async {
   if (mime == 'image/jpeg' || mime == 'image/png') {
-    return importPhoneScan(
+    return _importPhoneScan(
       app,
       notebookId: notebookId,
       pageId: pageId,
