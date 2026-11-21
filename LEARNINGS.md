@@ -94,6 +94,14 @@ dauerhafte Vorschau speichern. Veraltete Aufträge vor dem Öffnen überspringen
 bei geteilten Aufträgen alle noch aktiven Betrachter berücksichtigen. Einen
 zuletzt verwendeten großen PDF-Quellcontainer trotz Cache-Budget behalten,
 sonst wird derselbe Inhalt für jede Seite erneut geöffnet; bei Inaktivität freigeben.
+PDF-Ausschnitte vor dem Positionswechsel vollständig dekodieren: `gaplessPlayback`
+zeigt sonst kurz die alten Pixel im neuen Rechteck. Alte Bildressourcen erst nach
+dem Frame freigeben. Anzeigetimeouts müssen auch Warteschlange/Öffnen abdecken;
+verspätete Resultate dürfen weder angezeigt noch als Vorschau gespeichert werden.
+Auch `exit(0)` kann auf einen Dart-Isolate in einem nativen Aufruf warten.
+Unter Windows erst Änderungen speichern und SQLite schließen, dann den eigenen
+Prozess direkt beenden; nicht auf PDF-Cleanup warten. Regressionstest mit
+blockiertem FFI-Worker und anschließend wieder freier Dateisperre erhalten.
 
 Widgettests nutzen eine künstliche Uhr. Speicher-/Erinnerungs-Timer rechtzeitig
 beenden; echtes Datei-I/O passend außerhalb dieser Uhr ausführen. Testdoubles

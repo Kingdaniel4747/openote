@@ -7,6 +7,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'l10n/app_strings.dart';
 
 import 'core/single_instance.dart';
+import 'core/process_exit.dart';
 import 'canvas/writing_touch_guard.dart';
 import 'core/startup_args.dart';
 import 'media/video_playback.dart';
@@ -131,6 +132,9 @@ class _OpenoteBootState extends State<OpenoteBoot> {
           // A minimized window may not produce another frame. Saving and
           // exiting must never wait for a repaint that might not arrive.
           try {
+            // Stop accepting render work before saving. Cleanup must never
+            // hold the saved workspace hostage to a blocked native worker.
+            final pdfCleanup = PdfPages.stopForExit();
             // A local SQLite or network-backed workspace may be unavailable.
             // Do not let such an I/O operation leave a windowless process
             // behind forever: after a bounded wait the existing recovery UI
@@ -142,9 +146,10 @@ class _OpenoteBootState extends State<OpenoteBoot> {
             // A page render may otherwise keep pdfium and its worker alive for
             // up to its 30-second timeout after the window has been closed.
             // Cancel first, then give cleanup a short bounded opportunity.
-            await PdfPages.reset()
-                .timeout(const Duration(milliseconds: 150), onTimeout: () {});
+            await pdfCleanup.timeout(const Duration(milliseconds: 150),
+                onTimeout: () {});
             if (app.hasUnsavedChanges) {
+              PdfPages.resumeAfterFailedExit();
               widget.instance?.listen(app.openNotebookFile);
               await WindowsWindowController.restoreAfterFailedExit();
               if (mounted) {
@@ -160,12 +165,13 @@ class _OpenoteBootState extends State<OpenoteBoot> {
             // notebook handle before the process terminates. Keep this after
             // all awaited/fallible saves and their unsaved-change check.
             app.dispose();
-            // Flutter's normal exit waits for native PDF workers even after
-            // their Dart futures were cancelled. At this point every save and
-            // lock release above has completed, so terminate the process
-            // explicitly instead of leaving a headless Openote.exe behind.
-            exit(0);
+            // Dart's exit(0) can also wait for isolates inside native PDF
+            // calls, even after cancelling their futures. Notebook handles
+            // are now closed; Windows can terminate the saved process and
+            // release its workspace lock without waiting for those workers.
+            exitSavedProcess(0);
           } catch (_) {
+            PdfPages.resumeAfterFailedExit();
             widget.instance?.listen(app.openNotebookFile);
             await WindowsWindowController.restoreAfterFailedExit();
             if (mounted) {

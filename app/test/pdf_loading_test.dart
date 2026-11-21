@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pdfrx/pdfrx.dart';
@@ -71,6 +72,47 @@ class _RasterPage extends _Page {
   }
 }
 
+class _BlockedRasterPage extends _RasterPage {
+  _BlockedRasterPage(this.result, this.started);
+  final Completer<PdfImage?> result;
+  final Completer<void> started;
+  final cancellation = _Cancellation();
+  @override
+  PdfPageRenderCancellationToken createCancellationToken() => cancellation;
+  @override
+  Future<PdfImage?> render({
+    int x = 0,
+    int y = 0,
+    int? width,
+    int? height,
+    double? fullWidth,
+    double? fullHeight,
+    int? backgroundColor,
+    PdfPageRotation? rotationOverride,
+    PdfAnnotationRenderingMode annotationRenderingMode =
+        PdfAnnotationRenderingMode.annotationAndForms,
+    int flags = 0,
+    PdfPageRenderCancellationToken? cancellationToken,
+  }) {
+    started.complete();
+    return result.future;
+  }
+}
+
+Future<void> waitForDetail(WidgetTester tester,
+    {void Function()? checkFrame}) async {
+  // Native codec callbacks need real time; pumpAndSettle advances only the
+  // artificial clock and can outrun decoding a newly rendered PNG.
+  for (var i = 0; i < 200; i++) {
+    checkFrame?.call();
+    if (find.byType(CircularProgressIndicator).evaluate().isEmpty) return;
+    await tester
+        .runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+    await tester.pump();
+  }
+  fail('PDF detail did not finish decoding');
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() => expect(initSqliteForTests(), true));
@@ -91,6 +133,7 @@ void main() {
     hash = app.addBlob(Uint8List.fromList([1, 2, 3]), 'application/pdf');
   });
   tearDown(() async {
+    PdfPages.resumeAfterFailedExit();
     await PdfPages.reset();
     PdfPages.openForTest = null;
     PdfPages.renderForTest = null;
@@ -245,6 +288,61 @@ void main() {
     expect(opens, 1);
   });
 
+  test('closing cancels an active native render and rejects new work',
+      () async {
+    final native = Completer<PdfImage?>();
+    final started = Completer<void>();
+    final page = _BlockedRasterPage(native, started);
+    final doc = _Document([page]);
+    PdfPages.openForTest = (_, __) async => doc;
+    final rendering =
+        PdfPages.pageRegion(app, hash, 0, const Rect.fromLTWH(0, 0, 1, 1), 800);
+    await started.future;
+    var cleaned = false;
+    final cleanup = PdfPages.stopForExit().then((_) => cleaned = true);
+    expect(page.cancellation.isCanceled, true);
+    expect(cleaned, false);
+    expect(await PdfPages.pageImage(app, hash, 0), null);
+    expect(await PdfPages.pageImageAtScale(app, hash, 0, 4), null);
+    expect(await PdfPages.pageCount(app, hash), null);
+    expect(
+        await PdfPages.pageRegion(
+            app, hash, 0, const Rect.fromLTWH(0, 0, 1, 1), 1600),
+        null);
+    // Persisting notes is independent of the unresponsive PDF worker.
+    app.markDirty();
+    await app.shutdown();
+    expect(app.hasUnsavedChanges, false);
+    expect(cleaned, false);
+    native.complete(null);
+    expect(await rendering, null);
+    await cleanup;
+    expect(doc.disposals, 1);
+    PdfPages.resumeAfterFailedExit();
+    expect(await PdfPages.pageCount(app, hash), 1);
+  });
+
+  test('a source opened after closing never starts or publishes a render',
+      () async {
+    final opening = Completer<PdfDocument>();
+    var renders = 0;
+    PdfPages.openForTest = (_, __) => opening.future;
+    PdfPages.renderForTest = (_) async {
+      renders++;
+      return (png: Uint8List.fromList([9]), width: 1, height: 1);
+    };
+    final pending = PdfPages.pageImage(app, hash, 0);
+    await Future<void>.delayed(Duration.zero);
+    final cleanup = PdfPages.stopForExit();
+    final doc = _Document([_Page()]);
+    opening.complete(doc);
+    expect(await pending, null);
+    await cleanup;
+    expect(renders, 0);
+    expect(doc.disposals, 1);
+    expect(PdfPages.cached(hash, 0), null);
+  });
+
   test('preparation stores every preview before completion, one page at a time',
       () async {
     final pages = List.generate(40, (_) => _Page());
@@ -378,6 +476,39 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('a stalled legacy PDF stops spinning without storing late pixels',
+      (tester) async {
+    final native = Completer<RenderedPdfPage?>();
+    PdfPages.openForTest = (_, __) async => _Document([_Page()]);
+    PdfPages.renderForTest = (_) => native.future;
+    final block = Block(
+        type: BlockType.image,
+        x: 0,
+        y: 0,
+        w: 400,
+        h: 500,
+        content: {'pdf': hash, 'page': 0});
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: SizedBox(
+                width: 400,
+                height: 500,
+                child: ImageBlockView(block: block, app: app)))));
+    await tester.pump();
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    await tester.pump(const Duration(seconds: 31));
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.text('Retry'), findsOneWidget);
+    final png = File('assets/icon/openote_icon.png').readAsBytesSync();
+    native.complete((png: png, width: 1024, height: 1024));
+    await tester.pump();
+    expect(block.content['blob'], null);
+    expect(PdfPages.cached(hash, 0), null);
+    app.cancelPendingSave();
+    await tester.pumpWidget(const SizedBox());
+    await PdfPages.reset();
+  });
+
   testWidgets('an existing PDF preview re-renders from its source on zoom',
       (tester) async {
     final png = File('assets/icon/openote_icon.png').readAsBytesSync();
@@ -414,16 +545,172 @@ void main() {
                         child: ImageBlockView(block: block, app: app)))))));
     await tester.pumpAndSettle();
     app.canvas.jumpTo(4, Offset.zero);
-    await tester.pump(); // Apply the canvas transform before the debounce fires.
+    await tester
+        .pump(); // Apply the canvas transform before the debounce fires.
     await tester.pump(const Duration(milliseconds: 200));
+    await waitForDetail(tester);
     await tester.pumpAndSettle();
     expect(widths, [2048]);
     expect(regions.single.width, lessThan(1));
     expect(regions.single.height, lessThan(1));
-    expect(find.byType(Image), findsNWidgets(2));
+    expect(find.byType(Image), findsOneWidget);
+    expect(find.byType(RawImage), findsNWidgets(2));
     expect(block.content['blob'], 'sha256:$preview');
     expect(app.blob(hash), orderedEquals([1, 2, 3]));
     expect(app.blob('sha256:$preview'), orderedEquals(png));
+    app.cancelPendingSave();
+    await tester.pumpWidget(const SizedBox());
+    await PdfPages.reset();
+  });
+
+  testWidgets('PDF crop pixels and geometry change together after panning',
+      (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(800, 600);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final png = File('assets/icon/openote_icon.png').readAsBytesSync();
+    Future<Uint8List> smallerPng(int width) async {
+      final codec = await ui.instantiateImageCodec(png, targetWidth: width);
+      final frame = await codec.getNextFrame();
+      try {
+        return (await frame.image.toByteData(format: ui.ImageByteFormat.png))!
+            .buffer
+            .asUint8List();
+      } finally {
+        frame.image.dispose();
+        codec.dispose();
+      }
+    }
+
+    final firstPng = (await tester.runAsync(() => smallerPng(32)))!;
+    final secondPng = (await tester.runAsync(() => smallerPng(64)))!;
+    final preview = app.addBlob(png, 'image/png');
+    final replacement = Completer<RenderedPdfRegion?>();
+    final regions = <Rect>[];
+    PdfPages.openForTest = (_, __) async => _Document([_Page()]);
+    PdfPages.renderRegionForTest = (_, region, width) async {
+      regions.add(region);
+      if (regions.length > 1) return replacement.future;
+      return (png: firstPng, width: 32, height: 32, region: region);
+    };
+    final block =
+        Block(type: BlockType.image, x: 0, y: 0, w: 400, h: 500, content: {
+      'pdf': hash,
+      'blob': 'sha256:$preview',
+      'page': 0,
+      'naturalW': 1024,
+      'naturalH': 1024
+    });
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: AnimatedBuilder(
+      animation: app.canvas,
+      builder: (_, __) => Transform.translate(
+          offset: app.canvas.offset,
+          child: Transform.scale(
+              scale: app.canvas.scale,
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                  width: 400,
+                  height: 500,
+                  child: ImageBlockView(block: block, app: app)))),
+    ))));
+    await tester.pumpAndSettle();
+    app.canvas.jumpTo(4, Offset.zero);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    await waitForDetail(tester);
+    final detail = find.byWidgetPredicate(
+        (w) => w is RawImage && (w.image?.width == 32 || w.image?.width == 64));
+    final position =
+        find.ancestor(of: detail, matching: find.byType(Positioned)).first;
+    Rect rect() {
+      final p = tester.widget<Positioned>(position);
+      return Rect.fromLTWH(p.left!, p.top!, p.width!, p.height!);
+    }
+
+    final initialRect = rect();
+    expect(tester.widget<RawImage>(detail).image!.width, 32);
+    app.canvas.jumpTo(4, const Offset(-400, -240));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(regions, hasLength(2));
+    expect(regions.last, isNot(regions.first));
+    expect(rect(), initialRect,
+        reason: 'keep the old crop fixed while rendering');
+    replacement.complete(
+        (png: secondPng, width: 64, height: 64, region: regions.last));
+    var sawReplacement = false;
+    void checkFrame() {
+      final image = tester.widget<RawImage>(detail).image!;
+      if (image.width == 32) {
+        expect(rect(), initialRect,
+            reason: 'old pixels must never move into the new crop');
+      } else {
+        sawReplacement = true;
+        final r = regions.last;
+        // The square preview is top-left aligned inside the 400 x 500 block.
+        expect(
+            rect(),
+            Rect.fromLTWH(
+                r.left * 400, r.top * 400, r.width * 400, r.height * 400));
+      }
+    }
+
+    await tester.pump();
+    await waitForDetail(tester, checkFrame: checkFrame);
+    expect(sawReplacement, true);
+    expect(block.content['blob'], 'sha256:$preview');
+    app.cancelPendingSave();
+    await tester.pumpWidget(const SizedBox());
+    await PdfPages.reset();
+  });
+
+  testWidgets('a stalled detail stops spinning and ignores its late result',
+      (tester) async {
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final png = File('assets/icon/openote_icon.png').readAsBytesSync();
+    final preview = app.addBlob(png, 'image/png');
+    final native = Completer<RenderedPdfRegion?>();
+    Rect? requested;
+    var renders = 0;
+    PdfPages.openForTest = (_, __) async => _Document([_Page()]);
+    PdfPages.renderRegionForTest = (_, region, width) {
+      requested = region;
+      renders++;
+      return native.future;
+    };
+    final block =
+        Block(type: BlockType.image, x: 0, y: 0, w: 400, h: 500, content: {
+      'pdf': hash,
+      'blob': 'sha256:$preview',
+      'page': 0,
+      'naturalW': 1024,
+      'naturalH': 1024
+    });
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: SizedBox(
+                width: 400,
+                height: 500,
+                child: ImageBlockView(block: block, app: app)))));
+    await tester.pumpAndSettle();
+    app.canvas.jumpTo(4, Offset.zero);
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    await tester.pump(const Duration(seconds: 31));
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.byTooltip('Retry'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 5));
+    expect(renders, 1,
+        reason: 'do not automatically repeat a stalled native operation');
+    native.complete((png: png, width: 1024, height: 1024, region: requested!));
+    await tester.pump();
+    expect(find.byType(RawImage), findsOneWidget,
+        reason: 'only the durable preview remains');
+    expect(block.content['blob'], 'sha256:$preview');
     app.cancelPendingSave();
     await tester.pumpWidget(const SizedBox());
     await PdfPages.reset();

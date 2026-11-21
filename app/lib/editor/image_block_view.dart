@@ -63,7 +63,6 @@ class _ImageBlockViewState extends State<ImageBlockView> {
   Timer? _zoomRenderTimer;
   int _qualityRequest = 0;
   bool _zoomRendering = false;
-  int _pdfRenderFailures = 0;
   String? _pdf;
   int _pdfPage = 0;
   String? _notebook;
@@ -71,7 +70,7 @@ class _ImageBlockViewState extends State<ImageBlockView> {
   double _pixelRatio = 1;
   int _decodedWidth = 0, _decodedHeight = 0;
   int? _sourceWidth;
-  RenderedPdfRegion? _detail;
+  ({ui.Image image, Rect region})? _detail;
   String? _detailKey;
   String? _requestedDetail;
   bool _detailFailed = false;
@@ -102,6 +101,7 @@ class _ImageBlockViewState extends State<ImageBlockView> {
     _zoomRenderTimer?.cancel();
     widget.app.canvas.removeListener(_scheduleZoomRender);
     _qualityRequest++;
+    _detail?.image.dispose();
     super.dispose();
   }
 
@@ -121,7 +121,7 @@ class _ImageBlockViewState extends State<ImageBlockView> {
       _qualityRequest++;
       _zoomRenderTimer?.cancel();
       _zoomRendering = false;
-      _detail = null;
+      _replaceDetail(null);
       _detailKey = _requestedDetail = null;
       _sourceBytes = null;
       _sourceWidth = null;
@@ -149,6 +149,30 @@ class _ImageBlockViewState extends State<ImageBlockView> {
     return Offset.zero & applyBoxFit(BoxFit.contain, natural, size).destination;
   }
 
+  void _replaceDetail(({ui.Image image, Rect region})? next) {
+    final previous = _detail;
+    _detail = next;
+    if (previous != null) {
+      // The previous RawImage can still be painted until this frame ends.
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => previous.image.dispose());
+    }
+  }
+
+  Future<ui.Image?> _decodeDetail(RenderedPdfRegion? detail) async {
+    if (detail == null) return null;
+    ui.Codec? codec;
+    try {
+      codec = await ui.instantiateImageCodec(detail.png);
+      return (await codec.getNextFrame()).image;
+    } catch (e) {
+      debugPrint('[openote/pdf] could not decode detail: $e');
+      return null;
+    } finally {
+      codec?.dispose();
+    }
+  }
+
   Future<void> _refreshResolution() async {
     if (!mounted) return;
     final request = _qualityRequest;
@@ -167,7 +191,10 @@ class _ImageBlockViewState extends State<ImageBlockView> {
       return;
     }
     final imageRect = _imageRect(box.size);
-    if (imageRect.isEmpty) return;
+    if (imageRect.isEmpty) {
+      if (_zoomRendering) setState(() => _zoomRendering = false);
+      return;
+    }
     final window = Offset.zero & MediaQuery.sizeOf(context);
     final points = [
       window.topLeft,
@@ -181,7 +208,10 @@ class _ImageBlockViewState extends State<ImageBlockView> {
             points.map((p) => p.dx).reduce(math.max),
             points.map((p) => p.dy).reduce(math.max))
         .intersect(imageRect);
-    if (visible.isEmpty) return;
+    if (visible.isEmpty) {
+      if (_zoomRendering) setState(() => _zoomRendering = false);
+      return;
+    }
     final physicalWidth =
         imageRect.width * widget.app.canvas.scale * _pixelRatio;
     final fullWidth =
@@ -219,31 +249,45 @@ class _ImageBlockViewState extends State<ImageBlockView> {
         _requestedDetail == key &&
         _notebook == widget.app.notebookId &&
         _ownerPage == widget.app.pageId;
-    final image = await PdfPages.pageRegion(
-        widget.app, pdf, _pdfPage, region, fullWidth.toInt(),
-        isCurrent: current);
-    if (!current()) return;
+    // Decode before changing the rectangle. Image.gaplessPlayback otherwise
+    // stretches the OLD crop into the NEW crop's position for a few frames.
+    var expired = false;
+    final loading = PdfPages.pageRegion(
+            widget.app, pdf, _pdfPage, region, fullWidth.toInt(),
+            isCurrent: current)
+        .then<({ui.Image image, Rect region})?>((image) async {
+      if (!current()) return null;
+      final pixels = await _decodeDetail(image);
+      if (pixels == null) return null;
+      if (expired || !current()) {
+        pixels.dispose();
+        return null;
+      }
+      return (image: pixels, region: image!.region);
+    });
+    final decoded =
+        await loading.timeout(const Duration(seconds: 30), onTimeout: () {
+      expired = true;
+      return null;
+    });
+    if (!current()) {
+      decoded?.image.dispose();
+      return;
+    }
     setState(() {
+      _requestedDetail = null;
       _zoomRendering = false;
-      _detailFailed = image == null;
-      if (image != null) {
-        _detail = image;
+      _detailFailed = decoded == null;
+      if (decoded != null) {
+        _replaceDetail(decoded);
         _detailKey = key;
-        _pdfRenderFailures = 0;
-      } else {
-        _pdfRenderFailures++;
       }
     });
-    if (image == null && _pdfRenderFailures <= 3) {
-      _zoomRenderTimer =
-          Timer(const Duration(milliseconds: 600), _refreshResolution);
-    }
   }
 
   void _load() {
     final request = ++_loadRequest;
     _pdfError = null;
-    _pdfRenderFailures = 0;
     _detailFailed = false;
     // New PDF slides carry both the source `{pdf, page}` and a permanent
     // image `blob`. Legacy slides have only the source reference; render one
@@ -322,7 +366,9 @@ class _ImageBlockViewState extends State<ImageBlockView> {
     }
     _rendering = true;
     PdfPages.pageImage(widget.app, pdf, page,
-        isCurrent: () => _loadCurrent(request)).then((png) {
+            isCurrent: () => _loadCurrent(request) && _rendering)
+        .timeout(const Duration(seconds: 30), onTimeout: () => null)
+        .then((png) {
       if (!_loadCurrent(request)) return;
       if (png != null) {
         _persistPdfPreview(png, request);
@@ -560,9 +606,9 @@ class _ImageBlockViewState extends State<ImageBlockView> {
                   top: rect.top + detail.region.top * rect.height,
                   width: detail.region.width * rect.width,
                   height: detail.region.height * rect.height,
-                  child: Image.memory(detail.png,
+                  child: RawImage(
+                      image: detail.image,
                       fit: BoxFit.fill,
-                      gaplessPlayback: true,
                       filterQuality: FilterQuality.medium),
                 )
               ]);
@@ -576,7 +622,6 @@ class _ImageBlockViewState extends State<ImageBlockView> {
                 tooltip: 'Retry',
                 icon: const Icon(Icons.refresh),
                 onPressed: () {
-                  _pdfRenderFailures = 0;
                   _scheduleZoomRender();
                 },
               )),

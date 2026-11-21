@@ -1,13 +1,14 @@
 # Aufgaben
 
-Stand: 20.11.2026. Nur aktuelle Arbeit und bekannte Grenzen, keine Versionschronik.
+Stand: 21.11.2026. Nur aktuelle Arbeit und bekannte Grenzen, keine Versionschronik.
 
 ## Übergabe für den nächsten Chat
 
 Bedienregeln und entfernte Funktionen stehen in PRODUCT.md, Code-Einstiegspunkte
 und Datenflüsse in ARCHITECTURE.md. Die letzten Änderungen umfassen Navigation,
 Kontextmenüs/Codebereinigung, Import-/Exportfortschritt, Original-Deduplizierung
-und das Fortsetzen vorhandener Medienreihen. Nächster sinnvoller Schritt ist
+und das Fortsetzen vorhandener Medienreihen sowie PDF-Nachschärfen/Prozessende.
+Nächster sinnvoller Schritt ist
 die Geräteprüfung unten; bestehende Funktionen nicht wieder ergänzen, nur weil
 alte Tests oder Kommentare sie erwähnen. Vor Änderungen den lokalen Diff lesen.
 
@@ -15,17 +16,18 @@ Aktueller automatisierter Stand, keine grüne Gesamtsuite:
 
 | Bereich | Letzte Prüfung |
 |---|---|
-| App, kompletter Dart-Quellbaum | Gesamtlauf beim Notebook-Umbau: keine Fehler; bestehender Stilhinweis in `command_bar.dart:907`, außerhalb der Notebook-Änderung |
+| App, kompletter Dart-Quellbaum | Keine Fehler; bestehender Stilhinweis in `command_bar.dart:907`. Sieben geänderte PDF-/Lebenszyklus-Dateien separat ohne Befund geprüft |
 | Notebook-Auswahl und Backup-Dialog | 17 gezielte UI-/Backup-/Lifecycle-Tests bestanden; Analyse der fünf betroffenen Dart-Dateien sauber. Helle/dunkle Ansichten gerendert und visuell geprüft |
 | Entfernte Befehle, Kalender, Text, Navigation, Anhänge | 157 gezielte Tests bestanden, vor den folgenden Importänderungen |
 | Fortschritt, Zielauswahl, Originalexport, Import-/Exportregressionen | 184 bestanden, 3 wegen fehlendem PDFium übersprungen |
 | Neue Reihenplatzierung, parallele Scans und PDF-Regressionen | 59 bestanden, dieselben 3 PDFium-Fälle übersprungen |
 | Abschließende Spaltenausrichtung und Scan-/Medienplatzierung | 20 bestanden, keine übersprungen |
 | Präziser Radierer, Stifttupfer, Knopf/Hover und Ink-Speicherung | 70 gezielte Tests bestanden; Analyse der fünf geänderten Dart-Dateien ohne Befund (20.11.2026, damaliger Stand) |
+| PDF-Nachschärfen, Render-Timeout, Speichern und Prozessende | 102 bestanden, 3 bekannte PDFium-Fälle übersprungen; blockierter nativer Worker und freigegebene Dateisperre im Unterprozess geprüft |
 
-Diese Läufe überschneiden sich und dürfen nicht addiert werden. Ein neuer
-Windows-/APK-/Rust-Build wurde für diesen letzten UI-/Importstand nicht
-ausgeführt; ältere Build-Ergebnisse weiter unten gelten für die damaligen
+Diese Läufe überschneiden sich und dürfen nicht addiert werden. Windows-Release
+am 21.11.2026 erfolgreich gebaut (Dart-Kern; ohne Cargo kein OneNote-Import).
+Kein neuer APK-/Rust-Build. Ältere Ergebnisse weiter unten gelten für die damaligen
 Stände. Kein Push, Release oder manuelles Geräteergebnis daraus ableiten.
 
 Zum Wiederaufnehmen in `app/`: `flutter analyze --no-pub` und nach passender
@@ -56,11 +58,12 @@ Für reine Dokumentationspflege diese Prüfungen nicht erneut starten.
 - Automatischen Handballenschutz am Gerät prüfen: Hand vor dem Stift auflegen,
   Ärmel am Scrollbalken, Schreibpausen und bewusstes Wischen/Zoomen bei weiter
   aufliegender Hand. Keine manuelle Touch-Sperre und keine neue Einstellung.
-- PDF-Anzeige nach Zoom-/Cache-Korrektur vom Nutzer als verbessert bestätigt.
-  Noch prüfen: während des PDF-Nachladens schließen; danach darf kein
-  Openote-Prozess im Task-Manager verbleiben. Import, Beschriften und Export
-  weiterhin real prüfen. Gezielte PDF-Prüfung: 62 bestanden, 3 wegen fehlendem
-  PDFium übersprungen; statische Analyse der geänderten Dateien ohne Befund.
+- PDF-Anzeige am Gerät erneut prüfen: Nachschärfen und Verschieben ohne kurzen
+  Bildsprung; Schließen während laufendem/hängendem Rendern und sofortiger Neustart
+  ohne verbliebenen Prozess. Ausschnitte wechseln jetzt fertig dekodiert mit ihrer
+  Position; nach 30 Sekunden endet die Ladeanzeige mit Retry. Windows beendet den
+  Prozess nach Speichern/SQLite-Abschluss direkt. Import, Beschriften und Export
+  weiterhin real prüfen; die Geräteprüfung übernimmt der Nutzer.
 - QR-Scanner im gemeinsamen WLAN am Ziel-PC prüfen.
 - Bild-/PDF-Import am Gerät prüfen: wie Handy-Scans linksbündig mit gleicher
   Breite und 36 Pixel Abstand unter vorhandenen Inhalt stapeln, auch bei

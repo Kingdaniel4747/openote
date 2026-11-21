@@ -40,6 +40,15 @@ abstract final class PdfPages {
   static var _regionBytes = 0;
   static var _generation = 0;
   static Future<void>? _pageQueue;
+  static bool _stopping = false;
+
+  /// Invalidate pending viewers immediately; disposal may finish much later.
+  static Future<void> stopForExit() {
+    _stopping = true;
+    return reset();
+  }
+
+  static void resumeAfterFailedExit() => _stopping = false;
 
   @visibleForTesting
   static Future<PdfDocument> Function(Uint8List, String)? openForTest;
@@ -60,6 +69,7 @@ abstract final class PdfPages {
 
   static Future<Uint8List?> pageImage(AppState app, String hash, int page,
       {bool Function()? isCurrent}) {
+    if (_stopping) return Future.value(null);
     final key = '$hash#$page';
     final hit = _pages.remove(key);
     if (hit != null) {
@@ -95,6 +105,7 @@ abstract final class PdfPages {
   static Future<Uint8List?> pageImageAtScale(
       AppState app, String hash, int page, double scale,
       {bool Function()? isCurrent}) {
+    if (_stopping) return Future.value(null);
     final key = '$hash#$page#${scale.toStringAsFixed(0)}';
     final hit = _pages.remove(key);
     if (hit != null) {
@@ -132,6 +143,7 @@ abstract final class PdfPages {
       entry = _acquire(app, hash);
       if (entry == null) return null;
       final doc = await entry.ready;
+      if (generation != _generation) return null;
       if (isCurrent != null && !isCurrent()) return null;
       if (page < 0 || page >= doc.pages.length) return null;
       final image = scale != kPdfPageScale && renderAtScaleForTest != null
@@ -141,6 +153,9 @@ abstract final class PdfPages {
               : await renderPdfPageToPng(doc.pages[page],
                   scale: scale, isCurrent: isCurrent);
       if (image == null) return null;
+      if (generation != _generation || (isCurrent != null && !isCurrent())) {
+        return null;
+      }
       if (generation == _generation) {
         _pageBytes -= _pages.remove(key)?.length ?? 0;
         _pages[key] = image.png;
@@ -164,6 +179,7 @@ abstract final class PdfPages {
   static Future<RenderedPdfRegion?> pageRegion(
       AppState app, String hash, int page, Rect region, int fullWidth,
       {bool Function()? isCurrent}) {
+    if (_stopping) return Future.value(null);
     final key =
         '$hash#$page#$fullWidth#${region.left},${region.top},${region.right},${region.bottom}';
     final hit = _regions.remove(key);
@@ -188,13 +204,17 @@ abstract final class PdfPages {
           entry = _acquire(app, hash);
           if (entry == null) return null;
           final doc = await entry.ready;
-          if (!_needed(pendingKey) || page < 0 || page >= doc.pages.length) {
+          if (generation != _generation ||
+              !_needed(pendingKey) ||
+              page < 0 ||
+              page >= doc.pages.length) {
             return null;
           }
           final image = renderRegionForTest != null
               ? await renderRegionForTest!(doc.pages[page], region, fullWidth)
               : await renderPdfRegionToPng(doc.pages[page], region, fullWidth,
                   isCurrent: () => _needed(pendingKey));
+          if (generation != _generation || !_needed(pendingKey)) return null;
           if (image != null && generation == _generation) {
             _regionBytes -= _regions.remove(key)?.png.length ?? 0;
             _regions[key] = image;
@@ -223,6 +243,7 @@ abstract final class PdfPages {
   static Uint8List? cached(String hash, int page) => _pages['$hash#$page'];
 
   static Future<int?> pageCount(AppState app, String hash) async {
+    if (_stopping) return null;
     final entry = _acquire(app, hash);
     if (entry == null) return null;
     try {

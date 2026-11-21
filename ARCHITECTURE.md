@@ -176,7 +176,10 @@ PDF-Anzeige (`media/pdf_pages.dart`, `editor/image_block_view.dart`): Original-P
 und dauerhafte Seitenvorschau bleiben erhalten. Die Bilddekodierung folgt Zoom
 und Display-Pixeldichte; für höhere PDF-Auflösung werden sichtbare Ausschnitte
 mit Rand nachgeladen und ausschließlich im Arbeitsspeicher gecacht. Überholte
-Aufträge werden vor dem Öffnen/Rendern verworfen. Ein zuletzt genutztes großes
+Aufträge werden vor dem Öffnen/Rendern verworfen. Ausschnitte werden vor dem
+Wechsel dekodiert; Pixel und Ausschnittsposition wechseln im selben Frame.
+Anzeigeaufträge enden nach spätestens 30 Sekunden mit erneuter Versuchsmöglichkeit;
+verspätete Ergebnisse werden verworfen. Ein zuletzt genutztes großes
 PDF darf das Dokumentcache-Budget überschreiten; Inaktivität gibt es wieder frei.
 Der Import bereitet weiterhin alle Seitenvorschauen vor dem Abschluss vor;
 eine schrittweise Veröffentlichung während des Imports ist nicht umgesetzt.
@@ -185,6 +188,9 @@ Start/Ende: Pro Workspace hält `core/single_instance.dart` eine Dateisperre;
 beim Schließen werden keine neuen Öffnungsanfragen bestätigt. Ein Neustart
 versucht nach ausbleibender Antwort die Sperre erneut, öffnet aber nie ungesperrt.
 Schließen wartet auf Speichern, nicht auf einen weiteren Fenster-Frame.
+Neue PDF-Aufträge werden beim Schließen gesperrt und laufende abgebrochen.
+Nach erfolgreichem Speichern und SQLite-Abschluss beendet `core/process_exit.dart`
+den Windows-Prozess direkt, auch bei einem blockierten nativen PDF-Worker.
 Updates speichern den letzten Zustand und schließen SQLite vor Prozessende.
 Während Setup läuft, verwirft der Windows-Runner manuelle Starts; Setup startet
 die fertige Installation mit `--after-update`. Der Setup-Mutex ist an den
