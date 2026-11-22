@@ -88,6 +88,11 @@ Nur Erkenntnisse behalten, die künftige Fehler verhindern. Keine Sitzungsprotok
 
 ## Prüfungen
 
+Release-Shells laufen mit `bash -e`: `((patch++))` liefert beim alten Wert 0
+einen Fehlerstatus und beendet den Schritt. Versionen mit `patch=$((patch + 1))`
+erhöhen; Nullwerte und Versionsüberläufe in `.github/scripts/version.test.mjs`
+gegen den tatsächlichen Workflow prüfen.
+
 PDF-Anzeige: Decode-Größe an Zoom und Display-Pixeldichte anpassen, auch unter
 100 % Zoom. Scharfe sichtbare Ausschnitte nur transient halten; niemals als
 dauerhafte Vorschau speichern. Veraltete Aufträge vor dem Öffnen überspringen,

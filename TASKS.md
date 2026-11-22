@@ -1,6 +1,36 @@
 # Aufgaben
 
-Stand: 21.11.2026. Nur aktuelle Arbeit und bekannte Grenzen, keine Versionschronik.
+Stand: 22.11.2026. Nur aktuelle Arbeit und bekannte Grenzen, keine Versionschronik.
+
+## Nächstes Release
+
+Vor dem nächsten Release-Push die folgenden Punkte durch die dann aktuellen
+Änderungen aus Nutzersicht ersetzen. Die Markierungen erhalten. Der Workflow
+übernimmt diesen Inhalt nur, wenn er sich gegenüber dem letzten Release ändert;
+sonst werden Wartungshinweis und neue Commits ausgegeben.
+
+<!-- release-notes:start -->
+- Neue deutsche und englische Projektwebsite mit Windows-/Android-Downloads,
+  Funktionsübersicht und Einstiegshilfe für Handschrift, PDFs, Scanner und KI.
+- README für neue Nutzer überarbeitet: Installation, Bedienung, Sicherungen und
+  die Grenzen des OneNote-Imports verständlich zusammengefasst.
+- Gemeinsame Windows-/Android-Releases starten beim Push auf `master` automatisch
+  und enthalten Datum, beschriebene Neuerungen und die zugehörigen Commits.
+<!-- release-notes:end -->
+
+## Veröffentlichung vorbereiten
+
+- In GitHub Settings → Pages als Quelle „GitHub Actions“ auswählen; danach
+  Änderungen selbst auf `master` pushen. Kein Push oder Release in dieser Sitzung.
+- Bestehende Android-Signatur-Secrets erhalten; GitHub-Build und gemeinsame
+  Release-Dateien nach dem ersten Push prüfen. Live-CI ersetzt keine Geräteprüfung.
+- Website im GitHub-About verlinken; nach dem Deployment Search Console einrichten
+  und `https://kingdaniel4747.github.io/openote/sitemap.xml` einreichen.
+- Lokal geprüft: 15 Node-Tests für Versionsvergabe, Release-Text und Download-
+  Fehlerfälle sowie 34 gezielte Flutter-Release-/Update-Tests bestanden.
+  Beide HTML-Seiten: 30 lokale Links/Assets, eindeutige IDs, Sprachverweise und
+  JSON-LD geprüft; `git diff --check` sauber. Browser-Sichtprüfung offen, weil der
+  Browser-Host nicht erreichbar war. Kein neuer Windows-/APK-Build oder Live-Deploy.
 
 ## Übergabe für den nächsten Chat
 
@@ -85,7 +115,7 @@ Für reine Dokumentationspflege diese Prüfungen nicht erneut starten.
 - Große Notizbücher und laufende Medien beim Schließen/Backup beobachten.
 - Wortlaut des noch nicht identifizierten VS-Code-Auto-Fix-Dialogs aufnehmen;
   Explorer-Farben können Git-Status oder Diagnosen bedeuten.
-- Linux und getrennte Windows-/Scanner-Releases später behandeln.
+- Linux-Pakete später behandeln; Windows und Scanner werden gemeinsam veröffentlicht.
 
 ## Offene automatisierte Fälle
 
@@ -176,7 +206,7 @@ ein lokaler APK-Build brauchen diese Werkzeuge.
   widerrufen laufende Bildantworten. 97 gezielte MCP-/Schutz-/Handschrift-/PDF-/
   Navigationstests bestanden, drei bekannte Headless-PDFium-Fälle übersprungen.
   Analyse sauber, Windows-Release-Build erfolgreich (Dart-Kern, lokal kein Cargo).
-  Der manuell startbare GitHub-Release-Workflow bleibt unverändert.
+  GitHub-Releases enthalten denselben Text wie die Updateanzeige.
 - Automatischer Windows-Handballenschutz vor der UI-Ereignisverarbeitung:
   Stift hat Vorrang, alte Handkontakte bleiben bis zum Abheben ausgeschlossen;
   frische klare Fingerbewegungen erlauben weiter Wischen und Pinch-Zoom.

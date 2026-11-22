@@ -9,20 +9,22 @@ void main() {
       loadYaml(File('${root.path}/.github/workflows/$name').readAsStringSync())
           as Map;
 
-  test('every pushed change creates a versioned Windows and Android release', () {
+  test('master pushes create a versioned Windows and Android release', () {
     final release = workflow('release.yml');
     final triggers = release['on'] as Map;
     final jobs = release['jobs'] as Map;
 
     expect(triggers.keys, unorderedEquals(['push', 'workflow_dispatch']));
-    expect(triggers['push']['branches'], ['**']);
+    expect(triggers['push']['branches'], ['master']);
     expect(triggers['push']['tags'], isNull);
-    expect(jobs.keys, unorderedEquals(['version', 'windows', 'android', 'publish']));
+    expect(jobs.keys,
+        unorderedEquals(['version', 'windows', 'android', 'publish']));
     expect(jobs['windows']['needs'], 'version');
     expect(jobs['android']['needs'], 'version');
     expect(jobs['windows']['runs-on'], 'windows-latest');
     expect(jobs['android']['runs-on'], 'ubuntu-latest');
-    expect(jobs['publish']['needs'], unorderedEquals(['version', 'windows', 'android']));
+    expect(jobs['publish']['needs'],
+        unorderedEquals(['version', 'windows', 'android']));
     expect(release['permissions']['contents'], 'write');
     expect(release['concurrency']['group'], 'openote-release');
     expect(release['concurrency']['cancel-in-progress'], false);
@@ -30,7 +32,8 @@ void main() {
 
   test('the Windows package has the injected app version and native core', () {
     final steps = workflow('release.yml')['jobs']['windows']['steps'] as List;
-    final build = steps.singleWhere((s) => s['name'] == 'Build the Windows app');
+    final build =
+        steps.singleWhere((s) => s['name'] == 'Build the Windows app');
     expect(build['run'], contains('--build-name='));
     expect(build['run'], contains('--dart-define=OPENOTE_VERSION='));
     expect(build['run'], contains('OPENOTE_REPOSITORY=Kingdaniel4747/openote'));
@@ -46,12 +49,14 @@ void main() {
     final signing = steps.singleWhere(
         (s) => s['name'] == 'Configure the protected Android signing key');
     final env = signing['env'] as Map;
-    expect(env.keys, containsAll([
-      'KEYSTORE_BASE64',
-      'KEYSTORE_PASSWORD',
-      'KEY_ALIAS',
-      'KEY_PASSWORD',
-    ]));
+    expect(
+        env.keys,
+        containsAll([
+          'KEYSTORE_BASE64',
+          'KEYSTORE_PASSWORD',
+          'KEY_ALIAS',
+          'KEY_PASSWORD',
+        ]));
     expect(signing['run'], contains('Missing Android signing secrets'));
 
     final gradle = File('${root.path}/scanner/android/app/build.gradle.kts')
@@ -65,18 +70,45 @@ void main() {
     final verify = steps.singleWhere((s) => s['name'] == 'Verify packages');
     expect(verify['run'], contains('windows-x64-setup.exe'));
     expect(verify['run'], contains('openote-scanner-'));
-    final publish = steps.singleWhere((s) => s['name'] == 'Publish the release');
+    final publish =
+        steps.singleWhere((s) => s['name'] == 'Publish the release');
     expect(publish['with']['draft'], false);
     expect(publish['with']['target_commitish'], r'${{ github.sha }}');
+    expect(publish['with']['body_path'], 'release-body.md');
+    expect(publish['with']['generate_release_notes'], true);
+    final notes =
+        steps.singleWhere((s) => s['name'] == 'Prepare readable release notes');
+    expect(
+        notes['env']['RELEASE_NOTES_OVERRIDE'], r'${{ inputs.release_notes }}');
+    expect(notes['run'], contains('writeReleaseNotes'));
+    expect(notes['run'], isNot(contains(r'${{ inputs.release_notes }}')));
+  });
+
+  test('the website deploys independently with Pages permissions', () {
+    final pages = workflow('pages.yml');
+    expect(pages['on']['push']['branches'], ['master']);
+    final deploy = pages['jobs']['deploy'];
+    expect(deploy['needs'], isNull);
+    expect(deploy['permissions']['pages'], 'write');
+    expect(deploy['permissions']['id-token'], 'write');
+    expect(deploy['environment']['name'], 'github-pages');
+    final upload = (deploy['steps'] as List).singleWhere((s) =>
+        (s['uses'] as String? ?? '')
+            .startsWith('actions/upload-pages-artifact@'));
+    expect(upload['with']['path'], 'website');
   });
 
   test('Windows writing services use standard C++20 coroutines', () {
     final runner = File('windows/runner/CMakeLists.txt').readAsStringSync();
     expect(
-        runner, contains(r'target_compile_features(${BINARY_NAME} PRIVATE cxx_std_20)'));
+        runner,
+        contains(
+            r'target_compile_features(${BINARY_NAME} PRIVATE cxx_std_20)'));
     expect(runner, isNot(contains('/await')));
-    expect(runner,
-        isNot(contains('_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS')));
+    expect(
+        runner,
+        isNot(
+            contains('_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS')));
     final writing =
         File('windows/runner/writing_services.cpp').readAsStringSync();
     final standardHeader = writing.indexOf('#include <coroutine>');

@@ -16,7 +16,8 @@
   Manuelle Geräte- und Bedienprüfungen übernimmt der Nutzer.
 - Flutter-Befehle im jeweiligen Paket app/ oder scanner/ ausführen.
   Für Windows-Buildprobleme zuerst LEARNINGS.md und die lokalen Overrides prüfen.
-- Kein Push und kein Release ohne ausdrücklichen Nutzerauftrag. Der bestehende
-  GitHub-Workflow veröffentlicht nach manuellem Start über `workflow_dispatch`;
-  normale Branch-Pushes lösen keinen Release aus. Workflow unverändert lassen.
+- Kein Push und kein Release ohne ausdrücklichen Nutzerauftrag. Jeder Push auf
+  `master` startet den gemeinsamen Windows-/Android-Release; andere Branches
+  veröffentlichen nicht. Vor einem beauftragten Release die Neuerungen im
+  markierten Abschnitt „Nächstes Release“ in TASKS.md aktualisieren.
 - Keine Schlüssel, persönlichen Notizen oder lokalen Testdaten einchecken.

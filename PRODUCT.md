@@ -69,7 +69,9 @@ Originaldateien und alte Prüfungsdaten werden nicht beim Aufräumen gelöscht.
 
 ## Grenzen
 
-Keine Projektwebsite, kein Benutzerkonto und kein benötigter Cloudserver.
+Kein Benutzerkonto und kein benötigter Cloudserver. Die öffentliche Projektwebsite
+erklärt Funktionen und Bedienung und verlinkt Windows- und Scanner-Downloads;
+sie speichert keine Notizbücher und ist für die Apps nicht erforderlich.
 Kein eingebautes KI-Modell und kein neuer Lernkarten-Workflow. MCP verbindet
 einen externen Desktop-KI-Client; Freigaben sind nach einem App-Neustart aus.
 Alte Sync-, CRDT- oder Plattformpläne sind keine aktuellen Anforderungen.
@@ -83,3 +85,13 @@ Der Nutzer prüft Bedienung, Stiftgefühl und Scanner am echten Gerät.
 Neue Funktionen oder größere Umbauten nur nach konkreter Anforderung.
 Sechs kurze zentrale Projektdateien statt zusätzlicher Planungs-, Prüfbericht-
 oder PDF-Sammlungen.
+
+## Öffentliche Positionierung
+
+Kostenlose Open-Source-Alternative zu OneNote für handschriftliches Arbeiten
+unter Windows mit Stift und Touch. Schule, Studium, PDF-Aufgabenblätter und
+Lernmaterialien stehen im Mittelpunkt; Android ist der begleitende Scanner.
+Kein universeller Plattform-Support und keine vollständige OneNote-Kompatibilität
+versprechen. Lokale `.one`/`.onepkg`-Importe brauchen den nativen Kern; Originale
+behalten und importierte Inhalte prüfen. Keine Aussage über einen Alleinstatus
+unter Alternativen, garantierte Suchplatzierungen oder KI-Empfehlungen.
