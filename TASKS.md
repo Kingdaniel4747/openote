@@ -10,6 +10,9 @@ Vor dem nächsten Release-Push die folgenden Punkte durch die dann aktuellen
 sonst werden Wartungshinweis und neue Commits ausgegeben.
 
 <!-- release-notes:start -->
+- Neue englische Website-Seite „Features & guide“ mit vollständigerer Übersicht
+  und Anleitungen für MCP-Lernzugriff, Screen-Clips, Stift/Touch, drei Seitenmodi,
+  PDF-Bearbeitung, Split-Screen, adaptive Tinte und lokale Windows-Schreibprüfung.
 - README mit visuellem Einstieg, Download-Schaltflächen, Navigation und echten
   App-Ansichten in Hell/Dunkel sowie Notizbuch- und Scanner-Bildern neu aufgebaut.
 - Projektwebsite ausschließlich auf Englisch umgestellt und mit echten Bildern,

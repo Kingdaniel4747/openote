@@ -25,6 +25,7 @@
 <p align="center">
   <a href="https://kingdaniel4747.github.io/openote/"><b>Website</b></a> ·
   <a href="#quick-start">Quick start</a> ·
+  <a href="https://kingdaniel4747.github.io/openote/features.html">Features &amp; guide</a> ·
   <a href="#features">Features</a> ·
   <a href="#android-scanner">Android scanner</a> ·
   <a href="#learn-with-your-ai-client">AI connection</a> ·
@@ -128,6 +129,10 @@ in this repository; Linux and macOS downloads are not currently offered.
 Every explicit file export asks where to save. **Save original** saves the source:
 several selected sheets of the same PDF produce one complete original PDF.
 UI labels may be translated depending on your app language.
+
+For the complete feature list and practical guides to screen clips, split screen,
+page modes, PDF editing, theme-aware ink and Windows writing checks, visit the
+**[Features & guide](https://kingdaniel4747.github.io/openote/features.html)**.
 
 ## Android scanner
 

@@ -6,6 +6,8 @@
 `en/` leitet auf die Wurzel um. Gemeinsame CSS-Datei und progressive Downloadlinks
 über `downloads.js`. Ohne GitHub-API/JavaScript bleiben die Release-Seiten verlinkt.
 `.github/workflows/pages.yml` veröffentlicht unabhängig von den App-Builds.
+`features.html` listet die Werkzeuge und erklärt ihre Bedienung; beide Seiten
+verlinken sie über die auch mobil sichtbare Navigation „Features & guide“.
 `release.yml` baut nach Push auf `master` beide Apps; `release-notes.mjs` erstellt
 aus dem markierten TASKS-Abschnitt, vorherigem Release-Stand und Git-Commits den
 Release-Text. Keine neue separate Markdown-Chronik.
