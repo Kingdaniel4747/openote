@@ -92,8 +92,31 @@ void main() {
 
     expect(anchor.top, lessThan(400),
         reason: 'an empty page must not push the first slide down the canvas');
-    expect(anchor.top, AppState.contentTop + 36);
+    expect(anchor.top - AppState.contentTop, anchor.left,
+        reason: 'the inset below the title matches the left inset');
     expect(anchor.left, AppState.pageLeftMargin);
+  });
+
+  test('empty text containers do not push the first PDF down', () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final app = await newApp();
+    final empty = Block(
+        type: BlockType.text,
+        x: 200,
+        y: 900,
+        w: 300,
+        h: 100,
+        content: {'text': ' \n\t'});
+    app.blocks = [empty];
+    app.select(empty.id, edit: true);
+    final anchor = app.mediaImportPlacement();
+    expect(anchor.top, AppState.contentTop + AppState.pageLeftMargin);
+    expect(anchor.left, AppState.pageLeftMargin);
+    expect(app.blocks.single.id, empty.id,
+        reason: 'placement does not delete a container still being edited');
+    final offscreen = app.mediaImportPlacement(
+        page: PageData([empty], PageProps()));
+    expect(offscreen, anchor);
   });
 
   test('new batches continue an existing horizontal PDF row to the right',

@@ -91,6 +91,9 @@ Off-screen-Importe verwenden die Daten der gekoppelten Seite, keine Messwerte
 der aktuell sichtbaren Seite. Erkennbare horizontale Reihen wachsen rechts;
 sonst wächst der Inhalt unten. Feste Papier-/PDF-Seiten behalten ihre Grenzen.
 PDF-Ausdrucke berechnen die Position für jedes neu veröffentlichte Blatt erneut.
+Der erste Import beginnt 44 Pixel unter dem Titelbereich, passend zum linken
+Rand. Leere Textcontainer zählen für die Platzierung nicht als Inhalt;
+zwischen vorhandenen Inhalten und Folgeblättern bleiben 36 Pixel Abstand.
 
 `AppState.runMediaImport` serialisiert PDF- und Handy-Importe einschließlich
 Lesen, Dekodieren und Speichern. Das verhindert sowohl überlagerte Positionen

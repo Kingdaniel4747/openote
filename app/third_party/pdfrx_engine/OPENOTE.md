@@ -26,3 +26,14 @@ creation returns inside try/catch/finally in `pdfrx_pdfium.dart`. This ensures
 errors reach cleanup and JPEG memory stays alive until asynchronous creation
 completes. The constant line threshold in `pdf_text_formatter.dart` is declared
 `const`. These changes address the analyzer findings without changing APIs.
+
+In-memory documents now set the memory-loading threshold to their full byte
+length. Previously, sources larger than 1 MiB unnecessarily used the custom
+native read callback even though all bytes were already available. On Windows,
+the callback could lose a condition-variable wakeup: the writer signalled
+without holding the reader's critical section. The writer now takes that lock,
+and the reader checks a pending-result predicate in a loop to handle spurious
+wakeups. File/range-based sources retain their existing loading strategy.
+Regression coverage: `app/test/pdf_memory_loading_test.dart` checks both sides
+of the old size boundary and exercises actual Windows worker callbacks with
+immediate, delayed and failed reads without requiring PDFium.

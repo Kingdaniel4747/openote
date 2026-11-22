@@ -311,7 +311,10 @@ class PdfrxEntryFunctionsImpl implements PdfrxEntryFunctions {
       passwordProvider: passwordProvider,
       firstAttemptByEmptyPassword: firstAttemptByEmptyPassword,
       useProgressiveLoading: useProgressiveLoading,
-      maxSizeToCacheOnMemory: maxSizeToCacheOnMemory,
+      // The complete source already lives in memory. Keep PDFium on its
+      // memory-loading path instead of round-tripping every read through a
+      // native worker -> Dart callback -> condition-variable handshake.
+      maxSizeToCacheOnMemory: maxSizeToCacheOnMemory ?? data.length,
       onDispose: onDispose,
     );
   }

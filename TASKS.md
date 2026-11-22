@@ -59,6 +59,8 @@ Aktueller automatisierter Stand, keine grüne Gesamtsuite:
 | Abschließende Spaltenausrichtung und Scan-/Medienplatzierung | 20 bestanden, keine übersprungen |
 | Präziser Radierer, Stifttupfer, Knopf/Hover und Ink-Speicherung | 70 gezielte Tests bestanden; Analyse der fünf geänderten Dart-Dateien ohne Befund (20.11.2026, damaliger Stand) |
 | PDF-Nachschärfen, Render-Timeout, Speichern und Prozessende | 102 bestanden, 3 bekannte PDFium-Fälle übersprungen; blockierter nativer Worker und freigegebene Dateisperre im Unterprozess geprüft |
+| PDF-Import: Speicherpfad und Windows-Lese-Callback | 28 gezielte Tests bestanden, einschließlich 512 nativer Leseaufrufe; Windows-Release am 22.11.2026 gebaut (Dart-Kern). Analyse: nur bestehender Stilhinweis in `command_bar.dart:907`. Betroffene Original-PDF noch am Gerät prüfen |
+| Importabstand und leere Textfelder | 28 gezielte Import-/Scanner-/Textfeldtests bestanden: erster Import 44 Pixel unter dem Titelbereich; leere Textfelder beeinflussen die Platzierung nicht. Löschen leerer Felder beim Wegklicken im Canvas bestätigt. Windows-Release gebaut; Analyse nur mit bekanntem Stilhinweis |
 
 Diese Läufe überschneiden sich und dürfen nicht addiert werden. Windows-Release
 am 21.11.2026 erfolgreich gebaut (Dart-Kern; ohne Cargo kein OneNote-Import).

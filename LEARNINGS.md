@@ -24,6 +24,12 @@ Nur Erkenntnisse behalten, die künftige Fehler verhindern. Keine Sitzungsprotok
 
 ## Daten und Bedienung
 
+- PDF-Bytes im Speicher direkt über PDFiums Speicherpfad öffnen: der bisherige
+  1-MiB-Schwellwert leitete größere Importe unnötig durch native Lese-Callbacks.
+  Bei Windows-Condition-Variables müssen Leser und Schreiber denselben Lock
+  sowie ein Zustandsprädikat verwenden; sonst gehen frühe Signale verloren.
+  Regression: `pdf_memory_loading_test.dart`, einschließlich echtem Worker.
+
 - PDF-Blätter referenzieren ein gemeinsames Original: beim Export nach
   `content['pdf']` deduplizieren, niemals nach Vorschaubild oder Blattnummer.
   Ein Originalexport muss einen Ziel-Dialog anbieten; Downloads ist kein

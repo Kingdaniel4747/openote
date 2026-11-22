@@ -40,9 +40,15 @@ class PdfiumFileAccessHelperWin32 implements PdfiumFileAccessHelper {
 
   @override
   void setValue(int faAddress, int value) {
-    final returnValue = Pointer<IntPtr>.fromAddress(faAddress + _retValueOffset);
-    returnValue.value = value;
-    WakeConditionVariable(faAddress + _cvOffset);
+    final cs = faAddress + _csOffset;
+    EnterCriticalSection(cs);
+    try {
+      final returnValue = Pointer<IntPtr>.fromAddress(faAddress + _retValueOffset);
+      returnValue.value = value;
+      WakeConditionVariable(faAddress + _cvOffset);
+    } finally {
+      LeaveCriticalSection(cs);
+    }
   }
 }
 
@@ -69,15 +75,22 @@ int _read(Pointer<Void> param, int position, Pointer<UnsignedChar> buffer, int s
   ).asFunction<void Function(int, Pointer<UnsignedChar>, int)>();
 
   EnterCriticalSection(cs);
+  final returnValue = Pointer<IntPtr>.fromAddress(faAddress + _retValueOffset);
+  returnValue.value = -2; // Pending; reads return a byte count or -1 on error.
 
   // Call Dart side read function. The call is returned immediately (it runs asynchronously)
   readFunc(position, buffer, size);
 
   // So, we should wait for Dart to signal completion
-  SleepConditionVariableCS(cv, cs, INFINITE);
-  final returnValue = Pointer<IntPtr>.fromAddress(faAddress + _retValueOffset).value;
+  // The writer must take the same lock: otherwise a fast read can signal
+  // before this thread starts waiting, losing the wakeup forever. Recheck
+  // the predicate because Windows condition variables may wake spuriously.
+  while (returnValue.value == -2) {
+    SleepConditionVariableCS(cv, cs, INFINITE);
+  }
+  final result = returnValue.value;
   LeaveCriticalSection(cs);
-  return returnValue;
+  return result;
 }
 
 /// CRITICAL_SECTION offset within FPDF_FILEACCESS

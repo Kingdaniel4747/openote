@@ -35,6 +35,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:openote/model/models.dart';
+import 'package:openote/canvas/page_canvas.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/theme/onote_theme.dart';
@@ -124,8 +125,8 @@ void main() {
   /// other non-printable chords, which are `Actions`/`Shortcuts`-driven
   /// rather than IME-driven, are unaffected and still use `key` below).
   Future<void> type(WidgetTester tester, String text, int caretAt) async {
-    tester.testTextInput.updateEditingValue(
-        TextEditingValue(text: text, selection: TextSelection.collapsed(offset: caretAt)));
+    tester.testTextInput.updateEditingValue(TextEditingValue(
+        text: text, selection: TextSelection.collapsed(offset: caretAt)));
     await settle(tester);
   }
 
@@ -158,6 +159,27 @@ void main() {
     expect(app.blocks.firstWhere((x) => x.id == b.id).content['text'], 'a');
     app.cancelPendingSave();
   });
+
+  for (final text in [null, '', ' \n\t', 'kept']) {
+    testWidgets('clicking away cleans up an empty text box (text=$text)',
+        (tester) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await pumpShell(tester);
+      final block = clickToCreate(200, 200);
+      await settle(tester);
+      if (text != null) {
+        await type(tester, 'temporary text', 14);
+        await type(tester, text, text.length);
+      }
+      await tester.tapAt(tester.getTopLeft(find.byType(PageCanvas)) +
+          app.canvas.pageToScreen(const Offset(800, 500)));
+      await settle(tester);
+      expect(app.editingBlockId, isNull);
+      expect(app.blocks.any((b) => b.id == block.id), text == 'kept');
+      expect(app.pendingEmptyBlockId, isNull);
+      app.cancelPendingSave();
+    });
+  }
 
   testWidgets(
       'arrow keys slide the pending box around the page, never jumping '

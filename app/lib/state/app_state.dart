@@ -4043,7 +4043,12 @@ class AppState extends ChangeNotifier
   /// existing content. Geometry comes from the page, never the selection.
   ({double left, double top, double width}) mediaImportPlacement(
       {PageData? page}) {
-    final source = page?.blocks ?? blocks;
+    // An empty caret container has no visible content to append beneath.
+    // It may still be active when the file picker or scanner starts importing.
+    final source = (page?.blocks ?? blocks).where((block) =>
+        !(block.type == BlockType.text &&
+            block.content['text'] is String &&
+            (block.content['text'] as String).trim().isEmpty));
     final props = page?.props ?? pageProps;
     Rect bounds(Block block) {
       final height = block.h ??
@@ -4098,7 +4103,9 @@ class AppState extends ChangeNotifier
     }
     return (
       left: appendLeft,
-      top: bottom + mediaImportGap,
+      // Match the left inset below the title band; keep the smaller inter-item
+      // gap for subsequent sheets and existing notes.
+      top: math.max(contentTop + pageLeftMargin, bottom + mediaImportGap),
       width: ((page?.props ?? pageProps).pageWidth - pageLeftMargin * 2)
           .clamp(280.0, 760.0),
     );
