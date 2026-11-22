@@ -72,6 +72,8 @@ Originaldateien und alte Prüfungsdaten werden nicht beim Aufräumen gelöscht.
 Kein Benutzerkonto und kein benötigter Cloudserver. Die öffentliche Projektwebsite
 erklärt Funktionen und Bedienung und verlinkt Windows- und Scanner-Downloads;
 sie speichert keine Notizbücher und ist für die Apps nicht erforderlich.
+Website und öffentliche README sind Englisch. Die Produktdarstellung verwendet
+Ansichten der echten Oberfläche mit Beispieldaten; keine gezeichneten App-Mockups.
 Kein eingebautes KI-Modell und kein neuer Lernkarten-Workflow. MCP verbindet
 einen externen Desktop-KI-Client; Freigaben sind nach einem App-Neustart aus.
 Alte Sync-, CRDT- oder Plattformpläne sind keine aktuellen Anforderungen.

@@ -11,7 +11,7 @@ const release = { tag_name: 'v1.2.3', assets: [
   { name: 'openote-scanner-1.2.3.apk', browser_download_url: prefix + 'openote-scanner-1.2.3.apk' },
 ] };
 
-async function simulate({ data = release, ok = true, offline = false, lang = 'de' } = {}) {
+async function simulate({ data = release, ok = true, offline = false, lang = 'en' } = {}) {
   const links = { windows: [{ href: fallback }, { href: fallback }], android: [{ href: fallback }] };
   const status = { textContent: 'fallback' };
   await runInNewContext(script, {
@@ -60,4 +60,9 @@ test('English version gets an English status without interpreting release HTML',
   const { status } = await simulate({ lang: 'en', data: { ...release, tag_name: '<b>v1.2.3</b>' } });
   assert.match(status.textContent, /Both download buttons/);
   assert.match(status.textContent, /<b>v1.2.3<\/b>/);
+});
+
+test('download status stays English even with a German language setting', async () => {
+  const { status } = await simulate({ lang: 'de' });
+  assert.match(status.textContent, /Both download buttons/);
 });

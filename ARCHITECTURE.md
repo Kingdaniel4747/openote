@@ -2,13 +2,18 @@
 
 ## Programme
 
-`website/` ist eine buildfreie GitHub-Pages-Website: deutsche Startseite,
-englische Fassung unter `en/`, gemeinsame CSS-Datei und progressive Downloadlinks
+`website/` ist eine buildfreie englische GitHub-Pages-Website; die alte Adresse
+`en/` leitet auf die Wurzel um. Gemeinsame CSS-Datei und progressive Downloadlinks
 über `downloads.js`. Ohne GitHub-API/JavaScript bleiben die Release-Seiten verlinkt.
 `.github/workflows/pages.yml` veröffentlicht unabhängig von den App-Builds.
 `release.yml` baut nach Push auf `master` beide Apps; `release-notes.mjs` erstellt
 aus dem markierten TASKS-Abschnitt, vorherigem Release-Stand und Git-Commits den
 Release-Text. Keine neue separate Markdown-Chronik.
+
+Echte öffentliche UI-Bilder unter `website/assets/screenshots/` entstehen aus
+`app/test/publication_screenshots_test.dart` und dem gleichnamigen Scanner-Test:
+opt-in `OPENOTE_PUBLICATION_SHOTS=1`, gesetztes `FLUTTER_ROOT`, `--update-goldens`.
+Nur temporäre Beispieldaten, keine persönlichen Bücher oder aktiven QR-Tokens.
 
 `app/` und `scanner/` sind eigenständige Flutter-Pakete mit eigener pubspec
 und Lockdatei. Sie bleiben in einem Repository. Die Verbindung läuft über das

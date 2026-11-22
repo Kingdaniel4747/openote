@@ -10,27 +10,29 @@ Vor dem nächsten Release-Push die folgenden Punkte durch die dann aktuellen
 sonst werden Wartungshinweis und neue Commits ausgegeben.
 
 <!-- release-notes:start -->
-- Neue deutsche und englische Projektwebsite mit Windows-/Android-Downloads,
-  Funktionsübersicht und Einstiegshilfe für Handschrift, PDFs, Scanner und KI.
-- README für neue Nutzer überarbeitet: Installation, Bedienung, Sicherungen und
-  die Grenzen des OneNote-Imports verständlich zusammengefasst.
-- Gemeinsame Windows-/Android-Releases starten beim Push auf `master` automatisch
-  und enthalten Datum, beschriebene Neuerungen und die zugehörigen Commits.
+- README mit visuellem Einstieg, Download-Schaltflächen, Navigation und echten
+  App-Ansichten in Hell/Dunkel sowie Notizbuch- und Scanner-Bildern neu aufgebaut.
+- Projektwebsite ausschließlich auf Englisch umgestellt und mit echten Bildern,
+  neuem Layout, Bedienhilfe und genauerem Android-Scanner-Ablauf überarbeitet.
 <!-- release-notes:end -->
 
 ## Veröffentlichung vorbereiten
 
-- In GitHub Settings → Pages als Quelle „GitHub Actions“ auswählen; danach
-  Änderungen selbst auf `master` pushen. Kein Push oder Release in dieser Sitzung.
+- Pages-Quelle im Nutzerscreenshot auf „GitHub Actions“ gesetzt; neue Änderungen
+  selbst auf `master` pushen. Kein Push oder Release in dieser Sitzung.
 - Bestehende Android-Signatur-Secrets erhalten; GitHub-Build und gemeinsame
   Release-Dateien nach dem ersten Push prüfen. Live-CI ersetzt keine Geräteprüfung.
 - Website im GitHub-About verlinken; nach dem Deployment Search Console einrichten
   und `https://kingdaniel4747.github.io/openote/sitemap.xml` einreichen.
-- Lokal geprüft: 15 Node-Tests für Versionsvergabe, Release-Text und Download-
-  Fehlerfälle sowie 34 gezielte Flutter-Release-/Update-Tests bestanden.
-  Beide HTML-Seiten: 30 lokale Links/Assets, eindeutige IDs, Sprachverweise und
-  JSON-LD geprüft; `git diff --check` sauber. Browser-Sichtprüfung offen, weil der
-  Browser-Host nicht erreichbar war. Kein neuer Windows-/APK-Build oder Live-Deploy.
+- Öffentliche Screenshots aus den echten Widgets mit isolierten Beispieldaten
+  gerendert und angesehen: drei Windows- und zwei Scanner-Ansichten. Einige echte
+  Android-Beschriftungen sind noch Deutsch; die Website selbst bleibt Englisch.
+- Geprüft: 16 Node-Tests bestanden, drei opt-in Screenshot-Tests bestanden;
+  Analyse beider neuer Dart-Dateien ohne Befund. 46 lokale Links/Anker und
+  Assets, HTML-Verschachtelung, SVG/Sitemap-XML sowie Software-JSON-LD geprüft.
+  Lokale Website liefert HTTP 200; `git diff --check` sauber.
+- Browser-Sichtprüfung bleibt offen: Die Umgebung hat die Firefox-Steuerung
+  wegen fehlender URL-Policy-Unterstützung gestoppt. Kein Live-Deploy in dieser Sitzung.
 
 ## Übergabe für den nächsten Chat
 

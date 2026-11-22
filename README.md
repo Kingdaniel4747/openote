@@ -1,157 +1,210 @@
-# Openote
+<p align="center">
+  <a href="https://kingdaniel4747.github.io/openote/"><img src="website/assets/icon.png" width="100" height="100" alt="Openote icon"></a>
+</p>
 
-**Die kostenlose Open-Source-Alternative zu OneNote für Windows mit Stift und Touch.**
+<h1 align="center">Openote</h1>
 
-Handschriftlich mitschreiben, PDFs beschriften und Lernmaterialien für ein ganzes
-Semester organisieren: Openote ist ein Arbeits- und Lernraum für Schule, Studium
-und den Alltag auf Windows-Geräten mit Stifteingabe. Der **Openote Scanner** auf
-Android bringt Arbeitsblätter und Dokumente direkt auf deine Seite.
+<p align="center">
+  <strong>Make room for handwritten thinking.</strong><br>
+  Your pen. Your PDFs. Your whole semester.<br>
+  A free, open-source OneNote alternative built for Windows pen and touch.
+</p>
 
-[Website & Anleitung](https://kingdaniel4747.github.io/openote/) ·
-[Windows herunterladen](https://github.com/Kingdaniel4747/openote/releases/latest) ·
-[Android-Scanner herunterladen](https://github.com/Kingdaniel4747/openote/releases/latest) ·
-[Neuerungen](https://github.com/Kingdaniel4747/openote/releases) ·
-[Fehler melden](https://github.com/Kingdaniel4747/openote/issues)
+<p align="center">
+  <a href="https://github.com/Kingdaniel4747/openote/releases/latest"><img src="https://img.shields.io/github/v/release/Kingdaniel4747/openote?style=flat-square&amp;color=6250cf" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/Windows-x64-24232b?style=flat-square" alt="Windows x64">
+  <img src="https://img.shields.io/badge/Android-companion_scanner-6250cf?style=flat-square" alt="Android companion scanner">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-24232b?style=flat-square" alt="License: AGPL-3.0-or-later"></a>
+</p>
 
-**Free, open-source handwriting and PDF annotation for Windows pen and touch.**
-A OneNote alternative for students who want local notebooks, handwritten study
-materials and an Android companion scanner. [English website & quick start](https://kingdaniel4747.github.io/openote/en/).
+<p align="center">
+  <a href="https://github.com/Kingdaniel4747/openote/releases/latest"><img src="website/assets/download-windows.svg" width="244" height="56" alt="Download Openote for Windows"></a>
+  <a href="https://github.com/Kingdaniel4747/openote/releases/latest"><img src="website/assets/download-android.svg" width="244" height="56" alt="Download Android scanner"></a>
+</p>
 
-## Für deinen Stift. Für deinen Stoff.
+<p align="center">
+  <a href="https://kingdaniel4747.github.io/openote/"><b>Website</b></a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#features">Features</a> ·
+  <a href="#android-scanner">Android scanner</a> ·
+  <a href="#learn-with-your-ai-client">AI connection</a> ·
+  <a href="#importing-from-onenote">OneNote import</a> ·
+  <a href="https://github.com/Kingdaniel4747/openote/releases">What’s new</a> ·
+  <a href="https://github.com/Kingdaniel4747/openote/issues">Report an issue</a>
+</p>
 
-- **Handschrift und Touch:** Stift, Kugelschreiber, Textmarker, präziser Radierer,
-  Undo/Redo sowie Verschieben und Zoomen mit Touch. Windows-Handballenschutz
-  gibt dem Stift Vorrang.
-- **PDFs bearbeiten:** Skripte und Aufgabenblätter importieren, markieren,
-  handschriftlich beschriften und Seiten wieder als PDF exportieren.
-- **Ein System zum Lernen:** Notizbücher, Abschnitte, Seiten und Unterseiten;
-  freier Platz für Text, Formeln, Tabellen, Bilder, Dateien und Videos.
-  Der Planer sammelt Hausaufgaben, Aufgaben und Prüfungstermine.
-- **Deine Daten lokal:** kein benötigtes Konto, kein Abo und kein erforderlicher
-  Cloudserver. Lokale Dateien funktionieren offline. Ganze Bücher sichern,
-  wiederherstellen oder in offenen Formaten exportieren.
-- **Android-Scanner:** per QR-Code koppeln und Dokumente im lokalen Netzwerk
-  direkt auf die ausgewählte Windows-Seite übertragen.
-- **Optionale KI-Anbindung:** einem kompatiblen Desktop-KI-Client über MCP
-  gezielt eine Seite oder ein Buch zum Lesen freigeben. Handschrift, Bilder und
-  PDF-Anmerkungen werden als Seitenbilder bereitgestellt. Kein eingebautes
-  Modell; externe KI-Dienste können Gebühren berechnen.
+<p align="center"><img src="website/assets/screenshots/study-light.png" width="1100" alt="Real Openote workspace: calculus notebook with drawing tools, typed notes, an equation, a pen diagram and a study checklist."><br><sub>The current Windows interface, rendered with sample course material.</sub></p>
 
-Für Geräte wie Microsoft Surface, Samsung Galaxy Book 360 sowie passende
-Lenovo-Yoga- und ThinkPad-Modelle mit Stifteingabe. Stiftfunktionen und
-Schreibgefühl hängen von der Hardware ab; nicht jedes Modell ist geprüft.
-Wenn du eine GoodNotes-ähnliche Arbeitsweise auf Windows suchst, kannst du
-Openote ausprobieren. Der Funktionsumfang unterscheidet sich von OneNote und
-GoodNotes; Openote ist ein unabhängiges Projekt.
+## A notebook you can actually work in
 
-## Herunterladen und installieren
+Write down the lecture. Solve the exercise on the PDF. Keep the explanation,
+your working and the next question together.
 
-| App | Download | Zweck |
+Openote is a workspace for **handwriting, documents and learning on Windows**.
+It is built for the way you use a pen-enabled laptop or convertible at school,
+university or your desk. The Android companion brings paper and phone files
+straight onto the page you already have open.
+
+**Local notebooks. No required account. No subscription.** If you want a
+GoodNotes-like way to study on Windows, try Openote. It has its own feature set
+and is independent of Microsoft and GoodNotes.
+
+## Features
+
+<table>
+  <tr>
+    <td width="33%" valign="top"><h3>Think with your pen</h3>Pen, ballpoint, highlighter and a precise eraser. Touch to pan and zoom. Windows palm rejection gives the pen priority. Undo and redo keep experiments reversible.</td>
+    <td width="33%" valign="top"><h3>Work on your PDFs</h3>Import course material, mark the important part and write your solution on the page. Export your work as PDF when it is time to share it.</td>
+    <td width="33%" valign="top"><h3>Organize the semester</h3>Notebooks, sections, pages and subpages, with a planner for assignments, tasks and exams. Text, formulas, tables, pictures and attachments can live together.</td>
+  </tr>
+  <tr>
+    <td valign="top"><h3>Keep your own files</h3>Local storage, complete notebook backups and exports including PDF, Markdown, JSON Canvas and InkML. No cloud server required for your notebooks.</td>
+    <td valign="top"><h3>Bring paper along</h3>Scan a document or choose a phone file with the Android companion. Pair by QR code and send it directly to your selected Windows page over the local network.</td>
+    <td valign="top"><h3>Let your AI read along</h3>Optional, read-only MCP access for a compatible desktop AI client. Share a page or one notebook, including page images with handwriting and PDF annotations.</td>
+  </tr>
+</table>
+
+### The same thoughts, in a different light
+
+Switch between light and dark themes. Change tools without moving your work
+somewhere else: handwriting, text, formulas and checklists share the page.
+
+<p align="center"><img src="website/assets/screenshots/study-dark.png" width="1100" alt="Real Openote drawing workspace in dark mode, showing the same sample calculus notes, formula, ink diagram and checklist."></p>
+
+### A semester, sorted
+
+Give each subject its own notebook. Search the library, pick a cover color and
+keep sections and pages in the order that makes sense to you. New, Import and
+Backup stay within reach.
+
+<p align="center"><img src="website/assets/screenshots/notebooks.png" width="1100" alt="Openote notebook management with a search field, colored notebook covers and New, Import and Backup buttons."></p>
+
+Screenshots show the **real current app UI with disposable sample data**, rendered
+from the app’s widgets. They are not conceptual mockups or personal notebooks.
+
+## Downloads
+
+| App | Get it | What to choose under release Assets |
 |---|---|---|
-| Openote für Windows x64 | [Aktuelles Setup](https://github.com/Kingdaniel4747/openote/releases/latest), Datei mit `windows-x64-setup.exe` | Vollständiger Notizeditor und Lernarbeitsplatz |
-| Openote Scanner für Android ab Version 6 | [Aktuelle APK](https://github.com/Kingdaniel4747/openote/releases/latest), Datei `openote-scanner-<Version>.apk` | Dokumente aufnehmen und an Windows senden |
+| **Openote for Windows** | [Latest Windows release](https://github.com/Kingdaniel4747/openote/releases/latest) | `openote-<version>-windows-x64-setup.exe` |
+| **Openote Scanner for Android** | [Latest Android release](https://github.com/Kingdaniel4747/openote/releases/latest) | `openote-scanner-<version>.apk` |
 
-Windows: Setup herunterladen und ausführen. Android: APK auf dem Handy öffnen;
-gegebenenfalls die Installation aus dieser Quelle erlauben. Verwende die Dateien
-aus diesem Repository. Der Scanner ist eine Begleitapp, kein Android-Notizeditor.
-Linux-Quellcode bleibt vorhanden; Linux- und macOS-Downloads werden aktuell
-nicht angeboten.
+**Windows:** download and run the setup. The published desktop package is x64,
+not a native Arm64 build. Use a compatible pen-enabled device for handwriting:
+for example a Surface, Galaxy Book 360, or a Yoga or ThinkPad model with pen
+support. The writing experience depends on the hardware; not every model is tested.
 
-Beide Apps prüfen auf neuere GitHub-Releases. Updates werden nach Bestätigung
-installiert. Auf Android muss jede Version mit demselben Schlüssel signiert sein.
-Alternativ kannst du die aktuelle Version über die Links oben installieren.
+**Android:** open the APK on your phone and allow installation from that source
+if prompted. Use the packages from this repository. Android 6 or later is required.
+This is a companion scanner, not a full Android notebook editor.
 
-## Die ersten fünf Minuten
+Both apps check GitHub for newer releases and ask before installation. Android
+updates must use the same signing key as the installed app. Linux source remains
+in this repository; Linux and macOS downloads are not currently offered.
 
-1. Öffne die Notizbuchverwaltung und lege ein Notizbuch an.
-2. Erstelle darin einen Abschnitt und eine Seite, etwa für ein Fach oder Seminar.
-3. Wähle unter **Draw** einen Stift und schreibe los; unter **Home** schreibst
-   und formatierst du Text. **Insert** fügt PDFs, Bilder und weitere Inhalte ein.
-   **View** steuert Seitendarstellung und Zoom. Beschriftungen können je nach
-   eingestellter Sprache übersetzt sein.
-4. Ordne Abschnitte und Seiten durch Ziehen. Halte eine Seite etwa 0,5 Sekunden
-   über einer anderen, um eine Unterseite vorzuschauen; Loslassen übernimmt sie.
-5. Sichere dein Buch regelmäßig über **Backup** in der Notizbuchverwaltung.
-   Wähle Bücher und Zielort der ZIP-Sicherung. Über **Import** stellst du sie
-   wieder her. Bewahre eine weitere Kopie auf einem anderen Datenträger auf.
+## Quick start
 
-| Bedienelement | Wofür? |
+1. Install the Windows app and open notebook management.
+2. Create a notebook, then a section and a page for your subject.
+3. Open **Draw**, choose a pen, and write. Use **Home** for typed notes or
+   **Insert** to bring in a PDF, picture or file.
+4. Drag sections and pages into order. Hold a page over another for about half
+   a second to preview a subpage; release to keep it, or move away to cancel.
+5. Open notebook management and choose **Backup**. Select books, save the ZIP
+   and keep another copy on a separate drive. Use **Import** to restore it.
+
+| Control | What it does |
 |---|---|
-| Home / Insert / Draw / View | Text / Inhalte einfügen / Handschrift / Ansicht |
-| Kalendersymbol | Planer öffnen; per Kalendertag neue Einträge anlegen |
-| KI-Symbol oben rechts | Lesenden Zugriff für einen externen KI-Client einrichten |
-| Zahnrad | Einstellungen |
-| Rechtsklick auf eine Seite → Export | Markdown, Vektor-PDF, Bild-PDF, JSON Canvas oder InkML exportieren |
-| Notizbuchverwaltung → Backup / Import | Bücher sichern, Sicherungen und unterstützte Dateien importieren |
+| **Home** | Write and format typed text |
+| **Insert** | Add PDFs, images, tables, files and other material |
+| **Draw** | Choose a pen, ballpoint, highlighter or eraser |
+| **View** | Change page appearance and zoom |
+| **Calendar icon** | Open the planner; select a day to create an entry |
+| **AI icon**, beside settings | Set up read-only access for an external AI client |
+| **Gear icon** | Open settings |
+| **Right-click a page → Export** | Save that page as PDF, Markdown or another offered format |
+| **Notebook management → Backup / Import** | Back up books, restore a backup or import a supported file |
 
-Jeder Dateiexport fragt nach einem Speicherort. „Save original“ sichert die
-Originalquelle; mehrere Blätter derselben PDF ergeben ein vollständiges Original.
-Mehr Bedienhilfe findest du auf der [Website](https://kingdaniel4747.github.io/openote/#anleitung).
+Every explicit file export asks where to save. **Save original** saves the source:
+several selected sheets of the same PDF produce one complete original PDF.
+UI labels may be translated depending on your app language.
 
-## Kann ich OneNote-Notizbücher importieren?
+## Android scanner
 
-Openote enthält einen **eingeschränkten Import für lokale `.one`- und
-`.onepkg`-Dateien** über den optionalen Rust-Kern. Wähle **Import** in der
-Notizbuchverwaltung. Der GitHub-Release-Build baut den nativen Kern mit;
-lokale Builds ohne Cargo haben diesen Import nicht.
+**Your phone is the bridge between the paper on your desk and your Windows notebook.**
 
-Nicht alle Inhalte oder Layouts sind unterstützt. Prüfe die importierten Seiten
-und behalte die Originaldateien. Eine vollständige Migration oder originalgetreue
-Bearbeitung ist nicht zugesichert. Es gibt keine direkte OneDrive-Anbindung.
+<p align="center">
+  <img src="website/assets/screenshots/scanner-home.png" width="280" alt="Actual Android scanner home screen explaining how to connect to an Openote page.">
+  &nbsp;&nbsp;
+  <img src="website/assets/screenshots/scanner-actions.png" width="280" alt="Actual scanner picker offering document scanning or file selection; these controls currently have German labels.">
+  <br><sub>Actual scanner UI. Some controls currently retain German labels.</sub>
+</p>
 
-## Scanner verbinden
+1. **On Windows:** open the destination page and choose **Scan from phone**.
+   Leave its pairing window open.
+2. **On Android:** open Openote Scanner and choose scanning or a file.
+   Scan the QR code displayed by the Windows app.
+3. **Capture or choose:** scan a paper document or select an existing phone file.
+4. **Send:** the material arrives on the selected page, below existing content.
 
-1. In Openote die Zielseite öffnen und „Scan from phone“ wählen.
-2. Mit Openote Scanner auf Android den angezeigten QR-Code scannen.
-3. Dokumente scannen und auf die Seite übertragen.
+Both devices need a reachable local network, usually the same Wi-Fi. Allow
+private incoming connections through the Windows firewall. A cloud server is
+not required. Closing the Windows pairing window stops the receiver.
 
-Beide Geräte brauchen ein gegenseitig erreichbares lokales Netzwerk,
-normalerweise dasselbe WLAN. Die Windows-Firewall muss private eingehende
-Verbindungen erlauben. Website und Cloudserver sind dafür nicht erforderlich.
-Das Schließen des Kopplungsdialogs beendet den Empfänger.
+[Download the Android APK](https://github.com/Kingdaniel4747/openote/releases/latest) ·
+[Scanner source](scanner/)
 
-## KI zum Lernen verbinden
+## Learn with your AI client
 
-1. In Openote auf das KI-Symbol oben rechts neben den Einstellungen klicken.
-2. Den Schalter einschalten und „Nur diese Seite“ oder „Ganzes Buch“ auswählen.
-   Bei ausgeschalteter Freigabe sind Auswahl und Kopieren deaktiviert. Der Seitenmodus folgt
-   der aktiven Seite, auch im geteilten Fenster. Die Buchfreigabe bleibt an das
-   ausgewählte Buch gebunden; beim Wechsel in ein anderes Buch ruht der Zugriff.
-3. „Für Chat kopieren“ wählen und den Text im Desktop-KI-Chat einfügen.
-   Er enthält Verbindungsdaten mit geheimem Token und eine Einrichtungsanweisung.
-   Der Client muss lokale MCP-Verbindungen unterstützen; gegebenenfalls ist
-   ein Neustart nötig. Für Codex enthält der Text einen Abschnitt für
-   die persönliche `~/.codex/config.toml`; danach den Client neu verbinden.
-   Diese Konfiguration enthält ein geheimes Token und gehört nicht ins Repository.
-4. Beispielsweise fragen: „Erkläre meine aktuelle Seite“ oder „Lies alle Seiten
-   dieses Buchs und frage mich dazu ab“.
+Try **“Explain my current page”** or **“Ask me questions about this notebook.”**
 
-Openote muss geöffnet bleiben. Der Server ist nur über `127.0.0.1` erreichbar;
-ein reiner Web-Client kann diese lokale Adresse nicht abrufen. Ein belegter
-Port wird als kurze Fehlermeldung angezeigt. Nach einem Neustart ist
-die Freigabe aus; die Verbindungsdaten bleiben für die nächste Freigabe erhalten.
+1. Open the **AI icon** at the top right, next to settings.
+2. Enable access and choose **Current page** or **Whole notebook**.
+3. Paste the text from **Copy for chat** into a desktop AI client that supports
+   local MCP connections and follow its setup instructions. The text includes
+   configuration for your personal Codex config; reconnect the client afterward.
+4. Keep Openote open while the client reads your material.
 
-Der Zugriff ist ausschließlich lesend und schließt gesperrte Seiten aus.
-Text einschließlich PDF-Text wird portionsweise geliefert, Handschrift, Bilder
-und PDF-Anmerkungen als begrenzte Seitenbilder mit Detailausschnitten. Buchlisten
-und Textsuche helfen beim gezielten Nachlesen; Handschrift wird nicht automatisch
-per OCR durchsuchbar. Videos, Dateianhänge und verknüpfte Seiten werden nicht
-automatisch geöffnet. Bereits übertragene Inhalte bleiben im Chat; eine
-Cloud-KI verarbeitet sie bei ihrem Anbieter.
+Access is **read-only** and excludes locked pages. Page access follows the active
+page, including split view; notebook access stays bound to the chosen book and
+pauses when you switch books. Access turns off after an app restart. Connection
+settings are kept locally; they contain a secret token and must not be committed.
 
-## Für Mitwirkende
+Text, including PDF text, is delivered in portions. Handwriting, images and PDF
+annotations are available as page images and detail crops. Handwriting is not
+automatically searchable OCR. Videos, attachments and linked pages are not
+automatically opened. The server listens only on `127.0.0.1`, so a browser-only
+client cannot reach it. A port conflict is reported in the app.
 
-Einstieg: [PRODUCT.md](PRODUCT.md) für Funktionen und Bedienregeln,
-[ARCHITECTURE.md](ARCHITECTURE.md) für Code-Einstiegspunkte,
-[TASKS.md](TASKS.md) für offene Arbeit und [LEARNINGS.md](LEARNINGS.md)
-für Fehlerfallen. [AGENTS.md](AGENTS.md) enthält die Arbeitsregeln.
-Vor Änderungen den lokalen Git-Status und Diff prüfen; vorhandene Änderungen erhalten.
+Openote has no built-in model. Your chosen AI provider may charge separately.
+Content already sent stays in the chat, and a cloud provider processes it on
+its own servers.
 
-### Windows aus Quellcode starten
+## Importing from OneNote
 
-Benötigt: Flutter mit Windows-Desktop-Unterstützung und Visual Studio mit
-C++-Desktopwerkzeugen. Lokal geprüft: Flutter 3.47.7 / Dart 3.13.5 und
-Visual Studio Community 2026 Insiders mit CMake 4.3.1.
+Choose **Import** in notebook management to try the **limited local `.one` and
+`.onepkg` importer**. It requires the optional native Rust core, which the GitHub
+release workflow builds. Local builds without Cargo do not include that importer.
+
+Not every content type or layout is supported. **Check imported pages and keep
+your originals.** Full migration and faithful editing are not guaranteed. There
+is no direct OneDrive integration.
+
+## Development
+
+Start with [PRODUCT.md](PRODUCT.md) for scope and UI behavior,
+[ARCHITECTURE.md](ARCHITECTURE.md) for entry points, [TASKS.md](TASKS.md) for open
+work, and [LEARNINGS.md](LEARNINGS.md) for pitfalls. [AGENTS.md](AGENTS.md) contains
+the repository rules. These internal project notes are in German. Preserve
+existing local changes and inspect Git status before working.
+
+<details>
+<summary><strong>Build from source and run checks</strong></summary>
+
+Requirements: Flutter with Windows support and Visual Studio C++ desktop tools.
+Locally verified: Flutter 3.47.7 / Dart 3.13.5, Visual Studio Community 2026
+Insiders and CMake 4.3.1. CI uses the version declared in its workflow. Keep the
+local plugin overrides in `app/pubspec.yaml`; do not patch the global Pub cache.
 
 ```powershell
 cd app
@@ -159,120 +212,105 @@ flutter pub get
 flutter run -d windows
 ```
 
-Im Flutter-Terminal: `r` für Hot Reload, `R` für Hot Restart, `q` zum Beenden.
-Native C++-/Rust-Änderungen brauchen einen neuen Build. Der Repository-Hauptordner
-selbst ist kein Flutter-Paket.
+`r` reloads, `R` restarts, `q` quits. Native C++/Rust changes require a new build.
+Run Flutter commands in `app/` or `scanner/`, not the repository root.
 
-Rust/Cargo baut den optionalen nativen Kern, insbesondere für den OneNote-Import.
-Ohne ihn startet die App mit dem Dart-Kern. Endnutzer benötigen keine separate
-Rust-Installation. Die lokalen Plugin-Overrides in `app/pubspec.yaml` gehören
-zum funktionierenden Build.
-Für OneNote-Import Rust/Cargo bereitstellen, in `rust/onote_core/` mit
-`cargo build --release` prüfen und anschließend die Windows-App neu bauen.
+For the OneNote importer, install Rust/Cargo, run `cargo build --release` in
+`rust/onote_core/`, then rebuild Windows. Without Cargo, the app uses the Dart
+core. End users do not need a Rust installation.
 
-### Ordner und Projektwissen
+In each Flutter package, run `flutter analyze` and relevant
+`flutter test test/<file>_test.dart`. Build Windows with
+`flutter build windows --release`; Android also needs its SDK and Java.
+Rust changes: `cargo test` in `rust/onote_core/`. Release scripts:
+`node --test .github/scripts/*.test.mjs` from the root.
+The entire historical test suite is not green; see TASKS.md. Manual pen,
+touch and device checks are performed by the project owner.
 
-| Pfad | Aufgabe |
+Public images are reproducible with disposable data: set
+`OPENOTE_PUBLICATION_SHOTS=1` and `FLUTTER_ROOT` to your Flutter SDK, then run
+`flutter test test/publication_screenshots_test.dart --update-goldens` in
+`app/` and `scanner/`. This renders current widgets without personal notebooks,
+a phone camera or a real pairing token. Review the PNGs before committing them.
+
+</details>
+
+<details>
+<summary><strong>Project layout and notebook portability</strong></summary>
+
+| Path | Purpose |
 |---|---|
-| `app/` | Windows-App; Linux-Quellcode bleibt erhalten |
-| `scanner/` | Android-Scanner |
-| `rust/onote_core/` | Optionaler nativer Kern und OneNote-Import |
-| `packaging/` | Windows-Installer und spätere Linux-Pakete |
-| `website/` | Deutsche und englische GitHub-Pages-Website mit Bedienhilfe |
-| `.github/workflows/` | Gemeinsamer Build-/Release-Ablauf |
+| `app/` | Windows app, with retained Linux source |
+| `scanner/` | Android companion |
+| `rust/onote_core/` | Optional native core and OneNote import |
+| `packaging/` | Windows installer and future Linux packaging |
+| `website/` | English static website and shared public screenshots |
+| `.github/workflows/` | Shared releases and independent Pages deployment |
 
-Ergänzend: [AGENTS.md](AGENTS.md), [PRODUCT.md](PRODUCT.md),
-[ARCHITECTURE.md](ARCHITECTURE.md), [TASKS.md](TASKS.md) und
-[LEARNINGS.md](LEARNINGS.md). Compilerdateien wie `app/build/` werden neu erzeugt.
+Copy complete `.onotebook` folders only while the app is closed. Startup and
+notebook management discover added books and reconstruct a missing
+`workspace.json`. Books in `Recycle Bin` remain deleted. Backups include
+consistent database snapshots and media from older layouts. Imported copies
+receive unique names such as `Physics 2.onotebook/Physics 2.onote`. Renaming in
+the app changes folder and container names together; Explorer changes are
+reconciled at the next scan. Generated files under `app/build/` are rebuilt.
 
-Ein vollständiger `.onotebook`-Ordner lässt sich bei geschlossener App auf einen
-anderen Rechner kopieren. Beim Start und Öffnen der Notizbuchverwaltung werden
-hinzugefügte Bücher erkannt; eine fehlende `workspace.json` wird aus den
-Notizbüchern neu aufgebaut. Mitkopierte Bücher unter `Recycle Bin` bleiben im
-Papierkorb. Die Backup-/Restore-Funktion sichert zusätzlich konsistente
-Datenbankstände und erhält auch Medien aus älteren Speicherlayouts.
-Importierte Kopien heißen bei Bedarf beispielsweise `Informatik 2` und liegen
-in `Informatik 2.onotebook/Informatik 2.onote`. Umbenennen in der App passt beide
-Namen an; Explorer-Umbenennungen werden beim nächsten Start oder erneuten Öffnen
-der Notizbuchverwaltung abgeglichen.
+</details>
 
-### Prüfen und bauen
+<details>
+<summary><strong>Publish the website and prepare a release</strong></summary>
 
-In `app/`: `flutter analyze`, passende Tests mit
-`flutter test test/<datei>_test.dart`, Release-Build mit
-`flutter build windows --release`. Die Gesamtsuite ist noch nicht vollständig
-grün; siehe TASKS.md. Die manuelle Geräteprüfung übernimmt der Nutzer.
-In `scanner/` gelten dieselben Analyse-/Testbefehle; ein APK-Build benötigt
-zusätzlich Android SDK und Java.
-Den Rust-Kern bei Änderungen separat mit `cargo test` in `rust/onote_core/` prüfen.
+The site is plain HTML/CSS/JS: serve `website/` locally to preview it. In GitHub
+Settings → Pages, select **GitHub Actions**. Website changes pushed to `master`
+deploy through **Publish website** to <https://kingdaniel4747.github.io/openote/>.
+The old `/en/` URL redirects to the English root; there is no German site.
 
-### Website auf GitHub Pages aktivieren
+Download links resolve current GitHub assets, with a fallback to the latest
+release page when the API is unavailable. Visible content, metadata, structured
+software data and the sitemap help discovery. Link the site in GitHub About;
+after publication you can verify the URL prefix in Search Console and submit
+`https://kingdaniel4747.github.io/openote/sitemap.xml`. Rankings and AI
+recommendations cannot be guaranteed. Google applies its normal
+[SEO foundations to AI features](https://developers.google.com/search/docs/appearance/ai-features).
+There are no website analytics or external fonts. A `robots.txt` under this
+project subpath would not control crawlers for the domain.
 
-Einmal im GitHub-Repository **Settings → Pages → Build and deployment → Source:
-GitHub Actions** wählen. Danach veröffentlicht **Publish website** bei Pushes auf
-`master`, wenn sich Website-Dateien oder der Pages-Workflow ändern. Manuelles
-Starten ist ebenfalls möglich. Zieladresse:
-`https://kingdaniel4747.github.io/openote/`. Die statischen Dateien in `website/`
-benötigen keinen Build und können lokal mit einem HTTP-Server angezeigt werden.
+**Every push to `master` starts the shared Windows/Android release workflow.**
+Both builds must succeed before publication. The next patch version is calculated
+from existing version tags and the Pubspec baseline. Pushes to other branches or
+tags do not publish; manual dispatch with a version and optional notes remains
+available. Existing version tags are rejected. Runs are serialized; GitHub can
+replace an older pending run when several pushes arrive quickly.
 
-Download-Knöpfe ermitteln die aktuellen Dateien über die öffentliche GitHub-API.
-Ist sie nicht erreichbar oder begrenzt, bleiben Links zum neuesten Release aktiv.
-Die Seiten enthalten lesbare Inhalte ohne JavaScript, Sprachverweise, Metadaten,
-SoftwareApplication-Daten und eine `sitemap.xml`. Keine Analyse-Tracker oder
-externen Schriftarten. GitHub übernimmt Hosting und Downloads.
+Before a release push, update the marked **Nächstes Release** section in TASKS.md
+with short user-facing changes. The workflow publishes new notes, a date and
+commit history. Unchanged notes are not presented as new features again; a
+maintenance summary is used instead. The in-app updater reads this release body.
+Agents must not push or publish without an explicit instruction.
 
-Nach der Veröffentlichung kannst du die Website in Google Search Console als
-URL-Präfix bestätigen und die Sitemap einreichen. Verlinke sie auch im
-GitHub-„About“-Bereich. Suchbegriffe wie OneNote-Alternative Windows,
-Handschrift-App Windows, PDF mit Stift beschriften und handwriting app Windows
-stehen im sichtbaren Inhalt. Suchplatzierungen und KI-Empfehlungen lassen sich
-nicht garantieren. Für Googles KI-Suche gelten die normalen
-[SEO-Grundlagen](https://developers.google.com/search/docs/appearance/ai-features).
-Ein Website-Unterpfad kann keine wirksame `robots.txt` für die gesamte
-`github.io`-Domain setzen; deshalb liegt hier keine irreführende Robots-Datei.
+Android signing requires `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
+`ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD` as repository secrets. Keep and
+securely back up the existing signing key: changing it breaks Android updates.
+Never commit the keystore or `scanner/android/key.properties`. Missing secrets
+prevent the shared release; the website deploys independently.
 
-### Ein neues Release veröffentlichen
+</details>
 
-**Jeder Push auf `master` startet „Release packages“**: Windows-Setup und
-signierte Scanner-APK werden gemeinsam gebaut und erst nach beiden erfolgreichen
-Builds veröffentlicht. Der Workflow erhöht die höchste vorhandene Versionsnummer
-um einen Patch; die lokale Pubspec-Version ist die Untergrenze. Pushes auf andere
-Branches und Tag-Pushes veröffentlichen nicht. Läufe werden serialisiert; GitHub kann bei
-mehreren schnellen Pushes einen noch wartenden Lauf durch den neueren ersetzen.
+## Licenses
 
-Vor dem Push die sichtbaren Neuerungen im markierten Abschnitt **„Nächstes
-Release“ in TASKS.md** eintragen. Schreibe kurz aus Nutzersicht, etwa „PDFs bleiben
-beim Zoomen scharf“. Der Workflow übernimmt geänderte Notizen, Datum und Commitliste
-in den Release-Text. Unveränderte Notizen werden nicht erneut als neue Features
-ausgegeben; dann erscheint ein Wartungshinweis mit den tatsächlichen Commits.
-Die Updateanzeige erhält denselben Release-Text über GitHub.
-
-Ein manueller Start mit eigener Version und optionalem Markdown-Text bleibt
-möglich. Bestehende Versions-Tags werden abgelehnt. Kein Push oder Live-Release
-durch einen Agenten ohne ausdrücklichen Auftrag.
-Release-Textlogik im Hauptordner prüfen:
-`node --test .github/scripts/*.test.mjs`.
-
-Für signierte APKs benötigt er `ANDROID_KEYSTORE_BASE64`,
-`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` und `ANDROID_KEY_PASSWORD`.
-Für Updates den gleichen Signaturschlüssel behalten und extern sicher sichern.
-Keystore und `scanner/android/key.properties` gehören nicht ins Repository.
-
-## Lizenzen
-
-| Bestandteil | Bestehende Lizenz |
+| Component | License |
 |---|---|
-| App, Scanner und allgemeiner Projektcode | AGPL-3.0-or-later, siehe [LICENSE](LICENSE) |
-| Eigener Rust-Kern | Apache-2.0; `rust/onote_core/LICENSE` und `NOTICE` |
-| Lokale Plugins und `rust/onote_core/vendor/cab/` | MIT; jeweilige Lizenz und Patchhinweise bleiben dort |
-| Inter / JetBrains Mono | OFL-1.1; Lizenztexte neben den Schriftdateien |
+| App, scanner and general project code | AGPL-3.0-or-later — [LICENSE](LICENSE) |
+| Own Rust core | Apache-2.0 — [license](rust/onote_core/LICENSE) and [NOTICE](rust/onote_core/NOTICE) |
+| Local plugins and `rust/onote_core/vendor/cab/` | MIT; retain their licenses and patch notes |
+| Inter / JetBrains Mono | OFL-1.1; license texts beside the font assets |
 
-Fremdcode behält seine Lizenztexte. Der frühere CC0-Lizenztext der entfernten
-Formatspezifikation liegt in `licenses/format-spec-CC0.txt`.
-Der Rust-Kern bleibt unabhängig vom AGPL-Appcode; Abhängigkeiten entsprechend
-prüfen. Beiträge unterliegen der jeweiligen Komponentenlizenz;
-bestehende DCO-Konvention: `git commit -s`.
+Third-party code keeps its own license notices. The earlier format specification’s
+CC0 text remains in `licenses/format-spec-CC0.txt`. The Rust core remains
+independent of the AGPL app code; review dependencies accordingly. Contributions
+follow the relevant component license and the existing DCO convention,
+`git commit -s`.
 
-Der OneNote-Reader basiert auf Microsofts Spezifikationen MS-ONESTORE/MS-ONE.
-`onenote.rs` (MPL-2.0) diente als externe Referenz; es ist keine Abhängigkeit
-und kein Code daraus wird im Rust-Kern eingebunden.
+The OneNote reader is based on Microsoft’s MS-ONESTORE/MS-ONE specifications.
+`onenote.rs` (MPL-2.0) served as an external reference; it is not a dependency and
+its code is not included in the Rust core.
