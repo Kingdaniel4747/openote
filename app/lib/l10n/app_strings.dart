@@ -96,6 +96,74 @@ const german = <String, String>{
   'Arrange horizontally': 'Nebeneinander anordnen',
   'View': 'Ansicht',
   'Settings': 'Einstellungen',
+  'Settings category': 'Einstellungsbereich',
+  'Report a bug': 'Fehler melden',
+  'You have the latest version.': 'Du verwendest die aktuelle Version.',
+  'Storage': 'Speicher',
+  'Sections': 'Abschnitte',
+  'Automatic': 'Automatisch',
+  'Always': 'Immer',
+  'Never': 'Nie',
+  'Use a finger to draw when no pen is in use.':
+      'Zeichne mit dem Finger, solange du keinen Stift verwendest.',
+  'Draw with one finger, even when a pen is nearby.':
+      'Zeichne mit einem Finger, auch wenn ein Stift in der Nähe ist.',
+  'Use a finger to move the page; draw only with your pen.':
+      'Verschiebe die Seite mit dem Finger. Zeichne nur mit dem Stift.',
+  'Underline possible spelling mistakes. Your text stays unchanged.':
+      'Unterstreicht mögliche Rechtschreibfehler. Dein Text bleibt unverändert.',
+  'Turn on spell check to check handwriting too.':
+      'Schalte die Rechtschreibprüfung ein, um auch Handschrift zu prüfen.',
+  'Choose the language and look of your workspace.':
+      'Wähle Sprache und Aussehen deiner Arbeitsumgebung.',
+  'Set up your pen, touch and writing assistance.':
+      'Passe Stift, Touch und Schreibhilfen an deine Arbeitsweise an.',
+  'Choose where sections appear and how the page moves.':
+      'Lege fest, wo deine Abschnitte stehen und wie sich die Seite bewegt.',
+  'Choose how long deleted notes can be restored.':
+      'Lege fest, wie lange du gelöschte Notizen wiederherstellen kannst.',
+  'Keep Openote up to date or get help.':
+      'Halte Openote aktuell oder finde Hilfe.',
+  'Language': 'Sprache',
+  'System follows the light or dark appearance in Windows.':
+      '„System“ übernimmt das helle oder dunkle Design von Windows.',
+  'Pen and touch': 'Stift und Touch',
+  'Your pen stays selected between strokes. Two fingers move and zoom the page.':
+      'Dein Stift bleibt zwischen den Strichen ausgewählt. Mit zwei Fingern verschiebst und zoomst du die Seite.',
+  'Writing assistance': 'Schreibhilfen',
+  'Underline possible spelling mistakes in typed text.':
+      'Unterstreicht mögliche Rechtschreibfehler in getipptem Text.',
+  'Suggest spelling checks for handwriting. Recognition can make mistakes.':
+      'Markiert mögliche Fehler in deiner Handschrift. Die Erkennung kann sich irren.',
+  'Windows language support': 'Sprachunterstützung in Windows',
+  'Section position': 'Position der Abschnitte',
+  'Above the page': 'Über der Seite',
+  'Beside the page': 'Neben der Seite',
+  'Keep sections above the page or beside the page list.':
+      'Zeige Abschnitte über der Seite oder neben der Seitenliste.',
+  'Page movement': 'Seite bewegen',
+  'Slower': 'Langsamer',
+  'Faster': 'Schneller',
+  'Keep deleted notes for': 'Gelöschte Notizen aufbewahren',
+  'Deleted notebooks, sections and pages can be restored until this time expires.':
+      'Bis dahin kannst du gelöschte Notizbücher, Abschnitte und Seiten wiederherstellen.',
+  '7 days': '7 Tage',
+  '14 days': '14 Tage',
+  '30 days': '30 Tage',
+  '60 days': '60 Tage',
+  '90 days': '90 Tage',
+  '1 year': '1 Jahr',
+  'Updates': 'Updates',
+  'Checking for updates…': 'Suche nach Updates…',
+  'Help and feedback': 'Hilfe und Feedback',
+  'Changes are saved automatically on this device.':
+      'Änderungen werden automatisch auf diesem Gerät gespeichert.',
+  'Make Openote feel right for you. Changes are saved automatically.':
+      'Richte Openote so ein, wie es zu dir passt. Änderungen werden automatisch gespeichert.',
+  'Hold a section or page for a moment to open its menu. Drag to change the order.':
+      'Halte einen Abschnitt oder eine Seite kurz gedrückt, um das Menü zu öffnen. Ziehe zum Verschieben.',
+  'Your selected pen stays active between strokes. Use two fingers to move and zoom the page.':
+      'Dein gewählter Stift bleibt beim Schreiben aktiv. Mit zwei Fingern kannst du die Seite verschieben und zoomen.',
   'Settings…': 'Einstellungen…',
   'Appearance': 'Darstellung',
   'Theme': 'Design',
@@ -143,6 +211,26 @@ const german = <String, String>{
   'Add to-do': 'To-do hinzufügen',
   'Add exam': 'Prüfung hinzufügen',
   'Homework': 'Hausaufgabe',
+  'Current month': 'Aktueller Monat',
+  'New homework': 'Neue Hausaufgabe',
+  'Edit entry': 'Eintrag bearbeiten',
+  'Task': 'Aufgabe',
+  'Notes (optional)': 'Notizen (optional)',
+  'Entry type': 'Art des Eintrags',
+  'Color': 'Farbe',
+  'Link page': 'Seite verknüpfen',
+  'Linked page': 'Verknüpfte Seite',
+  'Open linked page': 'Verknüpfte Seite öffnen',
+  'Entries for this day': 'Einträge für diesen Tag',
+  'Nothing planned for this day.': 'Für diesen Tag ist nichts geplant.',
+  'Show all': 'Alle anzeigen',
+  'For example: Maths, page 42, exercises 3–5':
+      'Zum Beispiel: Mathe, Seite 42, Aufgaben 3–5',
+  'purple': 'Violett',
+  'blue': 'Blau',
+  'green': 'Grün',
+  'orange': 'Orange',
+  'red': 'Rot',
   'To-do': 'To-do',
   'Exam': 'Prüfung',
   'Page outline': 'Seitenübersicht',

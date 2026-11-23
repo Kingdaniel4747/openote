@@ -58,6 +58,26 @@ class FakeSettings {
 }
 
 void main() {
+  test(
+      'calendar colors survive edits and serialization without changing legacy times',
+      () {
+    final settings = FakeSettings();
+    final store =
+        ReminderStore(readSetting: settings.read, writeSetting: settings.write);
+    final at = DateTime(2030, 6, 12, 17, 45);
+    final entry = store.add(text: 'Old reminder', at: at, color: 'blue');
+    store.update(entry.id,
+        text: 'Updated reminder', at: at, category: 'homework');
+    final restored = Reminder.fromJson(jsonDecode(jsonEncode(entry.toJson())))!;
+    expect(restored.color, 'blue');
+    expect(restored.at, at);
+    expect(restored.allDay, isFalse);
+    expect(restored.id, entry.id);
+    final legacy =
+        Reminder.fromJson({'id': 'old', 'at': '2030-06-12', 'allDay': true})!;
+    expect(legacy.color, isNull);
+    expect(legacy.toJson().containsKey('color'), isFalse);
+  });
   // A fixed clock: mid-afternoon, so "earlier today" and "later today" both
   // exist.
   final now = DateTime(2026, 8, 5, 15, 30);

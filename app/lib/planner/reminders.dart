@@ -66,6 +66,7 @@ class Reminder {
     this.blockId,
     this.line,
     this.category = 'todo',
+    this.color,
     this.fired = false,
     this.firedAt,
     this.dismissed = false,
@@ -112,6 +113,9 @@ class Reminder {
 
   /// Whether the entry was created as homework or an ordinary to-do.
   String category;
+
+  /// Optional calendar accent; absent in older entries.
+  String? color;
 
   /// Whether this has already been surfaced to the user.
   ///
@@ -160,6 +164,7 @@ class Reminder {
         if (blockId != null) 'blockId': blockId,
         if (line != null) 'line': line,
         if (category != 'todo') 'category': category,
+        if (color != null) 'color': color,
         if (fired) 'fired': true,
         if (firedAt != null) 'firedAt': _encodeTime(firedAt!),
         if (dismissed) 'dismissed': true,
@@ -198,6 +203,7 @@ class Reminder {
       blockId: _decodeId(raw['blockId']),
       line: _decodeLine(raw['line']),
       category: _category(raw['category']),
+      color: raw['color'] is String ? raw['color'] as String : null,
       fired: raw['fired'] == true,
       firedAt: _decodeTime(raw['firedAt']),
       dismissed: raw['dismissed'] == true,
@@ -366,6 +372,7 @@ class ReminderStore {
     String? blockId,
     int? line,
     String category = 'todo',
+    String? color,
     String? id,
     DateTime? now,
   }) {
@@ -381,6 +388,7 @@ class ReminderStore {
       blockId: blockId,
       line: line,
       category: _category(category),
+      color: color,
     );
     _items.add(r);
     _persist(now);
@@ -392,6 +400,7 @@ class ReminderStore {
       {required String text,
       required DateTime at,
       required String category,
+      String? color,
       bool? allDay,
       String? pageId,
       String? notebookId}) {
@@ -402,6 +411,7 @@ class ReminderStore {
       ..allDay = allDay ?? r.allDay
       ..at = (allDay ?? r.allDay) ? DateTime(at.year, at.month, at.day) : at
       ..category = _category(category)
+      ..color = color ?? r.color
       ..pageId = pageId
       ..notebookId = notebookId
       ..fired = false

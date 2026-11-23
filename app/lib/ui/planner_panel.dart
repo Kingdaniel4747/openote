@@ -1,22 +1,4 @@
-/// The Planner: one place where every date you have lives (v0.5 §3).
-///
-/// **The complaint this answers.** The exam countdown worked, but managing it
-/// did not: a date was set from two different context menus and was then
-/// visible only inside the study panel, on whichever section you had open.
-/// There was no way to ask *"what dates do I have at all"*. So the fix is not
-/// a better date picker — it is a surface where every dated thing is listed,
-/// and where each one can be re-dated or cleared without hunting for the menu
-/// that created it.
-///
-/// **Four streams, one list.** Exams, dated to-dos, reminders and a subscribed
-/// timetable are stored in four different places for four good reasons (see
-/// `planner_state.dart`), and a student does not care about any of them. They
-/// arrive here flattened into rows that all behave the same way: click to go
-/// there, right-click to re-date.
-///
-/// **Every state offers a next action** — the rule the study panel was rebuilt
-/// around, and the same reasoning applies. "Nothing today" with no way to add
-/// anything is a dead end that reads as broken.
+/// Calendar overview, day lists and inline homework editing in the right panel.
 library;
 
 import 'package:flutter/material.dart';
@@ -34,6 +16,7 @@ import 'side_panel.dart';
 import 'planner_format.dart';
 import '../theme/tokens.dart';
 import 'onote_dialog.dart';
+import 'planner_entry_editor.dart';
 
 class PlannerPanel extends StatefulWidget {
   const PlannerPanel({super.key, required this.app});
@@ -52,19 +35,104 @@ class _PlannerPanelState extends State<PlannerPanel> {
   DateTime? _pickedDay;
   int _calendarReset = 0;
   Offset? _rowPressPosition;
+  final _drafts = <String, PlannerEntryDraft>{};
+  PlannerEntryDraft? _draft;
+  Reminder? _editing;
+  bool _showForm = false;
+  int _entryRevision = 0;
+
+  void _beginEntry(DateTime day, {Reminder? editing}) {
+    final key = '${day.year}-${day.month}-${day.day}';
+    setState(() {
+      _pickedDay = DateUtils.dateOnly(day);
+      _editing = editing;
+      _showForm = true;
+      _entryRevision++;
+      if (editing == null) {
+        _draft = _drafts.putIfAbsent(
+            key,
+            () => PlannerEntryDraft(
+                notebookId: app.notebookId, pageId: app.pageId));
+      } else {
+        final separator = editing.text.indexOf(' — ');
+        _draft = _drafts.putIfAbsent(
+            'entry:${editing.id}',
+            () => PlannerEntryDraft(
+                  title: separator < 0
+                      ? editing.text
+                      : editing.text.substring(0, separator),
+                  notes: separator < 0
+                      ? ''
+                      : editing.text.substring(separator + 3),
+                  category: editing.category,
+                  color: editing.color ?? 'purple',
+                  linkPage: editing.pageId != null,
+                  notebookId: editing.notebookId ??
+                      (editing.pageId == null ? app.notebookId : null),
+                  pageId: editing.pageId ?? app.pageId,
+                ));
+      }
+    });
+  }
+
+  void _saveEntry() {
+    final draft = _draft!;
+    if (draft.title.trim().isEmpty || _pickedDay == null) return;
+    final text = draft.notes.trim().isEmpty
+        ? draft.title.trim()
+        : '${draft.title.trim()} — ${draft.notes.trim()}';
+    final editing = _editing;
+    if (editing == null) {
+      planner.reminders.add(
+          text: text,
+          at: _pickedDay!,
+          allDay: true,
+          category: draft.category,
+          color: draft.color,
+          notebookId: draft.linkPage ? draft.notebookId : null,
+          pageId: draft.linkPage ? draft.pageId : null);
+      final day = _pickedDay!;
+      _drafts.remove('${day.year}-${day.month}-${day.day}');
+    } else {
+      planner.reminders.update(editing.id,
+          text: text,
+          at: editing.at,
+          allDay: editing.allDay,
+          category: draft.category,
+          color: draft.color,
+          notebookId: draft.linkPage ? draft.notebookId : null,
+          pageId: draft.linkPage ? draft.pageId : null);
+      _drafts.remove('entry:${editing.id}');
+    }
+    setState(() {
+      _showForm = false;
+      _editing = null;
+      _draft = null;
+    });
+  }
+
+  void _cancelEntry() {
+    final day = _pickedDay;
+    if (_editing == null && day != null) {
+      _drafts.remove('${day.year}-${day.month}-${day.day}');
+    }
+    if (_editing != null) _drafts.remove('entry:${_editing!.id}');
+    setState(() {
+      _showForm = false;
+      _editing = null;
+      _draft = null;
+    });
+  }
 
   void _resetCalendar() {
-    if (_pickedDay == null) return;
     setState(() {
       _pickedDay = null;
+      _showForm = false;
       _calendarReset++;
     });
   }
 
-  Future<void> _pickCalendarDay(DateTime day) async {
-    setState(() => _pickedDay = day);
-    await _chooseDayAction(day);
-  }
+  void _pickCalendarDay(DateTime day) => _beginEntry(day);
 
   @override
   Widget build(BuildContext context) {
@@ -79,13 +147,42 @@ class _PlannerPanelState extends State<PlannerPanel> {
         if ((Offset.zero & render.size).contains(local)) _resetCalendar();
       },
       child: SidePanel(
-        title: SidePanelKind.planner.label,
+        title: tr(context, SidePanelKind.planner.label),
         icon: Icons.event_note_outlined,
         onClose: app.closePanel,
+        actions: [
+          IconButton(
+              icon: const Icon(Icons.today_outlined, size: OnoteIcon.sm),
+              tooltip: tr(context, 'Current month'),
+              onPressed: _resetCalendar)
+        ],
         // The alerts sit in the banner slot, above the scroll region, because a
         // reminder you have to scroll to find has not reminded you.
-        banner: planner.pendingAlerts.isNotEmpty ? _alerts(context) : null,
-        footer: null,
+        banner: _pickedDay == null && planner.pendingAlerts.isNotEmpty
+            ? _alerts(context)
+            : null,
+        footer: !_showForm
+            ? null
+            : Padding(
+                padding: const EdgeInsets.all(OnoteSpace.x5),
+                child: Row(children: [
+                  Expanded(
+                      child: TextButton(
+                          style: TextButton.styleFrom(
+                              minimumSize: const Size(0, 44)),
+                          onPressed: _cancelEntry,
+                          child: const AppText('Cancel'))),
+                  const SizedBox(width: OnoteSpace.x5),
+                  Expanded(
+                      child: FilledButton(
+                          style: FilledButton.styleFrom(
+                              minimumSize: const Size(0, 44)),
+                          onPressed: _draft?.title.trim().isNotEmpty == true
+                              ? _saveEntry
+                              : null,
+                          child: const AppText('Save'))),
+                ]),
+              ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -253,35 +350,62 @@ class _PlannerPanelState extends State<PlannerPanel> {
 
   Widget _dayList(BuildContext context, DateTime day, DateTime now) {
     final items = planner.itemsOn(day, now: now);
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 10),
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
+    final draft = _draft;
+    return Column(children: [
+      Padding(
+          padding: const EdgeInsets.symmetric(horizontal: OnoteSpace.x5),
           child: Row(children: [
-            Text(formatDayFull(day),
-                style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: .6,
-                    color: context.surfaces.textSecondary)),
-            const Spacer(),
-            InkWell(
-              onTap: () => setState(() => _pickedDay = null),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                child: Text('Show all',
-                    style: TextStyle(
-                        fontSize: 11, color: context.surfaces.textSecondary)),
-              ),
-            ),
-          ]),
-        ),
-        if (items.isNotEmpty)
-          for (final it in items)
-            if (!_isPastDay(it.when, now)) _row(context, it, now),
-      ],
-    );
+            Expanded(
+                child: Text(
+                    MaterialLocalizations.of(context).formatMediumDate(day),
+                    style: OnoteType.uiStrong)),
+            TextButton(
+                onPressed: () => setState(() {
+                      _pickedDay = null;
+                      _showForm = false;
+                    }),
+                child: const AppText('Show all')),
+          ])),
+      Expanded(
+          child: ListView(
+        key: ValueKey('planner-day-${day.toIso8601String()}-$_entryRevision'),
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 16),
+        children: [
+          const SizedBox(height: OnoteSpace.x5),
+          const AppText('Entries for this day', style: OnoteType.uiStrong),
+          const SizedBox(height: OnoteSpace.x4),
+          if (items.isEmpty)
+            const AppText('Nothing planned for this day.',
+                style: OnoteType.small),
+          if (_editing == null || !_showForm)
+            for (final item in items) _row(context, item, now),
+          if (_showForm && draft != null)
+            PlannerEntryEditor(
+              key: ObjectKey(draft),
+              draft: draft,
+              editing: _editing != null,
+              autofocus: _editing == null && items.isEmpty,
+              pageTitle: app.node(draft.pageId)?.title,
+              onOpenPage: () async {
+                final problem = await app.openPlannerTarget(
+                    targetNotebookId: draft.notebookId,
+                    targetPageId: draft.pageId);
+                if (problem != null && context.mounted) {
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(SnackBar(content: Text(problem)));
+                }
+              },
+              onSave: _saveEntry,
+              onChanged: () => setState(() {}),
+            )
+          else
+            OutlinedButton.icon(
+                onPressed: () => _beginEntry(day),
+                icon: const Icon(Icons.add, size: 16),
+                label: const AppText('New homework')),
+        ],
+      )),
+    ]);
   }
 
   bool _isPastDay(DateTime day, DateTime now) =>
@@ -290,7 +414,15 @@ class _PlannerPanelState extends State<PlannerPanel> {
 
   Widget _row(BuildContext context, DatedItem it, DateTime now) {
     return InkWell(
-      onTap: () => _open(it),
+      onTap: () {
+        final reminder =
+            planner.reminders.byId(PlannerState.reminderIdOf(it) ?? '');
+        if (reminder != null) {
+          _beginEntry(it.when, editing: reminder);
+        } else {
+          _open(it);
+        }
+      },
       onTapDown: (details) => _rowPressPosition = details.globalPosition,
       onLongPress: () =>
           _rowMenu(it, _rowPressPosition ?? Offset.zero, DateTime.now()),
@@ -392,9 +524,12 @@ class _PlannerPanelState extends State<PlannerPanel> {
           context.surfaces.textSecondary
         ),
     };
+    final reminder =
+        planner.reminders.byId(PlannerState.reminderIdOf(it) ?? '');
     return Padding(
       padding: const EdgeInsets.only(top: 1),
-      child: Icon(icon, size: 16, color: colour),
+      child: Icon(icon,
+          size: 16, color: plannerEntryColors[reminder?.color] ?? colour),
     );
   }
 
@@ -429,7 +564,7 @@ class _PlannerPanelState extends State<PlannerPanel> {
     if (it.kind == DatedKind.reminder) {
       final reminder =
           planner.reminders.byId(PlannerState.reminderIdOf(it) ?? '');
-      if (reminder != null) await _addReminder(now, editing: reminder);
+      if (reminder != null) _beginEntry(it.when, editing: reminder);
     } else if (it.kind == DatedKind.exam) {
       final section = PlannerState.examSectionOf(it);
       if (section != null) {
@@ -492,55 +627,6 @@ class _PlannerPanelState extends State<PlannerPanel> {
         homework: entry.category == 'homework',
         exam: entry.category == 'exam',
         undatedEditing: entry);
-  }
-
-  Future<void> _chooseDayAction(DateTime day) async {
-    final choice = await showOnoteDialog<String>(
-      context: context,
-      builder: (dialogContext) => SimpleDialog(
-        title: Text(
-          MaterialLocalizations.of(context).formatMediumDate(day),
-          style: const TextStyle(fontSize: 15),
-        ),
-        children: [
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(dialogContext, 'homework'),
-            child: const ListTile(
-              leading: Icon(Icons.add_task_outlined),
-              title: AppText('Add homework'),
-            ),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(dialogContext, 'reminder'),
-            child: const ListTile(
-              leading: Icon(Icons.notifications_none),
-              title: AppText('Add to-do'),
-            ),
-          ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(dialogContext, 'exam'),
-            child: const ListTile(
-              leading: Icon(Icons.flag_outlined),
-              title: AppText('Add exam'),
-            ),
-          ),
-        ],
-      ),
-    );
-    if (choice == null || !mounted) return;
-    final now = DateTime.now();
-    switch (choice) {
-      case 'homework':
-        await _addReminder(now, initialDay: day, homework: true);
-      case 'reminder':
-        await _addReminder(now, initialDay: day);
-      case 'exam':
-        await _addExam(initialDay: day);
-    }
-  }
-
-  Future<void> _addExam({DateTime? initialDay}) async {
-    await _addReminder(DateTime.now(), initialDay: initialDay, exam: true);
   }
 
   Future<void> _addReminder(

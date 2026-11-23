@@ -4996,13 +4996,24 @@ class AppState extends ChangeNotifier
   }
 
   Future<void> deleteNode(String id) async {
+    final section = sectionOf(pageId) ?? activeSectionId;
+    final siblings = section == null ? <TreeNode>[] : pagesOf(section);
+    final index = siblings.indexWhere((n) => n.id == pageId);
     final at = nowMs();
     _repo.softDeleteNode(notebookId!, id, at: at);
     reloadNodes();
     if (pageId == id || !nodes.any((n) => n.id == pageId)) {
-      await selectPage(
-        nodes.where((n) => n.kind == NodeKind.page).firstOrNull?.id,
-      );
+      final remaining = nodes.map((n) => n.id).toSet();
+      final next =
+          siblings.skip(index + 1).where((n) => remaining.contains(n.id));
+      final previous = siblings
+          .take(index < 0 ? 0 : index)
+          .where((n) => remaining.contains(n.id));
+      final sectionExists = remaining.contains(section);
+      await selectPage(sectionExists
+          ? next.firstOrNull?.id ?? previous.lastOrNull?.id
+          : nodes.where((n) => n.kind == NodeKind.page).firstOrNull?.id);
+      if (sectionExists) activeSectionId = section;
     }
     notifyListeners();
   }
@@ -5680,8 +5691,10 @@ class AppState extends ChangeNotifier
   void setTool(Tool t, {bool temporary = false}) {
     if (!temporary) toolChoiceRevision++;
     if (!temporary &&
-        (t == Tool.pen || t == Tool.ballpoint ||
-            t == Tool.highlighter || t == Tool.eraser)) {
+        (t == Tool.pen ||
+            t == Tool.ballpoint ||
+            t == Tool.highlighter ||
+            t == Tool.eraser)) {
       _preferredInkTool = t;
       _repo.setSetting('preferredInkTool', t.name);
     }

@@ -66,6 +66,17 @@ void main() {
       final alpha = row('Alpha');
       final beta = row('Beta');
       final gamma = row('Gamma');
+      if (kind == PointerDeviceKind.touch) {
+        final hold = await tester.startGesture(tester.getCenter(alpha));
+        await tester.pump(const Duration(milliseconds: 450));
+        expect(find.text('Rename'), findsNothing);
+        await tester.pump(const Duration(milliseconds: 180));
+        await hold.up();
+        await tester.pumpAndSettle();
+        expect(find.text('Rename'), findsOneWidget);
+        await tester.tapAt(const Offset(950, 650));
+        await tester.pumpAndSettle();
+      }
       final before = tester.getCenter(beta);
       final start = tester.getCenter(alpha);
       final destination = tester.getCenter(gamma);
@@ -144,6 +155,20 @@ void main() {
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pumpAndSettle();
       expect(app.node(first.id)!.title, 'Renamed Alpha');
+      if (kind == PointerDeviceKind.touch) {
+        app.toggleNavCollapsed();
+        app.cancelPendingSave();
+        await tester.pumpAndSettle();
+        final icon = find.byTooltip('Renamed Alpha');
+        final hold = await tester.startGesture(tester.getCenter(icon));
+        await tester.pump(const Duration(milliseconds: 650));
+        await hold.up();
+        await tester.pumpAndSettle();
+        expect(find.text('Rename'), findsOneWidget);
+        expect(app.navCollapsed, isTrue);
+        await tester.tapAt(const Offset(950, 650));
+        await tester.pumpAndSettle();
+      }
       expect(tester.takeException(), isNull);
       app.cancelPendingSave();
       await tester.pumpWidget(const SizedBox.shrink());

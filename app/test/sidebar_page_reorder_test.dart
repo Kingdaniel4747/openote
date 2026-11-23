@@ -90,6 +90,17 @@ void main() {
       Finder row(String title) =>
           find.descendant(of: sidebar, matching: find.text(title));
       final parent = row('Parent A');
+      if (kind == PointerDeviceKind.touch) {
+        final hold = await tester.startGesture(tester.getCenter(parent));
+        await tester.pump(const Duration(milliseconds: 450));
+        expect(find.text('Rename'), findsNothing);
+        await tester.pump(const Duration(milliseconds: 180));
+        await hold.up();
+        await tester.pumpAndSettle();
+        expect(find.text('Rename'), findsOneWidget);
+        await tester.tapAt(const Offset(950, 650));
+        await tester.pumpAndSettle();
+      }
       final start = tester.getCenter(parent);
       final childStart = tester.getCenter(row('Child A1'));
       final destination = tester.getCenter(row('Page C'));

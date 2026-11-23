@@ -20,6 +20,7 @@ import '../state/planner_state.dart';
 import '../theme/onote_theme.dart';
 import 'planner_format.dart';
 import '../theme/tokens.dart';
+import 'planner_entry_editor.dart' show plannerEntryColors;
 
 class MonthGrid extends StatefulWidget {
   const MonthGrid({
@@ -118,20 +119,17 @@ class _MonthGridState extends State<MonthGrid> {
     );
   }
 
-  Widget _cell(
-      BuildContext context,
-      DateTime day,
-      Map<String, Set<DatedKind>> marks,
-      Map<String, int> counts,
-      ColorScheme scheme) {
+  Widget _cell(BuildContext context, DateTime day, Map<String, Set<int>> marks,
+      Map<String, int> counts, ColorScheme scheme) {
     final inMonth = day.month == _month.month;
     final isToday = daysEqual(day, widget.now);
     final isPicked =
         widget.selected != null && daysEqual(day, widget.selected!);
-    final kinds = marks[_key(day)] ?? const <DatedKind>{};
+    final colours = marks[_key(day)] ?? const <int>{};
     final count = counts[_key(day)] ?? 0;
 
     return InkWell(
+      key: ValueKey('planner-day-${day.year}-${day.month}-${day.day}'),
       onTap: () => widget.onPick(day),
       borderRadius: BorderRadius.circular(6),
       child: Container(
@@ -193,19 +191,17 @@ class _MonthGridState extends State<MonthGrid> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // Ordered by DatedKind so the dots never reshuffle between
-                  // rebuilds of the same day.
-                  for (final k in DatedKind.values)
-                    if (kinds.contains(k))
-                      Container(
-                        width: 4,
-                        height: 4,
-                        margin: const EdgeInsets.symmetric(horizontal: .8),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: _dotColour(k, scheme, context.surfaces),
-                        ),
+                  // Distinct accents identify entries without crowding a day.
+                  for (final colour in colours.take(4))
+                    Container(
+                      width: 4,
+                      height: 4,
+                      margin: const EdgeInsets.symmetric(horizontal: .8),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Color(colour),
                       ),
+                    ),
                 ],
               ),
             ),
@@ -224,13 +220,17 @@ class _MonthGridState extends State<MonthGrid> {
       };
 
   /// Which kinds fall on each day in the visible range, keyed by `y-m-d`.
-  Map<String, Set<DatedKind>> _marks(DateTime from, DateTime to) {
-    final out = <String, Set<DatedKind>>{};
+  Map<String, Set<int>> _marks(DateTime from, DateTime to) {
+    final out = <String, Set<int>>{};
     for (final it in widget.planner.agenda(now: widget.now)) {
       if (it.done) continue; // a ticked-off task is not a thing still to do
       if (_pastDay(it.when)) continue;
       if (it.when.isBefore(from) || it.when.isAfter(to)) continue;
-      out.putIfAbsent(_key(it.when), () => <DatedKind>{}).add(it.kind);
+      final reminder =
+          widget.planner.reminders.byId(PlannerState.reminderIdOf(it) ?? '');
+      final colour = plannerEntryColors[reminder?.color] ??
+          _dotColour(it.kind, Theme.of(context).colorScheme, context.surfaces);
+      out.putIfAbsent(_key(it.when), () => <int>{}).add(colour.toARGB32());
     }
     return out;
   }

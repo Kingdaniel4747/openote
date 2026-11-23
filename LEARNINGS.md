@@ -24,6 +24,12 @@ Nur Erkenntnisse behalten, die künftige Fehler verhindern. Keine Sitzungsprotok
 
 ## Daten und Bedienung
 
+- Planer-Tagesansicht nicht zusätzlich mit dem Hinweisbanner für fällige
+  Erinnerungen belegen: Banner + Monatsraster können die Eingabe auf null Höhe
+  verdrängen. Tagesnavigation und Speichern bleiben außerhalb der scrollenden Liste.
+- Tooltips auf Navigationseinträgen beanspruchen standardmäßig Langdruck und
+  können das Kontextmenü verhindern. Dort `TooltipTriggerMode.manual` verwenden:
+  Maus-Hover bleibt erhalten, die Haltegeste gehört dem gemeinsamen Menü-Recognizer.
 - PDF-Bytes im Speicher direkt über PDFiums Speicherpfad öffnen: der bisherige
   1-MiB-Schwellwert leitete größere Importe unnötig durch native Lese-Callbacks.
   Bei Windows-Condition-Variables müssen Leser und Schreiber denselben Lock

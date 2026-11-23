@@ -84,7 +84,9 @@ void main() {
     expect(find.text('Delete'), findsOneWidget);
     await tester.tapAt(const Offset(1350, 850));
     await tester.pumpAndSettle();
-    await tester.longPress(tab);
+    final hold = await tester.startGesture(tester.getCenter(tab));
+    await tester.pump(const Duration(milliseconds: 650));
+    await hold.up();
     await tester.pumpAndSettle();
     expect(find.text('Rename'), findsOneWidget);
     await tester.tapAt(const Offset(1350, 850));
@@ -131,6 +133,16 @@ void main() {
         findsNWidgets(app.pagesOf(section.id).length));
     final pageButton =
         find.descendant(of: rail, matching: find.byTooltip('Another page'));
+    final pageHold = await tester.startGesture(tester.getCenter(pageButton));
+    await tester.pump(const Duration(milliseconds: 450));
+    expect(find.text('Rename'), findsNothing);
+    await tester.pump(const Duration(milliseconds: 180));
+    await pageHold.up();
+    await tester.pumpAndSettle();
+    expect(find.text('Rename'), findsOneWidget);
+    expect(app.navCollapsed, isTrue);
+    await tester.tapAt(const Offset(1350, 850));
+    await tester.pumpAndSettle();
     await tester.tap(pageButton);
     await tester.pumpAndSettle();
     expect(app.pageId, secondPage.id);

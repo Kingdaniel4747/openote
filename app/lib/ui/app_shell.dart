@@ -1708,6 +1708,9 @@ class _SectionTabsState extends State<_SectionTabs> {
         child: Row(children: [
           Expanded(
             child: InlineSectionStrip(
+              onHold: (id, position) => showNodeMenu(
+                  context, app, app.node(id)!,
+                  canIndent: false, position: position),
               ids: [for (final section in sections) section.id],
               widths: [for (final _ in sections) 130.0],
               disabledId: _renamingId,
@@ -1723,13 +1726,13 @@ class _SectionTabsState extends State<_SectionTabs> {
                 final section = sections[index];
                 final selected = section.id == app.activeSectionId;
                 final color = _colorFor(section.color, dark);
-                var downPosition = Offset.zero;
                 return DragTarget<String>(
                     onWillAcceptWithDetails: (d) =>
                         app.node(d.data)?.kind == NodeKind.page,
                     onAcceptWithDetails: (d) =>
                         app.movePageToSection(d.data, section.id),
                     builder: (context, candidates, rejected) => Tooltip(
+                          triggerMode: TooltipTriggerMode.manual,
                           message: section.title,
                           child: InkWell(
                             borderRadius: BorderRadius.circular(8),
@@ -1744,15 +1747,10 @@ class _SectionTabsState extends State<_SectionTabs> {
                                       app.activateSection(section.id);
                                     }
                                   },
-                            onTapDown: (details) =>
-                                downPosition = details.globalPosition,
                             onSecondaryTapUp: (details) => showNodeMenu(
                                 context, app, section,
                                 canIndent: false,
                                 position: details.globalPosition),
-                            onLongPress: () => showNodeMenu(
-                                context, app, section,
-                                canIndent: false, position: downPosition),
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 150),
                               curve: Curves.easeOutCubic,

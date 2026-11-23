@@ -20,6 +20,27 @@ Der Android-Scanner ist eine Begleitapp, kein zweiter Notizeditor.
 
 ## Aktuelle Bedienung
 
+- Kalender: Monatsraster und Tageszähler bleiben der Einstieg. Ein Datum öffnet
+  direkt rechts eine Hausaufgabe ohne Datums-/Uhrzeitdialog. Aufgabe genügt,
+  Notizen, Eintragsart, Farbe und Seitenverknüpfung sind optional. Enter speichert;
+  Speichern/Abbrechen und „Alle anzeigen“ bleiben erreichbar. Einträge öffnen
+  zum vollständigen Lesen/Bearbeiten, verknüpfte Seiten über einen eigenen Knopf.
+  Der Knopf neben dem X kehrt zum aktuellen Monat und zur Übersicht zurück.
+  Entwürfe bleiben beim Wechsel zwischen Tagen/Übersicht innerhalb des Panels
+  erhalten; alte datierte und undatierte Einträge bleiben lesbar/bearbeitbar.
+- Einstellungen: feste Themenleiste links, bei schmalen Fenstern eine kompakte
+  Themenauswahl. Zusammengehörige Optionen stehen in ruhigen Gruppen mit kurzen
+  Erklärungen und einheitlichen Auswahlfeldern. System/Hell/Dunkel sind direkt
+  wählbare Flächen ohne Haken. Ganze Schalterzeilen sind bedienbar; Änderungen
+  werden direkt gespeichert. Handschriftprüfung zeigt ihre Abhängigkeit von der
+  Rechtschreibprüfung, statt einen wirkungslosen Schalter anzubieten.
+- Nach dem Löschen der geöffneten Seite folgt die nächste Seite derselben Sektion,
+  am Ende die vorherige. Ist die Sektion leer, bleibt sie ohne geöffnete Seite aktiv.
+- Ruhiges Halten auf Sektionen und Seiten öffnet nach 0,6 Sekunden das Kontextmenü,
+  auch in der eingeklappten Navigation. Bewegung vor Ablauf startet Verschieben.
+- Ein ausdrücklich gewählter Stift, Textmarker oder Radierer bleibt nach dem
+  Abheben aktiv. Nur aus dem Auswahlmodus vorübergehend aktiviertes Schreiben
+  kehrt danach zur Auswahl zurück.
 - Notizbuchauswahl: anpassbares Bücher-Raster mit mehrzeiligen Titeln,
   deutlicher Markierung des aktuellen Buchs und direkt sichtbarer Suche.
   Die Farbpalette markiert auch automatisch vergebene Farben. „Backup“ öffnet

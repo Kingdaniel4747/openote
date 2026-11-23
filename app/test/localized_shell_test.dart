@@ -84,9 +84,14 @@ void main() {
     await t.tap(find.byTooltip('Einstellungen…'));
     await t.pumpAndSettle();
     expect(find.text('Sprache der Oberfläche'), findsOneWidget);
+    await t.tap(
+        find.byKey(const ValueKey('settings-category-Writing and drawing')));
+    await t.pumpAndSettle();
     expect(find.text('Schreibsprache'), findsOneWidget);
     expect(repo.getSetting('interfaceLanguage'), 'de');
     expect(repo.getSetting('writingLanguage'), 'de-DE');
+    await t.tap(find.byKey(const ValueKey('settings-category-Appearance')));
+    await t.pumpAndSettle();
     await t.tap(find.byType(DropdownButton<String>).first);
     await t.pumpAndSettle();
     await t.tap(find.text('English').last);

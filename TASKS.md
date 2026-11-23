@@ -1,6 +1,6 @@
 # Aufgaben
 
-Stand: 22.11.2026. Nur aktuelle Arbeit und bekannte Grenzen, keine Versionschronik.
+Stand: 23.11.2026. Nur aktuelle Arbeit und bekannte Grenzen, keine Versionschronik.
 
 ## Nächstes Release
 
@@ -51,6 +51,8 @@ Aktueller automatisierter Stand, keine grüne Gesamtsuite:
 
 | Bereich | Letzte Prüfung |
 |---|---|
+| Kalender: direkte Eingabe und Tagesübersicht | 119 gezielte Planer-/Erinnerungs-/Layouttests bestanden. Direkt rechts anlegen/bearbeiten, feste Tagesleiste mit „Alle anzeigen“, feste Speichern-/Abbrechen-Knöpfe, Farbpunkt und aktueller-Monat-Knopf. Entwürfe, vollständige Notizen, stabile Seitenziele, alte Uhrzeiten und Farbspeicherung geprüft. Betroffene Dart-Dateien ohne Analysebefund; Hell/Dunkel und 560-Pixel-Fenster mit 130 % Schrift gerendert und visuell geprüft. Geräteprüfung offen |
+| Einstellungen, Seitenlöschung, Touch-Menüs und dauerhafte Stiftauswahl | 79 gezielte Tests bestanden, zusätzlich deutscher Einstellungsdialog/Sprachwechsel bestanden. Danach nur Einstellungen neu gestaltet: Themenleiste ohne Haken, einheitliche Felder, direkte Designauswahl und erklärende Zeilen. Vier Layout-/Bedientests bei 400/540/1000 Pixel Breite, Hell/Dunkel, Deutsch/Englisch und 130 % Schrift sowie Sprachwechsel bestanden; Ansichten gerendert und visuell geprüft. Gezielte Analyse der vier Einstellungsdateien sauber. Bedienung am Gerät offen |
 | App, kompletter Dart-Quellbaum | Keine Fehler; bestehender Stilhinweis in `command_bar.dart:907`. Sieben geänderte PDF-/Lebenszyklus-Dateien separat ohne Befund geprüft |
 | Notebook-Auswahl und Backup-Dialog | 17 gezielte UI-/Backup-/Lifecycle-Tests bestanden; Analyse der fünf betroffenen Dart-Dateien sauber. Helle/dunkle Ansichten gerendert und visuell geprüft |
 | Entfernte Befehle, Kalender, Text, Navigation, Anhänge | 157 gezielte Tests bestanden, vor den folgenden Importänderungen |
@@ -76,6 +78,14 @@ Für reine Dokumentationspflege diese Prüfungen nicht erneut starten.
 
 ## Als Nächstes
 
+- Kalender am Gerät prüfen: Tag antippen, Aufgabe mit Enter oder Speichern
+  erfassen; lange Texte lesen/bearbeiten, optional Seite/Farbe verknüpfen.
+  „Alle anzeigen“, Tageszahl nach Erledigen und aktueller Monat neben dem X;
+  neue/bearbeitete Entwürfe beim Wechsel zwischen Tagen wiederfinden.
+- Einstellungen am Gerät prüfen: Themenwahl, lesbare Beschriftungen und direkt
+  bedienbare Schalter. Sektionen/Seiten auch eingeklappt 0,6 Sekunden ruhig halten:
+  Kontextmenü statt Tooltip; Bewegen startet weiter das Verschieben. Nach Löschen
+  nächste, am Ende vorherige Seite derselben Sektion; leere Sektion bleibt aktiv.
 - Neue Bücher- und Backup-Auswahl am Gerät prüfen: lange Namen, viele Bücher,
   Farbauswahl, Tastatur/Touch und Einzel-/Gesamtsicherung mit Zielauswahl.
 - Sektionen oben/links und Seiten am Gerät prüfen: direkt mit Maus und Finger
@@ -150,8 +160,9 @@ Entfernte Messproben und Funktionen ändern zukünftige Testzahlen.
 ## Bereits geprüft
 
 - Eingabewerkzeuge am Gerät prüfen: Stift verwendet das zuletzt gewählte
-  Schreibwerkzeug oder den Radierer; nach dem Abheben wählt und verschiebt
-  die Maus wieder. Ein ausdrücklich gewähltes Werkzeug zeichnet mit der Maus;
+  Schreibwerkzeug oder den Radierer. Ausdrücklich gewählte Schreibwerkzeuge
+  bleiben nach dem Abheben aktiv; nur vorübergehendes Schreiben aus dem
+  Auswahlmodus kehrt zur Auswahl zurück. Ein gewähltes Werkzeug zeichnet mit der Maus;
   Fingerzeichnen bei Einstellung „Always“ und Zweifinger-Navigation prüfen.
 
 Live-MCP an der installierten Windows-App: aktuelle Seite mit Aufgabenbildern,

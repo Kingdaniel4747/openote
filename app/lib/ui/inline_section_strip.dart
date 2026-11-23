@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'node_context_menu.dart';
 
 /// Reorders sections in their clipped strip or list, preserving the grab point.
 class InlineSectionStrip extends StatefulWidget {
@@ -22,6 +23,7 @@ class InlineSectionStrip extends StatefulWidget {
       this.preferNextTarget = false,
       this.canNest,
       this.onNest,
+      this.onHold,
       this.onNestPreview});
 
   final List<String> ids;
@@ -40,6 +42,7 @@ class InlineSectionStrip extends StatefulWidget {
   final bool Function(String moving, String target)? canNest;
   final void Function(String moving, String target)? onNest;
   final void Function(String? moving, String? target)? onNestPreview;
+  final void Function(String id, Offset position)? onHold;
   final void Function(String moving, String target, bool after) onReorder;
 
   @override
@@ -309,54 +312,60 @@ class _InlineSectionStripState extends State<InlineSectionStrip> {
                     onPointerCancel: (_) {
                       if (_moving == id) _finish(cancel: true);
                     },
-                    child: widget.allowExternalDrops
-                        ? Draggable<String>(
-                            data: id,
-                            maxSimultaneousDrags: _disabled(id) ? 0 : 1,
-                            dragAnchorStrategy: pointerDragAnchorStrategy,
-                            feedback: const SizedBox.shrink(),
-                            onDragStarted: () {
-                              final current = _latest;
-                              _start(
-                                  id, DragStartDetails(globalPosition: _down));
-                              _update(current);
-                            },
-                            onDragUpdate: (_) => _update(_latest),
-                            onDragEnd: (details) =>
-                                _finish(cancel: details.wasAccepted),
-                            child: widget.children[widget.ids.indexOf(id)],
-                          )
-                        : GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            dragStartBehavior: DragStartBehavior.down,
-                            onHorizontalDragStart: !_horizontal || _disabled(id)
-                                ? null
-                                : (d) => _start(id, d),
-                            onHorizontalDragUpdate:
-                                !_horizontal || _disabled(id)
-                                    ? null
-                                    : (d) => _update(d.globalPosition),
-                            onHorizontalDragEnd: !_horizontal || _disabled(id)
-                                ? null
-                                : (_) => _finish(),
-                            onHorizontalDragCancel:
-                                !_horizontal || _disabled(id)
-                                    ? null
-                                    : () => _finish(cancel: true),
-                            onVerticalDragStart: _horizontal || _disabled(id)
-                                ? null
-                                : (d) => _start(id, d),
-                            onVerticalDragUpdate: _horizontal || _disabled(id)
-                                ? null
-                                : (d) => _update(d.globalPosition),
-                            onVerticalDragEnd: _horizontal || _disabled(id)
-                                ? null
-                                : (_) => _finish(),
-                            onVerticalDragCancel: _horizontal || _disabled(id)
-                                ? null
-                                : () => _finish(cancel: true),
-                            child: widget.children[widget.ids.indexOf(id)],
-                          ),
+                    child: NavigatorHoldMenu(
+                      onHold: id == widget.disabledId || widget.onHold == null
+                          ? null
+                          : (position) => widget.onHold!(id, position),
+                      child: widget.allowExternalDrops
+                          ? Draggable<String>(
+                              data: id,
+                              maxSimultaneousDrags: _disabled(id) ? 0 : 1,
+                              dragAnchorStrategy: pointerDragAnchorStrategy,
+                              feedback: const SizedBox.shrink(),
+                              onDragStarted: () {
+                                final current = _latest;
+                                _start(id,
+                                    DragStartDetails(globalPosition: _down));
+                                _update(current);
+                              },
+                              onDragUpdate: (_) => _update(_latest),
+                              onDragEnd: (details) =>
+                                  _finish(cancel: details.wasAccepted),
+                              child: widget.children[widget.ids.indexOf(id)],
+                            )
+                          : GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              dragStartBehavior: DragStartBehavior.down,
+                              onHorizontalDragStart:
+                                  !_horizontal || _disabled(id)
+                                      ? null
+                                      : (d) => _start(id, d),
+                              onHorizontalDragUpdate:
+                                  !_horizontal || _disabled(id)
+                                      ? null
+                                      : (d) => _update(d.globalPosition),
+                              onHorizontalDragEnd: !_horizontal || _disabled(id)
+                                  ? null
+                                  : (_) => _finish(),
+                              onHorizontalDragCancel:
+                                  !_horizontal || _disabled(id)
+                                      ? null
+                                      : () => _finish(cancel: true),
+                              onVerticalDragStart: _horizontal || _disabled(id)
+                                  ? null
+                                  : (d) => _start(id, d),
+                              onVerticalDragUpdate: _horizontal || _disabled(id)
+                                  ? null
+                                  : (d) => _update(d.globalPosition),
+                              onVerticalDragEnd: _horizontal || _disabled(id)
+                                  ? null
+                                  : (_) => _finish(),
+                              onVerticalDragCancel: _horizontal || _disabled(id)
+                                  ? null
+                                  : () => _finish(cancel: true),
+                              child: widget.children[widget.ids.indexOf(id)],
+                            ),
+                    ),
                   ),
                 ),
               if (_horizontal)

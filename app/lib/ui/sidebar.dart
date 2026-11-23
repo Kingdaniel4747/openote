@@ -115,6 +115,13 @@ class _PageListState extends State<_PageList> {
 
     return InlineSectionStrip(
       axis: Axis.vertical,
+      onHold: (id, position) {
+        final node = app.node(id);
+        if (node != null) {
+          showNodeMenu(context, app, node,
+              canIndent: node.kind == NodeKind.page, position: position);
+        }
+      },
       ids: [for (final page in visible) page.id],
       widths: [for (final page in visible) height(page)],
       disabledId: _renamingId,
@@ -633,6 +640,13 @@ class _SidebarState extends State<Sidebar> {
 
     return InlineSectionStrip(
       axis: Axis.vertical,
+      onHold: (id, position) {
+        final node = app.node(id);
+        if (node != null) {
+          showNodeMenu(context, app, node,
+              canIndent: node.kind == NodeKind.page, position: position);
+        }
+      },
       ids: ids,
       widths: [
         for (final id in ids)
@@ -745,7 +759,6 @@ class _GroupHeader extends StatefulWidget {
 class _GroupHeaderState extends State<_GroupHeader> {
   bool _renaming = false;
   final _taps = SidebarDoubleTapGate();
-  Offset _downPos = Offset.zero; // last pointer-down, for long-press menus
 
   /// This row's place in the keyboard, handed to its `InkWell` so there is one
   /// focus node rather than two — see [_nodeDeleteKey].
@@ -798,11 +811,8 @@ class _GroupHeaderState extends State<_GroupHeader> {
                   _rowFocus.requestFocus();
                   app.toggleGroupCollapsed(group.id);
                 },
-          onTapDown: (d) => _downPos = d.globalPosition,
           onSecondaryTapUp: (d) => showNodeMenu(context, app, group,
               canIndent: false, position: d.globalPosition),
-          onLongPress: () => showNodeMenu(context, app, group,
-              canIndent: false, position: _downPos),
           child: Container(
             // A foreground border paints over the row instead of taking up
             // layout space, so its title and icons stay perfectly still.
@@ -1011,6 +1021,7 @@ class _NavRail extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(vertical: 2),
                         child: Center(
                           child: Tooltip(
+                            triggerMode: TooltipTriggerMode.manual,
                             message: s.title,
                             child: InkWell(
                               borderRadius: BorderRadius.circular(6),
@@ -1023,8 +1034,8 @@ class _NavRail extends StatelessWidget {
                                 }
                               },
                               child: Container(
-                                width: 24,
-                                height: 24,
+                                width: 40,
+                                height: 40,
                                 alignment: Alignment.center,
                                 decoration: BoxDecoration(
                                   color: _sectionColor(s.color, dark)
@@ -1129,25 +1140,26 @@ class _NavigatorDragEntryState extends State<NavigatorDragEntry> {
               ? Colors.transparent
               : Theme.of(context).colorScheme.primary;
           final line = BorderSide(color: color, width: 2);
-          final entry = GestureDetector(
-            onSecondaryTapUp: (d) => showNodeMenu(
-                context, widget.app, widget.node,
+          final entry = NavigatorHoldMenu(
+            onHold: (position) => showNodeMenu(context, widget.app, widget.node,
                 canIndent: widget.node.kind == NodeKind.page,
-                position: d.globalPosition),
-            onLongPressStart: (d) => showNodeMenu(
-                context, widget.app, widget.node,
-                canIndent: widget.node.kind == NodeKind.page,
-                position: d.globalPosition),
-            child: DecoratedBox(
-                decoration: BoxDecoration(
-                    border: widget.horizontal
-                        ? Border(
-                            left: after ? BorderSide.none : line,
-                            right: after ? line : BorderSide.none)
-                        : Border(
-                            top: after ? BorderSide.none : line,
-                            bottom: after ? line : BorderSide.none)),
-                child: widget.child),
+                position: position),
+            child: GestureDetector(
+              onSecondaryTapUp: (d) => showNodeMenu(
+                  context, widget.app, widget.node,
+                  canIndent: widget.node.kind == NodeKind.page,
+                  position: d.globalPosition),
+              child: DecoratedBox(
+                  decoration: BoxDecoration(
+                      border: widget.horizontal
+                          ? Border(
+                              left: after ? BorderSide.none : line,
+                              right: after ? line : BorderSide.none)
+                          : Border(
+                              top: after ? BorderSide.none : line,
+                              bottom: after ? line : BorderSide.none)),
+                  child: widget.child),
+            ),
           );
           return Draggable<String>(
             data: widget.node.id,
@@ -1264,7 +1276,6 @@ class _SectionHeaderState extends State<_SectionHeader> {
   bool _renaming = false;
 
   final _taps = SidebarDoubleTapGate();
-  Offset _downPos = Offset.zero; // last pointer-down, for long-press menus
 
   /// This row's place in the keyboard, handed to its `InkWell` so there is one
   /// focus node rather than two — see [_nodeDeleteKey].
@@ -1329,11 +1340,8 @@ class _SectionHeaderState extends State<_SectionHeader> {
               _rowFocus.requestFocus();
               app.activateSection(section.id);
             },
-      onTapDown: (d) => _downPos = d.globalPosition,
       onSecondaryTapUp: (d) => showNodeMenu(context, app, section,
           canIndent: false, position: d.globalPosition),
-      onLongPress: () => showNodeMenu(context, app, section,
-          canIndent: false, position: _downPos),
       child: Container(
         decoration: pageTarget
             ? BoxDecoration(color: scheme.primary.withValues(alpha: .06))
@@ -1754,7 +1762,6 @@ class _PageTile extends StatefulWidget {
 class _PageTileState extends State<_PageTile> {
   bool _renaming = false;
   final _taps = SidebarDoubleTapGate();
-  Offset _downPos = Offset.zero; // last pointer-down, for long-press menus
 
   /// This row's place in the keyboard, handed to its `InkWell` so there is one
   /// focus node rather than two — see [_nodeDeleteKey].
@@ -1808,11 +1815,8 @@ class _PageTileState extends State<_PageTile> {
                 _rowFocus.requestFocus();
                 app.selectPage(page.id);
               },
-        onTapDown: (d) => _downPos = d.globalPosition,
         onSecondaryTapUp: (d) => showNodeMenu(context, app, page,
             canIndent: true, position: d.globalPosition),
-        onLongPress: () => showNodeMenu(context, app, page,
-            canIndent: true, position: _downPos),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           curve: Curves.easeOutCubic,

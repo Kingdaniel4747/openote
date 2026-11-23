@@ -288,8 +288,8 @@ class _PageCanvasState extends State<PageCanvas> {
           .clamp(0, (render.size.height * pixelRatio).ceil() - 1);
       // Read only the sampled physical pixel, not the entire page image.
       image = await render.samplePixel(
-        Rect.fromLTWH(x / pixelRatio, y / pixelRatio, 1 / pixelRatio,
-            1 / pixelRatio),
+        Rect.fromLTWH(
+            x / pixelRatio, y / pixelRatio, 1 / pixelRatio, 1 / pixelRatio),
         pixelRatio: pixelRatio,
       );
       final bytes = await image.toByteData(format: ImageByteFormat.rawRgba);
@@ -468,11 +468,15 @@ class _PageCanvasState extends State<PageCanvas> {
     if (_beginRulerPointer(e)) return;
     if (e.kind == PointerDeviceKind.stylus ||
         e.kind == PointerDeviceKind.invertedStylus) {
+      // Return to selection only when contact temporarily enabled ink.
+      // An explicit drawing choice stays selected between strokes.
+      _penToolRevision = app.tool == Tool.select || app.tool == Tool.text
+          ? app.toolChoiceRevision
+          : null;
       _showPenButtonTool(_windowsPen.erasesAtContact(e));
       if (app.tool == Tool.select || app.tool == Tool.text) {
         app.setTool(app.preferredInkTool, temporary: true);
       }
-      _penToolRevision = app.toolChoiceRevision;
       app.requestDrawTab();
     }
     if (_windowsPen.enabled ||
@@ -786,7 +790,8 @@ class _PageCanvasState extends State<PageCanvas> {
       _showPenButtonTool(_pendingErase);
       if (_penToolRevision == app.toolChoiceRevision && !_buttonOverride) {
         app.setTool(Tool.select, temporary: true);
-      } else if (_penToolRevision == app.toolChoiceRevision && _buttonOverride) {
+      } else if (_penToolRevision == app.toolChoiceRevision &&
+          _buttonOverride) {
         _selectAfterPenButtonRelease = true;
       }
       _penToolRevision = null;
@@ -2200,8 +2205,10 @@ class _PageCanvasState extends State<PageCanvas> {
             return;
           }
           if (app.touchDrawing == TouchDrawing.always &&
-              !_windowsPen.nativeInRange && !_inkContactActive &&
-              _fingerInkDown == null && _touches.isEmpty) {
+              !_windowsPen.nativeInRange &&
+              !_inkContactActive &&
+              _fingerInkDown == null &&
+              _touches.isEmpty) {
             _fingerInkDown = e;
             _inkDown(e);
             return;

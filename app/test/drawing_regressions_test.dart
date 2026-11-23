@@ -350,6 +350,15 @@ void main() {
         await stroke.up();
         await t.pump();
         expect(ink().last.tool, choice == Tool.pen ? 'pen' : 'highlighter');
+        expect(app.tool, choice,
+            reason: 'lifting the pen must preserve an explicit tool choice');
+        final again = await t.startGesture(const Offset(200, 400),
+            kind: PointerDeviceKind.stylus);
+        await again.moveTo(const Offset(300, 400));
+        await again.up();
+        await t.pump();
+        expect(app.tool, choice);
+        expect(ink().last.tool, choice == Tool.pen ? 'pen' : 'highlighter');
       }
       app.cancelPendingSave();
       expect(t.takeException(), isNull);

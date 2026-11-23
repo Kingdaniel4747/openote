@@ -63,11 +63,21 @@ Reihenfolge und Seitenbäume über `reorderNode`, `reorderPageTree` und
 `makeSubpageOf`. Der frühere `moveNode(id, delta)`-Befehl ist entfernt.
 
 `ui/node_context_menu.dart` stellt das Kontextmenü bereit;
+`NavigatorHoldMenu` vereinheitlicht den 600-ms-Langdruck in direkten Listen,
+Sektionstabs und der eingeklappten Leiste. Deren Tooltips beanspruchen keine
+Haltegeste mehr; Maus-Hover bleibt verfügbar.
 `ui/page_export_menu.dart` definiert Formatauswahl und Export der angeklickten
 Seite. `ui/insert_catalog.dart` ist der gemeinsame Einfügen-Katalog für Ribbon
 und Canvas-Menü. Kalenderdaten bleiben in `state/study_state.dart`,
 `state/planner_state.dart` und `planner/`; `StudyState` enthält nur noch
 Prüfungsdaten/-zeiten, keine Lernkartenplanung.
+
+Der Planer öffnet `ui/planner_entry_editor.dart` direkt unter dem Monatsraster.
+`PlannerPanel` hält Entwürfe je Tag/Eintrag und die feste Tages- und Aktionsleiste.
+`Reminder.color` ist ein optionaler Farbschlüssel in den bestehenden Settings;
+`MonthGrid` und Listen verwenden denselben Akzent. Neue Einträge sind ganztägig,
+Bearbeiten erhält alte Uhrzeiten und Notebook-/Seiten-IDs. Das Monatsraster selbst
+bleibt erhalten; der aktuelle-Monat-Knopf setzt seine Widget-Identität zurück.
 
 ## Medienimport und Dateiexport
 

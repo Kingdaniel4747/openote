@@ -1,4 +1,29 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
+
+/// A stationary hold opens a menu; moving first leaves dragging in charge.
+class NavigatorHoldMenu extends StatelessWidget {
+  const NavigatorHoldMenu(
+      {super.key, required this.onHold, required this.child});
+  final ValueChanged<Offset>? onHold;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => RawGestureDetector(
+        behavior: HitTestBehavior.opaque,
+        gestures: {
+          if (onHold != null)
+            LongPressGestureRecognizer: GestureRecognizerFactoryWithHandlers<
+                LongPressGestureRecognizer>(
+              () => LongPressGestureRecognizer(
+                  duration: const Duration(milliseconds: 600)),
+              (recognizer) => recognizer.onLongPressStart =
+                  (details) => onHold!(details.globalPosition),
+            ),
+        },
+        child: child,
+      );
+}
 
 /// A modal context menu whose Material submenus automatically choose the
 /// available side of the window and support both mouse hover and touch.

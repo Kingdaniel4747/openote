@@ -50,6 +50,37 @@ void main() {
   TreeNode byTitle(AppState app, String t) =>
       app.nodes.firstWhere((n) => n.title == t);
 
+  test('deleting pages stays in the section and prefers the next neighbour',
+      () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (repo, tmp, app) = await fixture('onote_nav_delete_');
+    addTearDown(() => cleanup(repo, tmp));
+    final b0 = byTitle(app, 'B0');
+    final b1 = byTitle(app, 'B1');
+    final b2 = byTitle(app, 'B2');
+    await app.selectPage(b1.id);
+    await app.deleteNode(b1.id);
+    expect(app.pageId, b2.id);
+    expect(app.activeSectionId, b0.parentId);
+    await app.deleteNode(b2.id);
+    expect(app.pageId, b0.id);
+    await app.deleteNode(b0.id);
+    expect(app.pageId, isNull);
+    expect(app.activeSectionId, b0.parentId);
+    expect(app.blocks, isEmpty);
+  });
+
+  test('deleting another page preserves the current page', () async {
+    if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+    final (repo, tmp, app) = await fixture('onote_nav_delete_other_');
+    addTearDown(() => cleanup(repo, tmp));
+    final page = byTitle(app, 'B1');
+    await app.selectPage(page.id);
+    await app.deleteNode(byTitle(app, 'A1').id);
+    expect(app.pageId, page.id);
+    expect(app.activeSectionId, page.parentId);
+  });
+
   test('browsing sections never loses your place', () async {
     if (!haveSqlite) return markTestSkipped('sqlite unavailable');
     // The old activateSection jumped to the FIRST page every time, so merely
