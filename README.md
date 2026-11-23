@@ -5,9 +5,9 @@
 <h1 align="center">Openote</h1>
 
 <p align="center">
-  <strong>Make room for handwritten thinking.</strong><br>
-  Your pen. Your PDFs. Your whole semester.<br>
-  A free, open-source OneNote alternative built for Windows pen and touch.
+  <strong>A free, open-source OneNote alternative for Windows pen and touch.</strong><br>
+  Handwritten notes. PDF annotation. Your whole semester.<br>
+  Local notebooks. No required account. No subscription.
 </p>
 
 <p align="center">
@@ -49,6 +49,9 @@ straight onto the page you already have open.
 **Local notebooks. No required account. No subscription.** If you want a
 GoodNotes-like way to study on Windows, try Openote. It has its own feature set
 and is independent of Microsoft and GoodNotes.
+
+If Openote helps you study, a [GitHub star](https://github.com/Kingdaniel4747/openote)
+helps other pen-and-paper thinkers discover the project.
 
 ## Features
 
@@ -300,6 +303,16 @@ Never commit the keystore or `scanner/android/key.properties`. Missing secrets
 prevent the shared release; the website deploys independently.
 
 </details>
+
+## Project origins
+
+This is an independently maintained continuation of
+[Openote by icmric and contributors](https://github.com/icmric/openote).
+This version focuses on Windows pen and touch, handwritten study notes, PDF
+workflows and an Android companion scanner. The original contributors retain
+credit for their work; this repository contains its own subsequent changes.
+Use this repository and its linked website for this version's downloads and
+support.
 
 ## Licenses
 
