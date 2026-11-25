@@ -51,7 +51,10 @@ Der Android-Scanner ist eine Begleitapp, kein zweiter Notizeditor.
   Der Neustart-Knopf neben dem X löscht nach Bestätigung sämtliche Schriftproben
   und Varianten und beginnt wieder bei „a“. Bereits eingefügte Handschrift auf
   Notizseiten bleibt erhalten; Umwandeln ist bis zur neuen Einrichtung gesperrt.
-  Vorschau mit Schriftgröße, Zeilenbreite, Wort-/Zeilenabstand;
+  Vorschau mit Schriftgröße, Zeilenbreite, Wort-/Zeilenabstand. Die bisherigen
+  Standards 28/600/1/1 stehen bei allen vier Reglern mittig; nach links lassen
+  sich alle Werte verkleinern, der Zeilenabstand bis 0,5. Feste Papierbreiten
+  begrenzen die Ausgabe weiterhin.
   Einfügen als normale radierbare, verschiebbare
   Stiftstriche mit Undo/Redo. Beta setzt Einzelzeichen zusammen, ohne verbundene
   Schreibschrift oder automatisches Lernen aus Notizen. Geräte-Workflow noch prüfen.

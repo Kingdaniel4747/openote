@@ -97,7 +97,11 @@ haben weiter Vorrang. Generator, Abstände und existierende Vorlagen bleiben erh
 `ink/handwriting_profile.dart` speichert Zeichenvarianten als Strichpfade und
 setzt Text mit Umbruch in seitenabsolute `Stroke`s um. Das lokale Profil liegt
 im Workspace-Setting `handwritingProfileBeta`, unabhängig von Notizbuchinhalten.
-Die Erzeugung berücksichtigt die Breite fester Papierseiten. `AppState.insertHandwriting`
+Die Layoutregler skalieren ihre beiden Hälften getrennt, damit die unveränderten
+Dialogstandards 28/600/1/1 jeweils mittig stehen. Wertebereich: Höhe 7–60,
+gewünschte Breite 100–900, Wortabstand 0,25–2 und Zeilenabstand 0,5–2.
+Die Erzeugung berücksichtigt unabhängig vom Breitenregler die Breite fester
+Papierseiten. `AppState.insertHandwriting`
 fügt gewöhnliche Ink-Blöcke ein; Radierer, Lasso und Speicherformat bleiben gemeinsam.
 Lasso-Formatierung ändert `brush.color`/`brush.size`, invalidiert gespeicherte
 Ink-Referenzen und erhöht die Cache-Revision auch bei schnellen Folgeänderungen.

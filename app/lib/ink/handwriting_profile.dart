@@ -138,7 +138,7 @@ class HandwritingProfile {
         !wordSpacing.isFinite ||
         wordSpacing <= 0 ||
         !lineSpacing.isFinite ||
-        lineSpacing < 1 ||
+        lineSpacing <= 0 ||
         !size.isFinite ||
         size <= 0) {
       throw ArgumentError('Invalid handwriting layout.');

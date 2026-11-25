@@ -676,18 +676,27 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
     );
   }
 
-  Widget _slider(String label, double value, double min, double max,
-          ValueChanged<double> change,
-          {int? divisions}) =>
-      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('${tr(context, label)}: ${value.toStringAsFixed(1)}'),
-        Slider(
-            value: value,
-            min: min,
-            max: max,
-            divisions: divisions,
-            onChanged: (v) => setState(() => change(v))),
-      ]);
+  Widget _slider(String label, double value, double min, double standard,
+      double max, ValueChanged<double> change) {
+    // Each half of the track gets its own scale, so the established default
+    // stays exactly in the centre without losing the useful upper range.
+    double actual(double position) => position <= .5
+        ? min + (standard - min) * position * 2
+        : standard + (max - standard) * (position - .5) * 2;
+    final position = value <= standard
+        ? (value - min) / (standard - min) * .5
+        : .5 + (value - standard) / (max - standard) * .5;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('${tr(context, label)}: ${value.toStringAsFixed(1)}'),
+      Slider(
+          key: ValueKey('handwriting-slider-$label'),
+          value: position.clamp(0.0, 1.0),
+          divisions: 100,
+          label: value.toStringAsFixed(1),
+          semanticFormatterCallback: (v) => actual(v).toStringAsFixed(1),
+          onChanged: (v) => setState(() => change(actual(v)))),
+    ]);
+  }
 
   Widget _generation() {
     final scheme = Theme.of(context).colorScheme;
@@ -779,15 +788,10 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
             tilePadding: EdgeInsets.zero,
             title: const AppText('Size & spacing'),
             children: [
-              _slider('Letter height', _height, 14, 60, (v) => _height = v,
-                  divisions: 46),
-              _slider('Line width', _effectiveWidth, math.min(200, _maxWidth),
-                  _maxWidth, (v) => _width = v,
-                  divisions: 14),
-              _slider('Word spacing', _words, .5, 2, (v) => _words = v,
-                  divisions: 15),
-              _slider('Line spacing', _lines, 1, 2, (v) => _lines = v,
-                  divisions: 10),
+              _slider('Letter height', _height, 7, 28, 60, (v) => _height = v),
+              _slider('Line width', _width, 100, 600, 900, (v) => _width = v),
+              _slider('Word spacing', _words, .25, 1, 2, (v) => _words = v),
+              _slider('Line spacing', _lines, .5, 1, 2, (v) => _lines = v),
             ],
           ),
           const SizedBox(height: 8),

@@ -916,6 +916,47 @@ void main() {
     });
   }
 
+  testWidgets('layout defaults are centred and every setting can be reduced',
+      (t) async {
+    activeTester = t;
+    if (!sqlite) return markTestSkipped('sqlite unavailable');
+    app.saveHandwritingProfile(completedProfile());
+    app.cancelPendingSave();
+    await t.pumpWidget(
+        MaterialApp(home: Scaffold(body: HandwritingDialog(app: app))));
+    await settle(t);
+    await t.ensureVisible(find.text('Size & spacing'));
+    await t.tap(find.text('Size & spacing'));
+    await settle(t);
+    const labels = [
+      'Letter height',
+      'Line width',
+      'Word spacing',
+      'Line spacing'
+    ];
+    const defaults = ['28.0', '600.0', '1.0', '1.0'];
+    const minima = ['7.0', '100.0', '0.3', '0.5'];
+    const maxima = ['60.0', '900.0', '2.0', '2.0'];
+    for (var i = 0; i < labels.length; i++) {
+      final finder = find.byKey(ValueKey('handwriting-slider-${labels[i]}'));
+      Slider slider() => t.widget<Slider>(finder);
+      expect(slider().value, .5);
+      expect(slider().label, defaults[i]);
+      slider().onChanged!(0);
+      await t.pump();
+      expect(slider().label, minima[i]);
+      expect(slider().semanticFormatterCallback!(0), minima[i]);
+      slider().onChanged!(1);
+      await t.pump();
+      expect(slider().label, maxima[i]);
+      slider().onChanged!(.5);
+      await t.pump();
+      expect(slider().label, defaults[i]);
+    }
+    expect(t.takeException(), isNull);
+    await t.pumpWidget(const SizedBox());
+  });
+
   testWidgets('generated lines fit A5 paper even at the largest letter size',
       (t) async {
     activeTester = t;
@@ -932,10 +973,10 @@ void main() {
     await t.ensureVisible(find.text('Size & spacing'));
     await t.tap(find.text('Size & spacing'));
     await settle(t);
-    t.widget<Slider>(find.byType(Slider).at(0)).onChanged!(60);
+    t.widget<Slider>(find.byType(Slider).at(0)).onChanged!(1);
     await t.pump();
     final width = t.widget<Slider>(find.byType(Slider).at(1));
-    expect(width.max, PaperSize.a5.width - AppState.sheetMargin * 2);
+    expect(width.max, 1);
     width.onChanged!(width.max);
     await t.pump();
     final insert = find.byKey(const ValueKey('handwriting-insert'));

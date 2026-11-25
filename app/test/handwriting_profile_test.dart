@@ -93,6 +93,21 @@ void main() {
         () => profile.generate('a', height: double.nan), throwsArgumentError);
   });
 
+  test('line spacing below one reduces baseline distance without shrinking ink',
+      () {
+    final profile = HandwritingProfile();
+    complete(profile);
+    final normal = profile.generate('a\na', lineSpacing: 1);
+    final tight = profile.generate('a\na', lineSpacing: .5);
+    expect(tight[0].y, normal[0].y);
+    expect(tight[1].y.first - tight[0].y.first,
+        (normal[1].y.first - normal[0].y.first) / 2);
+    for (final invalid in [0.0, -1.0, double.nan, double.infinity]) {
+      expect(() => profile.generate('a', lineSpacing: invalid),
+          throwsArgumentError);
+    }
+  });
+
   test('generated paths can be partially erased and encoded as normal ink', () {
     final profile = HandwritingProfile()..addSample('a', [sample()]);
     complete(profile);
