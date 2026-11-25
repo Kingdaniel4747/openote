@@ -35,7 +35,9 @@ Der Android-Scanner ist eine Begleitapp, kein zweiter Notizeditor.
   „Schrift bearbeiten“ zeigt alle Zeichen mit eigener Schrift und Größenbeispiel;
   je Zeichen sind die bis zu fünf Varianten nebeneinander auswählbar. Gezielt
   ersetzen oder hinzufügen, ohne die Zeichenansicht nach dem Speichern zu verlassen.
-  „Gespeichert“ bestätigt den Vorgang; der Pfeil führt zurück. Leere gespeicherte
+  „Gespeichert“ bestätigt den Vorgang und wählt automatisch den nächsten leeren
+  Entwurf, solange noch keine fünf Varianten gespeichert sind. Bei fünf bleibt
+  die gespeicherte Variante ausgewählt; der Pfeil führt zurück. Leere gespeicherte
   Varianten werden beim Wechsel oder Zurückgehen entfernt, neue leere Entwürfe
   belegen keinen Platz. Es gibt höchstens eine Kachel „Neue Variante“ und maximal
   fünf gespeicherte Varianten; volle Listen verdrängen nichts.

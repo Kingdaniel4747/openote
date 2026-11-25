@@ -445,6 +445,9 @@ void main() {
     expect(app.handwritingProfile.samples['a'], hasLength(2));
     expect(find.byKey(const ValueKey('handwriting-variant-1')), findsOneWidget);
     expect(fresh, findsOneWidget);
+    expect(t.state<HandwritingPadState>(find.byType(HandwritingPad)).strokes,
+        isEmpty,
+        reason: 'Save automatically selects the next empty draft');
     expect(t.widget<FilledButton>(save).onPressed, isNull,
         reason: 'saved draft cannot be appended a second time');
     final retained = app.handwritingProfile.samples['a']![1].single.id;
@@ -463,6 +466,57 @@ void main() {
             .id,
         retained);
     expect(fresh, findsOneWidget);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets(
+      'saving C selects the next new draft until all five slots are filled',
+      (t) async {
+    activeTester = t;
+    if (!sqlite) return markTestSkipped('sqlite unavailable');
+    app.saveHandwritingProfile(completedProfile());
+    app.cancelPendingSave();
+    await t.pumpWidget(
+        MaterialApp(home: Scaffold(body: HandwritingDialog(app: app))));
+    await settle(t);
+    await t.tap(find.text('Edit handwriting'));
+    await settle(t);
+    await t.ensureVisible(find.byKey(const ValueKey('handwriting-tile-C')));
+    await t.tap(find.byKey(const ValueKey('handwriting-tile-C')));
+    await settle(t);
+    await t
+        .ensureVisible(find.byKey(const ValueKey('handwriting-new-variant')));
+    await t.tap(find.byKey(const ValueKey('handwriting-new-variant')));
+    await t.pump();
+    final original = app.handwritingProfile.samples['C']!.first.single.id;
+    for (var count = 2; count <= 5; count++) {
+      final rect = t.getRect(find.byKey(const ValueKey('handwriting-pad')));
+      final pen =
+          await t.startGesture(rect.center, kind: PointerDeviceKind.stylus);
+      await pen.moveBy(const Offset(15, 10));
+      await pen.up();
+      await t.pump();
+      await t.tap(find.byKey(const ValueKey('handwriting-save-next')));
+      await settle(t);
+      final variants = app.handwritingProfile.samples['C']!;
+      expect(variants, hasLength(count));
+      expect(variants.map((v) => v.single.id).toSet(), hasLength(count));
+      expect(variants.first.single.id, original);
+      expect(find.byKey(const ValueKey('handwriting-current-character')),
+          findsOneWidget);
+      final pad = t.state<HandwritingPadState>(find.byType(HandwritingPad));
+      if (count < 5) {
+        expect(find.byKey(const ValueKey('handwriting-new-variant')),
+            findsOneWidget);
+        expect(pad.strokes, isEmpty,
+            reason:
+                'write the next variant immediately without selecting another tile');
+      } else {
+        expect(find.byKey(const ValueKey('handwriting-new-variant')),
+            findsNothing);
+        expect(pad.strokes.single.id, variants.last.single.id);
+      }
+    }
     await t.pumpWidget(const SizedBox());
   });
 

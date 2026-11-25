@@ -274,7 +274,8 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
             : _HandwritingView.setup;
         _loadVariant(null);
       } else {
-        _loadVariant(savedIndex);
+        final hasRoom = (_profile.samples[_character]?.length ?? 0) < 5;
+        _loadVariant(hasRoom ? null : savedIndex);
         _saved = true;
       }
     });

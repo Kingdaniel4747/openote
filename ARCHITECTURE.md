@@ -70,7 +70,9 @@ Der bestätigte Profil-Reset leert `handwritingProfileBeta` sowie den Dialogentw
 setzt Einrichtung/Undo zurück und ändert keine Ink-Blöcke auf Notizseiten.
 Die Bestätigungsknöpfe sind ebenfalls gezielte Touch-Ziele während Stift-Hover.
 Speichern ersetzt nur die ausgewählte Variante; maximal fünf ohne Verdrängen.
-Der Editor bleibt beim Speichern geöffnet und wählt die gespeicherte Variante;
+Der Editor bleibt beim Speichern geöffnet und wählt den nächsten leeren Entwurf,
+solange weniger als fünf Varianten gespeichert sind; bei fünf bleibt die gespeicherte
+Variante ausgewählt.
 „Gespeichert“ verhindert doppeltes Anhängen desselben Entwurfs. Beim Wechsel oder
 Zurückgehen werden leere gespeicherte Varianten entfernt; Zielindizes werden
 entsprechend angepasst. Leere neue Entwürfe bleiben ungespeichert, genau eine
