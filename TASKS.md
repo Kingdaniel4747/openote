@@ -1,6 +1,6 @@
 # Aufgaben
 
-Stand: 23.11.2026. Nur aktuelle Arbeit und bekannte Grenzen, keine Versionschronik.
+Stand: 25.11.2026. Nur aktuelle Arbeit und bekannte Grenzen, keine Versionschronik.
 
 ## Nächstes Release
 
@@ -51,9 +51,10 @@ Aktueller automatisierter Stand, keine grüne Gesamtsuite:
 
 | Bereich | Letzte Prüfung |
 |---|---|
+| Eigene Handschrift (Beta) und Lasso-Farbe/-Dicke | 37 gezielte Profil-/Workflow-/Zeichenwerkzeug-/Radierer-/Speichertests bestanden; App-Analyse sauber. Windows-Release-Build erfolgreich (Dart-Kern, lokal ohne Cargo). Persönliche Zeichenvarianten lokal speichern, Text erst mit vollständigen eigenen Zeichen erzeugen, als gewöhnliche Ink-Striche einfügen. Deutsche 400-Pixel-Ansichten in Hell/Dunkel bei 130 % Schrift geprüft; Stift schreibt ohne Dialogscrollen, Touch scrollt, A5-Zeilenbreite geprüft. Workflow mit echtem Stift noch vom Nutzer prüfen. Verbundene Schreibschrift und Lernen aus Notizen fehlen bewusst in der Beta. Drei alte `command_bar_compact_test.dart`-Erwartungen zum Einstellungsdialog scheitern auch mit unveränderter Toolbar aus HEAD |
 | Kalender: direkte Eingabe und Tagesübersicht | 119 gezielte Planer-/Erinnerungs-/Layouttests bestanden. Direkt rechts anlegen/bearbeiten, feste Tagesleiste mit „Alle anzeigen“, feste Speichern-/Abbrechen-Knöpfe, Farbpunkt und aktueller-Monat-Knopf. Entwürfe, vollständige Notizen, stabile Seitenziele, alte Uhrzeiten und Farbspeicherung geprüft. Betroffene Dart-Dateien ohne Analysebefund; Hell/Dunkel und 560-Pixel-Fenster mit 130 % Schrift gerendert und visuell geprüft. Geräteprüfung offen |
 | Einstellungen, Seitenlöschung, Touch-Menüs und dauerhafte Stiftauswahl | 79 gezielte Tests bestanden, zusätzlich deutscher Einstellungsdialog/Sprachwechsel bestanden. Danach nur Einstellungen neu gestaltet: Themenleiste ohne Haken, einheitliche Felder, direkte Designauswahl und erklärende Zeilen. Vier Layout-/Bedientests bei 400/540/1000 Pixel Breite, Hell/Dunkel, Deutsch/Englisch und 130 % Schrift sowie Sprachwechsel bestanden; Ansichten gerendert und visuell geprüft. Gezielte Analyse der vier Einstellungsdateien sauber. Bedienung am Gerät offen |
-| App, kompletter Dart-Quellbaum | Keine Fehler; bestehender Stilhinweis in `command_bar.dart:907`. Sieben geänderte PDF-/Lebenszyklus-Dateien separat ohne Befund geprüft |
+| App, kompletter Dart-Quellbaum | `flutter analyze --no-pub`: keine Probleme gefunden (25.11.2026) |
 | Notebook-Auswahl und Backup-Dialog | 17 gezielte UI-/Backup-/Lifecycle-Tests bestanden; Analyse der fünf betroffenen Dart-Dateien sauber. Helle/dunkle Ansichten gerendert und visuell geprüft |
 | Entfernte Befehle, Kalender, Text, Navigation, Anhänge | 157 gezielte Tests bestanden, vor den folgenden Importänderungen |
 | Fortschritt, Zielauswahl, Originalexport, Import-/Exportregressionen | 184 bestanden, 3 wegen fehlendem PDFium übersprungen |

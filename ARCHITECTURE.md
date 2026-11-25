@@ -52,6 +52,17 @@ Referenz für Schnittintervalle und Stabilisierung: [Xournal++](https://github.c
 Tests: `ink_eraser_test.dart`, `windows_pen_buttons_test.dart`,
 `drawing_regressions_test.dart`, `ink_storage_test.dart` und `ink_codec_test.dart`.
 
+Handschrift-Beta: `ui/handwriting_dialog.dart` erfasst Zeichen auf einem festen
+Schreibfeld mit Grundlinie; Stift/Maus schreiben, Touch scrollt den Dialog.
+`ink/handwriting_profile.dart` speichert Zeichenvarianten als Strichpfade und
+setzt Text mit Umbruch in seitenabsolute `Stroke`s um. Das lokale Profil liegt
+im Workspace-Setting `handwritingProfileBeta`, unabhängig von Notizbuchinhalten.
+Die Erzeugung berücksichtigt die Breite fester Papierseiten. `AppState.insertHandwriting`
+fügt gewöhnliche Ink-Blöcke ein; Radierer, Lasso und Speicherformat bleiben gemeinsam.
+Lasso-Formatierung ändert `brush.color`/`brush.size`, invalidiert gespeicherte
+Ink-Referenzen und erhöht die Cache-Revision auch bei schnellen Folgeänderungen.
+Tests: `handwriting_profile_test.dart` und `handwriting_beta_test.dart`.
+
 ## Navigation und Kontextmenüs
 
 `ui/inline_section_strip.dart` enthält die gemeinsame direkte Verschiebelogik

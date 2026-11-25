@@ -23,6 +23,7 @@ import 'object_row.dart';
 import 'onote_switch.dart';
 import 'settings_dialog.dart';
 import 'learning_access_dialog.dart';
+import 'handwriting_dialog.dart';
 import 'scanner_pairing_dialog.dart';
 import 'update_dialog.dart';
 import '../theme/tokens.dart';
@@ -277,6 +278,7 @@ class _CommandBarState extends State<CommandBar> {
         ),
         _PlannerButton(app: app),
         LearningAccessButton(app: app),
+        HandwritingButton(app: app),
         IconButton(
           icon: const Icon(Icons.settings_outlined, size: 18),
           tooltip: tr(context, 'Settings…'),
@@ -322,6 +324,7 @@ class _CommandBarState extends State<CommandBar> {
             ),
             _PlannerButton(app: app),
             LearningAccessButton(app: app),
+            HandwritingButton(app: app),
             IconButton(
               icon: const Icon(Icons.settings_outlined, size: 18),
               tooltip: tr(context, 'Settings…'),
@@ -903,8 +906,9 @@ class _CommandBarState extends State<CommandBar> {
       final width = eraser ? app.eraserSize : app.penSize;
       var closest = 0;
       for (var i = 1; i < sizes.length; i++) {
-        if ((sizes[i] - width).abs() < (sizes[closest] - width).abs())
+        if ((sizes[i] - width).abs() < (sizes[closest] - width).abs()) {
           closest = i;
+        }
       }
       final slider = SliderTheme(
         data: SliderTheme.of(context).copyWith(
@@ -1015,6 +1019,7 @@ class _CommandBarState extends State<CommandBar> {
                 ? const EdgeInsets.symmetric(vertical: 2)
                 : const EdgeInsets.symmetric(horizontal: 2),
             child: InkWell(
+              key: ValueKey('ink-preset-$i'),
               borderRadius: BorderRadius.circular(99),
               onSecondaryTapDown: (details) async {
                 final remove = await showMenu<bool>(

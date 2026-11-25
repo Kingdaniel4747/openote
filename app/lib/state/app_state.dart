@@ -28,6 +28,7 @@ import '../store/database.dart' show NotebookFileProblem, notebookFileProblem;
 import '../store/media_store.dart';
 import '../ink/ink_codec.dart';
 import '../ink/ink_storage.dart';
+import '../ink/handwriting_profile.dart';
 import '../editor/list_editing.dart';
 import '../markdown/md_syntax.dart';
 import '../update/app_update.dart';
@@ -1375,6 +1376,7 @@ class AppState extends ChangeNotifier
     _repo.setSetting('inkToolSizes', {
       for (final entry in _inkToolSizes.entries) entry.key.name: entry.value,
     });
+    _styleSelectedInk(size: size);
     notifyListeners();
   }
 
@@ -2011,21 +2013,73 @@ class AppState extends ChangeNotifier
   /// most of why you'd lasso a diagram at all. Resizing came free once blocks
   /// gained ink-scaling handles.
   void recolorSelectedInk(String hex) {
-    if (!hasInkSelection) return;
+    _styleSelectedInk(color: hex);
+  }
+
+  void _styleSelectedInk({String? color, double? size}) {
+    final targets = blocks
+        .where((b) =>
+            selectedIds.contains(b.id) &&
+            b.type == BlockType.ink &&
+            (b.content['strokes'] as List? ?? []).any((raw) =>
+                raw is Map &&
+                raw['brush'] is Map &&
+                (color != null && raw['brush']['color'] != color ||
+                    size != null && raw['brush']['size'] != size)))
+        .toList();
+    if (targets.isEmpty) return;
     pushUndo();
-    for (final b in blocks) {
-      if (!selectedIds.contains(b.id) || b.type != BlockType.ink) continue;
+    for (final b in targets) {
       final strokes = b.content['strokes'];
       if (strokes is! List) continue;
       for (final raw in strokes) {
-        if (raw is Map) raw['color'] = hex;
+        if (raw is Map && raw['brush'] is Map) {
+          final brush = Map<String, dynamic>.from(raw['brush'] as Map);
+          if (color != null) brush['color'] = color;
+          if (size != null) brush['size'] = size;
+          raw['brush'] = brush;
+        }
       }
       invalidateInkStorage(b);
-      b.updatedAt = nowMs();
+      b.updatedAt = math.max(nowMs(), b.updatedAt + 1);
     }
     markDirty();
     docRevision++;
     notifyListeners();
+  }
+
+  HandwritingProfile get handwritingProfile =>
+      HandwritingProfile.fromJson(_repo.getSetting('handwritingProfileBeta'));
+
+  void saveHandwritingProfile(HandwritingProfile profile) {
+    _repo.setSetting('handwritingProfileBeta', profile.toJson());
+  }
+
+  /// Generated handwriting enters exactly the same ink path as live writing.
+  Block? insertHandwriting(List<Stroke> strokes) {
+    if (pageId == null || isPageLocked(pageId!) || strokes.isEmpty) return null;
+    final left = strokes.map((s) => s.bounds().minX).reduce(math.min);
+    final top = strokes.map((s) => s.bounds().minY).reduce(math.min);
+    final right = strokes.map((s) => s.bounds().maxX).reduce(math.max);
+    final bottom = strokes.map((s) => s.bounds().maxY).reduce(math.max);
+    final block = addBlock(Block(
+        type: BlockType.ink,
+        x: left,
+        y: top,
+        w: math.max(1, right - left),
+        h: math.max(1, bottom - top),
+        content: {
+          'strokes': [for (final s in strokes) s.toJson()]
+        }));
+    // addBlock can snap/clamp the box. Ink positions are absolute.
+    final dx = block.x - left, dy = block.y - top;
+    for (final raw in block.content['strokes'] as List) {
+      raw['x'] = [for (final v in raw['x'] as List) (v as num) + dx];
+      raw['y'] = [for (final v in raw['y'] as List) (v as num) + dy];
+    }
+    updateBlock(block);
+    select(block.id);
+    return block;
   }
 
   /// Guides to draw while dragging (CANVAS-7), and the snap they imply.

@@ -334,6 +334,7 @@ class _PageCanvasState extends State<PageCanvas> {
               '${(color.b * 255).round().toRadixString(16).padLeft(2, '0')}'
           .toUpperCase();
       app.setCustomInkColor(hex);
+      app.recolorSelectedInk('#$hex');
       app.rememberCustomColor(hex);
     }
     app.setInkEyedropperActive(false);

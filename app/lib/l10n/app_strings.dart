@@ -34,6 +34,37 @@ class AppText extends StatelessWidget {
 }
 
 const german = <String, String>{
+  'My handwriting · Beta': 'Meine Handschrift · Beta',
+  '1. Learn handwriting': '1. Schrift einlernen',
+  '2. Write text': '2. Text schreiben',
+  'Write each character yourself with a pen or mouse. Keep the baseline and size consistent. Save several variants for more variety. Samples stay on this device.':
+      'Zeichne jedes Zeichen selbst mit Stift oder Maus. Achte auf die Grundlinie und eine einheitliche Größe. Speichere mehrere Varianten für mehr Abwechslung. Die Vorlagen bleiben auf diesem Gerät.',
+  'Character': 'Zeichen',
+  'variants': 'Varianten',
+  'Write between the upper guide and the baseline. Descenders go below the baseline. Touch is reserved for scrolling.':
+      'Schreibe zwischen oberer Hilfslinie und Grundlinie. Unterlängen reichen unter die Grundlinie. Mit dem Finger kannst du scrollen.',
+  'Undo stroke': 'Strich zurücknehmen',
+  'Save variant': 'Variante speichern',
+  'Save & next character': 'Speichern & nächstes Zeichen',
+  'Last saved variant': 'Zuletzt gespeicherte Variante',
+  'Remove last variant': 'Letzte Variante entfernen',
+  'characters learned': 'Zeichen eingelernt',
+  'Beta uses individual characters. Connected cursive and learning from existing notes will come later.':
+      'Die Beta setzt einzelne Zeichen zusammen. Verbundene Schreibschrift und das Lernen aus vorhandenen Notizen sind noch nicht enthalten.',
+  'First record your own characters in Learn handwriting. Text can only use characters you have saved.':
+      'Zeichne zuerst unter „Schrift einlernen“ deine eigenen Zeichen ein. Für den Text werden nur deine gespeicherten Zeichen verwendet.',
+  'Text to write': 'Text zum Umwandeln',
+  'Record these missing characters first. Tap a character to learn it:':
+      'Diese Zeichen fehlen noch. Tippe auf ein Zeichen, um es einzulernen:',
+  'Letter height': 'Schrifthöhe',
+  'Line width': 'Zeilenbreite',
+  'Word spacing': 'Wortabstand',
+  'Line spacing': 'Zeilenabstand',
+  'Insert as normal pen strokes, then erase, move or add your own writing. The saved samples remain unchanged.':
+      'Als normale Stiftstriche einfügen und anschließend radieren, verschieben oder selbst weiterschreiben. Deine gespeicherten Vorlagen bleiben erhalten.',
+  'Open an unlocked page to insert handwriting.':
+      'Öffne eine entsperrte Seite, um Handschrift einzufügen.',
+  'Insert pen strokes': 'Stiftstriche einfügen',
   'Only this page': 'Nur diese Seite',
   'Follows page changes': 'Folgt dem Seitenwechsel',
   'All unlocked pages': 'Alle ungesperrten Seiten',

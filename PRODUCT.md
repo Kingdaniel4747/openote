@@ -20,6 +20,15 @@ Der Android-Scanner ist eine Begleitapp, kein zweiter Notizeditor.
 
 ## Aktuelle Bedienung
 
+- „Meine Handschrift · Beta“ neben den Einstellungen: zuerst eigene Zeichen mit
+  Stift oder Maus einzeichnen und lokal speichern (bis zu fünf Varianten pro
+  Zeichen). Getippten Text erst nach Einlernen aller darin verwendeten Zeichen
+  erzeugen; fehlende Zeichen sind direkt anwählbar. Vorschau mit Schriftgröße,
+  Zeilenbreite, Wort-/Zeilenabstand; Einfügen als normale radierbare, verschiebbare
+  Stiftstriche mit Undo/Redo. Beta setzt Einzelzeichen zusammen, ohne verbundene
+  Schreibschrift oder automatisches Lernen aus Notizen. Geräte-Workflow noch prüfen.
+- Lasso-Auswahl: Farben einschließlich Farbmischer/Pipette und Strichdicke in
+  „Zeichnen“ ändern die ausgewählten Striche; nicht ausgewählte bleiben erhalten.
 - Kalender: Monatsraster und Tageszähler bleiben der Einstieg. Ein Datum öffnet
   direkt rechts eine Hausaufgabe ohne Datums-/Uhrzeitdialog. Aufgabe genügt,
   Notizen, Eintragsart, Farbe und Seitenverknüpfung sind optional. Enter speichert;
