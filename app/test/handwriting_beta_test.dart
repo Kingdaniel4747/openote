@@ -577,7 +577,9 @@ void main() {
     final profile = completedProfile();
     final generated =
         profile.generate('aa', origin: const Offset(100, 200), height: 64);
+    app.setTool(Tool.pen);
     final block = app.insertHandwriting(generated)!;
+    expect(app.tool, Tool.select);
     expect(block.type, BlockType.ink);
     expect(app.selectedIds, contains(block.id));
     final first = Stroke.fromJson(Map<String, dynamic>.from(

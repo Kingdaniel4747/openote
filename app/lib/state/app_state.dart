@@ -2078,6 +2078,7 @@ class AppState extends ChangeNotifier
       raw['y'] = [for (final v in raw['y'] as List) (v as num) + dy];
     }
     updateBlock(block);
+    setTool(Tool.select);
     select(block.id);
     return block;
   }
