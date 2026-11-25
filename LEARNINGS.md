@@ -70,6 +70,12 @@ Nur Erkenntnisse behalten, die künftige Fehler verhindern. Keine Sitzungsprotok
   Tipp auf „Weiter“. Sichtbarkeit vor dem Hit-Test prüfen, beim Dialogabbau abmelden;
   aktive Stiftkontakte, große und bereits aufliegende Hände weiter ausschließen.
   Solche Abläufe mit `WritingTouchBinding` testen, nicht nur mit normalen Widget-Taps.
+- Ein dauerhaft gesetzter Pad-Pointer oder Stiftkontakt im Handballenschutz kann
+  nach verlorenem Pen-up Schreiben und Knöpfe blockieren. Beide Ebenen bereinigen:
+  neue Kontakte/Hover je Gerät, globale End-/Removed-Ereignisse und Fokusverlust.
+  Entwurfsstriche behalten, explizites Cancel zurückrollen; Observer/Pointer-Routen
+  beim Abbau entfernen und verspätete Meldungen ignorieren. Kein Zeitlimit setzen,
+  das einen echten, nur kurz pausierten Strich abschneidet.
 - Planer-Seiten-IDs gehören zu einem Notebook: vor `selectPage` das Ziel dort
   prüfen und gegebenenfalls das Notebook wechseln. Die Sektion aus der Seite
   ableiten; beim Bearbeiten niemals die Ziel-Notebook-ID durch die aktuelle ersetzen.

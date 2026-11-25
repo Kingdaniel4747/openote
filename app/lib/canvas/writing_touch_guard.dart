@@ -46,7 +46,7 @@ class WritingTouchGuard {
   final _candidates = <int, _TouchCandidate>{};
   final _rejected = <int>{};
   final _navigation = <int>{};
-  final _penContacts = <int>{};
+  final _penContacts = <int, int>{}; // pointer -> physical device
   final _tapTimers = <Timer>{};
   final _controlTargets = <Object, bool Function(PointerDownEvent)>{};
   bool _nativeInRange = false;
@@ -195,7 +195,14 @@ class WritingTouchGuard {
       final approaching = !_recentPen;
       _lastPen = _now();
       if (approaching || event is PointerDownEvent) _rejectExisting();
-      if (event is PointerDownEvent) _penContacts.add(event.pointer);
+      if (event is PointerDownEvent || event is PointerHoverEvent) {
+        // One device has one tip. A fresh Down supersedes a lost Up, and
+        // Hover proves that this device is no longer touching the surface.
+        _penContacts.removeWhere((_, device) => device == event.device);
+        if (event is PointerDownEvent) {
+          _penContacts[event.pointer] = event.device;
+        }
+      }
       if (event is PointerUpEvent ||
           event is PointerCancelEvent ||
           event is PointerRemovedEvent) {

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' show ViewFocusEvent, ViewFocusState, ViewFocusDirection;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -100,6 +101,10 @@ void main() {
     final region = find.descendant(
         of: find.byType(HandwritingPad), matching: find.byType(MouseRegion));
     expect(t.widget<MouseRegion>(region).cursor, SystemMouseCursors.none);
+    expect(key.currentState!.strokes.single.tool, 'ballpoint');
+    expect(key.currentState!.strokes.single.size, 2.5);
+    expect(original.tool, 'pen',
+        reason: 'loading does not mutate the saved input');
     expect(
         find.byWidgetPredicate(
             (w) => w is CustomPaint && w.painter is HandwritingSamplePainter),
@@ -171,5 +176,139 @@ void main() {
     expect(key.currentState!.strokes.single.x, [20, 200]);
     expect(key.currentState!.drawing, isFalse);
     await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('learning records one fixed width regardless of stylus pressure',
+      (t) async {
+    final key = GlobalKey<HandwritingPadState>();
+    await t.pumpWidget(host(key));
+    await t.pump();
+    final at = t.getCenter(find.byKey(const ValueKey('handwriting-pad')));
+    await t.sendEventToBinding(PointerDownEvent(
+        pointer: 99,
+        kind: PointerDeviceKind.stylus,
+        buttons: kPrimaryButton,
+        position: at,
+        pressure: .1));
+    await t.sendEventToBinding(PointerMoveEvent(
+        pointer: 99,
+        kind: PointerDeviceKind.stylus,
+        buttons: kPrimaryButton,
+        position: at + const Offset(20, 20),
+        pressure: .9));
+    await t.sendEventToBinding(PointerUpEvent(
+        pointer: 99,
+        kind: PointerDeviceKind.stylus,
+        position: at + const Offset(20, 20),
+        pressure: 0));
+    await t.pump();
+    final stroke = key.currentState!.strokes.single;
+    expect(stroke.p, everyElement(.5));
+    expect(stroke.tool, 'ballpoint');
+    expect(stroke.size, 2.5);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('a missing release cannot block the next writing contact',
+      (t) async {
+    final key = GlobalKey<HandwritingPadState>();
+    await t.pumpWidget(host(key));
+    await t.pump();
+    final at = t.getCenter(find.byKey(const ValueKey('handwriting-pad')));
+    final interrupted =
+        await t.startGesture(at, pointer: 91, kind: PointerDeviceKind.stylus);
+    await interrupted.moveBy(const Offset(20, 20));
+    final next = await t.startGesture(at - const Offset(40, 20),
+        pointer: 92, kind: PointerDeviceKind.stylus);
+    await next.moveBy(const Offset(20, 10));
+    await next.up();
+    await t.pump();
+    expect(key.currentState!.drawing, isFalse);
+    expect(key.currentState!.strokes, hasLength(2));
+    await interrupted.cancel();
+    await t.pump();
+    expect(key.currentState!.strokes, hasLength(2));
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets(
+      'a removed pen ends its unfinished stroke without reopening the dialog',
+      (t) async {
+    final key = GlobalKey<HandwritingPadState>();
+    await t.pumpWidget(host(key));
+    await t.pump();
+    final at = t.getCenter(find.byKey(const ValueKey('handwriting-pad')));
+    final pen =
+        await t.startGesture(at, pointer: 91, kind: PointerDeviceKind.stylus);
+    await pen.moveBy(const Offset(20, 10));
+    await t.sendEventToBinding(PointerRemovedEvent(
+        pointer: 91, kind: PointerDeviceKind.stylus, position: at));
+    await t.pump();
+    expect(key.currentState!.drawing, isFalse);
+    expect(key.currentState!.strokes, hasLength(1));
+    await pen.cancel();
+    await t.pumpWidget(const SizedBox());
+  });
+
+  for (final interrupt in ['focus', 'inactive', 'reload', 'hover']) {
+    testWidgets('$interrupt ends an unfinished stroke and writing can continue',
+        (t) async {
+      final key = GlobalKey<HandwritingPadState>();
+      await t.pumpWidget(host(key));
+      await t.pump();
+      final at = t.getCenter(find.byKey(const ValueKey('handwriting-pad')));
+      final pen =
+          await t.startGesture(at, pointer: 91, kind: PointerDeviceKind.stylus);
+      await pen.moveBy(const Offset(20, 10));
+      switch (interrupt) {
+        case 'focus':
+          t.binding.handleViewFocusChanged(ViewFocusEvent(
+              viewId: t.view.viewId,
+              state: ViewFocusState.unfocused,
+              direction: ViewFocusDirection.undefined));
+        case 'inactive':
+          t.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+        case 'reload':
+          final reassemble = t.binding.reassembleApplication();
+          await t.pump();
+          await reassemble;
+        case 'hover':
+          // Recover on the global route even after the hit-test stream was lost.
+          t.binding.pointerRouter.route(PointerHoverEvent(
+              pointer: 91, kind: PointerDeviceKind.stylus, position: at));
+      }
+      await t.pump();
+      expect(key.currentState!.drawing, isFalse);
+      expect(key.currentState!.strokes, hasLength(1));
+      t.binding.handleViewFocusChanged(ViewFocusEvent(
+          viewId: t.view.viewId,
+          state: ViewFocusState.focused,
+          direction: ViewFocusDirection.undefined));
+      t.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await pen.up();
+      final next =
+          await t.startGesture(at, pointer: 92, kind: PointerDeviceKind.stylus);
+      await next.moveBy(const Offset(20, 10));
+      await next.up();
+      await t.pump();
+      expect(key.currentState!.strokes, hasLength(2));
+      expect(key.currentState!.drawing, isFalse);
+      await t.pumpWidget(const SizedBox());
+    });
+  }
+
+  testWidgets('closing the pad during writing ignores a late release',
+      (t) async {
+    final key = GlobalKey<HandwritingPadState>();
+    await t.pumpWidget(host(key));
+    await t.pump();
+    final pen = await t.startGesture(
+        t.getCenter(find.byKey(const ValueKey('handwriting-pad'))),
+        kind: PointerDeviceKind.stylus);
+    await pen.moveBy(const Offset(10, 10));
+    await t.pumpWidget(const SizedBox());
+    await pen.up();
+    await t.pump();
+    expect(t.takeException(), isNull);
   });
 }

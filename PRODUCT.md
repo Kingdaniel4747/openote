@@ -32,6 +32,11 @@ Der Android-Scanner ist eine Begleitapp, kein zweiter Notizeditor.
   gleich. Unter dem Feld steht nur ein mittiger Kreis-Pfeil zum Leeren und
   Neuschreiben; Werkzeugauswahl, Undo-Stroke und doppelter Retry-Knopf entfallen.
   Beim Hover ist der Cursor unsichtbar, die Stifttaste radiert weiterhin.
+  Einlernen und Bearbeiten verwenden stets die feste mittlere Dicke 2,5 ohne
+  Druckempfindlichkeit, auch für ältere Vorlagen. Erzeugte Handschrift bleibt
+  druckunabhängig; ihre Dicke lässt sich weiterhin nachträglich ändern.
+  Verlorene Stift-Endmeldungen, Geräteentfernung, Fokusverlust und Hot Reload
+  schließen den offenen Entwurfskontakt ab, statt das Schreibfeld zu blockieren.
   „Schrift bearbeiten“ zeigt alle Zeichen mit eigener Schrift und Größenbeispiel;
   je Zeichen sind die bis zu fünf Varianten nebeneinander auswählbar. Gezielt
   ersetzen oder hinzufügen, ohne die Zeichenansicht nach dem Speichern zu verlassen.

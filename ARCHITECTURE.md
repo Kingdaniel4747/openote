@@ -63,6 +63,17 @@ sperrt auch die Erzeugung selbst, solange Pflichtzeichen fehlen. Nach Abschluss
 Darstellung für Schreibfeld, Zeichenübersicht und Variantenauswahl. Die blasse
 Inter-Vorlage sitzt auf der festen Grundlinie und wird nie als Strich gespeichert.
 Die Stifttaste nutzt `WindowsPenButtons`, Radieren den vorhandenen `eraseStroke`.
+Aufnahme und Profilansicht verwenden `ballpoint` mit `sampleSize = 2.5`; neue
+Punkte speichern konstanten Druck 0,5. `fixedSample` vereinheitlicht die Darstellung
+alter Vorlagen bei erhaltener Geometrie und Sensormetadaten. Der Generator schreibt
+ebenfalls druckunabhängige Ballpoint-Striche mit der gewählten Ausgabedicke.
+Das Schreibfeld beobachtet globale Pointer-End-/Hover-/Removed-Meldungen und
+Fenster-/App-Fokus. Frische Kontakte beenden einen unvollständigen Vorgänger;
+Aufgezeichnetes bleibt im Entwurf, explizites Cancel stellt den Vorzustand wieder her.
+Beim Abbau werden Pointer-Route und Observer entfernt und späte Endmeldungen ignoriert.
+Der Handballenschutz verfolgt Stiftkontakte je physischem Gerät: neuer Down oder
+Hover bereinigt verlorene Endmeldungen desselben Geräts, ohne fremde Stifte oder
+bereits abgewiesene Handkontakte freizugeben.
 Das sichtbare Schreibfeld ist 160 Pixel breit; das gespeicherte 220×160-System
 und `letterHeight` bleiben unverändert. Die proportional kleinere Vorlage und
 Pointer-Abbildung ändern damit weder vorhandene Proben noch die Ausgabegröße.

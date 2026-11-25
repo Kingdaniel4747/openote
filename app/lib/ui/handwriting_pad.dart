@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show ViewFocusEvent, ViewFocusState;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -27,7 +28,8 @@ class HandwritingPad extends StatefulWidget {
   State<HandwritingPad> createState() => HandwritingPadState();
 }
 
-class HandwritingPadState extends State<HandwritingPad> {
+class HandwritingPadState extends State<HandwritingPad>
+    with WidgetsBindingObserver {
   final strokes = <Stroke>[];
   final _undo = <List<Stroke>>[];
   final _pen = WindowsPenButtons();
@@ -41,13 +43,15 @@ class HandwritingPadState extends State<HandwritingPad> {
   bool get canUndo => _undo.isNotEmpty && !drawing;
 
   List<Stroke> _copy(List<Stroke> source) => [
-        for (final s in source) Stroke.fromJson(s.toJson()),
+        for (final s in source) HandwritingProfile.fixedSample(s),
       ];
 
   @override
   void initState() {
     super.initState();
     strokes.addAll(_copy(widget.initialStrokes));
+    WidgetsBinding.instance.addObserver(this);
+    GestureBinding.instance.pointerRouter.addGlobalRoute(_observePointer);
     unawaited(_pen.attach());
   }
 
@@ -69,6 +73,11 @@ class HandwritingPadState extends State<HandwritingPad> {
 
   @override
   void dispose() {
+    _pointer = null;
+    _before = null;
+    _wet = null;
+    GestureBinding.instance.pointerRouter.removeGlobalRoute(_observePointer);
+    WidgetsBinding.instance.removeObserver(this);
     _pen.dispose();
     super.dispose();
   }
@@ -102,15 +111,73 @@ class HandwritingPadState extends State<HandwritingPad> {
   void _append(PointerEvent e, Offset at) {
     _wet!.x.add(at.dx);
     _wet!.y.add(at.dy);
-    _wet!.p.add(e.kind == PointerDeviceKind.stylus && e.pressure > 0
-        ? e.pressure.clamp(.05, 1)
-        : .5);
+    _wet!.p.add(.5);
     _wet!.t.add(e.timeStamp.inMilliseconds - _started);
   }
 
   void _finishWet() {
     if (_wet != null) strokes.add(_wet!);
     _wet = null;
+  }
+
+  void _commitContact() {
+    _finishWet();
+    if (_before != null) _undo.add(_before!);
+    _before = null;
+    _pointer = null;
+    _last = null;
+    _erasePoint = null;
+  }
+
+  void _cancelContact() {
+    strokes
+      ..clear()
+      ..addAll(_before!);
+    _before = null;
+    _wet = null;
+    _pointer = null;
+    _last = null;
+    _erasePoint = null;
+  }
+
+  void _interruptContact() {
+    if (!mounted || !drawing) return;
+    setState(_commitContact);
+    widget.onChanged();
+  }
+
+  // Listener does not receive device removal or a release whose hit-test
+  // route was lost. Keep the last recorded points and unblock the controls.
+  void _observePointer(PointerEvent event) {
+    if (!mounted || event.pointer != _pointer) return;
+    if (event is PointerCancelEvent) {
+      setState(_cancelContact);
+      widget.onChanged();
+    } else if (event is PointerRemovedEvent ||
+        event is PointerUpEvent ||
+        event is PointerHoverEvent && (event.buttons & kPrimaryButton) == 0) {
+      _interruptContact();
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) _interruptContact();
+  }
+
+  @override
+  void didChangeViewFocus(ViewFocusEvent event) {
+    if (mounted &&
+        event.viewId == View.of(context).viewId &&
+        event.state == ViewFocusState.unfocused) {
+      _interruptContact();
+    }
+  }
+
+  @override
+  void reassemble() {
+    super.reassemble();
+    _interruptContact();
   }
 
   void _update(PointerEvent e, Size size) {
@@ -134,7 +201,11 @@ class HandwritingPadState extends State<HandwritingPad> {
     } else {
       if (_wet == null) {
         _started = e.timeStamp.inMilliseconds;
-        _wet = Stroke(tool: 'pen', colorHex: 'auto', size: 2.5, strokeStart: 0);
+        _wet = Stroke(
+            tool: 'ballpoint',
+            colorHex: 'auto',
+            size: HandwritingProfile.sampleSize,
+            strokeStart: 0);
       }
       _append(e, at);
       _erasePoint = null;
@@ -154,14 +225,16 @@ class HandwritingPadState extends State<HandwritingPad> {
               key: const ValueKey('handwriting-pad'),
               behavior: HitTestBehavior.opaque,
               onPointerDown: (e) {
-                if (drawing ||
-                    e.kind == PointerDeviceKind.touch ||
+                if (e.kind == PointerDeviceKind.touch ||
                     (e.buttons & kPrimaryButton) == 0 &&
                         !widget.eraser &&
                         !_pen.erases(e)) {
                   return;
                 }
+                if (drawing && e.pointer == _pointer) return;
                 setState(() {
+                  // A fresh contact must recover from a missing previous Up.
+                  if (drawing) _commitContact();
                   _before = _copy(strokes);
                   _pointer = e.pointer;
                   _erasing = widget.eraser || _pen.erases(e);
@@ -177,25 +250,13 @@ class HandwritingPadState extends State<HandwritingPad> {
                 if (_pointer != e.pointer) return;
                 setState(() {
                   _update(e, size);
-                  _finishWet();
-                  _undo.add(_before!);
-                  _before = null;
-                  _pointer = null;
-                  _erasePoint = null;
+                  _commitContact();
                 });
                 widget.onChanged();
               },
               onPointerCancel: (e) {
                 if (_pointer != e.pointer) return;
-                setState(() {
-                  strokes
-                    ..clear()
-                    ..addAll(_before!);
-                  _before = null;
-                  _wet = null;
-                  _pointer = null;
-                  _erasePoint = null;
-                });
+                setState(_cancelContact);
                 widget.onChanged();
               },
               child: DecoratedBox(

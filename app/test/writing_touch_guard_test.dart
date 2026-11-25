@@ -225,6 +225,60 @@ void main() {
           delivered.where((e) => e.kind == PointerDeviceKind.touch), isEmpty);
     });
 
+    test(
+        'a new contact recovers a lost pen release without admitting the old palm',
+        () {
+      guard.registerControlTarget(guard, (_) => true);
+      down(1);
+      penDown();
+      guard.handle(
+          const PointerDownEvent(pointer: 100, kind: PointerDeviceKind.stylus));
+      guard.handle(
+          const PointerUpEvent(pointer: 100, kind: PointerDeviceKind.stylus));
+      up(1);
+      delivered.clear();
+      down(2);
+      up(2);
+      expect(delivered.map((e) => e.pointer), [2, 2]);
+    });
+
+    test('hover after a missing pen-up permits a fresh control tap', () {
+      guard.registerControlTarget(guard, (_) => true);
+      penDown();
+      guard.handle(
+          const PointerHoverEvent(pointer: 99, kind: PointerDeviceKind.stylus));
+      delivered.clear();
+      down(1);
+      up(1);
+      expect(delivered.map((e) => e.runtimeType),
+          [PointerDownEvent, PointerUpEvent]);
+    });
+
+    test('another pen device cannot release an active contact', () {
+      guard.registerControlTarget(guard, (_) => true);
+      penDown();
+      guard.handle(const PointerHoverEvent(
+          pointer: 100, device: 2, kind: PointerDeviceKind.stylus));
+      down(1);
+      up(1);
+      guard.handle(const PointerDownEvent(
+          pointer: 100, device: 2, kind: PointerDeviceKind.stylus));
+      guard.handle(const PointerUpEvent(
+          pointer: 100, device: 2, kind: PointerDeviceKind.stylus));
+      down(2);
+      up(2);
+      expect(
+          delivered.where((e) => e.kind == PointerDeviceKind.touch), isEmpty);
+      penUp();
+      down(3);
+      up(3);
+      expect(
+          delivered
+              .where((e) => e.kind == PointerDeviceKind.touch)
+              .map((e) => e.pointer),
+          [3, 3]);
+    });
+
     test('native focus/range loss cannot leave touch permanently suppressed',
         () {
       guard.setPenInRange(true);

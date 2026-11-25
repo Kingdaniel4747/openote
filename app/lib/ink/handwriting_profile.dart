@@ -15,7 +15,18 @@ class HandwritingProfile {
   static const boxHeight = 160.0;
   static const baseline = 112.0;
   static const letterHeight = 64.0;
+  static const sampleSize = 2.5;
   final Map<String, List<List<Stroke>>> samples;
+
+  /// Legacy samples retain their geometry and sensor metadata, but previews
+  /// and editing use the same constant-width brush as newly recorded samples.
+  static Stroke fixedSample(Stroke source) {
+    final json = source.toJson();
+    final brush = json['brush'] as Map;
+    brush['tool'] = 'ballpoint';
+    brush['size'] = sampleSize;
+    return Stroke.fromJson(json);
+  }
 
   List<String> get pendingCharacters => [
         for (final rune in characters.runes)
@@ -80,7 +91,7 @@ class HandwritingProfile {
       return false;
     }
     final copy = [
-      for (final stroke in strokes) Stroke.fromJson(stroke.toJson()),
+      for (final stroke in strokes) fixedSample(stroke),
     ];
     if (index == null) {
       variants.add(copy);
@@ -174,13 +185,13 @@ class HandwritingProfile {
         if (x > 0 && x + advance > width) newline();
         for (final source in strokes) {
           result.add(Stroke(
-            tool: 'pen',
+            tool: 'ballpoint',
             colorHex: color,
             size: size,
             strokeStart: 0,
             x: [for (final v in source.x) origin.dx + x + (v - left) * scale],
             y: [for (final v in source.y) origin.dy + y + v * scale],
-            p: List.of(source.p),
+            p: List.filled(source.x.length, .5),
             tx: List.of(source.tx),
             ty: List.of(source.ty),
             t: List.of(source.t),

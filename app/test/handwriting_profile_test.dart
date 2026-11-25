@@ -40,7 +40,7 @@ void main() {
     complete(profile);
     expect(profile.isComplete, isTrue);
     expect(() => profile.generate('é'), throwsStateError);
-    expect(profile.generate('a').single.tool, 'pen');
+    expect(profile.generate('a').single.tool, 'ballpoint');
   });
 
   test('variants survive JSON and retain pen data without sharing arrays', () {
@@ -55,7 +55,10 @@ void main() {
         origin: const Offset(100, 200), height: 32, color: '#FF0000', size: 6);
     expect(generated[0].x, [100, 120]);
     expect(generated[0].y, [224, 256]);
-    expect(generated[0].p, [.3, .7]);
+    expect(generated[0].p, [.5, .5]);
+    expect(restored.samples['ä']!.single.single.p, [.3, .7],
+        reason:
+            'legacy sensor data survives even though it no longer varies width');
     expect(generated[0].tx, [.1, .2]);
     expect(generated[0].t, [0, 40]);
     expect(generated[0].colorHex, '#FF0000');
