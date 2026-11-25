@@ -122,4 +122,25 @@ void main() {
     expect(profile.samples.keys, ['a']);
     expect(profile.samples['a'], hasLength(1));
   });
+
+  test('chosen variants can be replaced and removed without evicting others',
+      () {
+    final profile = HandwritingProfile();
+    for (var i = 0; i < 5; i++) {
+      expect(profile.saveVariant('a', [sample(y: 50.0 + i)]), isTrue);
+    }
+    final ids = profile.samples['a']!.map((v) => v.single.id).toList();
+    expect(profile.saveVariant('a', [sample(y: 90)]), isFalse);
+    expect(profile.samples['a']!.map((v) => v.single.id), ids);
+    expect(profile.saveVariant('a', [sample(y: 80)], index: 1), isTrue);
+    expect(profile.samples['a']![0].single.id, ids[0]);
+    expect(profile.samples['a']![2].single.id, ids[2]);
+    expect(profile.samples['a']![1].single.y.first, 80);
+    profile.removeVariant('a', 3);
+    final restored =
+        HandwritingProfile.fromJson(jsonDecode(jsonEncode(profile.toJson())));
+    expect(restored.samples['a'], hasLength(4));
+    expect(restored.samples['a']!.last.single.id, ids[4]);
+    expect(restored.samples['a']![1].single.y.first, 80);
+  });
 }

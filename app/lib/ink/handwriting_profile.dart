@@ -59,6 +59,11 @@ class HandwritingProfile {
       };
 
   void addSample(String character, List<Stroke> strokes) {
+    saveVariant(character, strokes);
+  }
+
+  /// Replacing one chosen variant must not silently evict another variant.
+  bool saveVariant(String character, List<Stroke> strokes, {int? index}) {
     if (character.runes.length != 1 ||
         character.trim().isEmpty ||
         strokes.isEmpty ||
@@ -67,13 +72,30 @@ class HandwritingProfile {
             s.x.length != s.y.length ||
             s.x.any((v) => !v.isFinite || v < 0 || v > boxWidth) ||
             s.y.any((v) => !v.isFinite || v < 0 || v > boxHeight))) {
-      return;
+      return false;
     }
-    final variants = samples.putIfAbsent(character, () => []);
-    if (variants.length >= 5) variants.removeAt(0);
-    variants.add([
+    final variants = samples[character] ?? [];
+    if (index != null && (index < 0 || index >= variants.length) ||
+        index == null && variants.length >= 5) {
+      return false;
+    }
+    final copy = [
       for (final stroke in strokes) Stroke.fromJson(stroke.toJson()),
-    ]);
+    ];
+    if (index == null) {
+      variants.add(copy);
+    } else {
+      variants[index] = copy;
+    }
+    samples[character] = variants;
+    return true;
+  }
+
+  void removeVariant(String character, int index) {
+    final variants = samples[character];
+    if (variants == null || index < 0 || index >= variants.length) return;
+    variants.removeAt(index);
+    if (variants.isEmpty) samples.remove(character);
   }
 
   Set<String> missing(String text) => {

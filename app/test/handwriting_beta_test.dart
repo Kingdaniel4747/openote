@@ -16,6 +16,7 @@ import 'package:openote/store/repository.dart';
 import 'package:openote/theme/onote_theme.dart';
 import 'package:openote/ui/command_bar.dart';
 import 'package:openote/ui/handwriting_dialog.dart';
+import 'package:openote/ui/handwriting_pad.dart';
 
 import 'support/sqlite.dart';
 
@@ -101,6 +102,116 @@ void main() {
     }
     return profile;
   }
+
+  Future<void> shot(WidgetTester t, GlobalKey key, String name) async {
+    if (Platform.environment['OPENOTE_BETA_SHOTS'] != '1') return;
+    await t.runAsync(() async {
+      final boundary =
+          key.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+      final image = await boundary.toImage();
+      final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+      await File('build/$name.png').writeAsBytes(bytes!.buffer.asUint8List());
+      image.dispose();
+    });
+  }
+
+  testWidgets(
+      'overview shows all characters; selected variants replace, delete and add without shifting other samples',
+      (t) async {
+    activeTester = t;
+    if (!sqlite) return markTestSkipped('sqlite unavailable');
+    t.view.physicalSize = const Size(1100, 950);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.resetPhysicalSize);
+    addTearDown(t.view.resetDevicePixelRatio);
+    final profile = completedProfile();
+    for (var i = 0; i < 4; i++) {
+      profile.addSample('a', [
+        Stroke(
+            tool: 'pen',
+            colorHex: 'auto',
+            size: 2.5,
+            x: [40, 160],
+            y: [60.0 + i * 8, 112])
+      ]);
+    }
+    final originalIds = profile.samples['a']!.map((v) => v.single.id).toList();
+    app.saveHandwritingProfile(profile);
+    app.cancelPendingSave();
+    final boundaryKey = GlobalKey();
+    await t.pumpWidget(MaterialApp(
+        theme: onoteTheme(Brightness.light),
+        home: RepaintBoundary(
+            key: boundaryKey,
+            child: Scaffold(body: HandwritingDialog(app: app)))));
+    await settle(t);
+    await t.tap(find.text('Edit handwriting'));
+    await settle(t);
+    for (final rune in HandwritingProfile.characters.runes) {
+      expect(
+          find.byKey(ValueKey('handwriting-tile-${String.fromCharCode(rune)}')),
+          findsOneWidget);
+    }
+    expect(find.byType(DropdownButtonFormField<String>), findsNothing);
+    await shot(t, boundaryKey, 'handwriting-overview');
+    await t.tap(find.byKey(const ValueKey('handwriting-tile-a')));
+    await settle(t);
+    for (var i = 0; i < 5; i++) {
+      expect(find.byKey(ValueKey('handwriting-variant-$i')), findsOneWidget);
+    }
+    expect(find.byKey(const ValueKey('handwriting-new-variant')), findsNothing);
+    await shot(t, boundaryKey, 'handwriting-variants');
+    await t.tap(find.byKey(const ValueKey('handwriting-variant-3')));
+    await t.pump();
+    final pad = t.state<HandwritingPadState>(find.byType(HandwritingPad));
+    expect(pad.strokes.single.id, originalIds[3]);
+    await t.tap(find.byKey(const ValueKey('handwriting-retry')));
+    await t.pump();
+    expect(pad.strokes, isEmpty);
+    expect(app.handwritingProfile.samples['a']![3].single.id, originalIds[3],
+        reason: 'Retry only clears the draft until Save');
+    final rect = t.getRect(find.byKey(const ValueKey('handwriting-pad')));
+    final pen =
+        await t.startGesture(rect.center, kind: PointerDeviceKind.stylus);
+    await pen.moveBy(const Offset(30, 20));
+    await pen.up();
+    await t.pump();
+    await t.tap(find.byKey(const ValueKey('handwriting-save-next')));
+    await settle(t);
+    final replaced = app.handwritingProfile.samples['a']!;
+    expect(replaced, hasLength(5));
+    expect(replaced[3].single.id, isNot(originalIds[3]));
+    expect(replaced[0].single.id, originalIds[0]);
+    expect(replaced[4].single.id, originalIds[4]);
+    expect(find.byKey(const ValueKey('handwriting-tile-a')), findsOneWidget);
+    await t.tap(find.byKey(const ValueKey('handwriting-tile-a')));
+    await settle(t);
+    await t.tap(find.byKey(const ValueKey('handwriting-variant-1')));
+    await t.pump();
+    await t.tap(find.byKey(const ValueKey('handwriting-delete-variant')));
+    await settle(t);
+    expect(app.handwritingProfile.samples['a'], hasLength(4));
+    expect(app.handwritingProfile.samples['a']![1].single.id, originalIds[2]);
+    expect(
+        find.byKey(const ValueKey('handwriting-new-variant')), findsOneWidget);
+    await t.tap(find.byKey(const ValueKey('handwriting-new-variant')));
+    await t.pump();
+    expect(t.state<HandwritingPadState>(find.byType(HandwritingPad)).strokes,
+        isEmpty);
+    final newRect = t.getRect(find.byKey(const ValueKey('handwriting-pad')));
+    final newPen =
+        await t.startGesture(newRect.center, kind: PointerDeviceKind.stylus);
+    await newPen.moveBy(const Offset(25, 20));
+    await newPen.up();
+    await t.pump();
+    await t.tap(find.byKey(const ValueKey('handwriting-save-next')));
+    await settle(t);
+    expect(app.handwritingProfile.samples['a'], hasLength(5));
+    expect(
+        app.handwritingProfile.samples['a']!.first.single.id, originalIds[0]);
+    expect(app.handwritingProfile.samples['a']![3].single.id, originalIds[4]);
+    await t.pumpWidget(const SizedBox());
+  });
 
   test('profile persists across reopening the workspace', () async {
     if (!sqlite) return markTestSkipped('sqlite unavailable');
@@ -361,19 +472,85 @@ void main() {
         isNotNull);
     await t.tap(find.text('Edit handwriting'));
     await settle(t);
-    await t.ensureVisible(find.byTooltip('Saved variants'));
-    await t.tap(find.byTooltip('Saved variants'));
+    expect(find.byKey(const ValueKey('handwriting-tile-a')), findsOneWidget);
+    expect(find.byType(DropdownButtonFormField<String>), findsNothing);
+    await t.tap(find.byKey(const ValueKey('handwriting-tile-a')));
     await settle(t);
-    await t.tap(find.text('Remove last variant'));
+    await t.ensureVisible(
+        find.byKey(const ValueKey('handwriting-delete-variant')));
+    await t.tap(find.byKey(const ValueKey('handwriting-delete-variant')));
     await settle(t);
     expect(app.handwritingProfile.isComplete, isFalse);
     expect(find.text('Back to text'), findsNothing);
     expect(find.byKey(const ValueKey('handwriting-insert')), findsNothing);
     expect(find.byKey(const ValueKey('handwriting-save-next')), findsOneWidget);
+    await t.tap(find.byKey(const ValueKey('handwriting-back-overview')));
+    await settle(t);
+    expect(find.text('Continue setup'), findsOneWidget);
     await t.pumpWidget(const SizedBox());
   });
 
   for (final dark in [false, true]) {
+    testWidgets(
+        'character overview and five variants fit narrow ${dark ? 'dark' : 'light'} window',
+        (t) async {
+      activeTester = t;
+      if (!sqlite) return markTestSkipped('sqlite unavailable');
+      t.view.physicalSize = const Size(400, 760);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.resetPhysicalSize);
+      addTearDown(t.view.resetDevicePixelRatio);
+      final profile = completedProfile();
+      for (var i = 0; i < 4; i++) {
+        profile.addSample('a', [sample(30.0 + i * 12)]);
+      }
+      app.saveHandwritingProfile(profile);
+      app.cancelPendingSave();
+      final boundaryKey = GlobalKey();
+      await t.pumpWidget(MaterialApp(
+          theme: onoteTheme(dark ? Brightness.dark : Brightness.light),
+          locale: const Locale('de'),
+          supportedLocales: const [Locale('de')],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
+          home: MediaQuery(
+              data: const MediaQueryData(
+                  size: Size(400, 760), textScaler: TextScaler.linear(1.3)),
+              child: RepaintBoundary(
+                  key: boundaryKey,
+                  child: Scaffold(body: HandwritingDialog(app: app))))));
+      await settle(t);
+      await t.tap(find.text('Schrift bearbeiten'));
+      await settle(t);
+      expect(t.takeException(), isNull);
+      await t.tap(find.byKey(const ValueKey('handwriting-tile-a')));
+      await settle(t);
+      expect(t.takeException(), isNull);
+      await shot(t, boundaryKey, 'handwriting-edit-${dark ? 'dark' : 'light'}');
+      for (var i = 0; i < 5; i++) {
+        expect(find.byKey(ValueKey('handwriting-variant-$i')), findsOneWidget);
+      }
+      await t
+          .ensureVisible(find.byKey(const ValueKey('handwriting-variant-4')));
+      await t.tap(find.byKey(const ValueKey('handwriting-variant-4')));
+      await settle(t);
+      expect(
+          t
+              .state<HandwritingPadState>(find.byType(HandwritingPad))
+              .strokes
+              .single
+              .x
+              .first,
+          66);
+      final save =
+          t.getRect(find.byKey(const ValueKey('handwriting-save-next')));
+      expect(save.bottom, lessThanOrEqualTo(760));
+      expect(save.height, greaterThanOrEqualTo(52));
+      expect(t.getCenter(find.byKey(const ValueKey('handwriting-pad'))).dy,
+          lessThan(save.top));
+      expect(t.takeException(), isNull);
+      await t.pumpWidget(const SizedBox());
+    });
+
     testWidgets(
         'beta dialog fits narrow ${dark ? 'dark' : 'light'} window with large text',
         (t) async {

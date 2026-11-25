@@ -34,6 +34,19 @@ class AppText extends StatelessWidget {
 }
 
 const german = <String, String>{
+  'All characters': 'Alle Zeichen',
+  'Tap a character to compare and edit its variants.':
+      'Tippe auf ein Zeichen, um seine Varianten zu vergleichen und zu bearbeiten.',
+  'Trace the size, keep your own letter shape. The pen button also erases.':
+      'Die Vorlage zeigt die Größe. Schreibe deine eigene Form. Die Stifttaste radiert ebenfalls.',
+  'Variants': 'Varianten',
+  'Variant': 'Variante',
+  'New variant': 'Neue Variante',
+  'Delete selected variant': 'Gewählte Variante löschen',
+  'Save variant': 'Variante speichern',
+  'Next': 'Weiter',
+  'Finish': 'Fertig',
+  'Continue setup': 'Einrichtung fortsetzen',
   'My handwriting · Beta': 'Meine Handschrift · Beta',
   'My handwriting': 'Meine Handschrift',
   'Beta · saved on this device': 'Beta · auf diesem Gerät gespeichert',
@@ -48,7 +61,7 @@ const german = <String, String>{
   'Numbers': 'Zahlen',
   'Punctuation': 'Satz- und Sonderzeichen',
   'Additional character': 'Zusätzliches Zeichen',
-  'Write again': 'Neu schreiben',
+  'Write again': 'Noch mal',
   'Saved variants': 'Gespeicherte Varianten',
   'Pen or mouse to write. Finger to scroll.':
       'Stift oder Maus schreiben. Finger scrollt.',
@@ -67,8 +80,6 @@ const german = <String, String>{
   'Character': 'Zeichen',
   'variants': 'Varianten',
   'Undo stroke': 'Strich zurücknehmen',
-  'Last saved variant': 'Zuletzt gespeicherte Variante',
-  'Remove last variant': 'Letzte Variante entfernen',
   'Text to write': 'Text zum Umwandeln',
   'Record these missing characters first. Tap a character to learn it:':
       'Diese Zeichen fehlen noch. Tippe auf ein Zeichen, um es einzulernen:',

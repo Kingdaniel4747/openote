@@ -13,6 +13,7 @@ import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
 import 'package:openote/ui/app_shell.dart';
 import 'package:openote/ui/windows_window_frame.dart';
+import 'package:openote/ui/handwriting_dialog.dart';
 
 import 'support/sqlite.dart';
 
@@ -180,6 +181,46 @@ void main() {
       penUp();
       move(1, const Offset(60, 0));
       up(1);
+      expect(
+          delivered.where((e) => e.kind == PointerDeviceKind.touch), isEmpty);
+    });
+
+    test(
+        'one fresh finger tap can confirm a sample after writing with pen hover',
+        () {
+      guard.registerControlTarget(
+          guard,
+          (event) =>
+              const Rect.fromLTWH(100, 650, 300, 60).contains(event.position));
+      penDown();
+      penUp();
+      guard.setPenInRange(true);
+      delivered.clear();
+      down(1, const Offset(200, 700));
+      up(1);
+      expect(
+          delivered
+              .where((e) => e.kind == PointerDeviceKind.touch)
+              .map((e) => e.runtimeType),
+          [PointerDownEvent, PointerUpEvent]);
+    });
+
+    test(
+        'control targets never admit old palms, large palms or active-pen contacts',
+        () {
+      guard.registerControlTarget(guard, (_) => true);
+      penDown();
+      down(1);
+      penUp();
+      up(1);
+      guard.handle(const PointerDownEvent(
+          pointer: 2, kind: PointerDeviceKind.touch, radiusMajor: 40));
+      up(2);
+      expect(
+          delivered.where((e) => e.kind == PointerDeviceKind.touch), isEmpty);
+      guard.unregisterControlTarget(guard);
+      down(3);
+      up(3);
       expect(
           delivered.where((e) => e.kind == PointerDeviceKind.touch), isEmpty);
     });
@@ -381,6 +422,44 @@ void main() {
       await t.tap(find.byTooltip('Close Openote'));
       await t.pump(const Duration(milliseconds: 200));
       expect(binding.exits, 1);
+      app.cancelPendingSave();
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'handwriting Next accepts one fresh finger after pen-up and ignores the old palm',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      t.view.physicalSize = const Size(1280, 850);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+      binding.writingTouchGuard.writingContext = () => true;
+      await t.pumpWidget(
+          MaterialApp(home: Scaffold(body: HandwritingDialog(app: app))));
+      await t.pumpAndSettle();
+      final next = find.byKey(const ValueKey('handwriting-save-next'));
+      final palm = await t.startGesture(t.getCenter(next), pointer: 1);
+      final rect = t.getRect(find.byKey(const ValueKey('handwriting-pad')));
+      final pen = await t.startGesture(rect.center - const Offset(20, 20),
+          pointer: 99, kind: PointerDeviceKind.stylus);
+      await pen.moveBy(const Offset(30, 40));
+      await pen.up();
+      binding.writingTouchGuard.setPenInRange(true);
+      await t.pump();
+      await palm.up();
+      await t.pump();
+      expect(app.handwritingProfile.learnedCharacters, 0);
+      await t.tap(next, pointer: 2);
+      await t.pump();
+      expect(app.handwritingProfile.learnedCharacters, 1,
+          reason:
+              'the first fresh fingertip must confirm without waiting for pen hover to end');
+      expect(
+          t
+              .widget<Text>(
+                  find.byKey(const ValueKey('handwriting-current-character')))
+              .data,
+          'b');
       app.cancelPendingSave();
       await t.pumpWidget(const SizedBox());
     });

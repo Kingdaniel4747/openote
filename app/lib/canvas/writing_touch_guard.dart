@@ -48,6 +48,7 @@ class WritingTouchGuard {
   final _navigation = <int>{};
   final _penContacts = <int>{};
   final _tapTimers = <Timer>{};
+  final _controlTargets = <Object, bool Function(PointerDownEvent)>{};
   bool _nativeInRange = false;
   DateTime? _lastPen;
 
@@ -57,6 +58,15 @@ class WritingTouchGuard {
       _penContacts.isNotEmpty ||
       (_lastPen != null && _now().difference(_lastPen!) < penGrace);
   bool isNavigationPointer(int pointer) => _navigation.contains(pointer);
+
+  /// Explicit controls outside an ink surface may accept a new finger after
+  /// pen-up, even during hover. Existing palms and active pen contacts stay
+  /// rejected. Owners must unregister when their controls leave the tree.
+  void registerControlTarget(
+          Object owner, bool Function(PointerDownEvent) hit) =>
+      _controlTargets[owner] = hit;
+
+  void unregisterControlTarget(Object owner) => _controlTargets.remove(owner);
 
   void setPenInRange(bool value) {
     if (value && !_nativeInRange && enabled) _rejectExisting();
@@ -73,6 +83,7 @@ class WritingTouchGuard {
     _nativeInRange = false;
     _lastPen = null;
     _penContacts.clear();
+    _controlTargets.clear();
     _cancelTaps();
   }
 
@@ -210,6 +221,11 @@ class WritingTouchGuard {
           _navigation.length >= 2 ||
           event.radiusMajor > 26) {
         _reject(event.pointer);
+        return;
+      }
+      if (_controlTargets.values.any((hit) => hit(event))) {
+        _touches[event.pointer] = event;
+        dispatch(event);
         return;
       }
       if (_recentPen || writingContext?.call() == true) {

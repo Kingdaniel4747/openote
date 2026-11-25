@@ -59,6 +59,15 @@ automatischem Weiterschalten. Der nächste Schritt wird aus den gespeicherten
 Vorlagen abgeleitet; kein separater Freigabeschalter. `HandwritingProfile.isComplete`
 sperrt auch die Erzeugung selbst, solange Pflichtzeichen fehlen. Nach Abschluss
 öffnet sich die Umwandlung; Variantenbearbeitung bleibt separat erreichbar.
+`ui/handwriting_pad.dart` kapselt Entwurf, Strich-/Radierer-Undo und die gemeinsame
+Darstellung für Schreibfeld, Zeichenübersicht und Variantenauswahl. Die blasse
+Inter-Vorlage sitzt auf der festen Grundlinie und wird nie als Strich gespeichert.
+Die Stifttaste nutzt `WindowsPenButtons`, Radieren den vorhandenen `eraseStroke`.
+Speichern ersetzt nur die ausgewählte Variante; maximal fünf ohne Verdrängen.
+`WritingTouchGuard.registerControlTarget` erlaubt frische kleine Fingerkontakte
+nach Pen-up nur an den sichtbaren Dialogkontrollen, nicht auf dem Schreibfeld;
+Registrierungen enden beim Dialogabbau. Aktive Stiftkontakte und alte Handkontakte
+haben weiter Vorrang. Generator, Abstände und existierende Vorlagen bleiben erhalten.
 `ink/handwriting_profile.dart` speichert Zeichenvarianten als Strichpfade und
 setzt Text mit Umbruch in seitenabsolute `Stroke`s um. Das lokale Profil liegt
 im Workspace-Setting `handwritingProfileBeta`, unabhängig von Notizbuchinhalten.
@@ -66,7 +75,8 @@ Die Erzeugung berücksichtigt die Breite fester Papierseiten. `AppState.insertHa
 fügt gewöhnliche Ink-Blöcke ein; Radierer, Lasso und Speicherformat bleiben gemeinsam.
 Lasso-Formatierung ändert `brush.color`/`brush.size`, invalidiert gespeicherte
 Ink-Referenzen und erhöht die Cache-Revision auch bei schnellen Folgeänderungen.
-Tests: `handwriting_profile_test.dart` und `handwriting_beta_test.dart`.
+Tests: `handwriting_profile_test.dart`, `handwriting_beta_test.dart`,
+`handwriting_pad_test.dart` und `writing_touch_guard_test.dart`.
 
 ## Navigation und Kontextmenüs
 

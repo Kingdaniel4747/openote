@@ -5,11 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../canvas/ink_painter.dart';
+import '../canvas/writing_touch_guard.dart';
 import '../ink/handwriting_profile.dart';
 import '../l10n/app_strings.dart';
 import '../model/models.dart';
 import '../state/app_state.dart';
 import '../theme/onote_theme.dart';
+import 'handwriting_pad.dart';
 
 Future<void> showHandwritingDialog(BuildContext context, AppState app) =>
     showDialog<void>(
@@ -35,19 +37,28 @@ class HandwritingButton extends StatelessWidget {
 class HandwritingDialog extends StatefulWidget {
   const HandwritingDialog({super.key, required this.app});
   final AppState app;
-
   @override
   State<HandwritingDialog> createState() => _HandwritingDialogState();
 }
 
+enum _HandwritingView { setup, overview, edit, text }
+
 class _HandwritingDialogState extends State<HandwritingDialog> {
   late final HandwritingProfile _profile;
   final _text = TextEditingController();
-  final _padKey = GlobalKey<_WritingPadState>();
+  final _padKey = GlobalKey<HandwritingPadState>();
+  final _dialogKey = GlobalKey();
+  final _headerKey = GlobalKey();
+  final _footerKey = GlobalKey();
+  final _controlsKey = GlobalKey();
   final _scroll = ScrollController();
+  WritingTouchGuard? _touchGuard;
   late String _character;
-  late bool _write;
-  bool _returnToText = false;
+  late _HandwritingView _view;
+  int? _variant;
+  int _draftRevision = 0;
+  List<Stroke> _initialStrokes = const [];
+  bool _returnToText = false, _canSave = false, _erase = false;
   double _height = 28, _width = 600, _words = 1, _lines = 1;
 
   @override
@@ -55,7 +66,33 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
     super.initState();
     _profile = widget.app.handwritingProfile;
     _character = _profile.pendingCharacters.firstOrNull ?? 'a';
-    _write = _profile.isComplete;
+    _view =
+        _profile.isComplete ? _HandwritingView.text : _HandwritingView.setup;
+    final binding = WidgetsBinding.instance;
+    if (binding is WritingTouchBinding) {
+      _touchGuard = (binding as WritingTouchBinding).writingTouchGuard;
+      _touchGuard!.registerControlTarget(this, _controlHit);
+    }
+  }
+
+  bool _controlHit(PointerDownEvent event) {
+    final root = _dialogKey.currentContext?.findRenderObject();
+    if (!mounted || root is! RenderBox || !root.hasSize) return false;
+    final hit = HitTestResult();
+    WidgetsBinding.instance.hitTestInView(hit, event.position, event.viewId);
+    if (!hit.path.any((entry) => entry.target == root)) return false;
+    // These explicit regions are outside the writing pad. A previous palm
+    // contact is never promoted by this callback.
+    for (final key in [_headerKey, _footerKey, _controlsKey]) {
+      final box = key.currentContext?.findRenderObject();
+      if (box is RenderBox &&
+          box.hasSize &&
+          (Offset.zero & box.size)
+              .contains(box.globalToLocal(event.position))) {
+        return true;
+      }
+    }
+    return false;
   }
 
   double get _maxWidth => widget.app.pageProps.isPaged
@@ -63,18 +100,22 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
           900, widget.app.pageProps.paper.width - AppState.sheetMargin * 2)
       : 900;
   double get _effectiveWidth => math.min(_width, _maxWidth);
-  bool get _hasDrawing =>
-      (_padKey.currentState?.strokes.isNotEmpty ?? false) &&
-      !(_padKey.currentState?.drawing ?? false);
+  bool get _write => _view == _HandwritingView.text;
   bool get _ready =>
       _profile.isComplete &&
       _text.text.trim().isNotEmpty &&
       _profile.missing(_text.text).isEmpty;
   bool get _canInsert =>
       widget.app.pageId != null && !widget.app.isPageLocked(widget.app.pageId!);
+  List<String> get _characters => {
+        ...HandwritingProfile.characters.runes.map(String.fromCharCode),
+        ..._profile.samples.keys,
+        ..._profile.missing(_text.text),
+      }.toList();
 
   @override
   void dispose() {
+    _touchGuard?.unregisterControlTarget(this);
     _text.dispose();
     _scroll.dispose();
     super.dispose();
@@ -84,43 +125,67 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
     if (_scroll.hasClients) _scroll.jumpTo(0);
   }
 
-  void _train(String character, {bool returnToText = false}) {
-    _padKey.currentState?.clear();
+  void _openOverview() {
     _top();
     setState(() {
-      _character = character;
-      _returnToText = returnToText;
-      _write = false;
+      _view = _HandwritingView.overview;
+      _canSave = false;
     });
   }
 
-  List<String> get _characters => {
-        ...HandwritingProfile.characters.runes.map(String.fromCharCode),
-        ..._profile.samples.keys,
-        ..._profile.missing(_text.text),
-      }.toList();
+  void _openCharacter(String character, {bool returnToText = false}) {
+    _top();
+    final variants = _profile.samples[character] ?? [];
+    setState(() {
+      _character = character;
+      _returnToText = returnToText;
+      _view = _HandwritingView.edit;
+      _loadVariant(variants.isEmpty ? null : 0);
+    });
+  }
+
+  void _loadVariant(int? index) {
+    _variant = index;
+    _initialStrokes =
+        index == null ? const [] : _profile.samples[_character]![index];
+    _canSave = _initialStrokes.isNotEmpty;
+    _erase = false;
+    _draftRevision++;
+  }
 
   void _save() {
     final pad = _padKey.currentState;
-    if (pad == null || !_hasDrawing) return;
-    final wasComplete = _profile.isComplete;
-    _profile.addSample(_character, pad.strokes);
+    if (!_canSave || pad == null || pad.drawing) return;
+    if (!_profile.saveVariant(_character, pad.strokes,
+        index: _view == _HandwritingView.edit ? _variant : null)) {
+      return;
+    }
     widget.app.saveHandwritingProfile(_profile);
-    pad.clear();
     _top();
     setState(() {
-      if (!wasComplete) {
+      if (_view == _HandwritingView.setup) {
         _character = _profile.pendingCharacters.firstOrNull ?? _character;
-        _write = _profile.isComplete;
-      } else if (_returnToText) {
-        _write = true;
-        _returnToText = false;
+        _view = _profile.isComplete
+            ? _HandwritingView.text
+            : _HandwritingView.setup;
+        _loadVariant(null);
       } else {
-        final characters = _characters;
-        _character = characters[
-            (characters.indexOf(_character) + 1) % characters.length];
+        _view = _returnToText && _profile.isComplete
+            ? _HandwritingView.text
+            : _HandwritingView.overview;
+        _returnToText = false;
+        _canSave = false;
       }
     });
+  }
+
+  void _removeVariant() {
+    if (_variant == null) return;
+    _profile.removeVariant(_character, _variant!);
+    widget.app.saveHandwritingProfile(_profile);
+    final count = _profile.samples[_character]?.length ?? 0;
+    setState(
+        () => _loadVariant(count == 0 ? null : math.min(_variant!, count - 1)));
   }
 
   List<Stroke> _generate({Offset origin = const Offset(12, 6)}) =>
@@ -166,21 +231,40 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final editing = _view == _HandwritingView.edit;
     return Dialog(
       insetPadding: const EdgeInsets.all(16),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 720, maxHeight: 800),
+        constraints: const BoxConstraints(maxWidth: 860, maxHeight: 820),
         child: SizedBox(
-          width: 720,
+          key: _dialogKey,
+          width: 860,
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 12, 12),
+              key: _headerKey,
+              padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
               child: Row(children: [
+                if (editing)
+                  IconButton(
+                    key: const ValueKey('handwriting-back-overview'),
+                    style: IconButton.styleFrom(
+                        minimumSize: const Size(44, 44),
+                        visualDensity: VisualDensity.standard),
+                    tooltip: tr(context, 'All characters'),
+                    onPressed: _openOverview,
+                    icon: const Icon(Icons.arrow_back, size: 20),
+                  ),
+                const SizedBox(width: 8),
                 Expanded(
                     child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                      Text(tr(context, 'My handwriting'),
+                      Text(
+                          tr(
+                              context,
+                              _view == _HandwritingView.overview
+                                  ? 'All characters'
+                                  : 'My handwriting'),
                           style: Theme.of(context)
                               .textTheme
                               .titleLarge
@@ -193,10 +277,12 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
                               ?.copyWith(color: scheme.onSurfaceVariant)),
                     ])),
                 IconButton(
-                  tooltip: tr(context, 'Close'),
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close, size: 20),
-                ),
+                    style: IconButton.styleFrom(
+                        minimumSize: const Size(44, 44),
+                        visualDensity: VisualDensity.standard),
+                    tooltip: tr(context, 'Close'),
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close, size: 20)),
               ]),
             ),
             Divider(height: 1, color: scheme.outlineVariant),
@@ -209,9 +295,12 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
               child: SingleChildScrollView(
                 key: const ValueKey('handwriting-scroll'),
                 controller: _scroll,
-                padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
-                child:
-                    _write && _profile.isComplete ? _generation() : _training(),
+                padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
+                child: switch (_view) {
+                  _HandwritingView.text => _generation(),
+                  _HandwritingView.overview => _overview(),
+                  _ => _training(),
+                },
               ),
             )),
             Divider(height: 1, color: scheme.outlineVariant),
@@ -222,12 +311,76 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
     );
   }
 
+  Widget _sample(String character, List<Stroke> strokes) {
+    final scheme = Theme.of(context).colorScheme;
+    return AspectRatio(
+        aspectRatio: HandwritingProfile.boxWidth / HandwritingProfile.boxHeight,
+        child: CustomPaint(
+            painter: HandwritingSamplePainter(
+                character: character,
+                strokes: strokes,
+                ink: scheme.onSurface,
+                guide: scheme.onSurfaceVariant)));
+  }
+
+  Widget _overview() {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+        key: _controlsKey,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(tr(context, 'Tap a character to compare and edit its variants.'),
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(color: scheme.onSurfaceVariant)),
+          const SizedBox(height: 16),
+          LayoutBuilder(builder: (context, constraints) {
+            final columns = math.max(2, (constraints.maxWidth / 108).floor());
+            final width = (constraints.maxWidth - (columns - 1) * 8) / columns;
+            return Wrap(spacing: 8, runSpacing: 8, children: [
+              for (final c in _characters)
+                SizedBox(
+                    width: width,
+                    child: Material(
+                      color: scheme.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(8),
+                      child: InkWell(
+                        key: ValueKey('handwriting-tile-$c'),
+                        borderRadius: BorderRadius.circular(8),
+                        onTap: () => _openCharacter(c),
+                        child: Padding(
+                            padding: const EdgeInsets.all(8),
+                            child: Column(children: [
+                              Row(children: [
+                                Text(c,
+                                    style:
+                                        Theme.of(context).textTheme.labelLarge),
+                                const Spacer(),
+                                Text('${_profile.samples[c]?.length ?? 0}/5',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
+                                            color: scheme.onSurfaceVariant)),
+                              ]),
+                              const SizedBox(height: 4),
+                              _sample(c,
+                                  _profile.samples[c]?.firstOrNull ?? const []),
+                            ])),
+                      ),
+                    )),
+            ]);
+          }),
+        ]);
+  }
+
   Widget _training() {
     final scheme = Theme.of(context).colorScheme;
-    final complete = _profile.isComplete;
+    final setup = _view == _HandwritingView.setup;
     final variants = _profile.samples[_character] ?? [];
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      if (!complete) ...[
+      if (setup) ...[
         Row(children: [
           Expanded(
               child: Text(tr(context, 'Set up your handwriting'),
@@ -240,15 +393,14 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
                   .bodySmall
                   ?.copyWith(color: scheme.onSurfaceVariant)),
         ]),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         LinearProgressIndicator(
-          value: _profile.learnedCharacters /
-              HandwritingProfile.characters.runes.length,
-          minHeight: 3,
-          borderRadius: BorderRadius.circular(2),
-          semanticsLabel: tr(context, 'Handwriting setup'),
-        ),
-        const SizedBox(height: 12),
+            value: _profile.learnedCharacters /
+                HandwritingProfile.characters.runes.length,
+            minHeight: 3,
+            borderRadius: BorderRadius.circular(2),
+            semanticsLabel: tr(context, 'Handwriting setup')),
+        const SizedBox(height: 8),
         Text(
             tr(context,
                 'Conversion becomes available after all characters are saved.'),
@@ -256,156 +408,211 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
                 .textTheme
                 .bodySmall
                 ?.copyWith(color: scheme.onSurfaceVariant)),
-      ] else ...[
-        Row(children: [
-          Expanded(
-              child: DropdownButtonFormField<String>(
-            key: ValueKey('handwriting-character-$_character'),
-            isExpanded: true,
-            initialValue: _character,
-            decoration: InputDecoration(labelText: tr(context, 'Character')),
-            items: [
-              for (final c in _characters)
-                DropdownMenuItem(value: c, child: Text(c))
-            ],
-            onChanged: (c) {
-              if (c != null) _train(c);
-            },
-          )),
-          const SizedBox(width: 12),
-          Text('${variants.length}/5 ${tr(context, 'variants')}'),
-        ]),
+        const SizedBox(height: 16),
       ],
-      const SizedBox(height: 20),
-      Semantics(
-          liveRegion: true,
-          child: Row(children: [
-            SizedBox(
-                width: 80,
-                child: Text(_character,
-                    key: const ValueKey('handwriting-current-character'),
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                        fontSize: 64,
-                        height: 1.1,
-                        fontWeight: FontWeight.w400,
-                        color: scheme.onSurface))),
-            const SizedBox(width: 16),
-            Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                  Text(
-                      tr(
-                          context,
-                          complete
-                              ? 'Write another variant'
-                              : 'Write this character'),
-                      style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 4),
-                  Text(tr(context, _group),
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: scheme.onSurfaceVariant)),
-                ])),
-          ])),
-      const SizedBox(height: 16),
+      Row(children: [
+        Text(_character,
+            key: const ValueKey('handwriting-current-character'),
+            style:
+                TextStyle(fontSize: 32, height: 1.2, color: scheme.onSurface)),
+        const SizedBox(width: 16),
+        Expanded(
+            child: Text(tr(context, _group),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(color: scheme.onSurfaceVariant))),
+      ]),
+      const SizedBox(height: 12),
       Center(
           child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 396),
-        child: _WritingPad(key: _padKey, onChanged: () => setState(() {})),
+        constraints: const BoxConstraints(maxWidth: 300),
+        child: HandwritingPad(
+          key: _padKey,
+          character: _character,
+          eraser: _erase,
+          sampleToken: '$_character:$_draftRevision',
+          initialStrokes: _initialStrokes,
+          onChanged: () => setState(() {
+            final pad = _padKey.currentState;
+            _canSave = pad != null && !pad.drawing && pad.strokes.isNotEmpty;
+          }),
+        ),
       )),
       const SizedBox(height: 8),
-      Row(children: [
-        IconButton(
-          tooltip: tr(context, 'Undo stroke'),
-          onPressed: _hasDrawing ? () => _padKey.currentState?.undo() : null,
-          icon: const Icon(Icons.undo_outlined, size: 18),
-        ),
-        TextButton(
-            onPressed: _hasDrawing ? () => _padKey.currentState?.clear() : null,
-            child: const AppText('Write again')),
-        const Spacer(),
-        if (variants.isNotEmpty)
-          PopupMenuButton<String>(
-            tooltip: tr(context, 'Saved variants'),
-            icon: const Icon(Icons.more_horiz, size: 20),
-            itemBuilder: (_) => [
-              const PopupMenuItem(
-                  value: 'remove', child: AppText('Remove last variant'))
+      Column(
+          key: _controlsKey,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  IconButton(
+                      style: IconButton.styleFrom(
+                          minimumSize: const Size(44, 44),
+                          visualDensity: VisualDensity.standard),
+                      tooltip: tr(context, 'Undo stroke'),
+                      onPressed: (_padKey.currentState?.canUndo ?? false)
+                          ? () => _padKey.currentState?.undo()
+                          : null,
+                      icon: const Icon(Icons.undo_outlined, size: 18)),
+                  IconButton(
+                      key: const ValueKey('handwriting-pen'),
+                      style: IconButton.styleFrom(
+                          minimumSize: const Size(44, 44),
+                          visualDensity: VisualDensity.standard),
+                      tooltip: tr(context, 'Pen'),
+                      isSelected: !_erase,
+                      onPressed: () => setState(() => _erase = false),
+                      icon: const Icon(Icons.edit_outlined, size: 18)),
+                  IconButton(
+                      key: const ValueKey('handwriting-eraser'),
+                      style: IconButton.styleFrom(
+                          minimumSize: const Size(44, 44),
+                          visualDensity: VisualDensity.standard),
+                      tooltip: tr(context, 'Eraser'),
+                      isSelected: _erase,
+                      onPressed: () => setState(() => _erase = true),
+                      icon: const Icon(Icons.cleaning_services_outlined,
+                          size: 18)),
+                ]),
+            const SizedBox(height: 4),
+            Text(
+                tr(context,
+                    'Trace the size, keep your own letter shape. The pen button also erases.'),
+                textAlign: TextAlign.center,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant)),
+            if (!setup) ...[
+              const SizedBox(height: 20),
+              const AppText('Variants'),
+              const SizedBox(height: 8),
+              Wrap(spacing: 8, runSpacing: 8, children: [
+                for (var i = 0; i < variants.length; i++)
+                  _variantTile(i, variants[i]),
+                if (variants.length < 5) _variantTile(null, const []),
+              ]),
+              if (_variant != null)
+                Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      key: const ValueKey('handwriting-delete-variant'),
+                      onPressed: _removeVariant,
+                      icon: const Icon(Icons.delete_outline, size: 18),
+                      label: const AppText('Delete selected variant'),
+                    )),
             ],
-            onSelected: (_) {
-              setState(() {
-                variants.removeLast();
-                if (variants.isEmpty) _profile.samples.remove(_character);
-                widget.app.saveHandwritingProfile(_profile);
-              });
-            },
-          ),
-      ]),
-      Text(tr(context, 'Pen or mouse to write. Finger to scroll.'),
-          style: Theme.of(context)
-              .textTheme
-              .bodySmall
-              ?.copyWith(color: scheme.onSurfaceVariant)),
-      if (variants.isNotEmpty) ...[
-        const SizedBox(height: 16),
-        Text(tr(context, 'Last saved variant'),
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: scheme.onSurfaceVariant)),
-        SizedBox(
-            height: 64,
-            child: FittedBox(
-                child: SizedBox(
-              width: HandwritingProfile.boxWidth,
-              height: HandwritingProfile.boxHeight,
-              child: CustomPaint(
-                  painter:
-                      InkPainter(variants.last, autoColor: scheme.onSurface)),
-            ))),
-      ],
+          ]),
     ]);
   }
 
+  Widget _variantTile(int? index, List<Stroke> strokes) {
+    final scheme = Theme.of(context).colorScheme;
+    final selected = index == _variant;
+    return SizedBox(
+        width: 112,
+        child: Material(
+          color: selected
+              ? scheme.primary.withValues(alpha: .08)
+              : scheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(8),
+          child: InkWell(
+            key: ValueKey(index == null
+                ? 'handwriting-new-variant'
+                : 'handwriting-variant-$index'),
+            borderRadius: BorderRadius.circular(8),
+            onTap: () {
+              _top();
+              setState(() => _loadVariant(index));
+            },
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color:
+                          selected ? scheme.primary : scheme.outlineVariant)),
+              child: Column(children: [
+                Text(
+                    index == null
+                        ? tr(context, 'New variant')
+                        : '${tr(context, 'Variant')} ${index + 1}',
+                    style: Theme.of(context).textTheme.bodySmall),
+                const SizedBox(height: 4),
+                _sample(_character, strokes),
+              ]),
+            ),
+          ),
+        ));
+  }
+
   Widget _footer() {
-    final setup = !_profile.isComplete;
+    final editing =
+        _view == _HandwritingView.edit || _view == _HandwritingView.setup;
     return Padding(
+      key: _footerKey,
       padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        if (_write && _profile.isComplete && !_canInsert) ...[
+        if (_write && !_canInsert) ...[
           Text(tr(context, 'Open an unlocked page to insert handwriting.'),
               style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 8),
         ],
-        Row(children: [
-          if (!_write && !setup) ...[
-            TextButton(
-                onPressed: () {
-                  _top();
-                  setState(() => _write = true);
-                },
-                child: const AppText('Back to text')),
+        if (editing)
+          Row(children: [
+            Expanded(
+                child: OutlinedButton(
+              key: const ValueKey('handwriting-retry'),
+              style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(0, 52),
+                  visualDensity: VisualDensity.standard),
+              onPressed: _canSave ? () => _padKey.currentState?.clear() : null,
+              child: const AppText('Write again'),
+            )),
             const SizedBox(width: 12),
-          ],
-          Expanded(
-              child: FilledButton(
-            key: ValueKey(_write && !setup
-                ? 'handwriting-insert'
-                : 'handwriting-save-next'),
-            style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
-            onPressed: _write && !setup
+            Expanded(
+                flex: 2,
+                child: FilledButton(
+                  key: const ValueKey('handwriting-save-next'),
+                  style: FilledButton.styleFrom(
+                      minimumSize: const Size(0, 52),
+                      visualDensity: VisualDensity.standard),
+                  onPressed: _canSave ? _save : null,
+                  child: AppText(_view == _HandwritingView.edit
+                      ? 'Save variant'
+                      : (_profile.pendingCharacters.length == 1
+                          ? 'Finish'
+                          : 'Next')),
+                )),
+          ])
+        else
+          FilledButton(
+            key: ValueKey(
+                _write ? 'handwriting-insert' : 'handwriting-overview-done'),
+            style: FilledButton.styleFrom(
+                minimumSize: const Size(0, 52),
+                visualDensity: VisualDensity.standard),
+            onPressed: _write
                 ? (_ready && _canInsert ? _insert : null)
-                : (_hasDrawing ? _save : null),
-            child: AppText(_write && !setup
+                : () {
+                    _top();
+                    setState(() {
+                      _view = _profile.isComplete
+                          ? _HandwritingView.text
+                          : _HandwritingView.setup;
+                      _character =
+                          _profile.pendingCharacters.firstOrNull ?? 'a';
+                      _loadVariant(null);
+                    });
+                  },
+            child: AppText(_write
                 ? 'Insert pen strokes'
-                : (setup && _profile.pendingCharacters.length == 1
-                    ? 'Finish setup'
-                    : 'Confirm & continue')),
-          )),
-        ]),
+                : (_profile.isComplete ? 'Back to text' : 'Continue setup')),
+          ),
       ]),
     );
   }
@@ -431,242 +638,107 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
         ? 180.0
         : math.max(
             180.0, preview.map((s) => s.bounds().maxY).reduce(math.max) + 16);
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Wrap(
-        alignment: WrapAlignment.spaceBetween,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: 16,
-        runSpacing: 4,
+    return Column(
+        key: _controlsKey,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(Icons.check_circle_outline,
-                size: 18, color: scheme.onSurfaceVariant),
-            const SizedBox(width: 8),
-            const AppText('Your handwriting is ready'),
-          ]),
-          TextButton(
-              onPressed: () => _train('a'),
-              child: const AppText('Edit handwriting')),
-        ],
-      ),
-      const SizedBox(height: 12),
-      TextField(
-        key: const ValueKey('handwriting-text'),
-        controller: _text,
-        minLines: 2,
-        maxLines: 4,
-        maxLength: 2000,
-        maxLengthEnforcement: MaxLengthEnforcement.enforced,
-        decoration: InputDecoration(
-            labelText: tr(context, 'Text to write'),
-            hintText: tr(context, 'Type here. Your handwriting appears below.'),
-            border: const OutlineInputBorder()),
-        onChanged: (_) => setState(() {}),
-      ),
-      if (missing.isNotEmpty) ...[
-        const AppText(
-            'Record these missing characters first. Tap a character to learn it:'),
-        const SizedBox(height: 8),
-        Wrap(spacing: 6, runSpacing: 6, children: [
-          for (final c in missing)
-            ActionChip(
-                label: Text(c), onPressed: () => _train(c, returnToText: true)),
-        ]),
-        const SizedBox(height: 12),
-      ],
-      const AppText('Preview'),
-      const SizedBox(height: 8),
-      Container(
-        height: 220,
-        decoration: BoxDecoration(
-            color: scheme.surfaceContainerLow,
-            border: Border.all(color: scheme.outlineVariant),
-            borderRadius: BorderRadius.circular(8)),
-        clipBehavior: Clip.hardEdge,
-        child: preview.isEmpty
-            ? Center(
-                child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(tr(context, 'Your text, in your handwriting'),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: scheme.onSurfaceVariant))))
-            : InteractiveViewer(
-                constrained: false,
-                minScale: .2,
-                maxScale: 3,
-                child: SizedBox(
-                    width: _effectiveWidth + 32,
-                    height: previewHeight,
-                    child: CustomPaint(
-                        painter:
-                            InkPainter(preview, autoColor: scheme.onSurface)))),
-      ),
-      const SizedBox(height: 12),
-      ExpansionTile(
-        key: const ValueKey('handwriting-layout'),
-        tilePadding: EdgeInsets.zero,
-        title: const AppText('Size & spacing'),
-        children: [
-          _slider('Letter height', _height, 14, 60, (v) => _height = v,
-              divisions: 46),
-          _slider('Line width', _effectiveWidth, math.min(200, _maxWidth),
-              _maxWidth, (v) => _width = v,
-              divisions: 14),
-          _slider('Word spacing', _words, .5, 2, (v) => _words = v,
-              divisions: 15),
-          _slider('Line spacing', _lines, 1, 2, (v) => _lines = v,
-              divisions: 10),
-        ],
-      ),
-      const SizedBox(height: 8),
-      Text(
-          tr(context,
-              'Inserted as editable pen strokes. Erase, move or write between them.'),
-          style: Theme.of(context)
-              .textTheme
-              .bodySmall
-              ?.copyWith(color: scheme.onSurfaceVariant)),
-    ]);
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 16,
+            runSpacing: 4,
+            children: [
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.check_circle_outline,
+                    size: 18, color: scheme.onSurfaceVariant),
+                const SizedBox(width: 8),
+                const AppText('Your handwriting is ready'),
+              ]),
+              TextButton(
+                  onPressed: _openOverview,
+                  child: const AppText('Edit handwriting')),
+            ],
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            key: const ValueKey('handwriting-text'),
+            controller: _text,
+            minLines: 2,
+            maxLines: 4,
+            maxLength: 2000,
+            maxLengthEnforcement: MaxLengthEnforcement.enforced,
+            decoration: InputDecoration(
+                labelText: tr(context, 'Text to write'),
+                hintText:
+                    tr(context, 'Type here. Your handwriting appears below.'),
+                border: const OutlineInputBorder()),
+            onChanged: (_) => setState(() {}),
+          ),
+          if (missing.isNotEmpty) ...[
+            const AppText(
+                'Record these missing characters first. Tap a character to learn it:'),
+            const SizedBox(height: 8),
+            Wrap(spacing: 6, runSpacing: 6, children: [
+              for (final c in missing)
+                ActionChip(
+                    label: Text(c),
+                    onPressed: () => _openCharacter(c, returnToText: true)),
+            ]),
+            const SizedBox(height: 12),
+          ],
+          const AppText('Preview'),
+          const SizedBox(height: 8),
+          Container(
+            height: 220,
+            decoration: BoxDecoration(
+                color: scheme.surfaceContainerLow,
+                border: Border.all(color: scheme.outlineVariant),
+                borderRadius: BorderRadius.circular(8)),
+            clipBehavior: Clip.hardEdge,
+            child: preview.isEmpty
+                ? Center(
+                    child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                            tr(context, 'Your text, in your handwriting'),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: scheme.onSurfaceVariant))))
+                : InteractiveViewer(
+                    constrained: false,
+                    minScale: .2,
+                    maxScale: 3,
+                    child: SizedBox(
+                        width: _effectiveWidth + 32,
+                        height: previewHeight,
+                        child: CustomPaint(
+                            painter: InkPainter(preview,
+                                autoColor: scheme.onSurface)))),
+          ),
+          const SizedBox(height: 12),
+          ExpansionTile(
+            key: const ValueKey('handwriting-layout'),
+            tilePadding: EdgeInsets.zero,
+            title: const AppText('Size & spacing'),
+            children: [
+              _slider('Letter height', _height, 14, 60, (v) => _height = v,
+                  divisions: 46),
+              _slider('Line width', _effectiveWidth, math.min(200, _maxWidth),
+                  _maxWidth, (v) => _width = v,
+                  divisions: 14),
+              _slider('Word spacing', _words, .5, 2, (v) => _words = v,
+                  divisions: 15),
+              _slider('Line spacing', _lines, 1, 2, (v) => _lines = v,
+                  divisions: 10),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+              tr(context,
+                  'Inserted as editable pen strokes. Erase, move or write between them.'),
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: scheme.onSurfaceVariant)),
+        ]);
   }
-}
-
-class _WritingPad extends StatefulWidget {
-  const _WritingPad({super.key, required this.onChanged});
-  final VoidCallback onChanged;
-  @override
-  State<_WritingPad> createState() => _WritingPadState();
-}
-
-class _WritingPadState extends State<_WritingPad> {
-  final strokes = <Stroke>[];
-  Stroke? _wet;
-  int? _pointer;
-  int _started = 0;
-  bool get drawing => _pointer != null;
-
-  void clear() {
-    setState(() {
-      strokes.clear();
-      _wet = null;
-      _pointer = null;
-    });
-    widget.onChanged();
-  }
-
-  void undo() {
-    if (drawing || strokes.isEmpty) return;
-    setState(strokes.removeLast);
-    widget.onChanged();
-  }
-
-  void _point(PointerEvent event, Size size) {
-    final point = Offset(
-        (event.localPosition.dx / size.width * HandwritingProfile.boxWidth)
-            .clamp(0, HandwritingProfile.boxWidth),
-        (event.localPosition.dy / size.height * HandwritingProfile.boxHeight)
-            .clamp(0, HandwritingProfile.boxHeight));
-    _wet!.x.add(point.dx);
-    _wet!.y.add(point.dy);
-    _wet!.p.add(event.kind == PointerDeviceKind.stylus && event.pressure > 0
-        ? event.pressure.clamp(.05, 1)
-        : .5);
-    _wet!.t.add(event.timeStamp.inMilliseconds - _started);
-  }
-
-  @override
-  Widget build(BuildContext context) => AspectRatio(
-        aspectRatio: HandwritingProfile.boxWidth / HandwritingProfile.boxHeight,
-        child: LayoutBuilder(builder: (context, constraints) {
-          final size = Size(constraints.maxWidth, constraints.maxHeight);
-          return MouseRegion(
-            cursor: SystemMouseCursors.precise,
-            child: Listener(
-              key: const ValueKey('handwriting-pad'),
-              behavior: HitTestBehavior.opaque,
-              onPointerDown: (e) {
-                if (_pointer != null ||
-                    e.kind == PointerDeviceKind.touch ||
-                    e.kind == PointerDeviceKind.invertedStylus ||
-                    e.buttons != kPrimaryButton) {
-                  return;
-                }
-                setState(() {
-                  _pointer = e.pointer;
-                  _started = e.timeStamp.inMilliseconds;
-                  _wet = Stroke(
-                      tool: 'pen', colorHex: 'auto', size: 2.5, strokeStart: 0);
-                  _point(e, size);
-                });
-                widget.onChanged();
-              },
-              onPointerMove: (e) {
-                if (_pointer == e.pointer) setState(() => _point(e, size));
-              },
-              onPointerUp: (e) {
-                if (_pointer != e.pointer) return;
-                setState(() {
-                  _point(e, size);
-                  strokes.add(_wet!);
-                  _wet = null;
-                  _pointer = null;
-                });
-                widget.onChanged();
-              },
-              onPointerCancel: (e) {
-                if (_pointer != e.pointer) return;
-                setState(() {
-                  _wet = null;
-                  _pointer = null;
-                });
-                widget.onChanged();
-              },
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerLow,
-                    border: Border.all(
-                        color: Theme.of(context).colorScheme.outlineVariant),
-                    borderRadius: BorderRadius.circular(8)),
-                child: CustomPaint(
-                    painter: _PadPainter(
-                        strokes,
-                        _wet,
-                        Theme.of(context).colorScheme.onSurface,
-                        Theme.of(context).colorScheme.outlineVariant)),
-              ),
-            ),
-          );
-        }),
-      );
-}
-
-class _PadPainter extends CustomPainter {
-  _PadPainter(this.strokes, this.wet, this.color, this.guide);
-  final List<Stroke> strokes;
-  final Stroke? wet;
-  final Color color, guide;
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas.save();
-    canvas.clipRect(Offset.zero & size);
-    canvas.scale(size.width / HandwritingProfile.boxWidth,
-        size.height / HandwritingProfile.boxHeight);
-    for (final y in [
-      HandwritingProfile.baseline - HandwritingProfile.letterHeight,
-      HandwritingProfile.baseline,
-      144.0
-    ]) {
-      canvas.drawLine(
-          Offset(8, y),
-          Offset(HandwritingProfile.boxWidth - 8, y),
-          Paint()
-            ..color = guide
-            ..strokeWidth = y == HandwritingProfile.baseline ? 1 : .5);
-    }
-    InkPainter(strokes, wet: wet, autoColor: color).paint(canvas,
-        const Size(HandwritingProfile.boxWidth, HandwritingProfile.boxHeight));
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant _PadPainter oldDelegate) => true;
 }
