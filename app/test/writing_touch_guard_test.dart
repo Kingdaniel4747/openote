@@ -461,6 +461,20 @@ void main() {
               .data,
           'b');
       app.cancelPendingSave();
+      await t.tap(find.byKey(const ValueKey('handwriting-reset')));
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const ValueKey('handwriting-reset-cancel')));
+      await t.pumpAndSettle();
+      expect(app.handwritingProfile.learnedCharacters, 1);
+      await t.tap(find.byKey(const ValueKey('handwriting-reset')));
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const ValueKey('handwriting-reset-confirm')));
+      app.cancelPendingSave();
+      await t.pumpAndSettle();
+      expect(app.handwritingProfile.samples, isEmpty,
+          reason:
+              'reset confirmation also accepts a fresh finger while the pen hovers');
+      app.cancelPendingSave();
       await t.pumpWidget(const SizedBox());
     });
   });

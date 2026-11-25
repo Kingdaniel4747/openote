@@ -51,6 +51,7 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
   final _headerKey = GlobalKey();
   final _footerKey = GlobalKey();
   final _controlsKey = GlobalKey();
+  final _resetActionsKey = GlobalKey();
   final _scroll = ScrollController();
   WritingTouchGuard? _touchGuard;
   late String _character;
@@ -59,6 +60,7 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
   int _draftRevision = 0;
   List<Stroke> _initialStrokes = const [];
   bool _returnToText = false, _canSave = false, _erase = false;
+  bool _resetPending = false;
   double _height = 28, _width = 600, _words = 1, _lines = 1;
 
   @override
@@ -80,6 +82,11 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
     if (!mounted || root is! RenderBox || !root.hasSize) return false;
     final hit = HitTestResult();
     WidgetsBinding.instance.hitTestInView(hit, event.position, event.viewId);
+    final resetActions = _resetActionsKey.currentContext?.findRenderObject();
+    if (resetActions is RenderBox &&
+        hit.path.any((entry) => entry.target == resetActions)) {
+      return true;
+    }
     if (!hit.path.any((entry) => entry.target == root)) return false;
     // These explicit regions are outside the writing pad. A previous palm
     // contact is never promoted by this callback.
@@ -131,6 +138,57 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
       _view = _HandwritingView.overview;
       _canSave = false;
     });
+  }
+
+  Future<void> _resetHandwriting() async {
+    if (_resetPending || _profile.samples.isEmpty) return;
+    setState(() => _resetPending = true);
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const AppText('Delete all handwriting samples?'),
+          content: const AppText(
+              'All learned characters and variants on this device will be deleted. Handwriting already inserted into your pages is kept. Setup will start again from the beginning.'),
+          actions: [
+            Wrap(key: _resetActionsKey, spacing: 12, runSpacing: 8, children: [
+              TextButton(
+                key: const ValueKey('handwriting-reset-cancel'),
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const AppText('Cancel'),
+              ),
+              FilledButton(
+                key: const ValueKey('handwriting-reset-confirm'),
+                style: FilledButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.error,
+                    foregroundColor: Theme.of(context).colorScheme.onError,
+                    minimumSize: const Size(0, 48),
+                    visualDensity: VisualDensity.standard),
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const AppText('Delete everything & restart'),
+              ),
+            ]),
+          ],
+        ),
+      );
+      if (!mounted || confirmed != true) return;
+      _profile.samples.clear();
+      widget.app.saveHandwritingProfile(_profile);
+      _text.clear();
+      _top();
+      setState(() {
+        _character = 'a';
+        _view = _HandwritingView.setup;
+        _returnToText = false;
+        _height = 28;
+        _width = 600;
+        _words = 1;
+        _lines = 1;
+        _loadVariant(null);
+      });
+    } finally {
+      if (mounted) setState(() => _resetPending = false);
+    }
   }
 
   void _openCharacter(String character, {bool returnToText = false}) {
@@ -276,6 +334,16 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
                               .bodySmall
                               ?.copyWith(color: scheme.onSurfaceVariant)),
                     ])),
+                IconButton(
+                    key: const ValueKey('handwriting-reset'),
+                    tooltip: tr(context, 'Delete all handwriting & start over'),
+                    style: IconButton.styleFrom(
+                        minimumSize: const Size(44, 44),
+                        visualDensity: VisualDensity.standard),
+                    onPressed: _profile.samples.isEmpty || _resetPending
+                        ? null
+                        : _resetHandwriting,
+                    icon: const Icon(Icons.restart_alt, size: 20)),
                 IconButton(
                     style: IconButton.styleFrom(
                         minimumSize: const Size(44, 44),
@@ -426,7 +494,7 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
       const SizedBox(height: 12),
       Center(
           child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 300),
+        constraints: const BoxConstraints(maxWidth: 160),
         child: HandwritingPad(
           key: _padKey,
           character: _character,

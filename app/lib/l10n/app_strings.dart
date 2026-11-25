@@ -34,6 +34,11 @@ class AppText extends StatelessWidget {
 }
 
 const german = <String, String>{
+  'Delete all handwriting & start over': 'Alles löschen und neu anfangen',
+  'Delete all handwriting samples?': 'Alle Schriftproben löschen?',
+  'All learned characters and variants on this device will be deleted. Handwriting already inserted into your pages is kept. Setup will start again from the beginning.':
+      'Alle eingelernten Zeichen und Varianten auf diesem Gerät werden gelöscht. Bereits auf deinen Seiten eingefügte Handschrift bleibt erhalten. Die Einrichtung beginnt wieder von vorne.',
+  'Delete everything & restart': 'Alles löschen und neu anfangen',
   'All characters': 'Alle Zeichen',
   'Tap a character to compare and edit its variants.':
       'Tippe auf ein Zeichen, um seine Varianten zu vergleichen und zu bearbeiten.',

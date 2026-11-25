@@ -27,13 +27,18 @@ Der Android-Scanner ist eine Begleitapp, kein zweiter Notizeditor.
   bis zum vollständigen Profil gesperrt und öffnet danach automatisch. Bestätigen
   und Einfügen bleiben unten erreichbar; Größe/Abstände sind aufklappbar. Danach
   bis zu fünf Varianten je Zeichen ergänzen und weitere Sonderzeichen direkt aus
-  dem Text einlernen. Kleineres Schreibfeld mit blassem Größenbeispiel auf der
-  Grundlinie, Radierer/Stifttaste und großem „Noch mal“-Knopf für den Entwurf.
+  dem Text einlernen. Das Schreibfeld samt blassem Größenbeispiel ist auf 160
+  statt 300 Pixel verkleinert; gespeicherte Schriftgröße und Ausgabe bleiben
+  gleich. Grundlinie, Radierer/Stifttaste und großer „Noch mal“-Knopf helfen
+  beim Zeichnen und Korrigieren des Entwurfs.
   „Schrift bearbeiten“ zeigt alle Zeichen mit eigener Schrift und Größenbeispiel;
   je Zeichen sind die bis zu fünf Varianten nebeneinander auswählbar. Gezielt
   ersetzen, hinzufügen oder löschen; volle Variantenlisten verdrängen nichts.
   Frische Fingertipps auf Dialogknöpfe funktionieren nach dem Abheben auch bei
   Stift-Hover; bereits aufliegende Handkontakte bleiben ausgeschlossen.
+  Der Neustart-Knopf neben dem X löscht nach Bestätigung sämtliche Schriftproben
+  und Varianten und beginnt wieder bei „a“. Bereits eingefügte Handschrift auf
+  Notizseiten bleibt erhalten; Umwandeln ist bis zur neuen Einrichtung gesperrt.
   Vorschau mit Schriftgröße, Zeilenbreite, Wort-/Zeilenabstand;
   Einfügen als normale radierbare, verschiebbare
   Stiftstriche mit Undo/Redo. Beta setzt Einzelzeichen zusammen, ohne verbundene

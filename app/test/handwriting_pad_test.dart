@@ -36,13 +36,14 @@ void main() {
 
   Widget host(GlobalKey<HandwritingPadState> key,
           {bool eraser = false,
+          double width = 300,
           String token = 'a',
           List<Stroke> ink = const []}) =>
       MaterialApp(
         home: Scaffold(
             body: Center(
                 child: SizedBox(
-                    width: 300,
+                    width: width,
                     child: HandwritingPad(
                         key: key,
                         character: 'a',
@@ -61,6 +62,33 @@ void main() {
     await pen.up();
     await t.pump();
   }
+
+  testWidgets(
+      'a half-size writing box records the same canonical letter geometry',
+      (t) async {
+    final key = GlobalKey<HandwritingPadState>();
+    Future<Stroke> record(double width, String token) async {
+      await t.pumpWidget(host(key, width: width, token: token));
+      await t.pump();
+      final rect = t.getRect(find.byKey(const ValueKey('handwriting-pad')));
+      final pen = await t.startGesture(
+          rect.topLeft + Offset(rect.width * .25, rect.height * .3),
+          kind: PointerDeviceKind.stylus);
+      await pen
+          .moveTo(rect.topLeft + Offset(rect.width * .75, rect.height * .7));
+      await pen.up();
+      await t.pump();
+      return Stroke.fromJson(key.currentState!.strokes.single.toJson());
+    }
+
+    final previousSize = await record(300, 'previous-size');
+    final smaller = await record(160, 'smaller-size');
+    for (var i = 0; i < previousSize.x.length; i++) {
+      expect(smaller.x[i], closeTo(previousSize.x[i], .00001));
+      expect(smaller.y[i], closeTo(previousSize.y[i], .00001));
+    }
+    await t.pumpWidget(const SizedBox());
+  });
 
   testWidgets(
       'size reference paints without becoming ink; retry and undo preserve the saved sample',

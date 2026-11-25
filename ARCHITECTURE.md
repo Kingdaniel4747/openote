@@ -63,6 +63,12 @@ sperrt auch die Erzeugung selbst, solange Pflichtzeichen fehlen. Nach Abschluss
 Darstellung für Schreibfeld, Zeichenübersicht und Variantenauswahl. Die blasse
 Inter-Vorlage sitzt auf der festen Grundlinie und wird nie als Strich gespeichert.
 Die Stifttaste nutzt `WindowsPenButtons`, Radieren den vorhandenen `eraseStroke`.
+Das sichtbare Schreibfeld ist 160 Pixel breit; das gespeicherte 220×160-System
+und `letterHeight` bleiben unverändert. Die proportional kleinere Vorlage und
+Pointer-Abbildung ändern damit weder vorhandene Proben noch die Ausgabegröße.
+Der bestätigte Profil-Reset leert `handwritingProfileBeta` sowie den Dialogentwurf,
+setzt Einrichtung/Undo zurück und ändert keine Ink-Blöcke auf Notizseiten.
+Die Bestätigungsknöpfe sind ebenfalls gezielte Touch-Ziele während Stift-Hover.
 Speichern ersetzt nur die ausgewählte Variante; maximal fünf ohne Verdrängen.
 `WritingTouchGuard.registerControlTarget` erlaubt frische kleine Fingerkontakte
 nach Pen-up nur an den sichtbaren Dialogkontrollen, nicht auf dem Schreibfeld;

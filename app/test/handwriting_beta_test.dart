@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart';
@@ -114,6 +115,161 @@ void main() {
       image.dispose();
     });
   }
+
+  testWidgets(
+      'reset requires confirmation, persists an empty profile and keeps inserted ink',
+      (t) async {
+    activeTester = t;
+    if (!sqlite) return markTestSkipped('sqlite unavailable');
+    final profile = completedProfile()..addSample('a', [sample(35)]);
+    app.saveHandwritingProfile(profile);
+    final inserted = app.insertHandwriting(profile.generate('aa'))!;
+    final originalInk = jsonEncode(inserted.content);
+    app.cancelPendingSave();
+    await t.pumpWidget(
+        MaterialApp(home: Scaffold(body: HandwritingDialog(app: app))));
+    await settle(t);
+    await t.enterText(find.byKey(const ValueKey('handwriting-text')), 'aa');
+    await t.tap(find.byKey(const ValueKey('handwriting-reset')));
+    await settle(t);
+    expect(app.handwritingProfile.isComplete, isTrue);
+    await t.tap(find.byKey(const ValueKey('handwriting-reset-cancel')));
+    await settle(t);
+    expect(app.handwritingProfile.samples['a'], hasLength(2));
+    expect(
+        t
+            .widget<TextField>(find.byKey(const ValueKey('handwriting-text')))
+            .controller!
+            .text,
+        'aa');
+    await t.tap(find.byKey(const ValueKey('handwriting-reset')));
+    await settle(t);
+    await t.tap(find.byKey(const ValueKey('handwriting-reset-confirm')));
+    await settle(t);
+    expect(app.handwritingProfile.samples, isEmpty);
+    expect(app.handwritingProfile.isComplete, isFalse);
+    expect(() => app.handwritingProfile.generate('a'), throwsStateError);
+    expect(find.byKey(const ValueKey('handwriting-text')), findsNothing);
+    expect(
+        t
+            .widget<Text>(
+                find.byKey(const ValueKey('handwriting-current-character')))
+            .data,
+        'a');
+    expect(t.state<HandwritingPadState>(find.byType(HandwritingPad)).strokes,
+        isEmpty);
+    expect(t.state<HandwritingPadState>(find.byType(HandwritingPad)).canUndo,
+        isFalse);
+    expect(
+        t
+            .widget<IconButton>(find.byKey(const ValueKey('handwriting-reset')))
+            .onPressed,
+        isNull);
+    expect(jsonEncode(inserted.content), originalInk);
+    await t.runAsync(() async {
+      await app.flushSave();
+      await repo.flushWorkspace();
+      final reopened = await Repository.openAt(directory);
+      final restored = AppState(reopened);
+      expect(restored.handwritingProfile.samples, isEmpty);
+      restored.dispose();
+      reopened.dispose();
+    });
+    app.cancelPendingSave();
+    await t.pumpWidget(const SizedBox());
+    await t.pumpWidget(
+        MaterialApp(home: Scaffold(body: HandwritingDialog(app: app))));
+    await settle(t);
+    expect(
+        t
+            .widget<Text>(
+                find.byKey(const ValueKey('handwriting-current-character')))
+            .data,
+        'a');
+    expect(find.byKey(const ValueKey('handwriting-text')), findsNothing);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('reset also clears a partial setup and its unsaved drawing',
+      (t) async {
+    activeTester = t;
+    if (!sqlite) return markTestSkipped('sqlite unavailable');
+    app.saveHandwritingProfile(
+        HandwritingProfile()..addSample('a', [sample(20)]));
+    app.cancelPendingSave();
+    await t.pumpWidget(
+        MaterialApp(home: Scaffold(body: HandwritingDialog(app: app))));
+    await settle(t);
+    expect(
+        t
+            .widget<Text>(
+                find.byKey(const ValueKey('handwriting-current-character')))
+            .data,
+        'b');
+    final pen = await t.startGesture(
+        t.getCenter(find.byKey(const ValueKey('handwriting-pad'))),
+        kind: PointerDeviceKind.stylus);
+    await pen.moveBy(const Offset(30, 30));
+    await pen.up();
+    await t.pump();
+    await t.tap(find.byKey(const ValueKey('handwriting-reset')));
+    await settle(t);
+    await t.tap(find.byKey(const ValueKey('handwriting-reset-confirm')));
+    await settle(t);
+    final pad = t.state<HandwritingPadState>(find.byType(HandwritingPad));
+    expect(pad.strokes, isEmpty);
+    expect(pad.canUndo, isFalse);
+    expect(app.handwritingProfile.learnedCharacters, 0);
+    expect(
+        t
+            .widget<Text>(
+                find.byKey(const ValueKey('handwriting-current-character')))
+            .data,
+        'a');
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets(
+      'U guide uses the smaller writing box and reset fits a narrow window',
+      (t) async {
+    activeTester = t;
+    if (!sqlite) return markTestSkipped('sqlite unavailable');
+    t.view.physicalSize = const Size(400, 760);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.resetPhysicalSize);
+    addTearDown(t.view.resetDevicePixelRatio);
+    app.saveHandwritingProfile(completedProfile(except: 'U'));
+    app.cancelPendingSave();
+    final boundaryKey = GlobalKey();
+    await t.pumpWidget(MaterialApp(
+        theme: onoteTheme(Brightness.light),
+        locale: const Locale('de'),
+        supportedLocales: const [Locale('de')],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context)
+                .copyWith(textScaler: const TextScaler.linear(1.3)),
+            child: RepaintBoundary(key: boundaryKey, child: child!)),
+        home: Scaffold(body: HandwritingDialog(app: app))));
+    await settle(t);
+    expect(
+        t
+            .widget<Text>(
+                find.byKey(const ValueKey('handwriting-current-character')))
+            .data,
+        'U');
+    expect(t.getSize(find.byKey(const ValueKey('handwriting-pad'))).width, 160);
+    expect(t.takeException(), isNull);
+    await shot(t, boundaryKey, 'handwriting-smaller-U');
+    await t.tap(find.byKey(const ValueKey('handwriting-reset')));
+    await settle(t);
+    expect(t.takeException(), isNull);
+    await shot(t, boundaryKey, 'handwriting-reset-confirmation');
+    await t.tap(find.byKey(const ValueKey('handwriting-reset-cancel')));
+    await settle(t);
+    expect(app.handwritingProfile.pendingCharacters, ['U']);
+    await t.pumpWidget(const SizedBox());
+  });
 
   testWidgets(
       'overview shows all characters; selected variants replace, delete and add without shifting other samples',
