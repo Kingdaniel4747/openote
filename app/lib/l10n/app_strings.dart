@@ -47,7 +47,7 @@ const german = <String, String>{
   'Variants': 'Varianten',
   'Variant': 'Variante',
   'New variant': 'Neue Variante',
-  'Delete selected variant': 'Gewählte Variante löschen',
+  'Saved': 'Gespeichert',
   'Save variant': 'Variante speichern',
   'Next': 'Weiter',
   'Finish': 'Fertig',

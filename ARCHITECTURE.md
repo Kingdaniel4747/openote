@@ -70,6 +70,13 @@ Der bestätigte Profil-Reset leert `handwritingProfileBeta` sowie den Dialogentw
 setzt Einrichtung/Undo zurück und ändert keine Ink-Blöcke auf Notizseiten.
 Die Bestätigungsknöpfe sind ebenfalls gezielte Touch-Ziele während Stift-Hover.
 Speichern ersetzt nur die ausgewählte Variante; maximal fünf ohne Verdrängen.
+Der Editor bleibt beim Speichern geöffnet und wählt die gespeicherte Variante;
+„Gespeichert“ verhindert doppeltes Anhängen desselben Entwurfs. Beim Wechsel oder
+Zurückgehen werden leere gespeicherte Varianten entfernt; Zielindizes werden
+entsprechend angepasst. Leere neue Entwürfe bleiben ungespeichert, genau eine
+Neue-Variante-Kachel bleibt bis zur Fünfergrenze verfügbar. Die Werkzeugleiste und
+Einzellöschung sind durch einen mittigen Entwurf-Reset ersetzt; Cursor ist im
+Schreibfeld unsichtbar, Radieren bleibt über die Stifttaste erreichbar.
 `WritingTouchGuard.registerControlTarget` erlaubt frische kleine Fingerkontakte
 nach Pen-up nur an den sichtbaren Dialogkontrollen, nicht auf dem Schreibfeld;
 Registrierungen enden beim Dialogabbau. Aktive Stiftkontakte und alte Handkontakte

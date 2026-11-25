@@ -29,11 +29,16 @@ Der Android-Scanner ist eine Begleitapp, kein zweiter Notizeditor.
   bis zu fünf Varianten je Zeichen ergänzen und weitere Sonderzeichen direkt aus
   dem Text einlernen. Das Schreibfeld samt blassem Größenbeispiel ist auf 160
   statt 300 Pixel verkleinert; gespeicherte Schriftgröße und Ausgabe bleiben
-  gleich. Grundlinie, Radierer/Stifttaste und großer „Noch mal“-Knopf helfen
-  beim Zeichnen und Korrigieren des Entwurfs.
+  gleich. Unter dem Feld steht nur ein mittiger Kreis-Pfeil zum Leeren und
+  Neuschreiben; Werkzeugauswahl, Undo-Stroke und doppelter Retry-Knopf entfallen.
+  Beim Hover ist der Cursor unsichtbar, die Stifttaste radiert weiterhin.
   „Schrift bearbeiten“ zeigt alle Zeichen mit eigener Schrift und Größenbeispiel;
   je Zeichen sind die bis zu fünf Varianten nebeneinander auswählbar. Gezielt
-  ersetzen, hinzufügen oder löschen; volle Variantenlisten verdrängen nichts.
+  ersetzen oder hinzufügen, ohne die Zeichenansicht nach dem Speichern zu verlassen.
+  „Gespeichert“ bestätigt den Vorgang; der Pfeil führt zurück. Leere gespeicherte
+  Varianten werden beim Wechsel oder Zurückgehen entfernt, neue leere Entwürfe
+  belegen keinen Platz. Es gibt höchstens eine Kachel „Neue Variante“ und maximal
+  fünf gespeicherte Varianten; volle Listen verdrängen nichts.
   Frische Fingertipps auf Dialogknöpfe funktionieren nach dem Abheben auch bei
   Stift-Hover; bereits aufliegende Handkontakte bleiben ausgeschlossen.
   Der Neustart-Knopf neben dem X löscht nach Bestätigung sämtliche Schriftproben

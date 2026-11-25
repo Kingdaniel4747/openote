@@ -59,7 +59,7 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
   int? _variant;
   int _draftRevision = 0;
   List<Stroke> _initialStrokes = const [];
-  bool _returnToText = false, _canSave = false, _erase = false;
+  bool _returnToText = false, _canSave = false, _saved = false;
   bool _resetPending = false;
   double _height = 28, _width = 600, _words = 1, _lines = 1;
 
@@ -133,11 +133,56 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
   }
 
   void _openOverview() {
+    _discardEmptyVariant();
     _top();
     setState(() {
       _view = _HandwritingView.overview;
       _canSave = false;
     });
+  }
+
+  void _backFromCharacter() {
+    _discardEmptyVariant();
+    _top();
+    setState(() {
+      _view = _returnToText && _profile.isComplete
+          ? _HandwritingView.text
+          : _HandwritingView.overview;
+      _returnToText = false;
+      _canSave = false;
+    });
+  }
+
+  /// Empty saved variants disappear on leaving; unsaved nonempty edits still
+  /// require Save. A new empty draft never occupies a stored variant slot.
+  int? _discardEmptyVariant() {
+    final pad = _padKey.currentState;
+    if (_view != _HandwritingView.edit ||
+        _variant == null ||
+        pad == null ||
+        pad.widget.sampleToken != '$_character:$_draftRevision' ||
+        pad.drawing ||
+        pad.strokes.isNotEmpty) {
+      return null;
+    }
+    final removed = _variant!;
+    _profile.removeVariant(_character, removed);
+    widget.app.saveHandwritingProfile(_profile);
+    _variant = null;
+    return removed;
+  }
+
+  void _selectVariant(int? index) {
+    final removed = _discardEmptyVariant();
+    if (removed != null && index != null) {
+      if (index == removed) {
+        index = null;
+      } else if (index > removed) {
+        index--;
+      }
+    }
+    _top();
+    setState(() => _loadVariant(index));
   }
 
   Future<void> _resetHandwriting() async {
@@ -207,13 +252,14 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
     _initialStrokes =
         index == null ? const [] : _profile.samples[_character]![index];
     _canSave = _initialStrokes.isNotEmpty;
-    _erase = false;
+    _saved = false;
     _draftRevision++;
   }
 
   void _save() {
     final pad = _padKey.currentState;
     if (!_canSave || pad == null || pad.drawing) return;
+    final savedIndex = _variant ?? (_profile.samples[_character]?.length ?? 0);
     if (!_profile.saveVariant(_character, pad.strokes,
         index: _view == _HandwritingView.edit ? _variant : null)) {
       return;
@@ -228,22 +274,10 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
             : _HandwritingView.setup;
         _loadVariant(null);
       } else {
-        _view = _returnToText && _profile.isComplete
-            ? _HandwritingView.text
-            : _HandwritingView.overview;
-        _returnToText = false;
-        _canSave = false;
+        _loadVariant(savedIndex);
+        _saved = true;
       }
     });
-  }
-
-  void _removeVariant() {
-    if (_variant == null) return;
-    _profile.removeVariant(_character, _variant!);
-    widget.app.saveHandwritingProfile(_profile);
-    final count = _profile.samples[_character]?.length ?? 0;
-    setState(
-        () => _loadVariant(count == 0 ? null : math.min(_variant!, count - 1)));
   }
 
   List<Stroke> _generate({Offset origin = const Offset(12, 6)}) =>
@@ -309,7 +343,7 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
                         minimumSize: const Size(44, 44),
                         visualDensity: VisualDensity.standard),
                     tooltip: tr(context, 'All characters'),
-                    onPressed: _openOverview,
+                    onPressed: _backFromCharacter,
                     icon: const Icon(Icons.arrow_back, size: 20),
                   ),
                 const SizedBox(width: 8),
@@ -498,12 +532,12 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
         child: HandwritingPad(
           key: _padKey,
           character: _character,
-          eraser: _erase,
           sampleToken: '$_character:$_draftRevision',
           initialStrokes: _initialStrokes,
           onChanged: () => setState(() {
             final pad = _padKey.currentState;
             _canSave = pad != null && !pad.drawing && pad.strokes.isNotEmpty;
+            _saved = false;
           }),
         ),
       )),
@@ -512,40 +546,16 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
           key: _controlsKey,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Wrap(
-                alignment: WrapAlignment.center,
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  IconButton(
-                      style: IconButton.styleFrom(
-                          minimumSize: const Size(44, 44),
-                          visualDensity: VisualDensity.standard),
-                      tooltip: tr(context, 'Undo stroke'),
-                      onPressed: (_padKey.currentState?.canUndo ?? false)
-                          ? () => _padKey.currentState?.undo()
-                          : null,
-                      icon: const Icon(Icons.undo_outlined, size: 18)),
-                  IconButton(
-                      key: const ValueKey('handwriting-pen'),
-                      style: IconButton.styleFrom(
-                          minimumSize: const Size(44, 44),
-                          visualDensity: VisualDensity.standard),
-                      tooltip: tr(context, 'Pen'),
-                      isSelected: !_erase,
-                      onPressed: () => setState(() => _erase = false),
-                      icon: const Icon(Icons.edit_outlined, size: 18)),
-                  IconButton(
-                      key: const ValueKey('handwriting-eraser'),
-                      style: IconButton.styleFrom(
-                          minimumSize: const Size(44, 44),
-                          visualDensity: VisualDensity.standard),
-                      tooltip: tr(context, 'Eraser'),
-                      isSelected: _erase,
-                      onPressed: () => setState(() => _erase = true),
-                      icon: const Icon(Icons.cleaning_services_outlined,
-                          size: 18)),
-                ]),
+            Center(
+                child: IconButton(
+              key: const ValueKey('handwriting-retry'),
+              tooltip: tr(context, 'Write again'),
+              style: IconButton.styleFrom(
+                  minimumSize: const Size(48, 48),
+                  visualDensity: VisualDensity.standard),
+              onPressed: _canSave ? () => _padKey.currentState?.clear() : null,
+              icon: const Icon(Icons.refresh_rounded, size: 24),
+            )),
             const SizedBox(height: 4),
             Text(
                 tr(context,
@@ -564,15 +574,6 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
                   _variantTile(i, variants[i]),
                 if (variants.length < 5) _variantTile(null, const []),
               ]),
-              if (_variant != null)
-                Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      key: const ValueKey('handwriting-delete-variant'),
-                      onPressed: _removeVariant,
-                      icon: const Icon(Icons.delete_outline, size: 18),
-                      label: const AppText('Delete selected variant'),
-                    )),
             ],
           ]),
     ]);
@@ -581,6 +582,12 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
   Widget _variantTile(int? index, List<Stroke> strokes) {
     final scheme = Theme.of(context).colorScheme;
     final selected = index == _variant;
+    final pad = _padKey.currentState;
+    final preview = selected &&
+            pad != null &&
+            pad.widget.sampleToken == '$_character:$_draftRevision'
+        ? pad.strokes
+        : strokes;
     return SizedBox(
         width: 112,
         child: Material(
@@ -594,8 +601,7 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
                 : 'handwriting-variant-$index'),
             borderRadius: BorderRadius.circular(8),
             onTap: () {
-              _top();
-              setState(() => _loadVariant(index));
+              _selectVariant(index);
             },
             child: Container(
               padding: const EdgeInsets.all(8),
@@ -611,7 +617,7 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
                         : '${tr(context, 'Variant')} ${index + 1}',
                     style: Theme.of(context).textTheme.bodySmall),
                 const SizedBox(height: 4),
-                _sample(_character, strokes),
+                _sample(_character, preview),
               ]),
             ),
           ),
@@ -631,32 +637,16 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
           const SizedBox(height: 8),
         ],
         if (editing)
-          Row(children: [
-            Expanded(
-                child: OutlinedButton(
-              key: const ValueKey('handwriting-retry'),
-              style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(0, 52),
-                  visualDensity: VisualDensity.standard),
-              onPressed: _canSave ? () => _padKey.currentState?.clear() : null,
-              child: const AppText('Write again'),
-            )),
-            const SizedBox(width: 12),
-            Expanded(
-                flex: 2,
-                child: FilledButton(
-                  key: const ValueKey('handwriting-save-next'),
-                  style: FilledButton.styleFrom(
-                      minimumSize: const Size(0, 52),
-                      visualDensity: VisualDensity.standard),
-                  onPressed: _canSave ? _save : null,
-                  child: AppText(_view == _HandwritingView.edit
-                      ? 'Save variant'
-                      : (_profile.pendingCharacters.length == 1
-                          ? 'Finish'
-                          : 'Next')),
-                )),
-          ])
+          FilledButton(
+            key: const ValueKey('handwriting-save-next'),
+            style: FilledButton.styleFrom(
+                minimumSize: const Size(0, 52),
+                visualDensity: VisualDensity.standard),
+            onPressed: _canSave && !_saved ? _save : null,
+            child: AppText(_view == _HandwritingView.edit
+                ? (_saved ? 'Saved' : 'Save variant')
+                : (_profile.pendingCharacters.length == 1 ? 'Finish' : 'Next')),
+          )
         else
           FilledButton(
             key: ValueKey(

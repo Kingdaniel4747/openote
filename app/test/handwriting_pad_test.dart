@@ -97,6 +97,9 @@ void main() {
     final original = line();
     await t.pumpWidget(host(key, ink: [original]));
     await t.pump();
+    final region = find.descendant(
+        of: find.byType(HandwritingPad), matching: find.byType(MouseRegion));
+    expect(t.widget<MouseRegion>(region).cursor, SystemMouseCursors.none);
     expect(
         find.byWidgetPredicate(
             (w) => w is CustomPaint && w.painter is HandwritingSamplePainter),

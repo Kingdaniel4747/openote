@@ -339,15 +339,26 @@ void main() {
     expect(replaced[3].single.id, isNot(originalIds[3]));
     expect(replaced[0].single.id, originalIds[0]);
     expect(replaced[4].single.id, originalIds[4]);
-    expect(find.byKey(const ValueKey('handwriting-tile-a')), findsOneWidget);
-    await t.tap(find.byKey(const ValueKey('handwriting-tile-a')));
-    await settle(t);
+    expect(find.byKey(const ValueKey('handwriting-tile-a')), findsNothing,
+        reason: 'Save keeps the character editor open');
+    expect(find.text('Saved'), findsOneWidget);
     await t.tap(find.byKey(const ValueKey('handwriting-variant-1')));
     await t.pump();
-    await t.tap(find.byKey(const ValueKey('handwriting-delete-variant')));
+    await t.tap(find.byKey(const ValueKey('handwriting-retry')));
+    await t.pump();
+    await t.tap(find.byKey(const ValueKey('handwriting-variant-2')));
     await settle(t);
     expect(app.handwritingProfile.samples['a'], hasLength(4));
     expect(app.handwritingProfile.samples['a']![1].single.id, originalIds[2]);
+    expect(
+        t
+            .state<HandwritingPadState>(find.byType(HandwritingPad))
+            .strokes
+            .single
+            .id,
+        originalIds[2],
+        reason:
+            'switching past a deleted empty variant keeps the intended target');
     expect(
         find.byKey(const ValueKey('handwriting-new-variant')), findsOneWidget);
     await t.tap(find.byKey(const ValueKey('handwriting-new-variant')));
@@ -366,6 +377,11 @@ void main() {
     expect(
         app.handwritingProfile.samples['a']!.first.single.id, originalIds[0]);
     expect(app.handwritingProfile.samples['a']![3].single.id, originalIds[4]);
+    expect(find.byKey(const ValueKey('handwriting-tile-a')), findsNothing);
+    expect(find.byKey(const ValueKey('handwriting-new-variant')), findsNothing);
+    await t.tap(find.byKey(const ValueKey('handwriting-back-overview')));
+    await settle(t);
+    expect(find.byKey(const ValueKey('handwriting-tile-a')), findsOneWidget);
     await t.pumpWidget(const SizedBox());
   });
 
@@ -381,6 +397,73 @@ void main() {
     expect(restored.handwritingProfile.pendingCharacters.first, 'b');
     restored.dispose();
     reopened.dispose();
+  });
+
+  testWidgets(
+      'editor has one centered restart and one reusable new-variant slot',
+      (t) async {
+    activeTester = t;
+    if (!sqlite) return markTestSkipped('sqlite unavailable');
+    app.saveHandwritingProfile(completedProfile());
+    app.cancelPendingSave();
+    await t.pumpWidget(
+        MaterialApp(home: Scaffold(body: HandwritingDialog(app: app))));
+    await settle(t);
+    await t.tap(find.text('Edit handwriting'));
+    await settle(t);
+    await t.tap(find.byKey(const ValueKey('handwriting-tile-a')));
+    await settle(t);
+    final restart = find.byKey(const ValueKey('handwriting-retry'));
+    expect(t.widget<IconButton>(restart).icon,
+        isA<Icon>().having((i) => i.icon, 'icon', Icons.refresh_rounded));
+    expect(t.getCenter(restart).dx,
+        t.getCenter(find.byKey(const ValueKey('handwriting-pad'))).dx);
+    expect(find.byKey(const ValueKey('handwriting-pen')), findsNothing);
+    expect(find.byKey(const ValueKey('handwriting-eraser')), findsNothing);
+    expect(find.byTooltip('Undo stroke'), findsNothing);
+    expect(
+        find.byKey(const ValueKey('handwriting-delete-variant')), findsNothing);
+    expect(find.widgetWithText(OutlinedButton, 'Write again'), findsNothing);
+    final fresh = find.byKey(const ValueKey('handwriting-new-variant'));
+    await t.tap(fresh);
+    await t.pump();
+    await t.tap(find.byKey(const ValueKey('handwriting-variant-0')));
+    await t.pump();
+    expect(app.handwritingProfile.samples['a'], hasLength(1));
+    expect(fresh, findsOneWidget);
+    await t.tap(fresh);
+    await t.pump();
+    final pen = await t.startGesture(
+        t.getCenter(find.byKey(const ValueKey('handwriting-pad'))),
+        kind: PointerDeviceKind.stylus);
+    await pen.moveBy(const Offset(20, 15));
+    await pen.up();
+    await t.pump();
+    final save = find.byKey(const ValueKey('handwriting-save-next'));
+    await t.tap(save);
+    await settle(t);
+    expect(app.handwritingProfile.samples['a'], hasLength(2));
+    expect(find.byKey(const ValueKey('handwriting-variant-1')), findsOneWidget);
+    expect(fresh, findsOneWidget);
+    expect(t.widget<FilledButton>(save).onPressed, isNull,
+        reason: 'saved draft cannot be appended a second time');
+    final retained = app.handwritingProfile.samples['a']![1].single.id;
+    await t.tap(find.byKey(const ValueKey('handwriting-variant-0')));
+    await t.pump();
+    await t.tap(restart);
+    await t.pump();
+    await t.tap(find.byKey(const ValueKey('handwriting-variant-1')));
+    await settle(t);
+    expect(app.handwritingProfile.samples['a']!.single.single.id, retained);
+    expect(
+        t
+            .state<HandwritingPadState>(find.byType(HandwritingPad))
+            .strokes
+            .single
+            .id,
+        retained);
+    expect(fresh, findsOneWidget);
+    await t.pumpWidget(const SizedBox());
   });
 
   test('selected ink changes brush only, supports undo and survives save',
@@ -525,6 +608,7 @@ void main() {
     await t.pump();
     await t.tap(find.byKey(const ValueKey('handwriting-save-next')));
     await settle(t);
+    expect(find.byKey(const ValueKey('handwriting-text')), findsNothing);
     expect(
         t
             .widget<Text>(
@@ -614,6 +698,10 @@ void main() {
     await t.pump();
     await t.tap(find.byKey(const ValueKey('handwriting-save-next')));
     await settle(t);
+    expect(find.byKey(const ValueKey('handwriting-text')), findsNothing);
+    expect(find.text('Saved'), findsOneWidget);
+    await t.tap(find.byKey(const ValueKey('handwriting-back-overview')));
+    await settle(t);
     expect(
         t
             .widget<TextField>(find.byKey(const ValueKey('handwriting-text')))
@@ -632,16 +720,12 @@ void main() {
     expect(find.byType(DropdownButtonFormField<String>), findsNothing);
     await t.tap(find.byKey(const ValueKey('handwriting-tile-a')));
     await settle(t);
-    await t.ensureVisible(
-        find.byKey(const ValueKey('handwriting-delete-variant')));
-    await t.tap(find.byKey(const ValueKey('handwriting-delete-variant')));
-    await settle(t);
-    expect(app.handwritingProfile.isComplete, isFalse);
-    expect(find.text('Back to text'), findsNothing);
-    expect(find.byKey(const ValueKey('handwriting-insert')), findsNothing);
-    expect(find.byKey(const ValueKey('handwriting-save-next')), findsOneWidget);
+    await t.tap(find.byKey(const ValueKey('handwriting-retry')));
+    await t.pump();
     await t.tap(find.byKey(const ValueKey('handwriting-back-overview')));
     await settle(t);
+    expect(app.handwritingProfile.isComplete, isFalse);
+    expect(find.byKey(const ValueKey('handwriting-insert')), findsNothing);
     expect(find.text('Continue setup'), findsOneWidget);
     await t.pumpWidget(const SizedBox());
   });

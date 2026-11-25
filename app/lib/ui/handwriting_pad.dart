@@ -149,7 +149,7 @@ class HandwritingPadState extends State<HandwritingPad> {
           final size = Size(constraints.maxWidth, constraints.maxHeight);
           final scheme = Theme.of(context).colorScheme;
           return MouseRegion(
-            cursor: SystemMouseCursors.precise,
+            cursor: SystemMouseCursors.none,
             child: Listener(
               key: const ValueKey('handwriting-pad'),
               behavior: HitTestBehavior.opaque,
