@@ -54,6 +54,11 @@ Tests: `ink_eraser_test.dart`, `windows_pen_buttons_test.dart`,
 
 Handschrift-Beta: `ui/handwriting_dialog.dart` erfasst Zeichen auf einem festen
 Schreibfeld mit Grundlinie; Stift/Maus schreiben, Touch scrollt den Dialog.
+Die Einrichtung führt durch alle 84 Zeichen mit festem Bestätigen-Knopf und
+automatischem Weiterschalten. Der nächste Schritt wird aus den gespeicherten
+Vorlagen abgeleitet; kein separater Freigabeschalter. `HandwritingProfile.isComplete`
+sperrt auch die Erzeugung selbst, solange Pflichtzeichen fehlen. Nach Abschluss
+öffnet sich die Umwandlung; Variantenbearbeitung bleibt separat erreichbar.
 `ink/handwriting_profile.dart` speichert Zeichenvarianten als Strichpfade und
 setzt Text mit Umbruch in seitenabsolute `Stroke`s um. Das lokale Profil liegt
 im Workspace-Setting `handwritingProfileBeta`, unabhängig von Notizbuchinhalten.

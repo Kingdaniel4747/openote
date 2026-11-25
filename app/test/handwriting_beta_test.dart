@@ -93,6 +93,15 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  HandwritingProfile completedProfile({String? except}) {
+    final profile = HandwritingProfile();
+    for (final rune in HandwritingProfile.characters.runes) {
+      final character = String.fromCharCode(rune);
+      if (character != except) profile.addSample(character, [sample(20)]);
+    }
+    return profile;
+  }
+
   test('profile persists across reopening the workspace', () async {
     if (!sqlite) return markTestSkipped('sqlite unavailable');
     app.saveHandwritingProfile(
@@ -101,6 +110,8 @@ void main() {
     final reopened = await Repository.openAt(directory);
     final restored = AppState(reopened);
     expect(restored.handwritingProfile.samples['a']!.single.single.p, [.3, .7]);
+    expect(restored.handwritingProfile.isComplete, isFalse);
+    expect(restored.handwritingProfile.pendingCharacters.first, 'b');
     restored.dispose();
     reopened.dispose();
   });
@@ -159,7 +170,7 @@ void main() {
   test('generated ink is inserted, erasable and saved without changing samples',
       () async {
     if (!sqlite) return markTestSkipped('sqlite unavailable');
-    final profile = HandwritingProfile()..addSample('a', [sample(20)]);
+    final profile = completedProfile();
     final generated =
         profile.generate('aa', origin: const Offset(100, 200), height: 64);
     final block = app.insertHandwriting(generated)!;
@@ -190,6 +201,8 @@ void main() {
     t.view.devicePixelRatio = 1;
     addTearDown(t.view.resetPhysicalSize);
     addTearDown(t.view.resetDevicePixelRatio);
+    app.saveHandwritingProfile(completedProfile(except: 'a'));
+    app.cancelPendingSave();
     await t.pumpWidget(MaterialApp(
         theme: onoteTheme(Brightness.light),
         home: Scaffold(body: HandwritingButton(app: app))));
@@ -203,11 +216,11 @@ void main() {
     await pen.moveTo(rect.topLeft + Offset(rect.width * .5, rect.height * .7));
     await pen.up();
     await t.pump();
-    await t.tap(find.text('Save variant'));
+    expect(find.byKey(const ValueKey('handwriting-text')), findsNothing);
+    await t.tap(find.byKey(const ValueKey('handwriting-save-next')));
     await settle(t);
     expect(app.handwritingProfile.samples['a'], hasLength(1));
-    await t.tap(find.text('2. Write text'));
-    await settle(t);
+    expect(app.handwritingProfile.isComplete, isTrue);
     await t.enterText(find.byKey(const ValueKey('handwriting-text')), 'aa');
     await settle(t);
     final insert = find.byKey(const ValueKey('handwriting-insert'));
@@ -222,15 +235,101 @@ void main() {
     await t.pumpWidget(const SizedBox());
   });
 
-  testWidgets('untrained text is blocked and missing character opens training',
+  testWidgets('setup confirms, advances, resumes and keeps conversion locked',
       (t) async {
     activeTester = t;
     if (!sqlite) return markTestSkipped('sqlite unavailable');
     await t.pumpWidget(
         MaterialApp(home: Scaffold(body: HandwritingDialog(app: app))));
-    await t.tap(find.text('2. Write text'));
     await settle(t);
-    await t.enterText(find.byKey(const ValueKey('handwriting-text')), 'ä');
+    expect(find.byKey(const ValueKey('handwriting-text')), findsNothing);
+    expect(find.byKey(const ValueKey('handwriting-insert')), findsNothing);
+    expect(
+        t
+            .widget<FilledButton>(
+                find.byKey(const ValueKey('handwriting-save-next')))
+            .onPressed,
+        isNull);
+    final rect = t.getRect(find.byKey(const ValueKey('handwriting-pad')));
+    final pen = await t.startGesture(rect.center - const Offset(20, 20),
+        kind: PointerDeviceKind.stylus);
+    await pen.moveBy(const Offset(30, 40));
+    await pen.up();
+    await t.pump();
+    await t.tap(find.byKey(const ValueKey('handwriting-save-next')));
+    await settle(t);
+    expect(
+        t
+            .widget<Text>(
+                find.byKey(const ValueKey('handwriting-current-character')))
+            .data,
+        'b');
+    expect(app.handwritingProfile.samples['a'], hasLength(1));
+    expect(app.handwritingProfile.isComplete, isFalse);
+    expect(find.byKey(const ValueKey('handwriting-text')), findsNothing);
+    await t.pumpWidget(const SizedBox());
+    await t.pumpWidget(
+        MaterialApp(home: Scaffold(body: HandwritingDialog(app: app))));
+    await settle(t);
+    expect(
+        t
+            .widget<Text>(
+                find.byKey(const ValueKey('handwriting-current-character')))
+            .data,
+        'b');
+    expect(find.byType(DropdownButtonFormField<String>), findsNothing,
+        reason: 'setup cannot skip unrecorded characters');
+    app.cancelPendingSave();
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets(
+      'every setup character is confirmed before automatic conversion opens',
+      (t) async {
+    activeTester = t;
+    if (!sqlite) return markTestSkipped('sqlite unavailable');
+    t.view.physicalSize = const Size(1000, 1100);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.resetPhysicalSize);
+    addTearDown(t.view.resetDevicePixelRatio);
+    await t.pumpWidget(MaterialApp(
+        theme: onoteTheme(Brightness.light),
+        home: Scaffold(body: HandwritingDialog(app: app))));
+    await settle(t);
+    for (final rune in HandwritingProfile.characters.runes) {
+      expect(find.byKey(const ValueKey('handwriting-text')), findsNothing);
+      expect(
+          t
+              .widget<Text>(
+                  find.byKey(const ValueKey('handwriting-current-character')))
+              .data,
+          String.fromCharCode(rune));
+      final rect = t.getRect(find.byKey(const ValueKey('handwriting-pad')));
+      final pen = await t.startGesture(rect.center - const Offset(20, 20),
+          kind: PointerDeviceKind.stylus);
+      await pen.moveBy(const Offset(30, 40));
+      await pen.up();
+      await t.pump();
+      await t.tap(find.byKey(const ValueKey('handwriting-save-next')));
+      await settle(t);
+    }
+    expect(app.handwritingProfile.isComplete, isTrue);
+    expect(find.byKey(const ValueKey('handwriting-text')), findsOneWidget);
+    expect(find.byKey(const ValueKey('handwriting-save-next')), findsNothing);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets(
+      'additional character returns to the typed text and removal locks setup',
+      (t) async {
+    activeTester = t;
+    if (!sqlite) return markTestSkipped('sqlite unavailable');
+    app.saveHandwritingProfile(completedProfile());
+    app.cancelPendingSave();
+    await t.pumpWidget(
+        MaterialApp(home: Scaffold(body: HandwritingDialog(app: app))));
+    await settle(t);
+    await t.enterText(find.byKey(const ValueKey('handwriting-text')), 'é');
     await settle(t);
     expect(
         t
@@ -238,12 +337,39 @@ void main() {
                 find.byKey(const ValueKey('handwriting-insert')))
             .onPressed,
         isNull);
-    await t.tap(find.widgetWithText(ActionChip, 'ä'));
+    await t.tap(find.widgetWithText(ActionChip, 'é'));
+    await settle(t);
+    final rect = t.getRect(find.byKey(const ValueKey('handwriting-pad')));
+    final pen =
+        await t.startGesture(rect.center, kind: PointerDeviceKind.stylus);
+    await pen.moveBy(const Offset(20, 20));
+    await pen.up();
+    await t.pump();
+    await t.tap(find.byKey(const ValueKey('handwriting-save-next')));
     await settle(t);
     expect(
-        find.byKey(const ValueKey('handwriting-character-ä')), findsOneWidget);
-    expect(find.byKey(const ValueKey('handwriting-pad')), findsOneWidget);
-    app.cancelPendingSave();
+        t
+            .widget<TextField>(find.byKey(const ValueKey('handwriting-text')))
+            .controller!
+            .text,
+        'é');
+    expect(
+        t
+            .widget<FilledButton>(
+                find.byKey(const ValueKey('handwriting-insert')))
+            .onPressed,
+        isNotNull);
+    await t.tap(find.text('Edit handwriting'));
+    await settle(t);
+    await t.ensureVisible(find.byTooltip('Saved variants'));
+    await t.tap(find.byTooltip('Saved variants'));
+    await settle(t);
+    await t.tap(find.text('Remove last variant'));
+    await settle(t);
+    expect(app.handwritingProfile.isComplete, isFalse);
+    expect(find.text('Back to text'), findsNothing);
+    expect(find.byKey(const ValueKey('handwriting-insert')), findsNothing);
+    expect(find.byKey(const ValueKey('handwriting-save-next')), findsOneWidget);
     await t.pumpWidget(const SizedBox());
   });
 
@@ -282,18 +408,23 @@ void main() {
           image.dispose();
         });
       }
+      // The polished setup fits at 760 px. A shorter window must still scroll
+      // with fingers while keeping upward stylus strokes on the writing pad.
+      t.view.physicalSize = const Size(400, 600);
+      await t.pump();
       final scroll = t.state<ScrollableState>(find
           .descendant(
               of: find.byType(HandwritingDialog),
               matching: find.byType(Scrollable))
           .first);
+      expect(scroll.position.maxScrollExtent, greaterThan(0));
       final before = scroll.position.pixels;
       final padRect = t.getRect(find.byKey(const ValueKey('handwriting-pad')));
-      final pen = await t.startGesture(padRect.center - const Offset(0, 50),
+      final pen = await t.startGesture(padRect.center + const Offset(0, 40),
           kind: PointerDeviceKind.stylus);
-      await pen.moveBy(const Offset(0, 30));
-      await pen.moveBy(const Offset(0, 30));
-      await pen.moveBy(const Offset(0, 30));
+      await pen.moveBy(const Offset(0, -30));
+      await pen.moveBy(const Offset(0, -30));
+      await pen.moveBy(const Offset(0, -30));
       await pen.up();
       await t.pump();
       expect(scroll.position.pixels, before,
@@ -303,8 +434,11 @@ void main() {
       await settle(t);
       expect(scroll.position.pixels, greaterThan(before),
           reason: 'fingers still scroll');
-      await t.tap(find.byType(ChoiceChip).at(1));
-      await settle(t);
+      expect(find.byKey(const ValueKey('handwriting-text')), findsNothing);
+      final confirm =
+          t.getRect(find.byKey(const ValueKey('handwriting-save-next')));
+      expect(confirm.bottom, lessThanOrEqualTo(600));
+      expect(confirm.top, greaterThan(0));
       expect(t.takeException(), isNull);
       app.cancelPendingSave();
       await t.pumpWidget(const SizedBox());
@@ -316,15 +450,16 @@ void main() {
     activeTester = t;
     if (!sqlite) return markTestSkipped('sqlite unavailable');
     app.pageProps = PageProps(layout: 'paged', paperSize: 'A5');
-    app.saveHandwritingProfile(
-        HandwritingProfile()..addSample('a', [sample(20)]));
+    app.saveHandwritingProfile(completedProfile());
     app.cancelPendingSave();
     await t.pumpWidget(
         MaterialApp(home: Scaffold(body: HandwritingDialog(app: app))));
-    await t.tap(find.text('2. Write text'));
     await settle(t);
     await t.enterText(find.byKey(const ValueKey('handwriting-text')),
         List.filled(50, 'a').join());
+    await settle(t);
+    await t.ensureVisible(find.text('Size & spacing'));
+    await t.tap(find.text('Size & spacing'));
     await settle(t);
     t.widget<Slider>(find.byType(Slider).at(0)).onChanged!(60);
     await t.pump();
@@ -345,6 +480,63 @@ void main() {
     }
     await t.pumpWidget(const SizedBox());
   });
+
+  for (final dark in [false, true]) {
+    testWidgets(
+        'conversion fits narrow ${dark ? 'dark' : 'light'} window and keeps insertion visible',
+        (t) async {
+      activeTester = t;
+      if (!sqlite) return markTestSkipped('sqlite unavailable');
+      t.view.physicalSize = const Size(400, 760);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.resetPhysicalSize);
+      addTearDown(t.view.resetDevicePixelRatio);
+      app.saveHandwritingProfile(completedProfile());
+      app.cancelPendingSave();
+      final boundaryKey = GlobalKey();
+      await t.pumpWidget(MaterialApp(
+          theme: onoteTheme(dark ? Brightness.dark : Brightness.light),
+          locale: const Locale('de'),
+          supportedLocales: const [Locale('de')],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
+          home: MediaQuery(
+              data: const MediaQueryData(
+                  size: Size(400, 760),
+                  textScaler: TextScaler.linear(1.3),
+                  disableAnimations: true),
+              child: RepaintBoundary(
+                  key: boundaryKey,
+                  child: Scaffold(body: HandwritingDialog(app: app))))));
+      await settle(t);
+      expect(t.takeException(), isNull);
+      expect(find.byKey(const ValueKey('handwriting-text')), findsOneWidget);
+      final insert = find.byKey(const ValueKey('handwriting-insert'));
+      final before = t.getRect(insert);
+      expect(before.bottom, lessThanOrEqualTo(760));
+      await t.enterText(
+          find.byKey(const ValueKey('handwriting-text')), 'Hallo Welt');
+      await settle(t);
+      if (Platform.environment['OPENOTE_BETA_SHOTS'] == '1') {
+        await t.runAsync(() async {
+          final boundary = boundaryKey.currentContext!.findRenderObject()!
+              as RenderRepaintBoundary;
+          final image = await boundary.toImage();
+          final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+          await File(
+                  'build/handwriting-conversion-${dark ? 'dark' : 'light'}.png')
+              .writeAsBytes(bytes!.buffer.asUint8List());
+          image.dispose();
+        });
+      }
+      await t.ensureVisible(find.text('Größe & Abstände'));
+      await t.tap(find.text('Größe & Abstände'));
+      await settle(t);
+      expect(t.takeException(), isNull);
+      expect(t.getRect(insert), before);
+      expect(t.widget<FilledButton>(insert).onPressed, isNotNull);
+      await t.pumpWidget(const SizedBox());
+    });
+  }
 
   testWidgets('lasso selection uses toolbar colour and thickness', (t) async {
     activeTester = t;

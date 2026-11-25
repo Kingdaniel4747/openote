@@ -19,18 +19,34 @@ Stroke sample({double y = 48, double width = 40}) => Stroke(
     t: [0, 40]);
 
 void main() {
+  void complete(HandwritingProfile profile) {
+    for (final character in profile.pendingCharacters) {
+      profile.addSample(character, [sample()]);
+    }
+  }
+
   test('requires own samples and reports exact missing characters', () {
     final profile = HandwritingProfile();
     expect(() => profile.generate('a'), throwsStateError);
     profile.addSample('a', [sample()]);
+    expect(profile.isComplete, isFalse);
+    expect(profile.pendingCharacters.first, 'b');
+    expect(profile.learnedCharacters, 1);
     expect(profile.missing('aa A ä\n\t!'), {'A', 'ä', '!'});
     expect(() => profile.generate('ab'), throwsStateError);
+    expect(() => profile.generate('a'), throwsStateError,
+        reason:
+            'even known text stays locked until the whole setup is complete');
+    complete(profile);
+    expect(profile.isComplete, isTrue);
+    expect(() => profile.generate('é'), throwsStateError);
     expect(profile.generate('a').single.tool, 'pen');
   });
 
   test('variants survive JSON and retain pen data without sharing arrays', () {
     final original = sample();
     final profile = HandwritingProfile()..addSample('ä', [original]);
+    complete(profile);
     original.x[0] = 99;
     final restored =
         HandwritingProfile.fromJson(jsonDecode(jsonEncode(profile.toJson())));
@@ -53,12 +69,14 @@ void main() {
     final profile = HandwritingProfile()
       ..addSample('g', [sample(y: 80)])
       ..addSample('g', [sample(y: 144)]);
+    complete(profile);
     final ink = profile.generate('ggg', height: 64);
     expect(ink.map((s) => s.y.first), [80, 144, 80]);
   });
 
   test('word wrap, explicit newlines and spacing preserve writing size', () {
     final profile = HandwritingProfile()..addSample('a', [sample()]);
+    complete(profile);
     final wrapped = profile.generate('aa aa', height: 32, width: 60);
     expect(wrapped[0].y, wrapped[1].y);
     expect(wrapped[2].y.first, greaterThan(wrapped[0].y.first));
@@ -74,6 +92,7 @@ void main() {
 
   test('generated paths can be partially erased and encoded as normal ink', () {
     final profile = HandwritingProfile()..addSample('a', [sample()]);
+    complete(profile);
     final stroke = profile.generate('a', height: 64).single;
     final parts =
         eraseStroke(stroke, const Offset(20, 80), const Offset(20, 80), 5);

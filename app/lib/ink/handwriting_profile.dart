@@ -17,6 +17,16 @@ class HandwritingProfile {
   static const letterHeight = 64.0;
   final Map<String, List<List<Stroke>>> samples;
 
+  List<String> get pendingCharacters => [
+        for (final rune in characters.runes)
+          if (samples[String.fromCharCode(rune)]?.isNotEmpty != true)
+            String.fromCharCode(rune),
+      ];
+
+  int get learnedCharacters =>
+      characters.runes.length - pendingCharacters.length;
+  bool get isComplete => pendingCharacters.isEmpty;
+
   factory HandwritingProfile.fromJson(dynamic raw) {
     final result = HandwritingProfile();
     if (raw is! Map || raw['v'] != 1 || raw['samples'] is! Map) return result;
@@ -84,8 +94,9 @@ class HandwritingProfile {
     double size = 2.5,
     String color = 'auto',
   }) {
-    if (samples.isEmpty || missing(text).isNotEmpty) {
-      throw StateError('Record the missing characters first.');
+    if (!isComplete || missing(text).isNotEmpty) {
+      throw StateError(
+          'Complete handwriting setup and record missing characters first.');
     }
     if (!height.isFinite ||
         height <= 0 ||
