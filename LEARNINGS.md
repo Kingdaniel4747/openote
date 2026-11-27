@@ -111,6 +111,11 @@ Nur Erkenntnisse behalten, die künftige Fehler verhindern. Keine Sitzungsprotok
 
 ## Prüfungen
 
+Linux-CI im Debian-Container: Das gecachte Flutter-SDK kann dem Host-Benutzer
+gehören. Nach dem Flutter-Setup und vor dem ersten Flutter-Aufruf nur
+`$FLUTTER_ROOT` über `git config --global --add safe.directory` freigeben;
+keinen pauschalen `*`-Eintrag verwenden.
+
 Linux: `flutter_js` 0.8.7 installiert QuickJS vor der abschließenden Bundle-
 Bereinigung und meldet es unter falschem `bundled_libraries`-Namen. Im eigenen
 Linux-CMake nach der Bereinigung erneut installieren, ohne Pub-Cache-Patch.
