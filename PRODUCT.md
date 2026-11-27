@@ -87,7 +87,8 @@ Der Android-Scanner ist eine Begleitapp, kein zweiter Notizeditor.
   eine durchsuchbare Auswahl für ein Buch oder alle Bücher; die Auswahl bleibt
   beim Filtern erhalten. Danach wird der Speicherort der ZIP-Sicherung gewählt.
 - Sektionen oben und links sowie Seiten werden direkt an ihrer Position mit
-  Maus oder Finger verschoben. Nachbarn weichen animiert aus; kein schwebendes
+  Maus oder Finger verschoben, Seiten auch im eingeklappten Navigator.
+  Nachbarn weichen animiert aus; kein schwebendes
   Drag-Pop-up, keine Einfügestriche. Griffpunkt und Begrenzung bleiben in der
   Leiste; lange Listen scrollen am Rand. Obere Sektionstabs sind 130 × 36 Pixel.
 - Eine Seite 0,5 Sekunden über einer anderen halten zeigt die Unterseiten-

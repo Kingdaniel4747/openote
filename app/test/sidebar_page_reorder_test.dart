@@ -13,8 +13,12 @@ import 'support/sqlite.dart';
 
 void main() {
   setUpAll(() => expect(initSqliteForTests(), isTrue));
-  for (final kind in [PointerDeviceKind.mouse, PointerDeviceKind.touch]) {
-    testWidgets('pages move inline with descendants using $kind',
+  for (final (kind, compact) in [
+    for (final kind in [PointerDeviceKind.mouse, PointerDeviceKind.touch])
+      for (final compact in [false, true]) (kind, compact),
+  ]) {
+    testWidgets(
+        'pages move inline with descendants using $kind (compact: $compact)',
         (tester) async {
       late Directory directory;
       late AppState app;
@@ -33,7 +37,8 @@ void main() {
         final notebook = await repo.createNotebook('Pages');
         app = AppState(repo)
           ..notebookId = notebook.id
-          ..sectionTabsAbovePage = false
+          ..sectionTabsAbovePage = compact
+          ..navCollapsed = compact
           ..spellCheckEnabled = false;
         app.reloadNodes();
         section = app.nodes.firstWhere((n) => n.kind == NodeKind.section);
@@ -87,8 +92,12 @@ void main() {
                       Row(children: [Sidebar(app: app)])))));
       await tester.pumpAndSettle();
       final sidebar = find.byType(Sidebar);
-      Finder row(String title) =>
-          find.descendant(of: sidebar, matching: find.text(title));
+      Finder row(String title) => find.descendant(
+          of: sidebar,
+          matching: compact
+              ? find.descendant(
+                  of: find.byTooltip(title), matching: find.byType(Icon))
+              : find.text(title));
       final parent = row('Parent A');
       if (kind == PointerDeviceKind.touch) {
         final hold = await tester.startGesture(tester.getCenter(parent));
@@ -160,7 +169,8 @@ void main() {
       expect(app.node(b.id)!.level, 0);
       await tester.pump(const Duration(milliseconds: 1));
       await tester.pump(const Duration(milliseconds: 160));
-      expect(tester.getTopLeft(row('Page B')).dx, closeTo(bLeft + 15, .01));
+      expect(tester.getTopLeft(row('Page B')).dx,
+          closeTo(bLeft + (compact ? 3 : 15), .01));
       expect(app.node(b.id)!.level, 0);
       await nest.up();
       await tester.pumpAndSettle();
@@ -184,15 +194,30 @@ void main() {
       app.togglePageCollapsed(a.id);
       await tester.pumpAndSettle();
       expect(row('Child A1'), findsNothing);
-      final crossSection =
-          await tester.startGesture(tester.getCenter(parent), kind: kind);
-      await crossSection.moveTo(tester.getCenter(row('Other section')));
-      await tester.pump();
-      await crossSection.up();
-      await tester.pumpAndSettle();
-      expect(app.pagesOf(other.id).map((p) => p.id),
-          [existing.id, a.id, child2.id, child.id, grandchild.id]);
-      expect(app.pagesOf(section.id).map((p) => p.id), [c.id, b.id]);
+      if (compact) {
+        final moveHidden =
+            await tester.startGesture(tester.getCenter(parent), kind: kind);
+        await moveHidden.moveTo(tester.getCenter(row('Page C')));
+        await tester.pump();
+        await moveHidden.up();
+        await tester.pumpAndSettle();
+        expect(app.pagesOf(section.id).map((p) => p.id),
+            [c.id, b.id, a.id, child2.id, child.id, grandchild.id]);
+        app.toggleNavCollapsed();
+        await tester.pumpAndSettle();
+        expect(find.text('Parent A'), findsOneWidget);
+        expect(find.text('Child A1'), findsNothing);
+      } else {
+        final crossSection =
+            await tester.startGesture(tester.getCenter(parent), kind: kind);
+        await crossSection.moveTo(tester.getCenter(row('Other section')));
+        await tester.pump();
+        await crossSection.up();
+        await tester.pumpAndSettle();
+        expect(app.pagesOf(other.id).map((p) => p.id),
+            [existing.id, a.id, child2.id, child.id, grandchild.id]);
+        expect(app.pagesOf(section.id).map((p) => p.id), [c.id, b.id]);
+      }
       expect(app.node(grandchild.id)!.level, 2);
       expect(tester.takeException(), isNull);
       app.cancelPendingSave();

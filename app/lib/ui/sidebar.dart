@@ -27,9 +27,14 @@ Color _sectionColor(String? token, bool dark) => switch (token) {
 /// Pages use the same inline movement as sections. Visible descendants travel
 /// with their parent, while each subpage can still be moved on its own.
 class _PageList extends StatefulWidget {
-  const _PageList({super.key, required this.app, required this.section});
+  const _PageList(
+      {super.key,
+      required this.app,
+      required this.section,
+      this.compact = false});
   final AppState app;
   final TreeNode section;
+  final bool compact;
 
   @override
   State<_PageList> createState() => _PageListState();
@@ -54,6 +59,7 @@ class _PageListState extends State<_PageList> {
       if (app.collapsedPages.contains(page.id)) hiddenBelow = page.level;
     }
     if (visible.isEmpty) {
+      if (widget.compact) return const SizedBox.shrink();
       return Center(
           child: AppText('No pages yet',
               style: TextStyle(
@@ -98,6 +104,7 @@ class _PageListState extends State<_PageList> {
           visible.sublist(i, end).map((p) => p.id).toList();
     }
     double height(TreeNode page) {
+      if (widget.compact) return 44;
       final painter = TextPainter(
         text: TextSpan(
             text: 'Mg',
@@ -158,19 +165,62 @@ class _PageListState extends State<_PageList> {
       },
       children: [
         for (final page in visible)
-          _PageTile(
-            app: app,
-            page: page,
-            hasChildren: all.indexOf(page) + 1 < all.length &&
-                all[all.indexOf(page) + 1].level > page.level,
-            collapsed: app.collapsedPages.contains(page.id),
-            previewLevel: previewBranch.any((p) => p.id == page.id)
-                ? page.level + previewDelta
-                : null,
-            nestTarget: page.id == _previewTarget,
-            onRenamingChanged: (renaming) =>
-                setState(() => _renamingId = renaming ? page.id : null),
-          ),
+          if (widget.compact)
+            Tooltip(
+              triggerMode: TooltipTriggerMode.manual,
+              message: page.title,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(6),
+                  onTap: () => app.selectPage(page.id),
+                  onSecondaryTapUp: (d) => showNodeMenu(context, app, page,
+                      canIndent: true, position: d.globalPosition),
+                  child: AnimatedContainer(
+                    alignment: Alignment.center,
+                    duration: const Duration(milliseconds: 150),
+                    curve: Curves.easeOutCubic,
+                    padding: EdgeInsets.only(
+                        left: 6.0 *
+                            (previewBranch.any((p) => p.id == page.id)
+                                ? page.level + previewDelta
+                                : page.level)),
+                    decoration: BoxDecoration(
+                      color: _sectionColor(page.color,
+                              Theme.of(context).brightness == Brightness.dark)
+                          .withValues(alpha: .18),
+                      borderRadius: BorderRadius.circular(6),
+                      border: page.id == _previewTarget || app.pageId == page.id
+                          ? Border.all(
+                              color: Theme.of(context).colorScheme.primary)
+                          : null,
+                    ),
+                    child: Icon(
+                        page.level == 0
+                            ? Icons.description_outlined
+                            : Icons.subdirectory_arrow_right,
+                        size: 16,
+                        color: app.pageId == page.id
+                            ? Theme.of(context).colorScheme.primary
+                            : context.surfaces.textSecondary),
+                  ),
+                ),
+              ),
+            )
+          else
+            _PageTile(
+              app: app,
+              page: page,
+              hasChildren: all.indexOf(page) + 1 < all.length &&
+                  all[all.indexOf(page) + 1].level > page.level,
+              collapsed: app.collapsedPages.contains(page.id),
+              previewLevel: previewBranch.any((p) => p.id == page.id)
+                  ? page.level + previewDelta
+                  : null,
+              nestTarget: page.id == _previewTarget,
+              onRenamingChanged: (renaming) =>
+                  setState(() => _renamingId = renaming ? page.id : null),
+            ),
       ],
     );
   }
@@ -966,9 +1016,7 @@ class _NavRail extends StatelessWidget {
         app.nodes.where((n) => n.kind == NodeKind.section).toList();
     // Section tabs already provide section navigation above the canvas.
     // Keep page switching available without expanding the navigator.
-    final destinations = app.sectionTabsAbovePage
-        ? app.pagesOf(app.activeSectionId ?? '')
-        : sections;
+    final activeSection = app.node(app.activeSectionId ?? '');
     return Container(
       width: 44,
       color: context.surfaces.chrome2,
@@ -1010,50 +1058,57 @@ class _NavRail extends StatelessWidget {
           // Page icons complement the section tabs. In the two-column layout,
           // section initials remain scannable even without section colours.
           Expanded(
-            child: ListView(
-              padding: const EdgeInsets.only(bottom: 8),
-              children: [
-                for (final s in destinations)
-                  NavigatorDragEntry(
-                      app: app,
-                      node: s,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2),
-                        child: Center(
-                          child: Tooltip(
-                            triggerMode: TooltipTriggerMode.manual,
-                            message: s.title,
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(6),
-                              onTap: () {
-                                if (s.kind == NodeKind.page) {
-                                  app.selectPage(s.id);
-                                } else {
-                                  app.toggleNavCollapsed();
-                                  app.activateSection(s.id);
-                                }
-                              },
-                              child: Container(
-                                width: 40,
-                                height: 40,
-                                alignment: Alignment.center,
-                                decoration: BoxDecoration(
-                                  color: _sectionColor(s.color, dark)
-                                      .withValues(alpha: .18),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: (s.kind == NodeKind.page
-                                          ? app.pageId == s.id
-                                          : app.activeSectionId == s.id)
-                                      ? Border.all(color: scheme.primary)
-                                      : null,
-                                ),
-                                child: s.kind == NodeKind.page
-                                    ? Icon(Icons.description_outlined,
-                                        size: 16,
-                                        color: app.pageId == s.id
-                                            ? scheme.primary
-                                            : context.surfaces.textSecondary)
-                                    : Text(
+            child: app.sectionTabsAbovePage
+                ? Column(children: [
+                    Expanded(
+                      child: activeSection == null
+                          ? const SizedBox.shrink()
+                          : _PageList(
+                              key: ValueKey(activeSection.id),
+                              app: app,
+                              section: activeSection,
+                              compact: true),
+                    ),
+                    IconButton(
+                      tooltip: tr(context, 'New page'),
+                      icon: const Icon(Icons.add, size: 20),
+                      onPressed: activeSection == null
+                          ? null
+                          : () => app.addPage(sectionId: activeSection.id),
+                    ),
+                  ])
+                : ListView(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    children: [
+                      for (final s in sections)
+                        NavigatorDragEntry(
+                            app: app,
+                            node: s,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2),
+                              child: Center(
+                                child: Tooltip(
+                                  triggerMode: TooltipTriggerMode.manual,
+                                  message: s.title,
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(6),
+                                    onTap: () {
+                                      app.toggleNavCollapsed();
+                                      app.activateSection(s.id);
+                                    },
+                                    child: Container(
+                                      width: 40,
+                                      height: 40,
+                                      alignment: Alignment.center,
+                                      decoration: BoxDecoration(
+                                        color: _sectionColor(s.color, dark)
+                                            .withValues(alpha: .18),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: app.activeSectionId == s.id
+                                            ? Border.all(color: scheme.primary)
+                                            : null,
+                                      ),
+                                      child: Text(
                                         s.title.isEmpty
                                             ? '·'
                                             : s.title.characters.first
@@ -1065,20 +1120,21 @@ class _NavRail extends StatelessWidget {
                                                 ? OnoteColors.moon100
                                                 : OnoteColors.graphite700),
                                       ),
+                                    ),
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
-                        ),
-                      )),
-                IconButton(
-                  tooltip: tr(context, 'New page'),
-                  icon: const Icon(Icons.add, size: 20),
-                  onPressed: app.activeSectionId == null
-                      ? null
-                      : () => app.addPage(sectionId: app.activeSectionId!),
-                ),
-              ],
-            ),
+                            )),
+                      IconButton(
+                        tooltip: tr(context, 'New page'),
+                        icon: const Icon(Icons.add, size: 20),
+                        onPressed: app.activeSectionId == null
+                            ? null
+                            : () =>
+                                app.addPage(sectionId: app.activeSectionId!),
+                      ),
+                    ],
+                  ),
           ),
         ],
       ),

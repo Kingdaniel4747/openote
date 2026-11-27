@@ -152,6 +152,8 @@ Die 500-ms-Unterseitenvorschau wird erst beim Loslassen übernommen.
 `ui/sidebar.dart` und `ui/app_shell.dart` binden sie ein; `AppState` speichert
 Reihenfolge und Seitenbäume über `reorderNode`, `reorderPageTree` und
 `makeSubpageOf`. Der frühere `moveNode(id, delta)`-Befehl ist entfernt.
+Die eingeklappte Seitenleiste nutzt dieselbe `_PageList` mit kompakten Symbolen;
+Seitenbäume, Unterseitenvorschau und Randscrollen bleiben dadurch gemeinsam.
 
 `ui/node_context_menu.dart` stellt das Kontextmenü bereit;
 `NavigatorHoldMenu` vereinheitlicht den 600-ms-Langdruck in direkten Listen,
