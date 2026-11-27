@@ -17,6 +17,8 @@ node_modules/
 /openote-*.tar.gz
 /openote-*.zip
 /openote-*.dmg
+/openote-*.deb
+/openote-*.rpm
 /openote-*-setup.exe
 /openote-scanner.apk
 /AppDir/

@@ -169,3 +169,10 @@ endif()
 # wiped. OPTIONAL covers the no-cargo build (see the guard above).
 install(FILES "${ONOTE_CORE_LIB}" DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime OPTIONAL)
+
+# flutter_js 0.8.7 installs QuickJS while loading its plugin rules, before the
+# bundle cleanup above. Its bundled_libraries variable has the wrong prefix,
+# so explicitly restore the library after cleanup without patching Pub cache.
+install(FILES
+  "${FLUTTER_MANAGED_DIR}/ephemeral/.plugin_symlinks/flutter_js/linux/shared/libquickjs_c_bridge_plugin.so"
+  DESTINATION "${INSTALL_BUNDLE_LIB_DIR}" COMPONENT Runtime)

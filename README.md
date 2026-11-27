@@ -92,6 +92,7 @@ from the app’s widgets. They are not conceptual mockups or personal notebooks.
 |---|---|---|
 | **Openote for Windows** | [Latest Windows release](https://github.com/Kingdaniel4747/openote/releases/latest) | `openote-<version>-windows-x64-setup.exe` |
 | **Openote for macOS** | [Latest release (after the first successful macOS build)](https://github.com/Kingdaniel4747/openote/releases/latest) | `openote-<version>-macos-universal.dmg` |
+| **Openote for Linux (x64)** | [Latest release (after the first successful Linux build)](https://github.com/Kingdaniel4747/openote/releases/latest) | `openote-<version>-linux-amd64.deb` or `openote-<version>-linux-x86_64.rpm` |
 | **Openote Scanner for Android** | [Latest Android release](https://github.com/Kingdaniel4747/openote/releases/latest) | `openote-scanner-<version>.apk` |
 
 **Windows:** download and run the setup. The published desktop package is x64,
@@ -111,10 +112,19 @@ it, try opening the installed app once, then use **System Settings → Privacy &
 Security → Open Anyway** if offered. Only approve a package you downloaded from
 this repository. The first macOS build and device checks are still pending.
 
-All apps check GitHub for newer releases. On macOS, the update button opens the
-release page; quit Openote before replacing it in Applications. Android updates
-must use the same signing key as the installed app. Linux source remains in this
-repository; Linux downloads are not currently offered.
+**Linux (initial support, x64):** the workflow builds DEB and RPM packages with
+a menu entry, icon and notebook file associations. The build uses Debian 12;
+the packages require glibc 2.36 or later and libmpv.so.2. Choose the format for
+your distribution and let its package manager install dependencies. For DEB,
+run `sudo apt install ./openote-<version>-linux-amd64.deb`; for RPM, run
+`sudo dnf install ./openote-<version>-linux-x86_64.rpm`, replacing `<version>`
+with the downloaded version. The first Linux CI build and device checks are
+still pending; ARM Linux packages are not provided.
+
+All apps check GitHub for newer releases. On macOS and Linux, the update button
+opens the release page. Quit Openote before replacing it in Applications or
+installing a newer Linux package. Android updates must use the same signing key
+as the installed app.
 
 ## Quick start
 
@@ -223,6 +233,12 @@ For macOS, use a Mac with Xcode, CocoaPods and Flutter. Run `flutter pub get`
 and `flutter run -d macos` from `app/`. The release workflow also builds the Rust
 core for both Mac architectures and packages a universal DMG.
 
+For Linux, use the [Flutter Linux toolchain](https://docs.flutter.dev/platform-integration/linux/setup),
+Rust and the native development libraries listed in the Linux release job. Run
+`flutter pub get` and `flutter build linux --release` from `app/`, then run
+`bash packaging/linux/build-packages.sh <version> app/build/linux/x64/release/bundle`
+from the repository root with `dpkg-deb` and `rpmbuild` installed.
+
 Windows requirements: Flutter with Windows support and Visual Studio C++ desktop tools.
 Locally verified: Flutter 3.47.7 / Dart 3.13.5, Visual Studio Community 2026
 Insiders and CMake 4.3.1. CI uses the version declared in its workflow. Keep the
@@ -262,10 +278,10 @@ a phone camera or a real pairing token. Review the PNGs before committing them.
 
 | Path | Purpose |
 |---|---|
-| `app/` | Windows and macOS app, with retained Linux source |
+| `app/` | Windows, macOS and Linux desktop app |
 | `scanner/` | Android companion |
 | `rust/onote_core/` | Optional native core and OneNote import |
-| `packaging/` | Windows installer, macOS DMG and future Linux packaging |
+| `packaging/` | Windows installer, macOS DMG and Linux DEB/RPM packages |
 | `website/` | English static website and shared public screenshots |
 | `.github/workflows/` | Shared releases and independent Pages deployment |
 
@@ -297,8 +313,8 @@ recommendations cannot be guaranteed. Google applies its normal
 There are no website analytics or external fonts. A `robots.txt` under this
 project subpath would not control crawlers for the domain.
 
-**Every push to `master` starts the shared Windows/macOS/Android release workflow.**
-All three builds must succeed before publication. The next patch version is calculated
+**Every push to `master` starts the shared Windows/macOS/Linux/Android release workflow.**
+All four builds must succeed before publication. The next patch version is calculated
 from existing version tags and the Pubspec baseline. Pushes to other branches or
 tags do not publish; manual dispatch with a version and optional notes remains
 available. Existing version tags are rejected. Runs are serialized; GitHub can

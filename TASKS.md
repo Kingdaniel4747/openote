@@ -28,6 +28,17 @@ sonst werden Wartungshinweis und neue Commits ausgegeben.
 - Pakete sind nur ad-hoc signiert; Developer-ID/Notarisierung bleibt offen.
   Gatekeeper-Freigabe und manuelles Ersetzen bei Updates stehen in README.md.
 
+## Linux-Erstprüfung
+
+- Vorhandene DEB-/RPM-Paketierung in den gemeinsamen Release-Workflow eingebunden;
+  x64-Build in Debian 12 mit Rust-Importer, mindestens glibc 2.36 und libmpv.so.2.
+- Ersten CI-Build sowie Installation, Menü-/Dateistart, Speichern/Neustart, PDF,
+  Video, OneNote-Import, Android-Scan und MCP auf Linux prüfen.
+- Lokale Tests prüfen die Abhängigkeitskontrolle; echte DEB/RPM-Fixtures laufen
+  zusätzlich in der Linux-CI. Unter Windows kein vollständiger Linux-Build möglich.
+- Lokal 22 Release-/Paketierungstests bestanden, ein echter Linux-Pakettest
+  übersprungen. QuickJS wird nach der Bundle-Bereinigung erneut mitkopiert.
+
 ## Veröffentlichung vorbereiten
 
 - Pages-Quelle im Nutzerscreenshot auf „GitHub Actions“ gesetzt; neue Änderungen
@@ -146,7 +157,7 @@ Für reine Dokumentationspflege diese Prüfungen nicht erneut starten.
 - Große Notizbücher und laufende Medien beim Schließen/Backup beobachten.
 - Wortlaut des noch nicht identifizierten VS-Code-Auto-Fix-Dialogs aufnehmen;
   Explorer-Farben können Git-Status oder Diagnosen bedeuten.
-- Linux-Pakete später behandeln; Windows und Scanner werden gemeinsam veröffentlicht.
+- Linux-Pakete sind eingebunden; ersten Build und Installationen noch prüfen.
 
 ## Offene automatisierte Fälle
 

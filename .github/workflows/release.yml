@@ -1,6 +1,6 @@
 name: Release packages
 
-# Each push to the publication branch builds one shared Windows/macOS/Android release.
+# Each push to the publication branch builds one shared desktop/Android release.
 # Serialization prevents concurrent runs from choosing the same patch version.
 on:
   push:
@@ -198,6 +198,82 @@ jobs:
           compression-level: 0
           retention-days: 7
 
+  linux:
+    name: Build Linux DEB and RPM (x64)
+    needs: version
+    runs-on: ubuntu-24.04
+    # Keep the glibc baseline and libmpv.so.2 ABI used by the packages.
+    container: debian:12
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install Linux build and packaging tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git unzip xz-utils zip jq \
+            build-essential clang cmake ninja-build pkg-config \
+            libgtk-3-dev libstdc++-12-dev liblzma-dev libmpv-dev \
+            libepoxy-dev libsecret-1-dev libssl-dev \
+            rpm file binutils desktop-file-utils shared-mime-info nodejs
+
+      - name: Check out the source
+        uses: actions/checkout@v6
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.8
+          cache: true
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Get Flutter packages
+        working-directory: app
+        run: flutter pub get
+
+      - name: Trim unused package assets
+        working-directory: app
+        run: |
+          dart run pdfrx:remove_wasm_modules
+          dart run tool/strip_web_assets.dart
+
+      - name: Build the Linux app and OneNote importer
+        working-directory: app
+        run: flutter build linux --release --build-name=${{ needs.version.outputs.value }} --dart-define=OPENOTE_VERSION=${{ needs.version.outputs.value }} --dart-define=OPENOTE_REPOSITORY=Kingdaniel4747/openote
+
+      - name: Trim Material icon font
+        working-directory: app
+        run: dart run tool/shake_icons.dart linux
+
+      - name: Verify shared-library dependencies
+        run: bash packaging/linux/verify-bundle.sh app/build/linux/x64/release/bundle
+
+      - name: Test Linux packaging with real package builders
+        env:
+          OPENOTE_LINUX_PACKAGE_TESTS: '1'
+        run: node --test .github/scripts/linux-package.test.mjs
+
+      - name: Build and inspect Linux packages
+        run: |
+          desktop-file-validate packaging/linux/org.openote.openote.desktop
+          bash packaging/linux/build-packages.sh '${{ needs.version.outputs.value }}' app/build/linux/x64/release/bundle
+          dpkg-deb --info 'openote-${{ needs.version.outputs.value }}-linux-amd64.deb'
+          rpm --query --package --info 'openote-${{ needs.version.outputs.value }}-linux-x86_64.rpm'
+
+      - name: Upload Linux packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-linux
+          path: |
+            openote-${{ needs.version.outputs.value }}-linux-amd64.deb
+            openote-${{ needs.version.outputs.value }}-linux-x86_64.rpm
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
   android:
     name: Build Android scanner APK
     needs: version
@@ -267,7 +343,7 @@ jobs:
 
   publish:
     name: Publish GitHub release
-    needs: [version, windows, macos, android]
+    needs: [version, windows, macos, linux, android]
     runs-on: ubuntu-latest
     steps:
       - name: Check out source and release history
@@ -288,6 +364,8 @@ jobs:
           test -s "release-files/openote-${{ needs.version.outputs.value }}-windows-x64-setup.exe"
           test -s "release-files/openote-scanner-${{ needs.version.outputs.value }}.apk"
           test -s "release-files/openote-${{ needs.version.outputs.value }}-macos-universal.dmg"
+          test -s "release-files/openote-${{ needs.version.outputs.value }}-linux-amd64.deb"
+          test -s "release-files/openote-${{ needs.version.outputs.value }}-linux-x86_64.rpm"
 
       - name: Prepare readable release notes
         env:
@@ -308,3 +386,5 @@ jobs:
             release-files/openote-${{ needs.version.outputs.value }}-windows-x64-setup.exe
             release-files/openote-scanner-${{ needs.version.outputs.value }}.apk
             release-files/openote-${{ needs.version.outputs.value }}-macos-universal.dmg
+            release-files/openote-${{ needs.version.outputs.value }}-linux-amd64.deb
+            release-files/openote-${{ needs.version.outputs.value }}-linux-x86_64.rpm

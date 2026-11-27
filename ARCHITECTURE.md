@@ -8,7 +8,7 @@
 `.github/workflows/pages.yml` veröffentlicht unabhängig von den App-Builds.
 `features.html` listet die Werkzeuge und erklärt ihre Bedienung; beide Seiten
 verlinken sie über die auch mobil sichtbare Navigation „Features & guide“.
-`release.yml` baut nach Push auf `master` Windows, macOS und Android; `release-notes.mjs` erstellt
+`release.yml` baut nach Push auf `master` Windows, macOS, Linux und Android; `release-notes.mjs` erstellt
 aus dem markierten TASKS-Abschnitt, vorherigem Release-Stand und Git-Commits den
 Release-Text. Keine neue separate Markdown-Chronik.
 
@@ -31,6 +31,17 @@ sowie beide Rust-Ziele; `packaging/macos/build-dmg.sh` bündelt die dylib neben
 dem Executable, prüft beide Architekturen und die Ad-hoc-Signatur und erzeugt
 eine DMG mit Applications-Verknüpfung. Keine Developer-ID/Notarisierung;
 erster CI-Build und Geräteprüfung offen. Updates öffnen die Release-Seite.
+
+## Linux-Build
+
+`release.yml` baut den vorhandenen GTK-Runner in `debian:12` auf einem x64-Runner,
+mit Flutter 3.44.8 und Rust. CMake bündelt `libonote_core.so` neben dem Executable.
+`packaging/linux/verify-bundle.sh` prüft alle dynamisch verknüpften ELF-Dateien
+auf fehlende Bibliotheken und den Video-ABI `libmpv.so.2`. Das vorhandene
+`build-packages.sh` erzeugt DEB/RPM mit Menüeintrag, Icon und MIME-Zuordnung.
+Beide Pakete sind Voraussetzung für den gemeinsamen Release; Grundlinie ist
+glibc 2.36, x86_64. Die CI prüft die Paketierung zusätzlich mit echten
+`dpkg-deb`-/`rpmbuild`-Werkzeugen. Linux-Start und Geräteprüfung bleiben offen.
 
 ## Windows-App
 
@@ -307,6 +318,6 @@ Bedienung (Fensterknopf/F11); MCP-Lesezugriffe ändern den Fensterzustand nicht.
 Windows-Runner: `app/windows/`; Linux-Runner: `app/linux/`.
 Lokale Plugin-Fixes liegen unter `app/third_party/` und sind über
 `dependency_overrides` eingebunden. Provenienz, Lizenzen und Patchnotizen bleiben
-beim jeweiligen Fremdcode. Beide Apps beziehen Releaseinformationen direkt von
-GitHub; die Website ist dafür unnötig. Der Workflow baut beide Pakete mit einer
-gemeinsamen Releaseversion.
+beim jeweiligen Fremdcode. Desktop-App und Scanner beziehen Releaseinformationen
+direkt von GitHub; die Website ist dafür unnötig. Der Workflow baut Windows,
+macOS, Linux und Android mit einer gemeinsamen Releaseversion.

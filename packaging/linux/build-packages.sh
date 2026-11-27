@@ -30,8 +30,13 @@
 set -euo pipefail
 
 VERSION="${1:?usage: build-packages.sh <version> <bundle-dir> [out-dir]}"
+if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "Version must be X.Y.Z" >&2
+  exit 1
+fi
 BUNDLE="${2:?usage: build-packages.sh <version> <bundle-dir> [out-dir]}"
 OUT="${3:-$PWD}"
+mkdir -p "$OUT"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
 ICON="$REPO/app/assets/icon/openote_icon.png"
@@ -100,8 +105,8 @@ Section: office
 Priority: optional
 Architecture: amd64
 Maintainer: Openote <noreply@openote.org>
-Depends: libgtk-3-0, libglib2.0-0, libstdc++6, libmpv2
-Homepage: https://openote.org
+Depends: libc6 (>= 2.36), libgtk-3-0, libglib2.0-0, libstdc++6 (>= 12), libmpv2, libepoxy0, libsqlite3-0, liblzma5
+Homepage: https://kingdaniel4747.github.io/openote/
 Description: Open-source alternative to Microsoft OneNote
  A freeform notebook with handwriting, maths and an open file format.
  Notes are stored locally in a documented SQLite container; syncing is
@@ -156,13 +161,19 @@ Version:        ${VERSION}
 Release:        1
 Summary:        Open-source alternative to Microsoft OneNote
 License:        AGPL-3.0-or-later
-URL:            https://openote.org
+URL:            https://kingdaniel4747.github.io/openote/
 BuildArch:      x86_64
 AutoReqProv:    no
 Requires:       gtk3
 Requires:       glib2
 Requires:       libstdc++
 Requires:       mpv-libs
+Requires:       glibc >= 2.36
+Requires:       libstdc++.so.6(GLIBCXX_3.4.30)(64bit)
+Requires:       libmpv.so.2()(64bit)
+Requires:       libepoxy
+Requires:       sqlite-libs
+Requires:       xz-libs
 
 %description
 A freeform notebook with handwriting, maths and an open file format.

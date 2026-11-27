@@ -139,7 +139,9 @@ Kein eingebautes KI-Modell und kein neuer Lernkarten-Workflow. MCP verbindet
 einen externen Desktop-KI-Client; Freigaben sind nach einem App-Neustart aus.
 Alte Sync-, CRDT- oder Plattformpläne sind keine aktuellen Anforderungen.
 Kompatibilitätsleser für ältere Notizbücher bleiben erhalten.
-Linux-Quellcode und Packaging bleiben für später bestehen.
+Zusätzliche macOS- und Linux-Pakete werden im gemeinsamen Release-Workflow gebaut;
+erste erfolgreiche Builds und Geräteprüfungen stehen noch aus. Linux erhält
+x64-DEB/RPM mit Menüeintrag, macOS eine Universal-DMG. Windows behält Vorrang.
 
 ## Arbeitspriorität
 

@@ -111,6 +111,12 @@ Nur Erkenntnisse behalten, die künftige Fehler verhindern. Keine Sitzungsprotok
 
 ## Prüfungen
 
+Linux: `flutter_js` 0.8.7 installiert QuickJS vor der abschließenden Bundle-
+Bereinigung und meldet es unter falschem `bundled_libraries`-Namen. Im eigenen
+Linux-CMake nach der Bereinigung erneut installieren, ohne Pub-Cache-Patch.
+Bei einzelnen Plugin-`ldd`-Prüfungen `LD_LIBRARY_PATH` auf Bundle/lib und Bundle
+setzen: Die Engine ist beim normalen App-Start bereits geladen.
+
 macOS: Bei `lipo <Datei> -verify_arch arm64 x86_64` steht die Eingabedatei
 vor dem Befehl; nach `-verify_arch` werden alle Argumente als Architekturen
 gelesen. Paketierungstests müssen diese Argumentreihenfolge mitprüfen.
