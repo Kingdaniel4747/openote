@@ -205,7 +205,8 @@ void main() {
       expect(t.takeException(), isNull);
       await t.pumpWidget(const SizedBox());
     });
-    testWidgets('eyedropper shows a crosshair for touch but not pen', (t) async {
+    testWidgets('eyedropper shows a crosshair for touch but not pen',
+        (t) async {
       if (!haveSqlite) return markTestSkipped('sqlite unavailable');
       app.setInkEyedropperActive(true);
       await t.pumpWidget(MaterialApp(
@@ -285,6 +286,75 @@ void main() {
       app.cancelPendingSave();
       await t.pumpWidget(const SizedBox());
     });
+
+    for (final mode in EraserMode.values) {
+      testWidgets('erased ink is painted again after undo ($mode)', (t) async {
+        if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+        app.setTool(Tool.pen);
+        await t.pumpWidget(MaterialApp(
+            home: Scaffold(
+                body: ListenableBuilder(
+                    listenable: app,
+                    builder: (_, __) => PageCanvas(state: app)))));
+        await t.pump();
+        await t.pump();
+        List<Stroke> painted() => t
+            .widgetList<CustomPaint>(find.byType(CustomPaint))
+            .map((w) => w.painter)
+            .whereType<InkPainter>()
+            .single
+            .strokes;
+        final pen = await t.startGesture(const Offset(200, 300),
+            kind: PointerDeviceKind.stylus);
+        await pen.moveTo(const Offset(460, 300));
+        await pen.up();
+        await t.pump();
+        expect(painted(), hasLength(1));
+        final pageId = app.pageId!;
+        await t.runAsync(() async {
+          await app.flushSave();
+          await app.selectPage(null);
+          await app.selectPage(pageId);
+        });
+        await t.pump();
+        final original = [for (final s in painted()) s.toJson()];
+        app.setTool(Tool.eraser);
+        app.eraserMode = mode;
+        await t.pump();
+        final eraser = await t.startGesture(const Offset(330, 300),
+            kind: PointerDeviceKind.stylus);
+        await eraser.up();
+        await t.pump();
+        final erased = [for (final s in painted()) s.toJson()];
+        expect(erased, isNot(equals(original)));
+        app.undo();
+        await t.pump();
+        expect([for (final s in painted()) s.toJson()], original,
+            reason:
+                'Undo must restore the visible ink as well as its page data.');
+        app.redo();
+        await t.pump();
+        expect([for (final s in painted()) s.toJson()], erased);
+        await t.runAsync(() async {
+          await app.flushSave();
+          final saved = repo.readPage(app.notebookId!, pageId);
+          expect([
+            for (final b in saved.blocks.where((b) => b.type == BlockType.ink))
+              for (final raw in b.content['strokes'] as List)
+                Map<String, dynamic>.from(raw as Map)..remove('id')
+          ], [
+            for (final raw in erased)
+              Map<String, dynamic>.from(raw)..remove('id')
+          ]);
+        });
+        app.undo();
+        await t.pump();
+        expect([for (final s in painted()) s.toJson()], original);
+        app.cancelPendingSave();
+        expect(t.takeException(), isNull);
+        await t.pumpWidget(const SizedBox());
+      });
+    }
 
     testWidgets(
         'shape endpoint, erasing and deliberate pen choices work together',

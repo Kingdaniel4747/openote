@@ -132,6 +132,7 @@ Für reine Dokumentationspflege diese Prüfungen nicht erneut starten.
 - Windows am Gerät prüfen: Schreiben, Speichern/Neustart, Undo/Redo, Stift- und
   Radierer-Taste, Lasso, Pinch-Zoom und Zweifinger-Lineal.
   Beim verbesserten Radierer schnelle und feine Bewegungen in beiden Modi,
+  vollständiges/teilweises Radieren mit Undo/Redo und anschließendem Speichern,
   Textmarker-Ränder und Knopfwechsel während Kontakt/Hover prüfen; außerdem
   kurze Stift-/Kugelschreiber-/Textmarker-Tupfer. Schreibgefühl noch nicht am Gerät bestätigt.
 - Start/Update am Gerät prüfen: minimiert schließen, sofort erneut öffnen,

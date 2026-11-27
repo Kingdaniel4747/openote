@@ -400,16 +400,24 @@ class _PageCanvasState extends State<PageCanvas> {
   /// continuous erase gesture (every pointer sample bumps `updatedAt`) piled up
   /// 128 dead entries and then wiped the cache for *every* block on the page,
   /// forcing a full re-decode mid-gesture.
-  final Map<String, ({int rev, List<Stroke> strokes})> _strokeCache = {};
+  final Map<String, ({int rev, List source, List<Stroke> strokes})>
+      _strokeCache = {};
 
   List<Stroke> _strokesOf(Block b) {
+    final source = b.content['strokes'] as List;
     final hit = _strokeCache[b.id];
-    if (hit != null && hit.rev == b.updatedAt) return hit.strokes;
+    // Undo restores a new list with the original timestamp.
+    if (hit != null &&
+        hit.rev == b.updatedAt &&
+        identical(hit.source, source) &&
+        hit.strokes.length == source.length) {
+      return hit.strokes;
+    }
     final decoded = [
-      for (final sj in b.content['strokes'] as List)
+      for (final sj in source)
         Stroke.fromJson((sj as Map).cast<String, dynamic>()),
     ];
-    _strokeCache[b.id] = (rev: b.updatedAt, strokes: decoded);
+    _strokeCache[b.id] = (rev: b.updatedAt, source: source, strokes: decoded);
     return decoded;
   }
 
@@ -883,7 +891,9 @@ class _PageCanvasState extends State<PageCanvas> {
       if (blockChanged) {
         changed = true;
         b.content['strokes'] = out;
-        _strokeCache[b.id] = (rev: b.updatedAt, strokes: survivors);
+        app.invalidateInkStorage(b);
+        _strokeCache[b.id] =
+            (rev: b.updatedAt, source: out, strokes: survivors);
         if (out.isNotEmpty) _refitInkBounds(b, survivors);
       }
     }

@@ -72,6 +72,9 @@ schneidet Striche gegen die gesamte vom runden Radierer überstrichene Fläche;
 Schnittpunkte interpolieren Druck, Neigung und Zeit. Unveränderte Striche bleiben
 im Cache, Undo/Redo und Speichern werden weiter am Gestenende abgeschlossen.
 `canvas/ink_painter.dart` erkennt auch Änderungen in der Mitte der Strichliste.
+Der Strichcache in `page_canvas.dart` prüft neben dem Zeitstempel die Identität
+der Rohstrichliste, damit Undo/Redo wiederhergestellte Zeichnungen neu darstellt.
+Radieren invalidiert alte Ink-Blob-Referenzen vor dem nächsten Speichern.
 Die bestehende Knopf-/Hover-Auswertung in `canvas/windows_pen_buttons.dart`
 und im Windows-Runner bleibt davon unabhängig und wurde nicht geändert.
 Referenz für Schnittintervalle und Stabilisierung: [Xournal++](https://github.com/xournalpp/xournalpp/tree/master/src/core/control/tools).
