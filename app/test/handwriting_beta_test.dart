@@ -641,6 +641,73 @@ void main() {
     await t.pumpWidget(const SizedBox());
   });
 
+  for (final paged in [false, true]) {
+    testWidgets('converted handwriting appends in free space (paged: $paged)',
+        (t) async {
+      activeTester = t;
+      if (!sqlite) return markTestSkipped('sqlite unavailable');
+      app.pageProps.layout = paged ? 'paged' : 'canvas';
+      app.snapToGrid = true;
+      app.saveHandwritingProfile(completedProfile());
+      app.addBlock(Block(
+          type: BlockType.text,
+          x: 44,
+          y: 150,
+          w: 400,
+          content: {'text': List.filled(50, 'Existing line').join('\n')}));
+      app.addBlock(Block(
+          type: BlockType.image,
+          x: 44,
+          y: 1200,
+          w: 500,
+          h: 700,
+          rotation: 30,
+          content: {'pdf': 'existing-pdf'}));
+      app.insertHandwriting([
+        Stroke(
+            tool: 'pen',
+            colorHex: '#000000',
+            size: 2,
+            x: [100, 200],
+            y: [2200, 2300],
+            p: [.5, .5])
+      ]);
+      final previous = jsonEncode([for (final b in app.blocks) b.toJson()]);
+      var bottom = app.contentExtent().bottom;
+      for (var i = 0; i < 2; i++) {
+        await t.pumpWidget(MaterialApp(
+            home: Scaffold(
+                body: Builder(
+                    builder: (context) => TextButton(
+                        onPressed: () => showHandwritingDialog(context, app),
+                        child: const Text('Convert'))))));
+        await t.tap(find.text('Convert'));
+        await settle(t);
+        await t.enterText(
+            find.byKey(const ValueKey('handwriting-text')), 'aa\naa');
+        await settle(t);
+        await t.ensureVisible(find.byKey(const ValueKey('handwriting-insert')));
+        await t.tap(find.byKey(const ValueKey('handwriting-insert')));
+        await settle(t);
+        expect(find.byType(HandwritingDialog), findsNothing);
+        final inserted = app.blocks.last;
+        expect(inserted.type, BlockType.ink);
+        expect(app.blockVisualBounds(inserted).top, greaterThan(bottom));
+        final strokes = (inserted.content['strokes'] as List).map(
+            (raw) => Stroke.fromJson(Map<String, dynamic>.from(raw as Map)));
+        expect(strokes.every((s) => s.bounds().minY > bottom), isTrue);
+        expect(jsonEncode([for (final b in app.blocks.take(3)) b.toJson()]),
+            previous);
+        bottom = app.contentExtent().bottom;
+      }
+      app.undo();
+      expect(app.blocks, hasLength(4));
+      app.cancelPendingSave();
+      expect(t.takeException(), isNull);
+      await t.pumpWidget(const SizedBox());
+    });
+  }
+
   testWidgets('setup confirms, advances, resumes and keeps conversion locked',
       (t) async {
     activeTester = t;

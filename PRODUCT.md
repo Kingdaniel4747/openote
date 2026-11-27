@@ -35,6 +35,8 @@ Der Android-Scanner ist eine Begleitapp, kein zweiter Notizeditor.
   Einlernen und Bearbeiten verwenden stets die feste mittlere Dicke 2,5 ohne
   Druckempfindlichkeit, auch für ältere Vorlagen. Erzeugte Handschrift bleibt
   druckunabhängig; ihre Dicke lässt sich weiterhin nachträglich ändern.
+  Text als Handschrift wird mit Abstand unter vorhandenen Inhalten eingefügt;
+  wiederholtes Einfügen überlagert keine bisherigen Notizen.
   Verlorene Stift-Endmeldungen, Geräteentfernung, Fokusverlust und Hot Reload
   schließen den offenen Entwurfskontakt ab, statt das Schreibfeld zu blockieren.
   „Schrift bearbeiten“ zeigt alle Zeichen mit eigener Schrift und Größenbeispiel;

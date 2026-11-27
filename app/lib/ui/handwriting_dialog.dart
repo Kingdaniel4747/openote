@@ -305,8 +305,10 @@ class _HandwritingDialogState extends State<HandwritingDialog> {
   void _insert() {
     if (!_ready || !_canInsert) return;
     final app = widget.app;
-    final at =
-        app.smartTextPosition(app.canvas.screenToPage(const Offset(60, 100)));
+    final at = Offset(
+        AppState.pageLeftMargin,
+        math.max(AppState.contentTop + AppState.pageLeftMargin,
+            app.contentExtent().bottom + AppState.mediaImportGap));
     if (app.insertHandwriting(_generate(origin: at)) != null) {
       Navigator.of(context).pop();
     }

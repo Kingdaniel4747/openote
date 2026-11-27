@@ -189,6 +189,7 @@ Entfernte Messproben und Funktionen ändern zukünftige Testzahlen.
 | `draw_tools_test.dart` | Schmale Tab-Leiste läuft über (1) |
 | `dialog_controller_lifetime_test.dart` | Notebook anlegen bei aktivem Editor (1) |
 | `keyboard_map_test.dart` | Timer beim Verlassen des Editors (1) |
+| `handwriting_beta_test.dart` | Lasso-Auswahl für Farbe/Dicke schlägt auch isoliert fehl; neue Tests für überlappungsfreies Einfügen auf freien/festen Seiten bestehen |
 | `localized_shell_test.dart` | Sprachzeile im Dialog; Handschrift-Debounce (2) |
 | `math_click_position_test.dart` | Zweiter Klick im offenen Formelblock (1) |
 | `marker_chord_test.dart` | Tastaturkürzel statt Marker-Eingabe (1) |
