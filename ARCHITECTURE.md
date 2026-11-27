@@ -8,7 +8,7 @@
 `.github/workflows/pages.yml` veröffentlicht unabhängig von den App-Builds.
 `features.html` listet die Werkzeuge und erklärt ihre Bedienung; beide Seiten
 verlinken sie über die auch mobil sichtbare Navigation „Features & guide“.
-`release.yml` baut nach Push auf `master` beide Apps; `release-notes.mjs` erstellt
+`release.yml` baut nach Push auf `master` Windows, macOS und Android; `release-notes.mjs` erstellt
 aus dem markierten TASKS-Abschnitt, vorherigem Release-Stand und Git-Commits den
 Release-Text. Keine neue separate Markdown-Chronik.
 
@@ -20,6 +20,17 @@ Nur temporäre Beispieldaten, keine persönlichen Bücher oder aktiven QR-Tokens
 `app/` und `scanner/` sind eigenständige Flutter-Pakete mit eigener pubspec
 und Lockdatei. Sie bleiben in einem Repository. Die Verbindung läuft über das
 Scan-Protokoll, nicht über eine Website oder gemeinsame Laufzeit.
+
+## macOS-Build
+
+`app/macos/` enthält den Flutter-Xcode-Runner mit CocoaPods, eigener Bundle-ID
+und Openote-Icon. Direkte Distribution ohne App Sandbox erhält bestehende
+Dateizugriffe, lokale MCP-Verbindungen und Scan-Empfang. Die plist erklärt den
+lokalen Netzwerkzugriff. `release.yml` baut auf `macos-15` eine Universal-App
+sowie beide Rust-Ziele; `packaging/macos/build-dmg.sh` bündelt die dylib neben
+dem Executable, prüft beide Architekturen und die Ad-hoc-Signatur und erzeugt
+eine DMG mit Applications-Verknüpfung. Keine Developer-ID/Notarisierung;
+erster CI-Build und Geräteprüfung offen. Updates öffnen die Release-Seite.
 
 ## Windows-App
 

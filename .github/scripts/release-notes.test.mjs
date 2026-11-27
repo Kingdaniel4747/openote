@@ -5,12 +5,14 @@ import { buildReleaseNotes, extractNotes } from './release-notes.mjs';
 const section = text => `# Aufgaben\n<!-- release-notes:start -->\n${text}\n<!-- release-notes:end -->\n## Private Arbeit\nNicht veröffentlichen`;
 const base = { version: '0.9.1', date: '2026-11-22', commits: '- PDF-Zoom verbessert (abc123)' };
 
-test('publishes only marked user notes, with date, commits and both packages', () => {
+test('publishes only marked user notes, with date, commits and all three packages', () => {
   const result = buildReleaseNotes({ ...base, tasks: section('- **Neu:** Scharfe PDFs') });
   assert.match(result, /\*\*Neu:\*\* Scharfe PDFs/);
   assert.match(result, /2026-11-22/);
   assert.match(result, /windows-x64-setup\.exe/);
   assert.match(result, /openote-scanner-0\.9\.1\.apk/);
+  assert.match(result, /openote-0\.9\.1-macos-universal\.dmg/);
+  assert.match(result, /ohne Apple-Notarisierung/);
   assert.match(result, /PDF-Zoom verbessert \(abc123\)/);
   assert.doesNotMatch(result, /Private Arbeit|Nicht veröffentlichen|release-notes:start/);
 });

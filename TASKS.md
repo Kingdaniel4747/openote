@@ -19,6 +19,15 @@ sonst werden Wartungshinweis und neue Commits ausgegeben.
   neuem Layout, Bedienhilfe und genauerem Android-Scanner-Ablauf überarbeitet.
 <!-- release-notes:end -->
 
+## macOS-Erstprüfung
+
+- Universal-DMG im gemeinsamen Release-Workflow ergänzt (Intel und Apple Silicon,
+  macOS ab 12), einschließlich Rust-OneNote-Import. Noch kein macOS-Build gelaufen.
+- Nach dem ersten beauftragten Push CI und Installation auf beiden Architekturen
+  prüfen: Start, Speichern/Neustart, PDF, Import/Export, Video, Android-Scan und MCP.
+- Pakete sind nur ad-hoc signiert; Developer-ID/Notarisierung bleibt offen.
+  Gatekeeper-Freigabe und manuelles Ersetzen bei Updates stehen in README.md.
+
 ## Veröffentlichung vorbereiten
 
 - Pages-Quelle im Nutzerscreenshot auf „GitHub Actions“ gesetzt; neue Änderungen

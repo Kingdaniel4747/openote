@@ -91,6 +91,7 @@ from the app’s widgets. They are not conceptual mockups or personal notebooks.
 | App | Get it | What to choose under release Assets |
 |---|---|---|
 | **Openote for Windows** | [Latest Windows release](https://github.com/Kingdaniel4747/openote/releases/latest) | `openote-<version>-windows-x64-setup.exe` |
+| **Openote for macOS** | [Latest release (after the first successful macOS build)](https://github.com/Kingdaniel4747/openote/releases/latest) | `openote-<version>-macos-universal.dmg` |
 | **Openote Scanner for Android** | [Latest Android release](https://github.com/Kingdaniel4747/openote/releases/latest) | `openote-scanner-<version>.apk` |
 
 **Windows:** download and run the setup. The published desktop package is x64,
@@ -102,9 +103,18 @@ support. The writing experience depends on the hardware; not every model is test
 if prompted. Use the packages from this repository. Android 6 or later is required.
 This is a companion scanner, not a full Android notebook editor.
 
-Both apps check GitHub for newer releases and ask before installation. Android
-updates must use the same signing key as the installed app. Linux source remains
-in this repository; Linux and macOS downloads are not currently offered.
+**macOS (initial support, macOS 12 or later):** the release workflow now builds a
+universal DMG for Apple Silicon (M-series) and Intel Macs. After the first
+successful release, open the DMG and drag Openote into Applications. The package
+is ad-hoc signed, without an Apple Developer ID or notarization. If macOS blocks
+it, try opening the installed app once, then use **System Settings → Privacy &
+Security → Open Anyway** if offered. Only approve a package you downloaded from
+this repository. The first macOS build and device checks are still pending.
+
+All apps check GitHub for newer releases. On macOS, the update button opens the
+release page; quit Openote before replacing it in Applications. Android updates
+must use the same signing key as the installed app. Linux source remains in this
+repository; Linux downloads are not currently offered.
 
 ## Quick start
 
@@ -209,7 +219,11 @@ existing local changes and inspect Git status before working.
 <details>
 <summary><strong>Build from source and run checks</strong></summary>
 
-Requirements: Flutter with Windows support and Visual Studio C++ desktop tools.
+For macOS, use a Mac with Xcode, CocoaPods and Flutter. Run `flutter pub get`
+and `flutter run -d macos` from `app/`. The release workflow also builds the Rust
+core for both Mac architectures and packages a universal DMG.
+
+Windows requirements: Flutter with Windows support and Visual Studio C++ desktop tools.
 Locally verified: Flutter 3.47.7 / Dart 3.13.5, Visual Studio Community 2026
 Insiders and CMake 4.3.1. CI uses the version declared in its workflow. Keep the
 local plugin overrides in `app/pubspec.yaml`; do not patch the global Pub cache.
@@ -248,10 +262,10 @@ a phone camera or a real pairing token. Review the PNGs before committing them.
 
 | Path | Purpose |
 |---|---|
-| `app/` | Windows app, with retained Linux source |
+| `app/` | Windows and macOS app, with retained Linux source |
 | `scanner/` | Android companion |
 | `rust/onote_core/` | Optional native core and OneNote import |
-| `packaging/` | Windows installer and future Linux packaging |
+| `packaging/` | Windows installer, macOS DMG and future Linux packaging |
 | `website/` | English static website and shared public screenshots |
 | `.github/workflows/` | Shared releases and independent Pages deployment |
 
@@ -283,8 +297,8 @@ recommendations cannot be guaranteed. Google applies its normal
 There are no website analytics or external fonts. A `robots.txt` under this
 project subpath would not control crawlers for the domain.
 
-**Every push to `master` starts the shared Windows/Android release workflow.**
-Both builds must succeed before publication. The next patch version is calculated
+**Every push to `master` starts the shared Windows/macOS/Android release workflow.**
+All three builds must succeed before publication. The next patch version is calculated
 from existing version tags and the Pubspec baseline. Pushes to other branches or
 tags do not publish; manual dispatch with a version and optional notes remains
 available. Existing version tags are rejected. Runs are serialized; GitHub can

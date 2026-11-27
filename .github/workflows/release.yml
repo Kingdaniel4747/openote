@@ -1,6 +1,6 @@
 name: Release packages
 
-# Each push to the publication branch builds one shared Windows/Android release.
+# Each push to the publication branch builds one shared Windows/macOS/Android release.
 # Serialization prevents concurrent runs from choosing the same patch version.
 on:
   push:
@@ -142,6 +142,62 @@ jobs:
           compression-level: 0
           retention-days: 7
 
+  macos:
+    name: Build macOS universal DMG
+    needs: version
+    runs-on: macos-15
+    steps:
+      - name: Check out the source
+        uses: actions/checkout@v6
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.8
+          cache: true
+
+      - name: Use CocoaPods for the existing plugins
+        run: flutter config --no-enable-swift-package-manager
+
+      - name: Set up Rust for both Mac architectures
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Build the OneNote importer for both Mac architectures
+        working-directory: rust/onote_core
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '12.0'
+        run: |
+          cargo build --release --locked --target aarch64-apple-darwin
+          cargo build --release --locked --target x86_64-apple-darwin
+
+      - name: Get Flutter packages
+        working-directory: app
+        run: flutter pub get
+
+      - name: Trim unused package assets
+        working-directory: app
+        run: |
+          dart run pdfrx:remove_wasm_modules
+          dart run tool/strip_web_assets.dart
+
+      - name: Build the macOS app
+        working-directory: app
+        run: flutter build macos --release --build-name=${{ needs.version.outputs.value }} --build-number=${{ github.run_number }} --dart-define=OPENOTE_VERSION=${{ needs.version.outputs.value }} --dart-define=OPENOTE_REPOSITORY=Kingdaniel4747/openote
+
+      - name: Package and verify the universal DMG
+        run: bash packaging/macos/build-dmg.sh '${{ needs.version.outputs.value }}'
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-macos
+          path: openote-${{ needs.version.outputs.value }}-macos-universal.dmg
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
   android:
     name: Build Android scanner APK
     needs: version
@@ -211,7 +267,7 @@ jobs:
 
   publish:
     name: Publish GitHub release
-    needs: [version, windows, android]
+    needs: [version, windows, macos, android]
     runs-on: ubuntu-latest
     steps:
       - name: Check out source and release history
@@ -219,7 +275,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download installer and APK
+      - name: Download release packages
         uses: actions/download-artifact@v8
         with:
           pattern: release-*
@@ -231,6 +287,7 @@ jobs:
         run: |
           test -s "release-files/openote-${{ needs.version.outputs.value }}-windows-x64-setup.exe"
           test -s "release-files/openote-scanner-${{ needs.version.outputs.value }}.apk"
+          test -s "release-files/openote-${{ needs.version.outputs.value }}-macos-universal.dmg"
 
       - name: Prepare readable release notes
         env:
@@ -250,3 +307,4 @@ jobs:
           files: |
             release-files/openote-${{ needs.version.outputs.value }}-windows-x64-setup.exe
             release-files/openote-scanner-${{ needs.version.outputs.value }}.apk
+            release-files/openote-${{ needs.version.outputs.value }}-macos-universal.dmg
