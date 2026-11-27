@@ -30,6 +30,8 @@ function packageApp({ missingCore = false, failure = '', version = '1.2.3' } = {
           test -s "$2" && test -s "$3" || return 1
           cat "$2" "$3" > "$5"
         else
+          test -s "$1" || return 1
+          [[ "$#" == 4 && "$2" == -verify_arch && "$3" == arm64 && "$4" == x86_64 ]] || return 1
           [[ "$TEST_FAILURE" != architecture ]]
         fi
       }

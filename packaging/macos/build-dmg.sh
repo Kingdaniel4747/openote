@@ -16,8 +16,8 @@ lipo -create \
   -output "$app/Contents/MacOS/libonote_core.dylib"
 
 # Refuse to ship an app or importer that only works on one kind of MacBook.
-lipo -verify_arch arm64 x86_64 "$app/Contents/MacOS/Openote"
-lipo -verify_arch arm64 x86_64 "$app/Contents/MacOS/libonote_core.dylib"
+lipo "$app/Contents/MacOS/Openote" -verify_arch arm64 x86_64
+lipo "$app/Contents/MacOS/libonote_core.dylib" -verify_arch arm64 x86_64
 # Ad-hoc signing is required on Apple Silicon. This is not Developer ID
 # signing or notarization; Gatekeeper still requires a user override.
 codesign --force --deep --sign - \

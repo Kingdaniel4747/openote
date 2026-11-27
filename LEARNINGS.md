@@ -111,6 +111,10 @@ Nur Erkenntnisse behalten, die künftige Fehler verhindern. Keine Sitzungsprotok
 
 ## Prüfungen
 
+macOS: Bei `lipo <Datei> -verify_arch arm64 x86_64` steht die Eingabedatei
+vor dem Befehl; nach `-verify_arch` werden alle Argumente als Architekturen
+gelesen. Paketierungstests müssen diese Argumentreihenfolge mitprüfen.
+
 Release-Shells laufen mit `bash -e`: `((patch++))` liefert beim alten Wert 0
 einen Fehlerstatus und beendet den Schritt. Versionen mit `patch=$((patch + 1))`
 erhöhen; Nullwerte und Versionsüberläufe in `.github/scripts/version.test.mjs`
