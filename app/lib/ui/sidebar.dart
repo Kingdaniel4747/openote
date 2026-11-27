@@ -13,6 +13,8 @@ import 'protect_dialog.dart';
 import '../theme/tokens.dart';
 import 'onote_dialog.dart';
 import 'node_context_menu.dart';
+import 'node_move_dialog.dart';
+import 'transfer_progress.dart';
 import 'page_export_menu.dart';
 
 Color _sectionColor(String? token, bool dark) => switch (token) {
@@ -2101,6 +2103,8 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
         );
     return [
       item('rename', Icons.edit_outlined, 'Rename'),
+      if (isPage || isSection)
+        item('moveto', Icons.drive_file_move_outline, 'Move to…'),
 
       if (isSection || isGroup) ...[
         const Divider(height: 6),
@@ -2153,6 +2157,24 @@ Future<void> showNodeMenu(BuildContext context, AppState app, TreeNode node,
     return;
   }
   switch (action) {
+    case 'moveto':
+      if (!await promptUnlock(context, app, node.id) || !context.mounted) {
+        return;
+      }
+      final destination = await showMoveNodeDialog(context, app, node);
+      if (destination == null || !context.mounted) return;
+      try {
+        await runTransfer(context, tr(context, 'Moving…'), (progress) async {
+          progress.update(total: 0, detail: node.title);
+          await app.moveNodeTo(node.id, destination.notebookId,
+              sectionId: destination.sectionId);
+        });
+      } catch (error) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('${tr(context, 'Could not move item.')} $error')));
+        }
+      }
     case 'rename':
       final title = await promptForText(context,
           title: 'Rename', okLabel: 'Save', hintText: node.title);

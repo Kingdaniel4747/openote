@@ -419,6 +419,19 @@ class ReminderStore {
     _persist();
   }
 
+  void movePageTargets(
+      String sourceNotebook, String destinationNotebook, Set<String> pageIds) {
+    var changed = false;
+    for (final reminder in _items) {
+      if (reminder.notebookId == sourceNotebook &&
+          pageIds.contains(reminder.pageId)) {
+        reminder.notebookId = destinationNotebook;
+        changed = true;
+      }
+    }
+    if (changed) _persist();
+  }
+
   /// The requested id, or a fresh one when it is already taken (or empty).
   ///
   /// [load] collapses duplicate ids on read, so a store that *creates* one hands

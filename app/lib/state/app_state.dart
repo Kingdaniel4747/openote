@@ -4993,7 +4993,112 @@ class AppState extends ChangeNotifier
     notifyListeners();
   }
 
-  /// Drag a page into another section (ORG-2): reparent, level 0, append.
+  /// Read destinations without changing the current notebook or editor.
+  List<TreeNode> sectionsInNotebook(String id) =>
+      _repo.loadNodes(id).where((n) => n.kind == NodeKind.section).toList();
+
+  Future<void> moveNodeTo(String id, String destinationNotebook,
+          {String? sectionId}) =>
+      (_editorOwner ?? this).runMediaImport(
+          () => _moveNodeTo(id, destinationNotebook, sectionId: sectionId));
+
+  Future<void> _moveNodeTo(String id, String destinationNotebook,
+      {String? sectionId}) async {
+    final owner = _editorOwner ?? this;
+    await owner.flushSave();
+    if (owner.hasUnsavedChanges) {
+      throw StateError('Save your changes successfully before moving.');
+    }
+    final sourceNotebook = notebookId!;
+    final root = node(id);
+    if (root == null ||
+        (root.kind != NodeKind.page && root.kind != NodeKind.section)) {
+      throw ArgumentError('Choose a page or section.');
+    }
+    if (isLocked(id)) throw StateError('Unlock this item before moving.');
+    final targetSections = sectionsInNotebook(destinationNotebook);
+    if (root.kind == NodeKind.page &&
+        !targetSections.any((s) => s.id == sectionId)) {
+      throw ArgumentError('Choose a destination section.');
+    }
+    if (destinationNotebook == sourceNotebook) {
+      if (root.kind == NodeKind.section) return;
+      if (root.parentId == sectionId) return;
+      final record = protectionFor(governingNode(id) ?? id);
+      if (record != null) {
+        _repo.setSetting(_protectKey(id), record.toJson());
+        _protectedIds.add(id);
+      }
+      final movesCurrentPage = _pageBranch(root).any((p) => p.id == pageId);
+      movePageToSection(id, sectionId!);
+      if (movesCurrentPage) {
+        activeSectionId = sectionId;
+        _rememberSectionPage(sectionId, pageId!);
+        notifyListeners();
+      }
+      return;
+    }
+    final branch = root.kind == NodeKind.page
+        ? _pageBranch(root)
+        : [root, ...pagesOf(root.id)];
+    final peers = root.kind == NodeKind.page
+        ? _repo
+            .loadNodes(destinationNotebook)
+            .where((n) => n.parentId == sectionId)
+            .toList()
+        : targetSections;
+    final lastPosition = peers.map((n) => n.position).toList()..sort();
+    final prefix = '${lastPosition.lastOrNull ?? 'a'}m${nowMs()}';
+    final moving = [
+      for (var i = 0; i < branch.length; i++)
+        TreeNode(
+            id: branch[i].id,
+            kind: branch[i].kind,
+            parentId: root.kind == NodeKind.page
+                ? sectionId
+                : (i == 0 ? null : root.id),
+            title: branch[i].title,
+            color: branch[i].color,
+            position: '$prefix${i.toString().padLeft(8, '0')}',
+            level:
+                branch[i].level - (root.kind == NodeKind.page ? root.level : 0),
+            createdAt: branch[i].createdAt)
+    ];
+    final protections = <String, Object?>{};
+    for (final entry in branch) {
+      final record = entry.id == id
+          ? protectionFor(governingNode(id) ?? id)
+          : protectionFor(entry.id);
+      if (record != null) {
+        protections[entry.id] = record.toJson();
+      }
+    }
+    await _repo.moveNodesToNotebook(sourceNotebook, destinationNotebook, moving,
+        protections: protections);
+    owner.planner.reminders.movePageTargets(sourceNotebook, destinationNotebook,
+        branch.where((n) => n.kind == NodeKind.page).map((n) => n.id).toSet());
+    for (final editor in [owner, ...owner._editors]) {
+      if (editor.notebookId != sourceNotebook &&
+          editor.notebookId != destinationNotebook) {
+        continue;
+      }
+      editor.reloadNodes();
+      editor.reloadProtection();
+      if (editor.pageId != null && editor.node(editor.pageId) == null) {
+        await editor.selectPage(editor.pages.firstOrNull?.id);
+      }
+      if (editor.activeSectionId != null &&
+          editor.node(editor.activeSectionId) == null) {
+        editor.activeSectionId = editor.nodes
+            .where((n) => n.kind == NodeKind.section)
+            .firstOrNull
+            ?.id;
+      }
+      editor.notifyListeners();
+    }
+  }
+
+  /// Drag a page into another section: reparent, level 0, append.
   void movePageToSection(String pageId, String sectionId) {
     final n = node(pageId);
     final s = node(sectionId);

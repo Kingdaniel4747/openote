@@ -108,6 +108,10 @@ Für reine Dokumentationspflege diese Prüfungen nicht erneut starten.
 
 ## Als Nächstes
 
+- „Verschieben nach …“ am Gerät prüfen: Sektion in anderes Buch, Seite samt
+  Unterseiten in andere Sektion/Buch; Zielauswahl, Abbrechen, PDFs/Anhänge und
+  Passcodes nach dem Wechsel prüfen.
+
 - Kalender am Gerät prüfen: Tag antippen, Aufgabe mit Enter oder Speichern
   erfassen; lange Texte lesen/bearbeiten, optional Seite/Farbe verknüpfen.
   „Alle anzeigen“, Tageszahl nach Erledigen und aktueller Monat neben dem X;

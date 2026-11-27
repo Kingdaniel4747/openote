@@ -98,6 +98,9 @@ Der Android-Scanner ist eine Begleitapp, kein zweiter Notizeditor.
   Hover oder Klick und mit Ausweichrichtung am Fensterrand. Exportiert wird die
   angeklickte Seite. Formate: Markdown, Vektor-PDF, Bild-PDF, JSON Canvas und
   InkML; zusätzlich Export des ganzen Buchs als offene Ordnerstruktur.
+- „Verschieben nach …“ im Rechtsklickmenü verschiebt Sektionen samt Seiten in
+  ein anderes Notizbuch; Seiten samt Unterseiten in eine gewählte Sektion des
+  aktuellen oder eines anderen Buchs. Inhalte, Medien und Passcodes bleiben erhalten.
 - Sektionsmenüs enthalten Farbpunkte, Umbenennen, Gruppenzuordnung, Sperren und
   Löschen. Reihenfolgen werden manuell gesetzt; Prüfungen nur im Kalender.
 - Import und Export verwenden Fortschrittsbalken, Prozent, erledigte und

@@ -1389,6 +1389,157 @@ class Repository {
   List<TreeNode> loadNodes(String notebookId) =>
       _writer(notebookId).loadNodes();
 
+  /// Commit the complete destination before removing anything from the source.
+  /// A failed copy leaves the source intact; media in the source stays available
+  /// to backups and other pages that share it.
+  Future<void> moveNodesToNotebook(
+      String sourceId, String destinationId, List<TreeNode> moving,
+      {required Map<String, Object?> protections}) async {
+    if (sourceId == destinationId || moving.isEmpty) {
+      throw ArgumentError('Choose another notebook.');
+    }
+    final source = _db(sourceId), destination = _db(destinationId);
+    // Deleted pages still belong to their section and must remain restorable.
+    moving = [...moving];
+    if (moving.first.kind == NodeKind.section) {
+      for (final row in source.select(
+          'SELECT * FROM nodes WHERE parent_id=? AND deleted_at IS NOT NULL',
+          [moving.first.id])) {
+        moving.add(TreeNode(
+            id: row['id'] as String,
+            kind: NodeKind.page,
+            parentId: moving.first.id,
+            title: row['title'] as String,
+            position: row['position'] as String,
+            color: row['color'] as String?,
+            level: row['level'] as int,
+            createdAt: row['created_at'] as int));
+      }
+    }
+    final sourceRef = notebooks.firstWhere((n) => n.id == sourceId);
+    final destinationRef = notebooks.firstWhere((n) => n.id == destinationId);
+    for (final node in moving) {
+      if (destination
+          .select('SELECT id FROM nodes WHERE id=?', [node.id]).isNotEmpty) {
+        throw StateError(
+            'This item already exists in the destination notebook.');
+      }
+    }
+    final mirrors = <String, Map<String, Object?>>{};
+    final hashes = <String>{};
+    final mediaNames = <String>{};
+    void findMedia(dynamic value) {
+      if (value is Map) {
+        if (value['media'] case final String name) mediaNames.add(name);
+        for (final entry in value.values) {
+          findMedia(entry);
+        }
+      } else if (value is List) {
+        for (final entry in value) {
+          findMedia(entry);
+        }
+      }
+    }
+
+    for (final node in moving.where((n) => n.kind == NodeKind.page)) {
+      final row = source.select(
+          'SELECT * FROM page_mirror WHERE page_id=?', [node.id]).firstOrNull;
+      if (row == null) continue;
+      mirrors[node.id] = Map.of(row);
+      final json = row['json'] as String;
+      hashes.addAll(RegExp(r'[0-9a-fA-F]{64}')
+          .allMatches(json)
+          .map((m) => m[0]!.toLowerCase()));
+      findMedia(jsonDecode(json));
+      hashes.addAll(source.select('SELECT hash FROM blob_refs WHERE page_id=?',
+          [node.id]).map((r) => r['hash'] as String));
+    }
+    final renamedMedia = <String, String>{};
+    for (final name in mediaNames) {
+      final file = MediaStore.resolve(sourceRef, name);
+      if (file == null) throw StateError('Media file is missing: $name');
+      renamedMedia[name] = await MediaStore.add(destinationRef, file);
+    }
+    dynamic rewriteMedia(dynamic value) {
+      if (value is Map) {
+        return {
+          for (final entry in value.entries)
+            entry.key:
+                entry.key == 'media' && renamedMedia.containsKey(entry.value)
+                    ? renamedMedia[entry.value]
+                    : rewriteMedia(entry.value)
+        };
+      }
+      if (value is List) return value.map(rewriteMedia).toList();
+      return value;
+    }
+
+    void copyRows(String table, String column, String id) {
+      for (final row
+          in source.select('SELECT * FROM $table WHERE $column=?', [id])) {
+        final columns = row.keys.toList();
+        destination.execute(
+            'INSERT INTO $table (${columns.join(',')}) VALUES (${columns.map((_) => '?').join(',')})',
+            [for (final column in columns) row[column]]);
+      }
+    }
+
+    // Passcodes must be durable before the destination can become visible.
+    for (final node in moving) {
+      final protection =
+          protections[node.id] ?? getSetting('protect:$sourceId:${node.id}');
+      if (protection != null) {
+        setSetting('protect:$destinationId:${node.id}', protection);
+      }
+    }
+    await flushWorkspace();
+    runInTransaction(destinationId, () {
+      for (final hash in hashes) {
+        final bytes = getBlob(sourceId, hash);
+        // Hash-like text need not be an asset reference.
+        if (bytes == null) {
+          final referenced = moving.any((n) => source.select(
+              'SELECT hash FROM blob_refs WHERE page_id=? AND hash=?',
+              [n.id, hash]).isNotEmpty);
+          if (referenced) throw StateError('An attachment is missing: $hash');
+          continue;
+        }
+        final mime = source.select('SELECT mime FROM blobs WHERE hash=?',
+            [hash]).firstOrNull?['mime'] as String?;
+        putBlob(destinationId, bytes, mime ?? 'application/octet-stream');
+      }
+      for (final node in moving) {
+        upsertNode(destinationId, node);
+        final deletedAt = source.select(
+            'SELECT deleted_at FROM nodes WHERE id=?',
+            [node.id]).firstOrNull?['deleted_at'];
+        if (deletedAt != null) {
+          destination.execute(
+              'UPDATE nodes SET deleted_at=? WHERE id=?', [deletedAt, node.id]);
+        }
+        final mirror = mirrors[node.id];
+        if (mirror != null) {
+          final json = renamedMedia.isEmpty
+              ? mirror['json']
+              : jsonEncode(rewriteMedia(jsonDecode(mirror['json'] as String)));
+          destination.execute(
+              'INSERT INTO page_mirror(page_id,json,mirror_rev,updated_at) VALUES(?,?,?,?)',
+              [node.id, json, mirror['mirror_rev'], mirror['updated_at']]);
+          copyRows('blob_refs', 'page_id', node.id);
+          copyRows('refs', 'src_page_id', node.id);
+        }
+      }
+    });
+    runInTransaction(sourceId, () {
+      for (final node in moving.reversed) {
+        source.execute('DELETE FROM refs WHERE src_page_id=?', [node.id]);
+        source.execute('DELETE FROM nodes WHERE id=?', [node.id]);
+      }
+    });
+    _decodedPages[sourceId]?.clear();
+    _decodedPages[destinationId]?.clear();
+  }
+
   TreeNode upsertNode(String notebookId, TreeNode n) =>
       _writer(notebookId).upsertNode(n);
 

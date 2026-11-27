@@ -165,6 +165,13 @@ und Canvas-Menü. Kalenderdaten bleiben in `state/study_state.dart`,
 `state/planner_state.dart` und `planner/`; `StudyState` enthält nur noch
 Prüfungsdaten/-zeiten, keine Lernkartenplanung.
 
+`ui/node_move_dialog.dart` wählt Buch/Sektion ohne Editorwechsel.
+`AppState.moveNodeTo` sichert offene Editoren und serialisiert mit Medienimporten;
+buchübergreifend schreibt `Repository.moveNodesToNotebook` erst das vollständige
+Ziel mit rohem Seiten-JSON, Blobs, Medien und Passcodes und entfernt dann die
+Quelle. Gelöschte Sektionsseiten bleiben im Ziel wiederherstellbar, Planerlinks
+folgen den verschobenen Seiten. Regressionen: `node_move_test.dart`.
+
 Der Planer öffnet `ui/planner_entry_editor.dart` direkt unter dem Monatsraster.
 `PlannerPanel` hält Entwürfe je Tag/Eintrag und die feste Tages- und Aktionsleiste.
 `Reminder.color` ist ein optionaler Farbschlüssel in den bestehenden Settings;

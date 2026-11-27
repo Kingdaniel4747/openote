@@ -34,6 +34,13 @@ class AppText extends StatelessWidget {
 }
 
 const german = <String, String>{
+  'Move to…': 'Verschieben nach …',
+  'Moving…': 'Wird verschoben …',
+  'Could not move item.': 'Das Element konnte nicht verschoben werden.',
+  'Create another notebook to move this section.':
+      'Erstelle ein weiteres Notizbuch, um diese Sektion zu verschieben.',
+  'No other sections in this notebook.':
+      'Keine andere Sektion in diesem Notizbuch vorhanden.',
   'Delete all handwriting & start over': 'Alles löschen und neu anfangen',
   'Delete all handwriting samples?': 'Alle Schriftproben löschen?',
   'All learned characters and variants on this device will be deleted. Handwriting already inserted into your pages is kept. Setup will start again from the beginning.':
