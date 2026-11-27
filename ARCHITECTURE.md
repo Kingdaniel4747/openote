@@ -85,6 +85,15 @@ Beim Abbau werden Pointer-Route und Observer entfernt und späte Endmeldungen ig
 Der Handballenschutz verfolgt Stiftkontakte je physischem Gerät: neuer Down oder
 Hover bereinigt verlorene Endmeldungen desselben Geräts, ohne fremde Stifte oder
 bereits abgewiesene Handkontakte freizugeben.
+Windows-Touch läuft nach dem Binding-Start über `runner/touch_input.cpp` und
+`canvas/windows_touch_input.dart`: app-lokale Subclass, Windows-Confidence und
+Kontaktfläche, DPI-Umrechnung vor dem Hit-Test. Nur übernommene Touch-Sequenzen
+werden im Runner konsumiert; Stift/Maus und ältere Runner behalten den Enginepfad.
+Verlorene Confidence bricht genau diesen Kontakt ab und sperrt ihn bis zum Abheben.
+Bestätigte Finger bleiben auch bei Stiftkontakt für Pan/Pinch verfügbar;
+Fokusverlust/Capture-Verlust beendet die Sequenz ohne Klick. Native Regression:
+`test/native/touch_input_test.cpp` (MSVC C++20, `/MD`, Flutter-Wrapper/Engine-Libs);
+Flutter-Tests: `windows_touch_input_test.dart`, `writing_touch_guard_test.dart`.
 Das sichtbare Schreibfeld ist 160 Pixel breit; das gespeicherte 220×160-System
 und `letterHeight` bleiben unverändert. Die proportional kleinere Vorlage und
 Pointer-Abbildung ändern damit weder vorhandene Proben noch die Ausgabegröße.

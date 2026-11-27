@@ -461,7 +461,7 @@ class _PageCanvasState extends State<PageCanvas> {
   void _inkDown(PointerDownEvent e) {
     if (e.kind == PointerDeviceKind.stylus ||
         e.kind == PointerDeviceKind.invertedStylus) {
-      _rejectTouchSequence = _touches.isNotEmpty;
+      _rejectTouchSequence = _touches.isNotEmpty && !_deliberateTouchGesture;
       if (_rejectTouchSequence) app.touchCanvasGesture = true;
       _touchVelocity = Offset.zero;
       controller.stopMotion();
@@ -1124,8 +1124,8 @@ class _PageCanvasState extends State<PageCanvas> {
     _lastTouchMove = DateTime.now();
     if (_touches.length == 1) {
       _rejectTouchSequence =
-          (_windowsPen.nativeInRange && !_deliberateTouch(e.pointer)) ||
-              _inkContactActive;
+          (_windowsPen.nativeInRange || _inkContactActive) &&
+              !_deliberateTouch(e.pointer);
       _touchPanStart = e.localPosition;
       _touchPanActive = false;
     }
@@ -1273,8 +1273,8 @@ class _PageCanvasState extends State<PageCanvas> {
 
   void _touchMove(PointerMoveEvent e) {
     if (!_touches.containsKey(e.pointer)) return;
-    if ((_windowsPen.nativeInRange && !_deliberateTouch(e.pointer)) ||
-        _inkContactActive ||
+    if (((_windowsPen.nativeInRange || _inkContactActive) &&
+            !_deliberateTouch(e.pointer)) ||
         e.radiusMajor > 30) {
       _rejectTouchSequence = true;
     }
@@ -1349,8 +1349,8 @@ class _PageCanvasState extends State<PageCanvas> {
   void _applyPinchTransform() {
     if (_rejectTouchSequence ||
         _touches.length != 2 ||
-        (_windowsPen.nativeInRange && !_deliberateTouchGesture) ||
-        _inkContactActive) {
+        ((_windowsPen.nativeInRange || _inkContactActive) &&
+            !_deliberateTouchGesture)) {
       return;
     }
     if (_touches.length < 2 ||

@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 
+import 'windows_touch_input.dart';
+
 /// Filter before hit testing: a child Listener has already received a palm
 /// by the time a parent Listener could reject it (including window buttons).
 mixin WritingTouchBinding on GestureBinding {
@@ -18,7 +20,18 @@ mixin WritingTouchBinding on GestureBinding {
 }
 
 class OpenoteWidgetsBinding extends WidgetsFlutterBinding
-    with WritingTouchBinding {}
+    with WritingTouchBinding {
+  OpenoteWidgetsBinding() {
+    if (Platform.isWindows) {
+      _windowsTouch = WindowsTouchInput(
+          dispatch: writingTouchGuard.handleNativeTouch,
+          view: () => platformDispatcher.implicitView!);
+      unawaited(_windowsTouch!.attach());
+    }
+  }
+
+  WindowsTouchInput? _windowsTouch;
+}
 
 class _TouchCandidate {
   _TouchCandidate(this.down);
@@ -46,6 +59,7 @@ class WritingTouchGuard {
   final _candidates = <int, _TouchCandidate>{};
   final _rejected = <int>{};
   final _navigation = <int>{};
+  final _nativeFingers = <int>{};
   final _penContacts = <int, int>{}; // pointer -> physical device
   final _tapTimers = <Timer>{};
   final _controlTargets = <Object, bool Function(PointerDownEvent)>{};
@@ -57,7 +71,24 @@ class WritingTouchGuard {
       _nativeInRange ||
       _penContacts.isNotEmpty ||
       (_lastPen != null && _now().difference(_lastPen!) < penGrace);
-  bool isNavigationPointer(int pointer) => _navigation.contains(pointer);
+  bool isNavigationPointer(int pointer) =>
+      _navigation.contains(pointer) || _nativeFingers.contains(pointer);
+
+  /// Windows confidence supplements the fallback gesture heuristics. Once
+  /// revoked, a contact cannot become a finger again before it lifts.
+  void handleNativeTouch(PointerEvent event, bool intended) {
+    final end = event is PointerUpEvent || event is PointerCancelEvent;
+    if (!intended) {
+      _cancelContact(event);
+    } else if (event is PointerDownEvent) {
+      _nativeFingers.add(event.pointer);
+    }
+    try {
+      handle(event);
+    } finally {
+      if (end) _nativeFingers.remove(event.pointer);
+    }
+  }
 
   /// Explicit controls outside an ink surface may accept a new finger after
   /// pen-up, even during hover. Existing palms and active pen contacts stay
@@ -83,6 +114,7 @@ class WritingTouchGuard {
     _nativeInRange = false;
     _lastPen = null;
     _penContacts.clear();
+    _nativeFingers.clear();
     _controlTargets.clear();
     _cancelTaps();
   }
@@ -96,11 +128,17 @@ class WritingTouchGuard {
 
   void _rejectExisting() {
     _cancelTaps();
-    _rejected.addAll(_candidates.keys);
-    _candidates.clear();
-    final contacts = _touches.values.toList(growable: false);
-    _touches.clear();
+    final candidates =
+        _candidates.keys.where((id) => !_nativeFingers.contains(id)).toList();
+    _rejected.addAll(candidates);
+    for (final id in candidates) {
+      _candidates.remove(id);
+    }
+    final contacts = _touches.values
+        .where((e) => !_nativeFingers.contains(e.pointer))
+        .toList();
     for (final event in contacts) {
+      _touches.remove(event.pointer);
       _rejected.add(event.pointer);
       dispatch(PointerCancelEvent(
           pointer: event.pointer,
@@ -115,7 +153,24 @@ class WritingTouchGuard {
 
   void _reject(int pointer) {
     _candidates.remove(pointer);
+    _nativeFingers.remove(pointer);
     _rejected.add(pointer);
+  }
+
+  void _cancelContact(PointerEvent event) {
+    final previous = _touches.remove(event.pointer);
+    _navigation.remove(event.pointer);
+    _nativeFingers.remove(event.pointer);
+    _reject(event.pointer);
+    if (previous != null) {
+      dispatch(PointerCancelEvent(
+          pointer: previous.pointer,
+          device: previous.device,
+          kind: PointerDeviceKind.touch,
+          position: previous.position,
+          viewId: previous.viewId,
+          timeStamp: event.timeStamp));
+    }
   }
 
   bool _onSurface(_TouchCandidate candidate) =>
@@ -163,13 +218,14 @@ class WritingTouchGuard {
   }
 
   void _finishCandidate(_TouchCandidate candidate, PointerEvent event) {
+    final nativeFinger = _nativeFingers.contains(event.pointer);
     _candidates.remove(event.pointer);
     if (event is! PointerUpEvent ||
         candidate.distance > 6 ||
         candidate.path > 8 ||
         event.timeStamp - candidate.down.timeStamp >
             const Duration(milliseconds: 500) ||
-        _recentPen) {
+        (_recentPen && !nativeFinger)) {
       return;
     }
     // A hand often lands before the nib. Give an impending pen contact a short
@@ -177,7 +233,7 @@ class WritingTouchGuard {
     late Timer timer;
     timer = Timer(const Duration(milliseconds: 120), () {
       _tapTimers.remove(timer);
-      if (_recentPen) return;
+      if (_recentPen && !nativeFinger) return;
       dispatch(candidate.down);
       dispatch(event);
     });
@@ -224,7 +280,8 @@ class WritingTouchGuard {
       return;
     }
     if (event is PointerDownEvent) {
-      if (_penContacts.isNotEmpty ||
+      if ((_penContacts.isNotEmpty &&
+              !_nativeFingers.contains(event.pointer)) ||
           _navigation.length >= 2 ||
           event.radiusMajor > 26) {
         _reject(event.pointer);
@@ -266,7 +323,7 @@ class WritingTouchGuard {
           (_navigation.contains(event.pointer) &&
               (event.position - _touches[event.pointer]!.position).distance >
                   100)) {
-        _rejectExisting();
+        _cancelContact(event);
         return;
       }
       _touches[event.pointer] = event;

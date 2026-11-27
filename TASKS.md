@@ -116,6 +116,9 @@ Für reine Dokumentationspflege diese Prüfungen nicht erneut starten.
 - Automatischen Handballenschutz am Gerät prüfen: Hand vor dem Stift auflegen,
   Ärmel am Scrollbalken, Schreibpausen und bewusstes Wischen/Zoomen bei weiter
   aufliegender Hand. Keine manuelle Touch-Sperre und keine neue Einstellung.
+  Windows-Confidence/Kontaktfläche jetzt direkt angebunden; bestätigte Finger
+  dürfen auch während eines Stiftstrichs Pan/Pinch ausführen. 69 gezielte
+  Eingabe-/Zeichentests und nativer Transporttest bestanden; Gerätewirkung offen.
 - PDF-Anzeige am Gerät erneut prüfen: Nachschärfen und Verschieben ohne kurzen
   Bildsprung; Schließen während laufendem/hängendem Rendern und sofortiger Neustart
   ohne verbliebenen Prozess. Ausschnitte wechseln jetzt fertig dekodiert mit ihrer

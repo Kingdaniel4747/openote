@@ -62,6 +62,8 @@ bool FlutterWindow::OnCreate() {
   pen_buttons_ = std::make_unique<PenButtons>(
       flutter_controller_->view()->GetNativeWindow(),
       flutter_controller_->engine()->messenger());
+  touch_input_ = std::make_unique<TouchInput>(
+      flutter_view, flutter_controller_->engine()->messenger());
   screen_capture_ = std::make_unique<ScreenCapture>(
       GetHandle(), flutter_controller_->engine()->messenger());
 
@@ -78,6 +80,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  touch_input_.reset();
   writing_services_.reset();
   window_controls_.reset();
   pen_buttons_.reset();
@@ -96,6 +99,7 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   if (pen_buttons_ &&
       ((message == WM_ACTIVATEAPP && !wparam) || message == WM_KILLFOCUS)) {
     pen_buttons_->Reset();
+    if (touch_input_) touch_input_->CancelAll();
   }
   // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {

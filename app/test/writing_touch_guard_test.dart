@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:openote/canvas/page_canvas.dart';
 import 'package:openote/canvas/windows_pen_buttons.dart';
 import 'package:openote/canvas/writing_touch_guard.dart';
+import 'package:openote/canvas/windows_touch_input.dart';
 import 'package:openote/model/models.dart';
 import 'package:openote/state/app_state.dart';
 import 'package:openote/store/repository.dart';
@@ -401,6 +402,105 @@ void main() {
           kind: PointerDeviceKind.mouse);
       await t.pump();
       expect(binding.exits, 1);
+      app.cancelPendingSave();
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets(
+        'native palm cannot close the window without an approaching pen',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await mount(t);
+      app.setTool(Tool.select);
+      final input = WindowsTouchInput(
+          dispatch: binding.writingTouchGuard.handleNativeTouch,
+          view: () => t.view);
+      final at = t.getCenter(find.byTooltip('Close Openote'));
+      for (final phase in [0, 2]) {
+        input.handlePacket({
+          'id': 1,
+          'phase': phase,
+          'x': at.dx,
+          'y': at.dy,
+          'intended': false,
+          'time': 1000
+        });
+      }
+      await t.pump(const Duration(milliseconds: 200));
+      expect(binding.exits, 0);
+      // A genuine finger on that same control must still work.
+      for (final phase in [0, 2]) {
+        input.handlePacket({
+          'id': 2,
+          'phase': phase,
+          'x': at.dx,
+          'y': at.dy,
+          'intended': true,
+          'time': 1100
+        });
+      }
+      await t.pump(const Duration(milliseconds: 200));
+      expect(binding.exits, 1);
+      app.cancelPendingSave();
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('native fingers pan and pinch during a real pen stroke',
+        (t) async {
+      if (!haveSqlite) return markTestSkipped('sqlite unavailable');
+      await mount(t);
+      final origin = t.getTopLeft(find.byType(PageCanvas));
+      final input = WindowsTouchInput(
+          dispatch: binding.writingTouchGuard.handleNativeTouch,
+          view: () => t.view);
+      void finger(int id, int phase, Offset at, {bool intended = true}) {
+        input.handlePacket({
+          'id': id,
+          'phase': phase,
+          'x': at.dx,
+          'y': at.dy,
+          'width': 12.0,
+          'height': 10.0,
+          'intended': intended,
+          'time': 1000
+        });
+      }
+
+      final track =
+          origin + Offset(t.getSize(find.byType(PageCanvas)).width - 5, 180);
+      final before = app.canvas.offset;
+      finger(1, 0, track, intended: false);
+      finger(1, 1, track + const Offset(0, 160), intended: false);
+      await t.pump();
+      expect(app.canvas.offset, before);
+      final pen = await t.startGesture(origin + const Offset(150, 240),
+          pointer: 99, kind: PointerDeviceKind.stylus);
+      await pen.moveBy(const Offset(50, 10));
+      final a = origin + const Offset(300, 350);
+      finger(2, 0, a);
+      for (var i = 1; i <= 5; i++) {
+        finger(2, 1, a + Offset(-12.0 * i, -8.0 * i));
+      }
+      await t.pump();
+      expect(app.canvas.offset, isNot(before));
+      finger(2, 2, a + const Offset(-60, -40));
+      final scale = app.canvas.scale;
+      final b = a + const Offset(150, 0);
+      finger(3, 0, a);
+      finger(4, 0, b);
+      for (var i = 1; i <= 4; i++) {
+        finger(3, 1, a + Offset(-12.0 * i, 0));
+        finger(4, 1, b + Offset(12.0 * i, 0));
+      }
+      await t.pump();
+      expect(app.canvas.scale, greaterThan(scale));
+      finger(3, 2, a + const Offset(-48, 0));
+      finger(4, 2, b + const Offset(48, 0));
+      finger(1, 2, track, intended: false);
+      await pen.moveBy(const Offset(20, 10));
+      await pen.up();
+      await t.pump();
+      expect(app.blocks.where((b) => b.type == BlockType.ink), isNotEmpty);
       app.cancelPendingSave();
       await t.pumpWidget(const SizedBox());
     });
