@@ -9,7 +9,13 @@
     if (!response.ok) return;
     const release = await response.json();
     if (release.draft || release.prerelease || !Array.isArray(release.assets)) return;
-    const match = { windows: /^openote-[\d.]+-windows-x64-setup\.exe$/, android: /^openote-scanner-[\d.]+\.apk$/ };
+    const match = {
+      windows: /^openote-[\d.]+-windows-x64-setup\.exe$/,
+      macos: /^openote-[\d.]+-macos-universal\.dmg$/,
+      'linux-deb': /^openote-[\d.]+-linux-amd64\.deb$/,
+      'linux-rpm': /^openote-[\d.]+-linux-x86_64\.rpm$/,
+      android: /^openote-scanner-[\d.]+\.apk$/,
+    };
     let resolved = 0;
     for (const [platform, pattern] of Object.entries(match)) {
       const asset = release.assets.find(item => pattern.test(item.name));
@@ -22,9 +28,9 @@
       }
       resolved++;
     }
-    if (resolved === 2 && typeof release.tag_name === 'string') {
+    if (resolved === Object.keys(match).length && typeof release.tag_name === 'string') {
       const status = document.getElementById('release-status');
-      status.textContent = `${release.tag_name} · Both download buttons now link directly to the latest packages on GitHub.`;
+      status.textContent = `${release.tag_name} · All download buttons now link directly to the latest packages on GitHub.`;
     }
   } catch { /* Offline, rate-limited, old browser: keep the static release links. */ }
 })();

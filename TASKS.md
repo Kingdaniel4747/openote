@@ -4,7 +4,7 @@ Stand: 25.11.2026. Nur aktuelle Arbeit und bekannte Grenzen, keine Versionschron
 
 ## Nächstes Release
 
-Vor dem nächsten Release-Push die folgenden Punkte durch die dann aktuellen
+Vor dem nächsten manuellen Hauptrelease die folgenden Punkte durch die dann aktuellen
 Änderungen aus Nutzersicht ersetzen. Die Markierungen erhalten. Der Workflow
 übernimmt diesen Inhalt nur, wenn er sich gegenüber dem letzten Release ändert;
 sonst werden Wartungshinweis und neue Commits ausgegeben.
@@ -23,7 +23,7 @@ sonst werden Wartungshinweis und neue Commits ausgegeben.
 
 - Universal-DMG im gemeinsamen Release-Workflow ergänzt (Intel und Apple Silicon,
   macOS ab 12), einschließlich Rust-OneNote-Import. Noch kein macOS-Build gelaufen.
-- Nach dem ersten beauftragten Push CI und Installation auf beiden Architekturen
+- Nach dem ersten manuellen macOS-Build CI und Installation auf beiden Architekturen
   prüfen: Start, Speichern/Neustart, PDF, Import/Export, Video, Android-Scan und MCP.
 - Pakete sind nur ad-hoc signiert; Developer-ID/Notarisierung bleibt offen.
   Gatekeeper-Freigabe und manuelles Ersetzen bei Updates stehen in README.md.
@@ -39,12 +39,20 @@ sonst werden Wartungshinweis und neue Commits ausgegeben.
 - Lokal 22 Release-/Paketierungstests bestanden, ein echter Linux-Pakettest
   übersprungen. QuickJS wird nach der Bundle-Bereinigung erneut mitkopiert.
 
+## Manuelle Workflows
+
+- Pushes starten keine Builds oder Deployments. In Actions einzeln „Build Windows
+  package“, „Build macOS package“ oder „Build Linux package“ starten; Ergebnisse
+  unter Artifacts, 7 Tage aufbewahrt. Diese Läufe veröffentlichen nichts.
+- „Main release“ baut gemeinsam und veröffentlicht nach Erfolg aller Plattformen.
+  „Publish website“ muss ebenfalls manuell gestartet werden.
+
 ## Veröffentlichung vorbereiten
 
 - Pages-Quelle im Nutzerscreenshot auf „GitHub Actions“ gesetzt; neue Änderungen
   selbst auf `master` pushen. Kein Push oder Release in dieser Sitzung.
 - Bestehende Android-Signatur-Secrets erhalten; GitHub-Build und gemeinsame
-  Release-Dateien nach dem ersten Push prüfen. Live-CI ersetzt keine Geräteprüfung.
+  Release-Dateien nach dem ersten manuellen Hauptrelease prüfen. Live-CI ersetzt keine Geräteprüfung.
 - Website im GitHub-About verlinken; nach dem Deployment Search Console einrichten
   und `https://kingdaniel4747.github.io/openote/sitemap.xml` einreichen.
 - Öffentliche Screenshots aus den echten Widgets mit isolierten Beispieldaten

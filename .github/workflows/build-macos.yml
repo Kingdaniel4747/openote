@@ -1,0 +1,81 @@
+name: Build macOS package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Test build version (X.Y.Z); does not publish a release"
+        required: true
+        default: '0.8.0'
+        type: string
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  BUILD_VERSION: ${{ inputs.version }}
+
+jobs:
+  macos:
+    name: Build macOS universal DMG
+    runs-on: macos-15
+    steps:
+      - name: Check out the source
+        uses: actions/checkout@v6
+
+      - name: Validate build version
+        shell: bash
+        run: bash .github/scripts/validate-build-version.sh
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.8
+          cache: true
+
+      - name: Use CocoaPods for the existing plugins
+        run: flutter config --no-enable-swift-package-manager
+
+      - name: Set up Rust for both Mac architectures
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Build the OneNote importer for both Mac architectures
+        working-directory: rust/onote_core
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '12.0'
+        run: |
+          cargo build --release --locked --target aarch64-apple-darwin
+          cargo build --release --locked --target x86_64-apple-darwin
+
+      - name: Get Flutter packages
+        working-directory: app
+        run: flutter pub get
+
+      - name: Trim unused package assets
+        working-directory: app
+        run: |
+          dart run pdfrx:remove_wasm_modules
+          dart run tool/strip_web_assets.dart
+
+      - name: Build the macOS app
+        working-directory: app
+        run: flutter build macos --release --build-name=$BUILD_VERSION --build-number=${{ github.run_number }} --dart-define=OPENOTE_VERSION=$BUILD_VERSION --dart-define=OPENOTE_REPOSITORY=Kingdaniel4747/openote
+
+      - name: Package and verify the universal DMG
+        run: bash packaging/macos/build-dmg.sh "$BUILD_VERSION"
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-macos
+          path: openote-${{ inputs.version }}-macos-universal.dmg
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7

@@ -1,0 +1,80 @@
+name: Build Windows package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Test build version (X.Y.Z); does not publish a release"
+        required: true
+        default: '0.8.0'
+        type: string
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  BUILD_VERSION: ${{ inputs.version }}
+
+jobs:
+  windows:
+    name: Build Windows installer
+    runs-on: windows-latest
+    steps:
+      - name: Check out the source
+        uses: actions/checkout@v6
+
+      - name: Validate build version
+        shell: bash
+        run: bash .github/scripts/validate-build-version.sh
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.8
+          cache: true
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Get Flutter packages
+        working-directory: app
+        run: flutter pub get
+
+      - name: Trim unused package assets
+        working-directory: app
+        shell: pwsh
+        run: |
+          dart run pdfrx:remove_wasm_modules
+          dart run tool/strip_web_assets.dart
+
+      - name: Build the Windows app
+        working-directory: app
+        run: flutter build windows --release --build-name=$env:BUILD_VERSION --dart-define=OPENOTE_VERSION=$env:BUILD_VERSION --dart-define=OPENOTE_REPOSITORY=Kingdaniel4747/openote
+
+      - name: Trim Material icon font
+        working-directory: app
+        shell: pwsh
+        run: dart run tool/shake_icons.dart windows
+
+      - name: Install the installer builder
+        shell: pwsh
+        run: choco install innosetup --no-progress --yes
+
+      - name: Build the Windows installer
+        shell: pwsh
+        run: |
+          & "$env:GITHUB_WORKSPACE\packaging\windows\build-installer.ps1" -Version "$env:BUILD_VERSION"
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-windows
+          path: openote-${{ inputs.version }}-windows-x64-setup.exe
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7

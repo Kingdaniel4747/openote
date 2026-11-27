@@ -13,6 +13,8 @@
 <p align="center">
   <a href="https://github.com/Kingdaniel4747/openote/releases/latest"><img src="https://img.shields.io/github/v/release/Kingdaniel4747/openote?style=flat-square&amp;color=6250cf" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/Windows-x64-24232b?style=flat-square" alt="Windows x64">
+  <img src="https://img.shields.io/badge/macOS-Intel_%2B_Apple_Silicon-24232b?style=flat-square" alt="macOS Intel and Apple Silicon">
+  <img src="https://img.shields.io/badge/Linux-x64-24232b?style=flat-square" alt="Linux x64">
   <img src="https://img.shields.io/badge/Android-companion_scanner-6250cf?style=flat-square" alt="Android companion scanner">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-24232b?style=flat-square" alt="License: AGPL-3.0-or-later"></a>
 </p>
@@ -20,6 +22,11 @@
 <p align="center">
   <a href="https://github.com/Kingdaniel4747/openote/releases/latest"><img src="website/assets/download-windows.svg" width="244" height="56" alt="Download Openote for Windows"></a>
   <a href="https://github.com/Kingdaniel4747/openote/releases/latest"><img src="website/assets/download-android.svg" width="244" height="56" alt="Download Android scanner"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Kingdaniel4747/openote/releases/latest"><b>Download macOS DMG</b></a> ·
+  <a href="https://github.com/Kingdaniel4747/openote/releases/latest"><b>Download Linux DEB / RPM</b></a>
 </p>
 
 <p align="center">
@@ -91,8 +98,8 @@ from the app’s widgets. They are not conceptual mockups or personal notebooks.
 | App | Get it | What to choose under release Assets |
 |---|---|---|
 | **Openote for Windows** | [Latest Windows release](https://github.com/Kingdaniel4747/openote/releases/latest) | `openote-<version>-windows-x64-setup.exe` |
-| **Openote for macOS** | [Latest release (after the first successful macOS build)](https://github.com/Kingdaniel4747/openote/releases/latest) | `openote-<version>-macos-universal.dmg` |
-| **Openote for Linux (x64)** | [Latest release (after the first successful Linux build)](https://github.com/Kingdaniel4747/openote/releases/latest) | `openote-<version>-linux-amd64.deb` or `openote-<version>-linux-x86_64.rpm` |
+| **Openote for macOS** | [Latest macOS release](https://github.com/Kingdaniel4747/openote/releases/latest) | `openote-<version>-macos-universal.dmg` |
+| **Openote for Linux (x64)** | [Latest Linux release](https://github.com/Kingdaniel4747/openote/releases/latest) | `openote-<version>-linux-amd64.deb` or `openote-<version>-linux-x86_64.rpm` |
 | **Openote Scanner for Android** | [Latest Android release](https://github.com/Kingdaniel4747/openote/releases/latest) | `openote-scanner-<version>.apk` |
 
 **Windows:** download and run the setup. The published desktop package is x64,
@@ -105,12 +112,12 @@ if prompted. Use the packages from this repository. Android 6 or later is requir
 This is a companion scanner, not a full Android notebook editor.
 
 **macOS (initial support, macOS 12 or later):** the release workflow now builds a
-universal DMG for Apple Silicon (M-series) and Intel Macs. After the first
-successful release, open the DMG and drag Openote into Applications. The package
+universal DMG for Apple Silicon (M-series) and Intel Macs. Open the downloaded
+DMG and drag Openote into Applications. The package
 is ad-hoc signed, without an Apple Developer ID or notarization. If macOS blocks
 it, try opening the installed app once, then use **System Settings → Privacy &
 Security → Open Anyway** if offered. Only approve a package you downloaded from
-this repository. The first macOS build and device checks are still pending.
+this repository. macOS device checks are still pending.
 
 **Linux (initial support, x64):** the workflow builds DEB and RPM packages with
 a menu entry, icon and notebook file associations. The build uses Debian 12;
@@ -118,8 +125,11 @@ the packages require glibc 2.36 or later and libmpv.so.2. Choose the format for
 your distribution and let its package manager install dependencies. For DEB,
 run `sudo apt install ./openote-<version>-linux-amd64.deb`; for RPM, run
 `sudo dnf install ./openote-<version>-linux-x86_64.rpm`, replacing `<version>`
-with the downloaded version. The first Linux CI build and device checks are
-still pending; ARM Linux packages are not provided.
+with the exact downloaded version. Run the command from the folder containing
+the file. After installation, launch **Openote** from the applications menu or
+run `openote` in a terminal. If the file is not found, drag the downloaded RPM
+or DEB into the terminal after `sudo dnf install ` or `sudo apt install `.
+ARM Linux packages are not provided; Linux device checks are still pending.
 
 All apps check GitHub for newer releases. On macOS and Linux, the update button
 opens the release page. Quit Openote before replacing it in Applications or
@@ -299,8 +309,7 @@ reconciled at the next scan. Generated files under `app/build/` are rebuilt.
 <summary><strong>Publish the website and prepare a release</strong></summary>
 
 The site is plain HTML/CSS/JS: serve `website/` locally to preview it. In GitHub
-Settings → Pages, select **GitHub Actions**. Website changes pushed to `master`
-deploy through **Publish website** to <https://kingdaniel4747.github.io/openote/>.
+Settings → Pages, select **GitHub Actions**. Start **Publish website → Run workflow** in GitHub Actions to deploy to <https://kingdaniel4747.github.io/openote/>.
 The old `/en/` URL redirects to the English root; there is no German site.
 
 Download links resolve current GitHub assets, with a fallback to the latest
@@ -313,14 +322,19 @@ recommendations cannot be guaranteed. Google applies its normal
 There are no website analytics or external fonts. A `robots.txt` under this
 project subpath would not control crawlers for the domain.
 
-**Every push to `master` starts the shared Windows/macOS/Linux/Android release workflow.**
-All four builds must succeed before publication. The next patch version is calculated
-from existing version tags and the Pubspec baseline. Pushes to other branches or
-tags do not publish; manual dispatch with a version and optional notes remains
-available. Existing version tags are rejected. Runs are serialized; GitHub can
-replace an older pending run when several pushes arrive quickly.
+**Pushes do not start builds, releases or website deployment.**
+Use GitHub **Actions → Build Windows package / Build macOS package / Build Linux
+package → Run workflow** to test one platform. Enter an X.Y.Z test version; the
+result is under the run’s **Artifacts** (available for 7 days). These builds do
+not publish a GitHub release.
 
-Before a release push, update the marked **Nächstes Release** section in TASKS.md
+For a public release, start **Actions → Main release → Run workflow**. It runs
+the same three desktop builds plus the Android scanner. All four builds must
+succeed before publication. The next patch version is calculated
+from existing version tags and the Pubspec baseline. Enter a version override and optional notes in the manual release form if needed. Existing version tags are rejected. Runs are serialized; GitHub can
+replace an older pending run when several releases are started quickly.
+
+Before starting Main release, update the marked **Nächstes Release** section in TASKS.md
 with short user-facing changes. The workflow publishes new notes, a date and
 commit history. Unchanged notes are not presented as new features again; a
 maintenance summary is used instead. The in-app updater reads this release body.

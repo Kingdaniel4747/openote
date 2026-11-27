@@ -5,10 +5,14 @@
 `website/` ist eine buildfreie englische GitHub-Pages-Website; die alte Adresse
 `en/` leitet auf die Wurzel um. Gemeinsame CSS-Datei und progressive Downloadlinks
 über `downloads.js`. Ohne GitHub-API/JavaScript bleiben die Release-Seiten verlinkt.
-`.github/workflows/pages.yml` veröffentlicht unabhängig von den App-Builds.
+`.github/workflows/pages.yml` veröffentlicht manuell, unabhängig von den App-Builds.
+Pushes starten keinen Workflow. `build-windows.yml`, `build-macos.yml` und
+`build-linux.yml` sind einzeln manuell testbar und per `workflow_call` vom
+Hauptrelease wiederverwendet. Einzelbuilds laden nur Artefakte hoch (7 Tage),
+ohne Veröffentlichung; der Hauptrelease berechnet die gemeinsame Version.
 `features.html` listet die Werkzeuge und erklärt ihre Bedienung; beide Seiten
 verlinken sie über die auch mobil sichtbare Navigation „Features & guide“.
-`release.yml` baut nach Push auf `master` Windows, macOS, Linux und Android; `release-notes.mjs` erstellt
+`release.yml` (Main release) baut nur manuell Windows, macOS, Linux und Android; `release-notes.mjs` erstellt
 aus dem markierten TASKS-Abschnitt, vorherigem Release-Stand und Git-Commits den
 Release-Text. Keine neue separate Markdown-Chronik.
 
@@ -34,7 +38,7 @@ erster CI-Build und Geräteprüfung offen. Updates öffnen die Release-Seite.
 
 ## Linux-Build
 
-`release.yml` baut den vorhandenen GTK-Runner in `debian:12` auf einem x64-Runner,
+`build-linux.yml` baut den vorhandenen GTK-Runner in `debian:12` auf einem x64-Runner,
 mit Flutter 3.44.8 und Rust. CMake bündelt `libonote_core.so` neben dem Executable.
 `packaging/linux/verify-bundle.sh` prüft alle dynamisch verknüpften ELF-Dateien
 auf fehlende Bibliotheken und den Video-ABI `libmpv.so.2`. Das vorhandene

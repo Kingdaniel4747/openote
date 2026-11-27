@@ -1,10 +1,8 @@
-name: Release packages
+name: Main release
 
-# Each push to the publication branch builds one shared desktop/Android release.
+# Manual publication builds all platforms with one shared version.
 # Serialization prevents concurrent runs from choosing the same patch version.
 on:
-  push:
-    branches: [master]
   workflow_dispatch:
     inputs:
       version:
@@ -88,194 +86,22 @@ jobs:
         run: node --test .github/scripts/*.test.mjs
 
   windows:
-    name: Build Windows installer
     needs: version
-    runs-on: windows-latest
-    steps:
-      - name: Check out the source
-        uses: actions/checkout@v6
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: 3.44.8
-          cache: true
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Get Flutter packages
-        working-directory: app
-        run: flutter pub get
-
-      - name: Trim unused package assets
-        working-directory: app
-        shell: pwsh
-        run: |
-          dart run pdfrx:remove_wasm_modules
-          dart run tool/strip_web_assets.dart
-
-      - name: Build the Windows app
-        working-directory: app
-        run: flutter build windows --release --build-name=${{ needs.version.outputs.value }} --dart-define=OPENOTE_VERSION=${{ needs.version.outputs.value }} --dart-define=OPENOTE_REPOSITORY=Kingdaniel4747/openote
-
-      - name: Trim Material icon font
-        working-directory: app
-        shell: pwsh
-        run: dart run tool/shake_icons.dart windows
-
-      - name: Install the installer builder
-        shell: pwsh
-        run: choco install innosetup --no-progress --yes
-
-      - name: Build the Windows installer
-        shell: pwsh
-        run: |
-          & "$env:GITHUB_WORKSPACE\packaging\windows\build-installer.ps1" -Version '${{ needs.version.outputs.value }}'
-
-      - name: Upload installer
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-windows
-          path: openote-${{ needs.version.outputs.value }}-windows-x64-setup.exe
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 7
+    uses: ./.github/workflows/build-windows.yml
+    with:
+      version: ${{ needs.version.outputs.value }}
 
   macos:
-    name: Build macOS universal DMG
     needs: version
-    runs-on: macos-15
-    steps:
-      - name: Check out the source
-        uses: actions/checkout@v6
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: 3.44.8
-          cache: true
-
-      - name: Use CocoaPods for the existing plugins
-        run: flutter config --no-enable-swift-package-manager
-
-      - name: Set up Rust for both Mac architectures
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
-
-      - name: Build the OneNote importer for both Mac architectures
-        working-directory: rust/onote_core
-        env:
-          MACOSX_DEPLOYMENT_TARGET: '12.0'
-        run: |
-          cargo build --release --locked --target aarch64-apple-darwin
-          cargo build --release --locked --target x86_64-apple-darwin
-
-      - name: Get Flutter packages
-        working-directory: app
-        run: flutter pub get
-
-      - name: Trim unused package assets
-        working-directory: app
-        run: |
-          dart run pdfrx:remove_wasm_modules
-          dart run tool/strip_web_assets.dart
-
-      - name: Build the macOS app
-        working-directory: app
-        run: flutter build macos --release --build-name=${{ needs.version.outputs.value }} --build-number=${{ github.run_number }} --dart-define=OPENOTE_VERSION=${{ needs.version.outputs.value }} --dart-define=OPENOTE_REPOSITORY=Kingdaniel4747/openote
-
-      - name: Package and verify the universal DMG
-        run: bash packaging/macos/build-dmg.sh '${{ needs.version.outputs.value }}'
-
-      - name: Upload DMG
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-macos
-          path: openote-${{ needs.version.outputs.value }}-macos-universal.dmg
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 7
+    uses: ./.github/workflows/build-macos.yml
+    with:
+      version: ${{ needs.version.outputs.value }}
 
   linux:
-    name: Build Linux DEB and RPM (x64)
     needs: version
-    runs-on: ubuntu-24.04
-    # Keep the glibc baseline and libmpv.so.2 ABI used by the packages.
-    container: debian:12
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: Install Linux build and packaging tools
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            ca-certificates curl git unzip xz-utils zip jq \
-            build-essential clang cmake ninja-build pkg-config \
-            libgtk-3-dev libstdc++-12-dev liblzma-dev libmpv-dev \
-            libepoxy-dev libsecret-1-dev libssl-dev \
-            rpm file binutils desktop-file-utils shared-mime-info nodejs
-
-      - name: Check out the source
-        uses: actions/checkout@v6
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: 3.44.8
-          cache: true
-
-      - name: Trust the cached Flutter SDK in the container
-        run: git config --global --add safe.directory "$FLUTTER_ROOT"
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Get Flutter packages
-        working-directory: app
-        run: flutter pub get
-
-      - name: Trim unused package assets
-        working-directory: app
-        run: |
-          dart run pdfrx:remove_wasm_modules
-          dart run tool/strip_web_assets.dart
-
-      - name: Build the Linux app and OneNote importer
-        working-directory: app
-        run: flutter build linux --release --build-name=${{ needs.version.outputs.value }} --dart-define=OPENOTE_VERSION=${{ needs.version.outputs.value }} --dart-define=OPENOTE_REPOSITORY=Kingdaniel4747/openote
-
-      - name: Trim Material icon font
-        working-directory: app
-        run: dart run tool/shake_icons.dart linux
-
-      - name: Verify shared-library dependencies
-        run: bash packaging/linux/verify-bundle.sh app/build/linux/x64/release/bundle
-
-      - name: Test Linux packaging with real package builders
-        env:
-          OPENOTE_LINUX_PACKAGE_TESTS: '1'
-        run: node --test .github/scripts/linux-package.test.mjs
-
-      - name: Build and inspect Linux packages
-        run: |
-          desktop-file-validate packaging/linux/org.openote.openote.desktop
-          bash packaging/linux/build-packages.sh '${{ needs.version.outputs.value }}' app/build/linux/x64/release/bundle
-          dpkg-deb --info 'openote-${{ needs.version.outputs.value }}-linux-amd64.deb'
-          rpm --query --package --info 'openote-${{ needs.version.outputs.value }}-linux-x86_64.rpm'
-
-      - name: Upload Linux packages
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-linux
-          path: |
-            openote-${{ needs.version.outputs.value }}-linux-amd64.deb
-            openote-${{ needs.version.outputs.value }}-linux-x86_64.rpm
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 7
+    uses: ./.github/workflows/build-linux.yml
+    with:
+      version: ${{ needs.version.outputs.value }}
 
   android:
     name: Build Android scanner APK
